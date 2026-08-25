@@ -9,7 +9,10 @@ const { execFileSync } = require('child_process');
 
 const ROOT = path.resolve(__dirname, '..');
 const DIST = path.join(ROOT, 'dist');
-const STATIC = path.join(DIST, 'static');
+// Sites binds public assets from the build root. Keep the worker isolated in
+// dist/server while every page, stylesheet, image, and generated snapshot is
+// staged directly beneath dist so env.ASSETS can resolve its original URLs.
+const STATIC = DIST;
 const WORKER_SOURCE = path.join(ROOT, 'sites', 'public-worker.js');
 
 function reset(directory) {
