@@ -1,0 +1,216 @@
+/* WESTO v14.1 — Experience Promo / CTA Progress / Mobile Dock / Header Safe-Zones */
+
+/* Entrance: the promo deck lives inside the experience block, never as an extra grid row. */
+#westo-entrance.has-eg-promo .eg-card { grid-template-rows: none !important; }
+#westo-entrance.has-eg-promo .eg-experience,
+#westo-entrance.has-eg-promo .eg-cta-wrap { grid-row:auto !important; }
+#westo-entrance .eg-experience {
+  display:grid !important;
+  grid-template-columns:1fr !important;
+  justify-items:center !important;
+  width:100% !important;
+  gap:clamp(7px,1.2vh,12px) !important;
+}
+#westo-entrance .eg-experience__lead { margin:0 !important; }
+#westo-entrance .eg-promo--experience {
+  width:min(100%,620px) !important;
+  margin:0 auto !important;
+  --eg-promo-h:clamp(132px,18.5vh,178px);
+  --eg-promo-radius:24px;
+}
+#westo-entrance .eg-promo--experience .eg-promo__deck {
+  height:calc(var(--eg-promo-h) + 14px) !important;
+  padding-top:14px !important;
+}
+#westo-entrance .eg-promo--experience .eg-promo__card { inset-block-start:14px !important; }
+#westo-entrance .eg-promo__card { will-change:auto !important; filter:none !important; }
+#westo-entrance .eg-promo__deck.is-dragging .eg-promo__card { will-change:transform,opacity !important; }
+#westo-entrance .eg-promo__card[data-layer='1'],
+#westo-entrance .eg-promo__card[data-layer='2'],
+#westo-entrance .eg-promo__card[data-layer='hidden'] { filter:none !important; }
+#westo-entrance .eg-promo__share { backdrop-filter:none !important; -webkit-backdrop-filter:none !important; background:rgba(5,15,18,.86) !important; }
+html[data-theme='light'] #westo-entrance .eg-promo__share { background:rgba(250,252,249,.95) !important; }
+
+/* Progress is visually contained by the CTA without becoming a semantic child of the button. */
+#westo-entrance .eg-cta-wrap { position:relative !important; padding-top:clamp(8px,1.2vh,12px) !important; }
+#westo-entrance .eg-cta { position:relative !important; padding-bottom:11px !important; overflow:hidden !important; }
+#westo-entrance .eg-cta-wrap > .eg-progress {
+  position:absolute !important;
+  z-index:4 !important;
+  inset-inline:clamp(18px,4vw,30px) !important;
+  bottom:7px !important;
+  margin:0 !important;
+  display:grid !important;
+  grid-template-columns:minmax(0,1fr) auto !important;
+  align-items:center !important;
+  gap:8px !important;
+  pointer-events:none !important;
+}
+#westo-entrance .eg-cta-wrap > .eg-progress .eg-progress__track { height:2px !important; background:rgba(255,255,255,.17) !important; }
+#westo-entrance .eg-cta-wrap > .eg-progress .eg-progress__pct { font-size:10px !important; line-height:1 !important; color:rgba(255,255,255,.84) !important; min-width:28px !important; }
+html[data-theme='light'] #westo-entrance .eg-cta-wrap > .eg-progress .eg-progress__track { background:rgba(17,62,63,.16) !important; }
+html[data-theme='light'] #westo-entrance .eg-cta-wrap > .eg-progress .eg-progress__pct { color:rgba(18,61,63,.74) !important; }
+
+/* Mobile footer becomes one coherent bottom navigation surface. */
+@media (max-width:767px) {
+  #westo-entrance .eg-foot {
+    width:min(calc(100% - 8px),520px) !important;
+    min-height:62px !important;
+    margin:0 auto !important;
+    padding:5px 6px !important;
+    grid-template-columns:50px minmax(0,1fr) auto !important;
+    align-items:center !important;
+    gap:4px !important;
+    border:1px solid rgba(92,218,224,.18) !important;
+    border-radius:28px !important;
+    background:rgba(4,12,15,.92) !important;
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.055),0 12px 28px rgba(0,0,0,.20) !important;
+    backdrop-filter:none !important;
+    -webkit-backdrop-filter:none !important;
+  }
+  html[data-theme='light'] #westo-entrance .eg-foot {
+    background:rgba(248,249,246,.96) !important;
+    border-color:rgba(39,91,87,.12) !important;
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.95),0 10px 24px rgba(40,65,61,.10) !important;
+  }
+  #westo-entrance .eg-foot .eg-corner,
+  #westo-entrance .eg-foot .eg-dock,
+  #westo-entrance .eg-foot .eg-lang-switch {
+    margin:0 !important;
+    min-height:50px !important;
+    height:50px !important;
+    border:0 !important;
+    box-shadow:none !important;
+    background:transparent !important;
+    backdrop-filter:none !important;
+    -webkit-backdrop-filter:none !important;
+  }
+  #westo-entrance .eg-theme-toggle { width:50px !important; min-width:50px !important; padding:0 !important; }
+  #westo-entrance .eg-dock { justify-self:center !important; width:auto !important; padding:0 3px !important; gap:1px !important; }
+  #westo-entrance .eg-dock__btn { width:44px !important; min-width:44px !important; height:48px !important; min-height:48px !important; padding:0 !important; border-radius:16px !important; }
+  #westo-entrance .eg-dock__btn:active { background:rgba(51,211,218,.10) !important; }
+  #westo-entrance .eg-dock__label,
+  #westo-entrance .eg-corner__label { display:none !important; }
+  #westo-entrance .eg-lang-switch { justify-self:end !important; padding-inline:8px !important; border-radius:18px !important; background:rgba(255,255,255,.035) !important; }
+  html[data-theme='light'] #westo-entrance .eg-lang-switch { background:rgba(34,73,69,.04) !important; }
+  #westo-entrance .eg-lang-seg { min-width:30px !important; min-height:44px !important; font-size:11px !important; }
+  #westo-entrance .eg-lang-sep { opacity:.22 !important; }
+}
+
+@media (max-width:430px) {
+  #westo-entrance .eg-promo--experience { --eg-promo-h:clamp(116px,31vw,142px); --eg-promo-radius:20px; }
+  #westo-entrance .eg-promo--experience .eg-promo__deck { height:calc(var(--eg-promo-h) + 12px) !important; padding-top:12px !important; }
+  #westo-entrance .eg-promo--experience .eg-promo__card { inset-block-start:12px !important; }
+  #westo-entrance .eg-promo__pagination { margin-top:0 !important; min-height:12px !important; }
+  #westo-entrance .eg-step-icon { width:48px !important; height:48px !important; }
+  #westo-entrance .eg-step-label { font-size:8px !important; }
+  #westo-entrance .eg-foot { grid-template-columns:46px minmax(0,1fr) auto !important; border-radius:25px !important; }
+  #westo-entrance .eg-theme-toggle { width:46px !important; min-width:46px !important; }
+  #westo-entrance .eg-dock__btn { width:44px !important; min-width:44px !important; }
+  #westo-entrance .eg-lang-seg { min-width:28px !important; min-height:44px !important; }
+}
+
+@media (max-height:720px) and (orientation:landscape) {
+  #westo-entrance .eg-promo--experience { --eg-promo-h:96px; width:min(430px,62vw) !important; }
+  #westo-entrance .eg-promo--experience .eg-promo__deck { height:106px !important; padding-top:10px !important; }
+  #westo-entrance .eg-promo--experience .eg-promo__card { inset-block-start:10px !important; --eg-promo-radius:17px; }
+  #westo-entrance .eg-experience__lead,
+  #westo-entrance .eg-quote { display:none !important; }
+}
+
+/* Navbar collision-proofing. The brand owns an explicit center track and side clusters
+   are constrained before they can paint into that track. */
+.navbar_container {
+  position:relative !important;
+  grid-template-columns:minmax(0,1fr) clamp(118px,17vw,190px) minmax(0,1fr) !important;
+}
+.navbar_logo-link {
+  grid-column:2 !important;
+  z-index:6 !important;
+  width:100% !important;
+  max-width:190px !important;
+  min-width:0 !important;
+  pointer-events:auto !important;
+}
+.navbar_sound-wrapper { grid-column:1 !important; max-width:100% !important; overflow:visible !important; }
+.navbar_menu-wrapper { grid-column:3 !important; max-width:100% !important; overflow:visible !important; }
+
+@media (max-width:767px) {
+  .navbar_container { grid-template-columns:minmax(0,1fr) clamp(104px,24vw,132px) minmax(0,1fr) !important; column-gap:6px !important; }
+  .navbar_logo-link { width:100% !important; height:46px !important; max-width:132px !important; }
+  .navbar_logo { max-height:46px !important; }
+  .navbar_menu-wrapper,.navbar_sound-wrapper { gap:4px !important; }
+  .navbar_menu-button { min-width:70px !important; height:48px !important; min-height:48px !important; padding-inline:9px !important; }
+  #nav-auth-btn { width:48px !important; min-width:48px !important; height:48px !important; min-height:48px !important; padding:0 !important; display:grid !important; place-items:center !important; }
+  .navbar_table,.westo-back-categories:not([hidden]) { width:46px !important; min-width:46px !important; height:46px !important; min-height:46px !important; }
+}
+@media (max-width:360px) {
+  .navbar_content { padding-inline:6px !important; }
+  .navbar_container { grid-template-columns:minmax(0,1fr) 92px minmax(0,1fr) !important; column-gap:4px !important; }
+  .navbar_logo-link { max-width:92px !important; }
+  .navbar_menu-button { width:44px !important; min-width:44px !important; padding:0 !important; }
+  .navbar_menu-button .text-block { display:none !important; }
+  #nav-auth-btn { width:44px !important; min-width:44px !important; height:44px !important; min-height:44px !important; font-size:12px !important; }
+  .navbar_table,.westo-back-categories:not([hidden]) { width:44px !important; min-width:44px !important; height:44px !important; min-height:44px !important; }
+}
+
+/* Never let the legacy menu-position promo deck coexist with the entrance deck. */
+#westo-menu-promo-deck { display:none !important; }
+html.has-westo-menu-promo-deck { --menu-promo-h:0px !important; --menu-promo-gap:0px !important; }
+
+@media (max-width:767px) and (max-height:720px) {
+  #westo-entrance .eg-shell { gap:5px !important; padding-top:calc(7px + var(--eg-safe-t)) !important; padding-bottom:calc(7px + var(--eg-safe-b)) !important; }
+  #westo-entrance .eg-card { padding-top:13px !important; padding-bottom:11px !important; }
+  #westo-entrance .eg-logo-stage { width:68px !important; max-height:100px !important; margin-bottom:0 !important; }
+  #westo-entrance .eg-brand-wordmark-img { width:min(190px,58vw) !important; max-height:38px !important; }
+  #westo-entrance .eg-tagline { margin-top:2px !important; font-size:10px !important; }
+  #westo-entrance .eg-subtitle { display:none !important; }
+  #westo-entrance .eg-status { margin-top:5px !important; min-height:31px !important; }
+  #westo-entrance .eg-experience { margin-top:5px !important; gap:4px !important; }
+  #westo-entrance .eg-experience__lead { font-size:9px !important; }
+  #westo-entrance .eg-promo--experience { --eg-promo-h:104px; width:min(100%,330px) !important; }
+  #westo-entrance .eg-promo--experience .eg-promo__deck { height:114px !important; padding-top:10px !important; }
+  #westo-entrance .eg-promo--experience .eg-promo__card { inset-block-start:10px !important; --eg-promo-radius:17px; }
+  #westo-entrance .eg-promo__pagination { display:none !important; }
+  #westo-entrance .eg-step-icon { width:38px !important; height:38px !important; }
+  #westo-entrance .eg-steps-row::before { top:19px !important; }
+  #westo-entrance .eg-step-label { display:none !important; }
+  #westo-entrance .eg-quote { display:none !important; }
+  #westo-entrance .eg-cta { min-height:50px !important; height:50px !important; }
+  #westo-entrance .eg-foot { min-height:54px !important; height:54px !important; }
+  #westo-entrance .eg-foot .eg-corner,#westo-entrance .eg-foot .eg-dock,#westo-entrance .eg-foot .eg-lang-switch { min-height:44px !important; height:44px !important; }
+  #westo-entrance .eg-dock__btn { height:44px !important; min-height:44px !important; }
+}
+
+/* Neutralize obsolete v13.6 grid/min-height assumptions now that promo is nested in experience. */
+#westo-entrance.has-eg-promo .eg-card { min-height:0 !important; }
+@media (max-width:767px) {
+  #westo-entrance.has-eg-promo .eg-card { min-height:0 !important; }
+}
+@media (max-width:430px) and (max-height:790px) {
+  #westo-entrance.has-eg-promo .eg-card { min-height:0 !important; }
+}
+
+
+/* v14.2 design-system hardening: coherent keyboard focus and minimum interaction targets. */
+#westo-entrance :is(.eg-theme-toggle,.eg-dock__btn,.eg-lang-seg,.eg-promo__share):focus-visible,
+.navbar :is(.navbar_menu-button,#nav-auth-btn,.navbar_table,.westo-back-categories):focus-visible {
+  outline:2px solid rgba(111,224,229,.88) !important;
+  outline-offset:3px !important;
+  box-shadow:0 0 0 4px rgba(65,204,212,.14) !important;
+}
+html[data-theme='light'] #westo-entrance :is(.eg-theme-toggle,.eg-dock__btn,.eg-lang-seg,.eg-promo__share):focus-visible,
+html[data-theme='light'] .navbar :is(.navbar_menu-button,#nav-auth-btn,.navbar_table,.westo-back-categories):focus-visible {
+  outline-color:rgba(28,108,115,.92) !important;
+  box-shadow:0 0 0 4px rgba(28,108,115,.12) !important;
+}
+@media (pointer:coarse) {
+  #westo-entrance .eg-lang-seg,
+  #westo-entrance .eg-dock__btn,
+  #nav-auth-btn,
+  .navbar_table,
+  .westo-back-categories:not([hidden]) {
+    min-width:44px !important;
+    min-height:44px !important;
+  }
+}

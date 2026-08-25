@@ -1,0 +1,100 @@
+/* WESTO Design Logic v13.1 — non-invasive human-factor guards.
+   Default v8/v12.9 visual language is authoritative. This layer only appears
+   for keyboard focus, accessibility preferences, text overflow and edge viewports. */
+:root{
+  --dl-touch-min:44px;
+  --dl-focus:#78d0d8;
+  --dl-focus-offset:3px;
+  --dl-vv-height:100dvh;
+  --dl-vv-width:100vw;
+}
+html[data-theme='light']{--dl-focus:#176f78}
+html{-webkit-text-size-adjust:100%;text-size-adjust:100%;scroll-padding-top:max(1rem,env(safe-area-inset-top))}
+button,input,select,textarea{font:inherit}
+button,[role='button'],a,input,select,textarea{touch-action:manipulation}
+
+.dl-skip-link{
+  position:fixed;inset-inline-start:max(.75rem,env(safe-area-inset-left));top:max(.75rem,env(safe-area-inset-top));
+  z-index:2147483647;transform:translateY(calc(-100% - 2rem));
+  padding:.72rem 1rem;border-radius:999px;background:#f7fbfa;color:#071012;
+  border:2px solid var(--dl-focus);box-shadow:0 12px 36px rgba(0,0,0,.24);font-weight:800;
+  transition:transform .16s ease;
+}
+.dl-skip-link:focus{transform:translateY(0)}
+html[data-input-modality='keyboard'] :where(a,button,input,select,textarea,[role='button'],[tabindex]):focus-visible{
+  outline:2px solid var(--dl-focus)!important;outline-offset:var(--dl-focus-offset)!important;
+}
+
+/* Only text-resilience; no default sizing, opacity, border, color or shadow changes. */
+:where(.auth-sub,.hint,.msg,.checkout-note,.cm-item__name,.cm-item__en,.cm-detail__desc,.table-line__name,.table-line__meta,.text-rich-text p,.text-rich-text li){
+  overflow-wrap:anywhere;word-break:normal;
+}
+body.legal-body{user-select:text!important;-webkit-user-select:text!important}
+
+/* Hit-area expansion without changing the approved visual geometry. */
+@media (pointer:coarse){
+  :where(.navbar_menu-button,.navbar_menu-close,.eg-glass-btn,.eg-chip-icon,.qty-modal__x,.table-drawer__close,.cm-detail__x,.score-btn,.slot-btn){
+    position:relative;
+  }
+  :where(.navbar_menu-button,.navbar_menu-close,.eg-glass-btn,.eg-chip-icon,.qty-modal__x,.table-drawer__close,.cm-detail__x,.score-btn,.slot-btn)::after{
+    content:"";position:absolute;left:50%;top:50%;width:max(100%,44px);height:max(100%,44px);transform:translate(-50%,-50%);
+  }
+}
+
+@media (max-width:360px){
+  .grid-2{grid-template-columns:1fr!important}
+  .score-grid{grid-template-columns:repeat(4,minmax(44px,1fr))!important;gap:.45rem!important}
+  .checkout-segment{grid-template-columns:1fr!important}
+}
+@media (max-height:560px) and (orientation:landscape){
+  :where(.qty-modal__card,.table-drawer__panel,.cm-detail__card,.eg-sheet){
+    max-height:calc(var(--dl-vv-height) - 1rem);overflow:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;
+  }
+}
+html.dl-keyboard-open :where(.qty-modal,.table-drawer,.cm-detail){max-height:var(--dl-vv-height)}
+
+@media (prefers-reduced-motion:reduce){
+  html:focus-within{scroll-behavior:auto!important}
+  *,*::before,*::after{scroll-behavior:auto!important;animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important;transition-delay:0ms!important}
+}
+@media (forced-colors:active){
+  :where(a,button,input,select,textarea,[role='button']){forced-color-adjust:auto}
+}
+@media print{.dl-skip-link{display:none!important}}
+
+/* Compositional tokens are advisory only; they do not override existing v8 geometry. */
+:root{
+  --dl-phi:1.618;
+  --dl-space-1:.5rem;
+  --dl-space-2:.8125rem;
+  --dl-space-3:1.3125rem;
+  --dl-space-4:2.125rem;
+  --dl-space-5:3.4375rem;
+}
+.eg-sheet{position:relative}
+.eg-sheet-close{
+  position:absolute;inset-inline-end:1rem;top:1rem;z-index:3;
+  width:44px;height:44px;border-radius:999px;display:grid;place-items:center;
+  border:1px solid rgba(120,208,216,.22);background:rgba(8,18,21,.66);color:inherit;
+  font:inherit;font-size:1.2rem;line-height:1;cursor:pointer;
+  -webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);
+}
+html[data-theme='light'] .eg-sheet-close{background:rgba(255,255,255,.78);border-color:rgba(16,72,76,.14);color:#111416}
+@media (prefers-contrast:more){
+  html[data-input-modality='keyboard'] :where(a,button,input,select,textarea,[role='button'],[tabindex]):focus-visible{outline-width:3px!important}
+}
+
+/* Semantic helpers introduced by v13.1 must not leak into the visible composition. */
+.visually-hidden,.sr-only{
+  position:absolute!important;width:1px!important;height:1px!important;padding:0!important;margin:-1px!important;
+  overflow:hidden!important;clip:rect(0,0,0,0)!important;clip-path:inset(50%)!important;
+  white-space:nowrap!important;border:0!important;
+}
+body.panel-body .auth-link-btn{
+  appearance:none;-webkit-appearance:none;border:0;background:transparent;color:inherit;
+  display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:.3rem .1rem;
+  font:inherit;line-height:inherit;text-decoration:underline;text-underline-offset:.2em;cursor:pointer;
+}
+html[data-theme='light'] body.panel-body .auth-link-btn{
+  color:rgba(26,23,20,.82);text-decoration-color:rgba(42,122,134,.55);
+}

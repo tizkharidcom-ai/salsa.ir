@@ -1,0 +1,121 @@
+{
+  "schema": "westo-smart-load-bundles-v1",
+  "generatedAt": "2026-08-22T12:01:07.262Z",
+  "bundles": [
+    {
+      "file": "css/westo-critical.smart.css",
+      "bytes": 620563,
+      "gzipEstimate": null,
+      "sha256": "7620a58b83562f0467ea68a536fb5ab5f5c3faccc30fa87b5cfff46f7e0279e2",
+      "sources": [
+        "css/mobile-forms.css",
+        "css/westo.webflow.shared.min.css",
+        "css/fa-override.css",
+        "css/i18n-dir.css",
+        "css/entrance-gate.css",
+        "css/entrance-gate-redesign.css",
+        "css/table.css",
+        "css/responsive-shell.css",
+        "css/menu-story.css",
+        "css/westo-glass.css",
+        "css/vazir-system.css",
+        "css/westo-production-v12.css",
+        "css/entrance-promo-deck.css",
+        "css/westo-v14.1-experience-polish.css",
+        "css/westo-v14.3-ultra-fine.css",
+        "css/westo-ultra-fine-v1.2.css",
+        "css/westo-dish-card-premium.css",
+        "css/westo-pwa.css",
+        "css/westo-landscape-recovery.css"
+      ]
+    },
+    {
+      "file": "js/westo-foundation.smart.js",
+      "bytes": 166185,
+      "gzipEstimate": null,
+      "sha256": "0234ea18516b586960114a607bc1c8b7b6f9d910fec53747860d95526db8dac7",
+      "sources": [
+        "js/i18n.js",
+        "js/category-theme.js",
+        "js/menu-store.js",
+        "js/content-overrides.js",
+        "js/theme.js",
+        "js/westo-entrance.js",
+        "js/entrance-promo-deck.js",
+        "js/subcategory-kill-switch.js",
+        "js/brand-lockup.js",
+        "js/language-switch-rescue.js",
+        "js/design-logic-v13.js"
+      ]
+    },
+    {
+      "file": "js/westo-motion.smart.js",
+      "bytes": 125809,
+      "gzipEstimate": null,
+      "sha256": "9a52435034429d75a2f7a997d7a2fdbef35e64e58dc5f993d66448c913993a73",
+      "sources": [
+        "js/vendor/gsap.min.js",
+        "js/vendor/ScrollTrigger.min.js",
+        "js/vendor/SplitText.min.js"
+      ]
+    },
+    {
+      "file": "js/westo-hero.smart.js",
+      "bytes": 102933,
+      "gzipEstimate": null,
+      "sha256": "e0359e4d8cdb9581a7fe02a7b005878acbb854df91e1e51995d3e05f6af70c5a",
+      "sources": [
+        "js/animations.js",
+        "js/sounds.js"
+      ]
+    },
+    {
+      "file": "js/westo-menu.smart.js",
+      "bytes": 231860,
+      "gzipEstimate": null,
+      "sha256": "0ea3ecee84399245f924f343fcceaa01c9744e3e8528809d98f7fb76d1ba07b4",
+      "sources": [
+        "js/buttons.js",
+        "js/table-cart.js"
+      ]
+    },
+    {
+      "file": "js/westo-background.smart.js",
+      "bytes": 11013,
+      "gzipEstimate": null,
+      "sha256": "97d1f46ce23fb905c47e785e7242ca2678d8ad5d03cbdba2a82b52fb8078982a",
+      "sources": [
+        "js/auth-nav.js",
+        "js/analytics-beacon.js"
+      ]
+    },
+    {
+      "file": "js/westo-app.smart.js",
+      "bytes": 655074,
+      "gzipEstimate": null,
+      "sha256": "82e9df1f69671eeabd95adcf588d09a82207697d0358b1d41dae27944657a9d4",
+      "sources": [
+        "js/i18n.js",
+        "js/category-theme.js",
+        "js/menu-store.js",
+        "js/content-overrides.js",
+        "js/theme.js",
+        "js/westo-entrance.js",
+        "js/entrance-promo-deck.js",
+        "js/subcategory-kill-switch.js",
+        "js/brand-lockup.js",
+        "js/language-switch-rescue.js",
+        "js/design-logic-v13.js",
+        "js/vendor/gsap.min.js",
+        "js/vendor/ScrollTrigger.min.js",
+        "js/vendor/SplitText.min.js",
+        "js/buttons.js",
+        "js/table-cart.js",
+        "js/animations.js",
+        "js/sounds.js",
+        "js/westo-production-v12.js",
+        "js/westo-v14.3-ultra-fine.js"
+      ]
+    }
+  ]
+}

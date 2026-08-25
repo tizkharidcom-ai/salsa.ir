@@ -1,0 +1,28 @@
+{
+  "providerId": 430,
+  "source": "https://www.topmenumarket.com/api/v2/providers/430/menu",
+  "syncedAt": "2026-08-02T16:31:07.916808+00:00",
+  "categories": 16,
+  "totalItems": 146,
+  "availableItems": 142,
+  "nestedItems": 47,
+  "categoryCounts": {
+    "7560": 8,
+    "7561": 18,
+    "17007": 3,
+    "7562": 4,
+    "7563": 7,
+    "7564": 9,
+    "7566": 13,
+    "13581": 8,
+    "7567": 7,
+    "7599": 25,
+    "14477": 6,
+    "7675": 15,
+    "7701": 3,
+    "7676": 7,
+    "7697": 7,
+    "9478": 2
+  },
+  "backup": "/private/tmp/westo-topmenu-backup-20260802T163107Z"
+}

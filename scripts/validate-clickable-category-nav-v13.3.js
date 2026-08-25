@@ -1,0 +1,25 @@
+const fs=require('fs');
+const path=require('path');
+const root=path.resolve(__dirname,'..');
+const prod=fs.readFileSync(path.join(root,'js/westo-production-v12.js'),'utf8');
+const three=fs.readFileSync(path.join(root,'js/three-scene.js'),'utf8');
+const css=fs.readFileSync(path.join(root,'css/westo-production-v12.css'),'utf8');
+const bundle=fs.readFileSync(path.join(root,'js/westo-app.smart.js'),'utf8');
+let pass=0,fail=0; const rows=[];
+function check(name,ok){(ok?pass++:fail++);rows.push(`${ok?'PASS':'FAIL'} ${name}`)}
+check('hero dock delegates click',/heroCats\.addEventListener\('click', onHeroCategoryClick\)/.test(prod));
+check('hero category click prevents global arbitration',/function onHeroCategoryClick[\s\S]*?e\.preventDefault\(\);[\s\S]*?e\.stopPropagation\(\);/.test(prod));
+check('programmatic category click wakes renderer',/function activateHeroCategory[\s\S]*?westoRenderWake\?\.\(\)/.test(prod));
+check('rail click is actually bound',/heroRail\.addEventListener\('click', onRailClick\)/.test(prod));
+check('rail keyboard handler is bound',/heroRail\.addEventListener\('keydown', onRailKeydown\)/.test(prod));
+check('rail dots are semantic buttons',/<button class=\\?"westo-v12-hero-dot/.test(prod));
+check('whole rail can scrub to nearest category',/whole progress line is a scrub target/.test(prod)&&/Math\.round\(ratio \* \(ids\.length - 1\)\)/.test(prod));
+check('rail active dot has roving tabindex',/d\.tabIndex = on \? 0 : -1/.test(prod));
+check('global swipe ignores hero category dock',/\.westo-prod-hero-cats/.test(three)&&/isUiChromeClick\(e\)/.test(three));
+check('global swipe ignores hero progress rail',/\.westo-v12-hero-rail/.test(three)&&/\.westo-v12-hero-dot/.test(three));
+check('mobile paging ignores interactive chrome',/Interactive chrome owns its own taps\/pans/.test(three));
+check('rail pointer events enabled',/\.westo-v12-hero-rail \{ pointer-events:auto !important/.test(css));
+check('dots pointer events enabled',/\.westo-v12-hero-dot \{[\s\S]*?pointer-events:auto !important/.test(css));
+check('category dock preserves horizontal pan',/\.westo-prod-hero-cats \{ touch-action:pan-x; \}/.test(css));
+check('smart app bundle contains rail click implementation',/whole progress line is a scrub target/.test(bundle));
+console.log(rows.join('\n'));console.log(`\n${pass}/${pass+fail} PASS; ${fail} FAIL`);process.exitCode=fail?1:0;

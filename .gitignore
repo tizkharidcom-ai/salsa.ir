@@ -1,0 +1,17 @@
+node_modules/
+.checkpoints/
+.cursor/
+.claude/
+uploads/*
+!uploads/.gitkeep
+server/data/secret.key
+server/data/db.json
+.DS_Store
+*.log
+tmp/
+.cache/
+dist/
+backups/
+artifacts/
+docs/
+lighthouse*.json

@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="fa" dir="rtl" data-theme="light">
+<head>
+  <meta charset="utf-8" />
+  <base href="/" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=5,viewport-fit=cover" />
+  <meta name="robots" content="noindex,nofollow,noarchive" />
+  <meta name="theme-color" content="#f4f6f7" />
+  <title>پنل عملیاتی وستو</title>
+  <link rel="icon" type="image/png" href="assets/images/6a1d9bb2854e5557fe84e7d1_westo-fav-dark.png" />
+  <link rel="stylesheet" href="css/vazir-system.css?v=font1" />
+  <link rel="stylesheet" href="css/role-panel.css?v=inventoryOps1" />
+  <link rel="stylesheet" href="css/kitchen-kds.css?v=kdsSquare3" />
+  <link rel="stylesheet" href="css/shamsi-datepicker.css?v=shamsi2-20260825" />
+  <script src="js/shamsi-core.js?v=shamsi1"></script>
+  <script src="js/shamsi-datepicker.js?v=shamsi2-20260825"></script>
+  <script src="js/role-panel.js?v=inventoryOps1" defer></script>
+</head>
+<body class="role-body">
+  <a class="skip-link" href="#role-main">رفتن به محتوای اصلی</a>
+  <div class="role-app" id="role-app" aria-busy="true">
+    <header class="role-header">
+      <div class="role-brand">
+        <img src="assets/images/brand/westo-fa-wordmark-dark.png" alt="وستو" />
+        <div><span id="role-eyebrow">فضای کاری</span><strong id="role-title">در حال بارگذاری…</strong></div>
+      </div>
+      <div class="role-header__actions">
+        <label class="role-branch"><span>شعبه</span><select id="role-branch-select" aria-label="انتخاب شعبه"></select></label>
+        <button class="role-shift" id="role-shift" type="button">شروع شیفت</button>
+        <a class="role-manager-back" id="role-manager-back" href="/admin" hidden>بازگشت به مدیریت</a>
+        <button class="role-icon-button" id="role-refresh" type="button" aria-label="به‌روزرسانی">↻</button>
+        <button class="role-user" id="role-user" type="button" aria-label="اطلاعات کاربر"></button>
+      </div>
+    </header>
+
+    <div class="role-preview-banner" id="role-preview-banner" hidden>
+      <span>حالت پیش‌نمایش مدیر</span>
+      <p>این صفحه دقیقاً با دامنه دید نقش انتخاب‌شده نمایش داده می‌شود؛ مجوز اصلی حساب مدیر تغییر نکرده است.</p>
+    </div>
+
+    <nav class="role-nav" id="role-nav" aria-label="بخش‌های فضای کاری"></nav>
+    <main class="role-main" id="role-main" tabindex="-1">
+      <section class="role-loading"><span></span><p>در حال آماده‌سازی ایستگاه کاری…</p></section>
+    </main>
+  </div>
+
+  <dialog class="role-dialog" id="role-dialog">
+    <form method="dialog" class="role-dialog__sheet">
+      <header><div><span id="dialog-kicker">عملیات</span><strong id="dialog-title">جزئیات</strong></div><button value="cancel" aria-label="بستن">×</button></header>
+      <div class="role-dialog__body" id="dialog-body"></div>
+    </form>
+  </dialog>
+  <div class="role-toast" id="role-toast" role="status" aria-live="polite"></div>
+</body>
+</html>

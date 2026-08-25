@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+  <link rel="manifest" href="/manifest.webmanifest?v=release14uf1d8-mobile-category-swipe" />
+  <script src="/js/pwa-bootstrap.js?v=release14uf1d8-mobile-category-swipe" defer></script>
+
+  <meta charset="utf-8" />
+  <title data-i18n="checkout.documentTitle">سفارش آنلاین — وستو</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=5, user-scalable=yes, viewport-fit=cover" />
+  <meta name="theme-color" content="#121416" />
+  <script>
+    (() => {
+      try {
+        const pref = localStorage.getItem('westo_theme') || 'system';
+        const theme = pref === 'system' ? (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark') : pref;
+        document.documentElement.setAttribute('data-theme', theme);
+      } catch (_) { document.documentElement.setAttribute('data-theme', 'dark'); }
+    })();
+  </script>
+  <link rel="icon" type="image/png" sizes="32x32" href="assets/images/6a1d9bb2854e5557fe84e7d1_westo-fav-dark.png" />
+  <link rel="stylesheet" href="css/westo-glass.css?v=glassAction1" />
+  <link rel="stylesheet" href="css/panel.css?v=logic9" />
+  <link rel="stylesheet" href="css/checkout.css?v=logic9" />
+  <script src="js/theme.js?v=stable1" defer></script>
+  <script src="js/i18n.js?v=logic9-fa-default1" defer></script>
+  <script src="js/checkout.js?v=logic9" defer></script>
+  <link rel="stylesheet" href="css/vazir-system.css?v=font1" />
+  <link rel="stylesheet" href="css/westo-production-v11.css?v=prod11" />
+  <link rel="stylesheet" href="css/westo-production-v12.css?v=prod13r9" />
+  <script src="js/design-logic-v13.js?v=logic13r1" defer></script>
+</head>
+<body class="panel-body checkout-body">
+  <header class="checkout-header">
+    <a href="/" class="checkout-brand" data-i18n-aria="checkout.backSite" aria-label="بازگشت به سایت">
+      <img src="assets/images/brand/westo-wordmark.png?v=brandCyan2" alt="WESTO" width="768" height="431" />
+    </a>
+    <a class="checkout-back" href="/menu" data-i18n="checkout.backMenu">بازگشت به منو</a>
+  </header>
+
+  <main class="checkout-layout">
+    <section class="checkout-menu" data-i18n-aria="checkout.menuAria" aria-label="انتخاب غذا">
+      <div class="checkout-heading">
+        <p class="eyebrow" data-i18n="checkout.eyebrow">سفارش آنلاین</p>
+        <h1 data-i18n="checkout.chooseFood">انتخاب غذا</h1>
+        <p data-i18n="checkout.intro">برای داخل مجموعه، تحویل حضوری یا ارسال با پیک.</p>
+      </div>
+      <nav class="checkout-categories" id="checkout-categories" data-i18n-aria="checkout.categoriesAria" aria-label="دسته‌های منو"></nav>
+      <div class="checkout-items" id="checkout-items" aria-live="polite"></div>
+    </section>
+
+    <aside class="checkout-side" data-i18n-aria="checkout.sideAria" aria-label="سبد و تکمیل سفارش">
+      <section class="checkout-card">
+        <div class="checkout-card__head"><h2 data-i18n="checkout.yourCart">سبد شما</h2><span id="cart-count" aria-live="polite">0</span></div>
+        <div id="checkout-cart" class="checkout-cart"></div>
+        <div class="checkout-totals" id="checkout-totals"></div>
+      </section>
+
+      <form id="checkout-form" class="checkout-card checkout-form" novalidate>
+        <div class="checkout-card__head"><h2 data-i18n="checkout.fulfillmentTitle">نحوه دریافت</h2><span class="checkout-live" id="checkout-live" data-i18n="checkout.ready">آماده</span></div>
+        <div class="checkout-segment" role="radiogroup" data-i18n-aria="checkout.fulfillmentAria" aria-label="نحوه دریافت">
+          <label><input type="radio" name="fulfillment" value="dine_in" checked /><span data-i18n="checkout.dineIn">داخل مجموعه</span></label>
+          <label><input type="radio" name="fulfillment" value="pickup" /><span data-i18n="checkout.pickup">تحویل حضوری</span></label>
+          <label><input type="radio" name="fulfillment" value="delivery" /><span data-i18n="checkout.delivery">ارسال با پیک</span></label>
+        </div>
+        <div class="checkout-fields">
+          <label><span data-i18n="checkout.branch">شعبه</span><select id="checkout-branch" required></select></label>
+          <label id="checkout-table-wrap"><span data-i18n="cart.tableNo">شماره میز</span><input id="checkout-table" inputmode="numeric" autocomplete="off" data-i18n-placeholder="checkout.ph.table" placeholder="مثلاً ۸" /></label>
+          <label id="checkout-zone-wrap" hidden><span data-i18n="checkout.deliveryZone">محدوده ارسال</span><select id="checkout-zone"></select></label>
+          <label id="checkout-address-wrap" hidden><span data-i18n="checkout.address">آدرس تحویل</span><textarea id="checkout-address" rows="2" data-i18n-placeholder="checkout.ph.address" placeholder="خیابان، پلاک، طبقه…"></textarea></label>
+          <label id="checkout-instructions-wrap" hidden><span data-i18n="checkout.instructions">توضیح برای پیک (اختیاری)</span><input id="checkout-instructions" autocomplete="off" data-i18n-placeholder="checkout.ph.instructions" placeholder="مثلاً تماس قبل از رسیدن" /></label>
+          <label><span data-i18n="cart.name">نام</span><input id="checkout-name" autocomplete="name" required /></label>
+          <label><span data-i18n="cart.phone">موبایل</span><input id="checkout-phone" dir="ltr" inputmode="numeric" autocomplete="tel" maxlength="11" placeholder="09xxxxxxxxx" required /></label>
+          <label><span data-i18n="checkout.paymentMethod">روش پرداخت</span><select id="checkout-payment"><option value="online" data-i18n="cart.online">پرداخت آنلاین</option><option value="cashier" data-i18n="checkout.cashierDelivery">پرداخت در صندوق / هنگام تحویل</option></select></label>
+          <label><span data-i18n="checkout.orderNote">یادداشت سفارش (اختیاری)</span><textarea id="checkout-note" rows="2" data-i18n-placeholder="checkout.ph.note" placeholder="حساسیت، بدون پیاز، توضیح دیگر…"></textarea></label>
+        </div>
+        <p class="checkout-note" id="checkout-note-text" data-i18n="checkout.initialNote">مبلغ و زمان تحویل با انتخاب روش دریافت به‌روزرسانی می‌شود.</p>
+        <button class="btn" type="submit" id="checkout-submit" data-i18n="checkout.continuePayment">ادامه به پرداخت</button>
+        <p class="msg" id="checkout-message" role="status"></p>
+      </form>
+
+      <section class="checkout-card checkout-success" id="checkout-success" hidden>
+        <p class="eyebrow" data-i18n="checkout.successKicker">سفارش ثبت شد</p>
+        <h2 id="checkout-success-title" data-i18n="checkout.pendingPayment">در انتظار پرداخت</h2>
+        <p id="checkout-success-body"></p>
+        <button class="btn" type="button" id="sandbox-confirm" hidden data-i18n="checkout.sandboxConfirm">تکمیل پرداخت آزمایشی</button>
+        <a class="btn btn-sm btn-ghost" href="/menu" data-i18n="checkout.backMenu">بازگشت به منو</a>
+      </section>
+    </aside>
+  </main>
+</body>
+</html>

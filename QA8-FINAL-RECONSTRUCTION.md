@@ -1,0 +1,1 @@
+WESTO Production v12.8 final reconstruction from v12 Geometry Final using the QA8 changes recorded in this conversation. Cache generation: release11. Approved v8 pattern/glass and original state machines preserved.

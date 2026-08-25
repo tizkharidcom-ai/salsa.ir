@@ -1,0 +1,38 @@
+{
+  "name": "westo",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Local mirror of westo.local (Webflow + Three.js r161 + GSAP + Lenis) as design base for Westo",
+  "scripts": {
+    "start": "node server/server.js",
+    "start:ops": "bun --cwd neem-project run dev",
+    "start:full": "node server/full-stack.js",
+    "test": "node --test test/*.test.js",
+    "test:integration": "RUN_HTTP_TESTS=true node --test test/command-center-http.test.js",
+    "migrate:postgres": "node server/migrate-postgres.js",
+    "migrate:unified": "node server/migrate-unified-postgres.js",
+    "migrate:finance-v2": "node scripts/migrate-finance-v2-postgres.js",
+    "verify:finance-v2-concurrency": "node scripts/verify-finance-v2-concurrency.js",
+    "audit:finance-v2": "node scripts/audit-finance-v2-migration.js",
+    "perf:har": "node scripts/analyze-har.js",
+    "images:avif": "node scripts/generate-avif-fallbacks.js",
+    "images:previews": "node scripts/generate-menu-previews.js",
+    "test:session-prewarm": "node scripts/test-session-prewarm.js",
+    "test:static-bootstrap": "node scripts/test-static-bootstrap-fallback.js",
+    "build:static-bootstrap": "node scripts/build-static-content-bootstrap.js",
+    "build:sites": "node scripts/build-sites-static.js",
+    "build:smart": "node scripts/build-static-content-bootstrap.js && node scripts/build-smart-bundles.js && node scripts/build-three-postprocessing.js",
+    "validate:smart": "node scripts/validate-smart-loading.js",
+    "validate:pwa": "node scripts/validate-pwa-standalone.js",
+    "validate:cleanup": "node scripts/validate-cleanup.js",
+    "validate:admin": "node scripts/validate-admin-center.js",
+    "validate:admin1000": "node scripts/validate-admin-1000.js"
+  },
+  "dependencies": {
+    "compression": "^1.8.1",
+    "express": "^5.2.1",
+    "multer": "^2.2.0",
+    "pg": "^8.22.0",
+    "qrcode": "^1.5.4"
+  }
+}

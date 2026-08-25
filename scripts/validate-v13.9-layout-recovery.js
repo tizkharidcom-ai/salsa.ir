@@ -1,0 +1,52 @@
+'use strict';
+const fs=require('fs'),path=require('path');
+const ROOT=path.resolve(__dirname,'..');
+const read=p=>fs.readFileSync(path.join(ROOT,p),'utf8');
+let pass=0,fail=0;const bad=[];
+function check(name,ok){ if(ok){pass++;console.log('PASS',name)} else {fail++;bad.push(name);console.error('FAIL',name)} }
+const css=read('css/menu-promo-deck.css');
+const prod=read('css/westo-production-v12.css');
+const deck=read('js/menu-promo-deck.js');
+const three=read('js/three-scene.js');
+const build=read('scripts/build-smart-bundles.js');
+const critical=read('css/westo-critical.smart.css');
+const app=read('js/westo-app.smart.js');
+const index=read('index.html');
+const loader=read('js/westo-smart-loader.js');
+const server=read('server/server.js');
+const table=read('js/table-cart.js');
+
+check('promo anchored to category section not viewport',/position:\s*absolute/.test(css) && !/#westo-menu-promo-deck\.westo-menu-promo-deck\s*\{[^}]*position:\s*fixed/s.test(css));
+check('promo semantic order before hero internals',deck.includes('heroSection.insertBefore(root, heroSection.firstChild)'));
+check('promo only category mode',css.includes("html.is-dish-boards #westo-menu-promo-deck { display:none")&&css.includes("html:not(.is-dish-boards) #westo-menu-promo-deck { display:block"));
+check('promo uses explicit nav gap token',css.includes('--menu-promo-gap-after-nav')&&css.includes('top: calc(var(--v12-nav-h'));
+check('promo mobile height budget reduced',css.includes('--menu-promo-h: clamp(142px,18.5vh,176px)'));
+check('promo phone height guard',css.includes('--menu-promo-h: clamp(136px,18vh,164px)'));
+check('promo short landscape budget',css.includes('--menu-promo-h: 104px'));
+check('promo share >=44px',/westo-menu-promo-deck__share[\s\S]*?width:44px;height:44px;min-width:44px;min-height:44px/.test(css));
+check('promo dots own real hit area',/westo-menu-promo-deck__dot\s*\{[\s\S]*?width:32px;height:32px;min-width:32px;min-height:32px/.test(css));
+check('promo visual dot remains compact',css.includes("westo-menu-promo-deck__dot::before")&&css.includes('width:7px;height:7px'));
+check('mobile category arrows suppressed',css.includes('html:not(.is-dish-boards) .carousel_arrow { display:none !important; }'));
+check('card filter animation removed',!css.includes('transition:transform .46s cubic-bezier(.18,.82,.18,1),opacity .32s ease,filter')&&!deck.includes('style.filter'));
+check('free throw physics retained',deck.includes('pointermove')&&deck.includes('Math.hypot(dx,dy)')&&deck.includes('throwCard'));
+check('snapback retained',deck.includes('snapBack'));
+check('circular reorder retained',deck.includes('deck.appendChild(current)'));
+check('resource scheduler retained',deck.includes('scheduler.bindImage')&&deck.includes("group:'menu-promo-deck'"));
+check('portrait category plate reserves promo room',three.includes('const promoDeckActive =')&&three.includes('promoHeightBudget')&&three.includes("contains('has-westo-menu-promo-deck')"));
+check('promo plate gets small scroll-fading y offset',three.includes('canPosY -= 0.08 * (1 - p0)'));
+check('desktop cinema stage reserves promo band',three.includes('promoDeckDesktop')&&three.includes('stage.scale *= lerp(0.86, 0.78, centerWeight)'));
+check('category index dock lite on touch',prod.includes('WESTO v13.9 — CATEGORY INDEX DOCK LITE')&&/westo-prod-hero-cats[\s\S]*?backdrop-filter:none !important/.test(prod));
+check('dish category header lite preserved',prod.includes('WESTO v13.7 — CATEGORY HEADER LITE'));
+check('dish category bar no blur',prod.includes('#westo-dish-catbar.westo-dish-catbar')&&prod.includes('backdrop-filter: none !important'));
+check('single-copy dish category model preserved',table.includes("track.dataset.loopCopies = '1'")&&table.includes("track.classList.remove('is-infinite')"));
+check('critical bundle includes v13.9 promo',critical.includes('WESTO Menu Promo Deck v13.9'));
+check('app bundle includes one v13.9 promo implementation',(app.match(/WESTO Menu Promo Deck v13\.9/g)||[]).length===1);
+check('legacy entrance promo still absent from bundle',!build.includes("'js/entrance-promo-deck.js'"));
+check('legacy menu promo rail absent from bundle',!build.includes("'js/promo-slider.js'"));
+check('release13r9 index',index.includes('westo-critical.smart.css?v=release13r9')&&index.includes('westo-smart-loader.js?v=release13r9'));
+check('release13r9 loader',loader.includes("const VERSION = 'release13r9'"));
+check('release13r9 early hints',server.includes('westo-app.smart.js?v=release13r9'));
+check('release13r9 postFX',three.includes('westo-postprocessing.bundle.mjs?v=release13r9'));
+
+console.log(`\nLayout recovery v13.9: ${pass}/${pass+fail} PASS`);
+if(fail){console.error(bad);process.exit(1)}

@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+  <link rel="manifest" href="/manifest.webmanifest?v=release14uf1d8-mobile-category-swipe" />
+  <script src="/js/pwa-bootstrap.js?v=release14uf1d8-mobile-category-swipe" defer></script>
+
+  <meta charset="utf-8" />
+  <title data-i18n="about.documentTitle">درباره ما — وستو</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=5, user-scalable=yes, viewport-fit=cover" />
+  <script>
+    (function () {
+      try {
+        var pref = localStorage.getItem('westo_theme');
+        if (pref !== 'light' && pref !== 'dark' && pref !== 'system') pref = 'system';
+        var t = pref === 'system'
+          ? (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark')
+          : pref;
+        document.documentElement.setAttribute('data-theme', t);
+        document.documentElement.setAttribute('data-theme-pref', pref);
+      } catch (e) {
+        document.documentElement.setAttribute('data-theme', 'dark');
+        document.documentElement.setAttribute('data-theme-pref', 'system');
+      }
+    })();
+  </script>
+  <meta name="description" content="About Us — Westo" />
+<meta name="theme-color" content="#121416" />
+
+<link rel="apple-touch-icon" href="/assets/icons/apple-touch-icon.png?v=brandCyan2" />
+  <link rel="icon" type="image/png" href="assets/images/brand/westo-mark.png?v=brandCyan2" />
+    <link rel="stylesheet" href="css/westo-glass.css?v=glassAction1" />
+  <style>
+    :root {
+      --ink: #f4efe6;
+      --muted: rgba(244, 239, 230, 0.55);
+      --bg: #0a0908;
+    }
+    html[data-theme='light'] {
+      --ink: #1a1714;
+      --muted: rgba(26, 23, 20, 0.55);
+      --bg: #f3eee6;
+    }
+    html[data-theme='light'] body {
+      background:
+        radial-gradient(circle at 50% 18%, rgba(42, 122, 134, 0.12) 0%, transparent 42%),
+        linear-gradient(180deg, #f7f2ea 0%, #f0e8dc 55%, #e8dfd0 100%);
+    }
+    html[data-theme='light'] .about-top a.wg-glass-btn,
+    html[data-theme='light'] .about-top a[href='/menu'] {
+      background: rgba(26, 23, 20, 0.08);
+      border: 1px solid rgba(26, 23, 20, 0.14);
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      min-height: 100%;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: 'Vazirmatn', system-ui, sans-serif;
+    }
+    body {
+      min-height: 100svh;
+      display: flex;
+      flex-direction: column;
+    }
+    .about-top {
+      padding: 1.25rem 1.35rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+    }
+    .about-top a[href='/'] {
+      color: var(--ink);
+      text-decoration: none;
+    }
+    .about-top a[href='/menu'],
+    .about-top a.wg-glass-btn {
+      color: var(--ink);
+      text-decoration: none;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+      min-height: 2.45rem;
+      padding: 0 0.95rem;
+      border-radius: 999px;
+    }
+    .about-top img { height: 28px; width: auto; display: block; }
+    .about-main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 2rem 1.35rem 3rem;
+      text-align: center;
+    }
+    .about-main h1 {
+      margin: 0;
+      font-size: clamp(1.75rem, 5vw, 2.4rem);
+      font-weight: 700;
+    }
+    .about-main .en {
+      margin-top: 0.45rem;
+      color: var(--muted);
+      font-size: 0.95rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+    /* Content reserved — fill later */
+    .about-slot {
+      width: min(36rem, 100%);
+      min-height: 12rem;
+      margin-top: 2rem;
+    }
+  </style>
+  <script src="js/i18n.js?v=logic9-fa-default1" defer></script>
+  <script src="js/theme.js?v=stable1" defer></script>
+  <link rel="stylesheet" href="css/vazir-system.css?v=font1" />
+  <link rel="stylesheet" href="css/westo-production-v11.css?v=prod11" />
+  <link rel="stylesheet" href="css/westo-production-v12.css?v=prod13r9" />
+  <script src="js/design-logic-v13.js?v=logic13r1" defer></script>
+</head>
+<body>
+  <header class="about-top">
+    <a href="/" aria-label="Westo"><img src="assets/images/brand/westo-wordmark.png?v=brandCyan2" alt="Westo" width="768" height="431" /></a>
+    <a href="/menu" class="wg-glass-btn wg-glass-btn--pill" data-i18n="nav.menu">منو</a>
+  </header>
+  <main class="about-main" id="main-content" tabindex="-1">
+    <h1 data-i18n="nav.about">درباره ما</h1>
+    <p class="en">About Us</p>
+    <div class="about-slot" data-about-slot aria-hidden="true"></div>
+  </main>
+  
+</body>
+</html>

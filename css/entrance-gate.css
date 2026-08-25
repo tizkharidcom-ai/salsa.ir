@@ -1,0 +1,1843 @@
+/* WESTO Immersive Entrance — brand cream / charcoal / cyan (both themes) */
+
+.loader.entrance-gate {
+  /* Brand accent (cyan) — same family as sitewide --wg-accent */
+  --eg-accent: #78d0d8;
+  --eg-accent-deep: #50c0d0;
+  --eg-accent-soft: rgba(120, 208, 216, 0.16);
+  --eg-accent-glow: rgba(120, 208, 216, 0.32);
+  /* Legacy aliases (progress / steps still reference these names) */
+  --eg-tiffany: var(--eg-accent);
+  --eg-tiffany-deep: var(--eg-accent-deep);
+  --eg-ink: #f4efe6;
+  --eg-muted: rgba(244, 239, 230, 0.62);
+  --eg-bg: #0c0b0a;
+  --eg-charcoal: #161310;
+  --eg-glass: rgba(255, 255, 255, 0.07);
+  --eg-glass-edge: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.38) 0%,
+    rgba(120, 208, 216, 0.22) 42%,
+    rgba(255, 255, 255, 0.06) 100%
+  );
+  --eg-open: #8fd49a;
+  --eg-closed: #e08a78;
+  --eg-loading: var(--eg-accent);
+  --eg-cta-bg: #f4efe6;
+  --eg-cta-ink: #1a1714;
+  --eg-cta-glow: rgba(244, 239, 230, 0.16);
+  --eg-chrome-bg: rgba(22, 19, 16, 0.62);
+  --eg-chrome-border: rgba(255, 255, 255, 0.14);
+  --eg-safe-t: env(safe-area-inset-top, 0px);
+  --eg-safe-b: env(safe-area-inset-bottom, 0px);
+  --eg-pad-x: 1.1rem;
+  --eg-r-btn: 0.85rem;
+  --eg-r-card: 1.55rem;
+  --eg-r-chip: 999px;
+  --eg-blur: 16px;
+
+  z-index: 100000 !important;
+  position: fixed !important;
+  inset: 0 !important;
+  display: flex !important;
+  flex-flow: column nowrap !important;
+  width: 100% !important;
+  height: 100% !important;
+  min-height: 100svh !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+  background: var(--eg-bg) !important;
+  color: var(--eg-ink);
+  font-family: 'Vazirmatn', 'Geist', system-ui, sans-serif;
+  cursor: auto;
+  user-select: text;
+  -webkit-user-select: text;
+  gap: 0 !important;
+  isolation: isolate;
+  transition: background 0.4s ease, color 0.35s ease;
+}
+
+.loader.entrance-gate[hidden] {
+  display: none !important;
+  pointer-events: none !important;
+  visibility: hidden !important;
+}
+
+/* —— Ambient —— */
+.entrance-gate .eg-ambient {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.entrance-gate .eg-ambient__base {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, #161310 0%, #0c0b0a 100%);
+}
+
+.entrance-gate .eg-ambient__photo {
+  position: absolute;
+  inset: 0;
+  display: block;
+  margin: 0;
+}
+
+.entrance-gate .eg-ambient__photo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+  filter: saturate(0.88) brightness(0.68) sepia(0.12);
+  transform: scale(1.04);
+  transition: filter 0.45s ease;
+}
+
+.entrance-gate .eg-ambient__veil {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(180deg, rgba(12, 11, 10, 0.58) 0%, rgba(12, 11, 10, 0.32) 40%, rgba(12, 11, 10, 0.78) 100%),
+    radial-gradient(ellipse 70% 55% at 50% 42%, rgba(22, 19, 16, 0.12), rgba(12, 11, 10, 0.72) 72%);
+}
+
+.entrance-gate .eg-ambient__wash {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    circle at center,
+    var(--eg-accent-soft),
+    transparent 46%
+  );
+}
+
+/* —— Cup plate (bottom-left physical) —— */
+.entrance-gate .eg-cup-stage {
+  position: absolute;
+  z-index: 1;
+  left: max(0.25rem, env(safe-area-inset-left, 0px));
+  bottom: max(0.15rem, env(safe-area-inset-bottom, 0px));
+  width: min(42vw, 22rem);
+  pointer-events: none;
+  user-select: none;
+}
+
+.entrance-gate .eg-cup-pic {
+  display: block;
+  width: 100%;
+  filter: drop-shadow(0 18px 40px rgba(0, 0, 0, 0.55));
+}
+
+.entrance-gate .eg-cup-pic img {
+  width: 100%;
+  height: auto;
+  display: block;
+  mix-blend-mode: lighten;
+}
+
+.entrance-gate .eg-cup-steam {
+  position: absolute;
+  left: 38%;
+  top: 8%;
+  width: 3.2rem;
+  height: 4.5rem;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.6s ease;
+}
+
+.entrance-gate.is-steam-on .eg-cup-steam {
+  opacity: 0.85;
+}
+
+.entrance-gate .eg-cup-steam .eg-steam__wisp {
+  left: 50%;
+}
+
+.entrance-gate .eg-ambient__rays {
+  position: absolute;
+  inset: -20%;
+  background:
+    conic-gradient(
+      from 210deg at 50% 42%,
+      transparent 0deg,
+      color-mix(in srgb, var(--eg-accent) 12%, transparent) 28deg,
+      transparent 56deg,
+      color-mix(in srgb, var(--eg-accent) 8%, transparent) 120deg,
+      transparent 160deg
+    );
+  opacity: 0.7;
+  animation: eg-rays-drift 28s linear infinite;
+}
+
+.entrance-gate .eg-steam__wisp {
+  position: absolute;
+  bottom: 0;
+  width: 0.55rem;
+  height: 1.6rem;
+  border-radius: 999px;
+  background: linear-gradient(
+    180deg,
+    rgba(245, 245, 245, 0) 0%,
+    var(--eg-accent-glow) 40%,
+    rgba(245, 245, 245, 0.35) 100%
+  );
+  /* Soft edge via gradient only — animated filter:blur is a thermal hog */
+  opacity: 0;
+  animation: eg-steam 5.2s ease-in-out infinite;
+}
+
+.entrance-gate .eg-ambient__fog {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 80% 50% at 50% 100%, color-mix(in srgb, var(--eg-bg) 92%, transparent), transparent 60%),
+    radial-gradient(ellipse 60% 40% at 20% 20%, color-mix(in srgb, var(--eg-accent) 14%, transparent), transparent 50%);
+  opacity: 0.85;
+}
+
+.entrance-gate .eg-ambient__noise {
+  position: absolute;
+  inset: 0;
+  opacity: 0.12;
+  mix-blend-mode: soft-light;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.55'/%3E%3C/svg%3E");
+}
+
+.entrance-gate .eg-ambient__particles {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0.55;
+}
+
+@keyframes eg-rays-drift {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* —— Shell —— */
+.entrance-gate .eg-shell {
+  position: relative;
+  z-index: 2;
+  display: grid !important;
+  /* Rows are hard-bounded so the card can never grow under the dock. */
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  width: 100% !important;
+  max-width: 100%;
+  height: 100% !important;
+  min-height: 100svh !important;
+  margin: 0 auto;
+  padding:
+    calc(0.9rem + var(--eg-safe-t))
+    var(--eg-pad-x)
+    calc(0.9rem + var(--eg-safe-b));
+  box-sizing: border-box;
+  direction: rtl;
+  gap: clamp(0.7rem, 1.8vh, 1.15rem);
+  perspective: 1200px;
+}
+
+.entrance-gate .eg-sr-only {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+}
+
+/* —— Top nav —— */
+.entrance-gate .eg-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  direction: ltr;
+  z-index: 5;
+}
+
+.entrance-gate .eg-glass-btn {
+  appearance: none;
+  position: relative;
+  overflow: hidden;
+  min-height: 2.6rem;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  border-radius: var(--eg-r-btn);
+  background: rgba(255, 255, 255, 0.06) !important;
+  color: var(--eg-ink);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  cursor: pointer;
+  text-decoration: none;
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16);
+  transition: transform 0.22s ease, background 0.22s ease, box-shadow 0.22s ease;
+}
+
+.entrance-gate .eg-glass-pill {
+  width: auto;
+  padding: 0 0.85rem 0 0.7rem;
+  border-radius: 999px;
+}
+
+.entrance-gate .eg-glass-pill__label {
+  position: relative;
+  z-index: 1;
+  font-size: 0.78rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.entrance-gate #eg-site-menu.westo-menu-trigger {
+  padding: 0 0.78rem 0 0.65rem;
+  border-radius: 999px;
+}
+
+.entrance-gate #eg-site-menu .westo-menu-trigger__icon {
+  width: 0.72rem;
+  height: 0.72rem;
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  position: relative;
+  z-index: 1;
+}
+
+.entrance-gate #eg-site-menu .westo-menu-trigger__icon svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.entrance-gate #eg-site-menu .westo-menu-trigger__label {
+  position: relative;
+  z-index: 1;
+  font-size: 0.78rem;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.entrance-gate .eg-glass-btn::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: var(--eg-glass-edge);
+  -webkit-mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+}
+
+.entrance-gate .eg-glass-btn:hover,
+.entrance-gate .eg-glass-btn:focus-visible,
+.entrance-gate .eg-glass-btn.is-active {
+  background: var(--eg-accent-soft) !important;
+  outline: none;
+  transform: translateY(-1px);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.2),
+    0 0 24px var(--eg-accent-glow);
+}
+
+.entrance-gate .eg-glass-btn svg {
+  width: 1.15rem;
+  height: 1.15rem;
+  position: relative;
+  z-index: 1;
+}
+
+/* —— Mid / glass card —— */
+.entrance-gate .eg-mid {
+  display: grid;
+  place-items: center;
+  min-height: 0;
+  width: 100%;
+}
+
+.entrance-gate .eg-card {
+  position: relative;
+  width: min(100%, 32.5rem);
+  /* Bound to the grid row — the dock owns its own band, never overlapped. */
+  max-height: 100%;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: clamp(1.15rem, 2.6vh, 1.9rem) clamp(1.15rem, 3.2vw, 1.75rem)
+    clamp(1rem, 2.2vh, 1.5rem);
+  border-radius: var(--eg-r-card);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background:
+    linear-gradient(
+      168deg,
+      rgba(255, 255, 255, 0.05) 0%,
+      transparent 42%,
+      color-mix(in srgb, var(--eg-accent) 5%, transparent) 100%
+    ),
+    var(--eg-glass);
+  -webkit-backdrop-filter: blur(var(--eg-blur)) saturate(1.2);
+  backdrop-filter: blur(var(--eg-blur)) saturate(1.2);
+  box-shadow:
+    0 40px 120px rgba(0, 0, 0, 0.8),
+    inset 0 1px 0 rgba(255, 255, 255, 0.16),
+    inset 0 0 0 1px color-mix(in srgb, var(--eg-accent) 6%, transparent),
+    inset 0 0 48px color-mix(in srgb, var(--eg-accent) 10%, transparent);
+  transform-style: preserve-3d;
+}
+
+/* Hairline cyan seam along the top edge — reads as machined, not sprayed. */
+.entrance-gate .eg-card::before {
+  content: '';
+  position: absolute;
+  inset-inline: 18%;
+  top: 0;
+  height: 1px;
+  pointer-events: none;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in srgb, var(--eg-accent) 70%, transparent),
+    transparent
+  );
+  opacity: 0.75;
+}
+
+.entrance-gate .eg-card__glow {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background:
+    radial-gradient(
+      ellipse 70% 45% at 50% 0%,
+      var(--eg-accent-soft),
+      transparent 55%
+    ),
+    radial-gradient(
+      ellipse 55% 30% at 50% 100%,
+      color-mix(in srgb, var(--eg-accent) 7%, transparent),
+      transparent 60%
+    );
+}
+
+.entrance-gate .eg-card__reflect {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0.35;
+  background: linear-gradient(
+    115deg,
+    transparent 30%,
+    color-mix(in srgb, var(--eg-accent) 16%, transparent) 48%,
+    transparent 62%
+  );
+  background-size: 220% 220%;
+  animation: eg-reflect 7s ease-in-out infinite;
+}
+
+@keyframes eg-reflect {
+  0%,
+  100% {
+    background-position: 0% 40%;
+  }
+  50% {
+    background-position: 100% 60%;
+  }
+}
+
+/* —— Logo + steam —— */
+.entrance-gate .eg-logo-stage {
+  position: relative;
+  z-index: 1;
+  width: clamp(5.5rem, 22vw, 7.25rem);
+  aspect-ratio: 536 / 734;
+  margin: 0.2rem auto 0.2rem;
+}
+
+.entrance-gate .eg-logo-png {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: auto;
+  margin: 0 auto;
+  object-fit: contain;
+  opacity: 0;
+  /* New geometric mark already sits on black — soft lift only */
+  filter: drop-shadow(0 10px 22px rgba(0, 0, 0, 0.35));
+  border-radius: 0.35rem;
+}
+
+/* Steam was designed for the old cup mark — hide on the geometric brand. */
+.entrance-gate .eg-steam {
+  display: none !important;
+}
+
+.entrance-gate .eg-steam__wisp {
+  position: absolute;
+  bottom: 0;
+  width: 0.55rem;
+  height: 1.6rem;
+  border-radius: 999px;
+  background: linear-gradient(
+    180deg,
+    rgba(245, 245, 245, 0) 0%,
+    var(--eg-accent-glow) 40%,
+    rgba(245, 245, 245, 0.35) 100%
+  );
+  filter: none;
+  opacity: 0;
+  animation: eg-steam 5.2s ease-in-out infinite;
+}
+
+.entrance-gate .eg-steam__wisp--1 {
+  left: 0.2rem;
+  animation-delay: 0s;
+}
+.entrance-gate .eg-steam__wisp--2 {
+  left: 0.9rem;
+  height: 1.9rem;
+  animation-delay: 0.7s;
+}
+.entrance-gate .eg-steam__wisp--3 {
+  left: 1.55rem;
+  animation-delay: 1.4s;
+}
+
+.entrance-gate.is-steam-on .eg-steam {
+  opacity: 1;
+}
+
+@keyframes eg-steam {
+  0% {
+    transform: translateY(8px) scaleX(0.8);
+    opacity: 0;
+  }
+  25% {
+    opacity: 0.55;
+  }
+  70% {
+    opacity: 0.2;
+  }
+  100% {
+    transform: translateY(-22px) scaleX(1.15);
+    opacity: 0;
+  }
+}
+
+/* —— Brand copy —— */
+.entrance-gate .eg-brand-copy {
+  position: relative;
+  z-index: 1;
+  margin-top: 0.35rem;
+}
+
+.entrance-gate .eg-brand-title {
+  margin: 0.15rem auto 0;
+  width: auto;
+  max-width: 100%;
+  font-family: 'Geist', 'Franklin Gothic Atf', system-ui, sans-serif;
+  font-size: clamp(2.15rem, 7.2vw, 2.85rem);
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0.14em;
+  text-indent: 0.14em; /* optical center with tracking */
+  text-transform: uppercase;
+  color: var(--eg-ink);
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.entrance-gate .eg-brand-wordmark-img {
+  display: block;
+  width: min(17rem, 72vw);
+  height: auto;
+  margin: 0 auto;
+  object-fit: contain;
+}
+
+.entrance-gate .eg-tagline {
+  margin: 0.75rem 0 0;
+  max-width: 18rem;
+  margin-inline: auto;
+  font-size: 0.92rem;
+  font-weight: 450;
+  line-height: 1.65;
+  color: var(--eg-muted);
+}
+
+.entrance-gate .eg-subtitle {
+  margin: 0.35rem 0 0;
+  font-size: 0.72rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--eg-muted);
+  direction: ltr;
+}
+
+/* —— Status —— */
+.entrance-gate .eg-status {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 2.1rem;
+  margin-top: clamp(0.7rem, 1.6vh, 1.05rem);
+  padding: 0.34rem 0.9rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(0, 0, 0, 0.28);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.92);
+  direction: rtl;
+  max-width: 100%;
+}
+
+/* One line, separated by hairline dividers — no cramped stacking. */
+.entrance-gate .eg-status-text {
+  display: inline-flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 0.42rem;
+  line-height: 1.3;
+  min-width: 0;
+}
+
+.entrance-gate .eg-status-meta,
+.entrance-gate .eg-status-loc {
+  position: relative;
+  font-size: 0.7rem;
+  font-weight: 500;
+  color: var(--eg-muted);
+  padding-inline-start: 0.42rem;
+  white-space: nowrap;
+}
+
+.entrance-gate .eg-status-meta:empty,
+.entrance-gate .eg-status-loc:empty {
+  display: none;
+}
+
+.entrance-gate .eg-status-meta:not(:empty)::before,
+.entrance-gate .eg-status-loc:not(:empty)::before {
+  content: '';
+  position: absolute;
+  inset-inline-start: 0;
+  top: 50%;
+  width: 1px;
+  height: 0.62em;
+  transform: translateY(-50%);
+  background: currentColor;
+  opacity: 0.32;
+}
+
+.entrance-gate .eg-status-dot {
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 50%;
+  background: var(--eg-loading);
+  box-shadow: 0 0 10px var(--eg-loading);
+  flex: 0 0 auto;
+}
+
+.entrance-gate .eg-status.is-open .eg-status-dot {
+  background: var(--eg-open);
+  box-shadow: 0 0 10px var(--eg-open);
+}
+.entrance-gate .eg-status.is-closed .eg-status-dot {
+  background: var(--eg-closed);
+  box-shadow: 0 0 10px var(--eg-closed);
+}
+.entrance-gate .eg-status.is-loading .eg-status-dot {
+  background: var(--eg-loading);
+  animation: eg-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes eg-pulse {
+  50% {
+    opacity: 0.45;
+    transform: scale(0.85);
+  }
+}
+
+/* —— Dock / chip buttons —— */
+.entrance-gate .eg-dock__btn,
+.entrance-gate .eg-chip-icon {
+  appearance: none;
+  position: relative;
+  overflow: hidden;
+  width: auto;
+  min-width: 3.6rem;
+  height: auto;
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.22rem;
+  padding: 0.4rem 0.45rem 0.35rem;
+  border-radius: 1rem;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--eg-ink);
+  text-decoration: none;
+  cursor: pointer;
+  transition: transform 0.22s ease, background 0.22s ease, box-shadow 0.22s ease, border-color 0.22s ease, color 0.22s ease;
+}
+
+.entrance-gate .eg-dock__btn svg,
+.entrance-gate .eg-chip-icon svg {
+  width: 1.2rem;
+  height: 1.2rem;
+  position: relative;
+  z-index: 1;
+}
+
+.entrance-gate .eg-dock__label {
+  position: relative;
+  z-index: 1;
+  font-size: 0.58rem;
+  font-weight: 600;
+  line-height: 1.15;
+  white-space: nowrap;
+  color: var(--eg-muted);
+}
+
+.entrance-gate .eg-dock__btn:hover,
+.entrance-gate .eg-dock__btn:focus-visible,
+.entrance-gate .eg-chip-icon:hover,
+.entrance-gate .eg-chip-icon:focus-visible,
+.entrance-gate .eg-chip-icon.is-active {
+  transform: translateY(-1px);
+  background: var(--eg-accent-soft);
+  border-color: color-mix(in srgb, var(--eg-accent) 55%, transparent);
+  box-shadow: 0 0 18px var(--eg-accent-glow);
+  outline: none;
+  color: #fff;
+}
+
+.entrance-gate .eg-dock__btn:hover .eg-dock__label,
+.entrance-gate .eg-dock__btn:focus-visible .eg-dock__label {
+  color: rgba(245, 245, 245, 0.92);
+}
+
+/* —— Experience loader —— */
+.entrance-gate .eg-experience {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  margin-top: clamp(0.7rem, 1.8vh, 1.1rem);
+  text-align: center;
+  /* Shrink-to-fit: stretching this block is what created the empty bands. */
+  flex: 0 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: clamp(0.55rem, 1.5vh, 0.9rem);
+  overflow: visible;
+}
+
+.entrance-gate .eg-experience__lead {
+  margin: 0;
+  font-size: 0.74rem;
+  letter-spacing: 0.04em;
+  color: var(--eg-muted);
+  text-align: center;
+}
+
+.entrance-gate .eg-steps-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(0.8rem, 3vw, 1.35rem);
+  margin: 0 auto;
+  padding-inline: 0.35rem;
+}
+
+/* Rail behind the icons — turns four loose dots into one measured sequence. */
+.entrance-gate .eg-steps-row::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  inset-inline: 1.55rem;
+  height: 1px;
+  transform: translateY(-50%);
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.16) 12%,
+    rgba(255, 255, 255, 0.16) 88%,
+    transparent
+  );
+  pointer-events: none;
+}
+
+.entrance-gate .eg-step-icon {
+  position: relative;
+  z-index: 1;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  border: 1.5px solid rgba(255, 255, 255, 0.16);
+  color: var(--eg-muted);
+  background: color-mix(in srgb, var(--eg-bg) 82%, transparent);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  transition: color 0.35s ease, border-color 0.35s ease, box-shadow 0.35s ease, background 0.35s ease, transform 0.35s ease;
+}
+
+.entrance-gate .eg-step-icon svg {
+  width: 1.15rem;
+  height: 1.15rem;
+}
+
+.entrance-gate .eg-step-icon.is-active {
+  color: var(--eg-accent);
+  border-color: color-mix(in srgb, var(--eg-accent) 75%, transparent);
+  background: var(--eg-accent-soft);
+  box-shadow: 0 0 22px var(--eg-accent-glow);
+  transform: scale(1.06);
+}
+
+.entrance-gate .eg-step-icon.is-done {
+  color: var(--eg-accent);
+  border-color: color-mix(in srgb, var(--eg-accent) 55%, transparent);
+  background: var(--eg-accent-soft);
+  box-shadow: 0 0 14px var(--eg-accent-glow);
+  opacity: 0.95;
+}
+
+.entrance-gate .eg-quote {
+  margin: 0;
+  font-size: 0.72rem;
+  font-style: italic;
+  letter-spacing: 0.03em;
+  color: var(--eg-muted);
+  text-align: center;
+}
+
+.entrance-gate .eg-progress {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 0.7rem;
+  margin: 0;
+}
+
+.entrance-gate .eg-progress__track {
+  position: relative;
+  height: 0.28rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+
+.entrance-gate .eg-progress__fill {
+  height: 100%;
+  width: 0%;
+  border-radius: inherit;
+  background: linear-gradient(
+    90deg,
+    var(--eg-accent-deep),
+    var(--eg-accent) 65%,
+    color-mix(in srgb, var(--eg-accent) 55%, #fff)
+  );
+  box-shadow: 0 0 12px var(--eg-accent-glow);
+  will-change: width;
+}
+
+.entrance-gate .eg-progress__pct {
+  font-size: 0.7rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+  color: var(--eg-accent);
+  direction: ltr;
+  min-width: 2.6rem;
+  text-align: end;
+}
+
+/* —— CTA —— */
+.entrance-gate .eg-cta-wrap {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  margin-top: auto;
+  padding-top: clamp(1.15rem, 2.8vh, 1.7rem);
+  flex-shrink: 0;
+}
+
+/* Hairline rule above the action zone — separates identity from intent. */
+.entrance-gate .eg-cta-wrap::before {
+  content: '';
+  position: absolute;
+  inset-inline: 8%;
+  top: 0;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.14),
+    transparent
+  );
+  pointer-events: none;
+}
+
+.entrance-gate .eg-cta {
+  appearance: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.55rem;
+  width: 100%;
+  height: 3.1rem;
+  min-height: 3.1rem;
+  padding: 0 1.4rem;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: var(--eg-cta-bg);
+  color: var(--eg-cta-ink);
+  font: inherit;
+  font-weight: 700;
+  font-size: 0.92rem;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  box-shadow:
+    0 0.55rem 1.4rem var(--eg-cta-glow),
+    0 0 0 1px color-mix(in srgb, var(--eg-accent) 22%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.35);
+  transition: transform 0.22s ease, box-shadow 0.22s ease, opacity 0.22s ease, background 0.22s ease, border-color 0.22s ease;
+}
+
+.entrance-gate .eg-cta-arrow {
+  flex: 0 0 auto;
+  opacity: 0.75;
+  transition: transform 0.24s ease, opacity 0.24s ease;
+}
+
+.entrance-gate .eg-cta:not(:disabled):hover .eg-cta-arrow,
+.entrance-gate .eg-cta:not(:disabled):focus-visible .eg-cta-arrow {
+  opacity: 1;
+}
+
+html[dir='rtl'] .entrance-gate .eg-cta-arrow {
+  transform: scaleX(-1);
+}
+
+/* Nudge the arrow along the reading direction on hover. */
+.entrance-gate .eg-cta:not(:disabled):hover .eg-cta-arrow,
+.entrance-gate .eg-cta:not(:disabled):focus-visible .eg-cta-arrow {
+  transform: translateX(3px);
+}
+
+html[dir='rtl'] .entrance-gate .eg-cta:not(:disabled):hover .eg-cta-arrow,
+html[dir='rtl'] .entrance-gate .eg-cta:not(:disabled):focus-visible .eg-cta-arrow {
+  transform: scaleX(-1) translateX(3px);
+}
+
+.entrance-gate .eg-cta:disabled {
+  cursor: wait;
+  opacity: 0.62;
+  box-shadow: 0 0.35rem 1rem var(--eg-cta-glow);
+}
+
+.entrance-gate .eg-cta:not(:disabled):hover,
+.entrance-gate .eg-cta:not(:disabled):focus-visible {
+  transform: translateY(-2px) scale(1.01);
+  border-color: color-mix(in srgb, var(--eg-accent) 55%, transparent);
+  box-shadow:
+    0 0.85rem 2rem var(--eg-cta-glow),
+    0 0 0 1px color-mix(in srgb, var(--eg-accent) 35%, transparent);
+  outline: none;
+}
+
+.entrance-gate .eg-cta-label {
+  position: relative;
+  z-index: 1;
+}
+
+/* —— Bottom dock + corners —— */
+.entrance-gate .eg-foot {
+  position: relative;
+  z-index: 5;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: end;
+  gap: 0.55rem;
+  width: 100%;
+  direction: ltr;
+}
+
+.entrance-gate .eg-dock {
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  gap: 0.15rem;
+  justify-self: center;
+  padding: 0.35rem 0.45rem;
+  border-radius: 999px;
+  border: 1px solid var(--eg-chrome-border);
+  background: var(--eg-chrome-bg);
+  -webkit-backdrop-filter: blur(18px);
+  backdrop-filter: blur(18px);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.35);
+}
+
+.entrance-gate .eg-corner {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 2.35rem;
+  padding: 0.35rem 0.7rem;
+  border-radius: 999px;
+  border: 1px solid var(--eg-chrome-border);
+  background: var(--eg-chrome-bg);
+  color: var(--eg-ink);
+  font: inherit;
+  cursor: pointer;
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+.entrance-gate .eg-corner__label {
+  font-size: 0.68rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.entrance-gate .eg-theme-toggle .eg-theme-icon--sun {
+  display: none;
+}
+
+html[data-theme='light'] .entrance-gate .eg-theme-toggle .eg-theme-icon--moon {
+  display: none;
+}
+
+html[data-theme='light'] .entrance-gate .eg-theme-toggle .eg-theme-icon--sun {
+  display: block;
+}
+
+.entrance-gate .eg-lang-switch {
+  gap: 0.28rem;
+  padding-inline: 0.55rem;
+}
+
+.entrance-gate .eg-lang-seg {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--eg-muted);
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  padding: 0.15rem 0.1rem;
+  cursor: pointer;
+}
+
+.entrance-gate .eg-lang-seg.is-active {
+  color: var(--eg-ink);
+}
+
+.entrance-gate .eg-lang-sep {
+  color: var(--eg-muted);
+  font-size: 0.72rem;
+}
+
+html[dir='ltr'] .entrance-gate .eg-shell {
+  direction: ltr;
+}
+
+html[dir='ltr'] .entrance-gate .eg-status {
+  direction: ltr;
+}
+
+html[dir='ltr'] .entrance-gate .eg-status-text {
+  align-items: flex-start;
+}
+
+/* —— Sheet (preserved contracts) —— */
+.entrance-gate .eg-sheet {
+  position: absolute;
+  inset: auto 0 0 0;
+  z-index: 8;
+  max-height: min(78svh, 36rem);
+  display: flex;
+  flex-direction: column;
+  border-radius: 1.25rem 1.25rem 0 0;
+  background: rgba(7, 16, 16, 0.96);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-bottom: 0;
+  -webkit-backdrop-filter: blur(18px);
+  backdrop-filter: blur(18px);
+  box-shadow: 0 -20px 50px rgba(0, 0, 0, 0.5);
+  padding:
+    0.85rem 1.1rem
+    calc(1rem + var(--eg-safe-b));
+  transform: translateY(110%);
+  visibility: hidden;
+  pointer-events: none;
+  transition: transform 0.45s cubic-bezier(0.22, 1, 0.36, 1), visibility 0.45s;
+  direction: rtl;
+}
+
+.entrance-gate.is-sheet-open .eg-sheet {
+  transform: translateY(0);
+  visibility: visible;
+  pointer-events: auto;
+}
+
+.entrance-gate .eg-sheet-handle {
+  width: 2.5rem;
+  height: 0.28rem;
+  margin: 0 auto 0.85rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.22);
+}
+
+.entrance-gate .eg-sheet-title {
+  margin: 0 0 0.85rem;
+  text-align: center;
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.entrance-gate .eg-site-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  margin-bottom: 0.85rem;
+}
+
+.entrance-gate .eg-site-nav[hidden] {
+  display: none !important;
+}
+
+.entrance-gate .eg-nav-link {
+  appearance: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  min-height: 2.85rem;
+  padding: 0.7rem 0.95rem;
+  border-radius: 0.85rem;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.05);
+  color: #fff;
+  font: inherit;
+  font-size: 0.92rem;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.entrance-gate .eg-nav-link:hover,
+.entrance-gate .eg-nav-link:focus-visible {
+  background: var(--eg-accent-soft);
+  border-color: color-mix(in srgb, var(--eg-accent) 58%, transparent);
+  outline: none;
+}
+
+.entrance-gate .eg-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.35rem;
+  margin-bottom: 0.75rem;
+}
+
+.entrance-gate .eg-tabs[hidden] {
+  display: none !important;
+}
+
+.entrance-gate .eg-tab {
+  appearance: none;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--eg-muted);
+  font: inherit;
+  font-size: 0.75rem;
+  padding: 0.45rem 0.3rem;
+  cursor: pointer;
+}
+
+.entrance-gate .eg-tab.is-active {
+  color: #fff;
+  border-color: color-mix(in srgb, var(--eg-accent) 65%, transparent);
+  background: var(--eg-accent-soft);
+}
+
+.entrance-gate .eg-panel {
+  display: none;
+  overflow: auto;
+  min-height: 0;
+  flex: 1 1 auto;
+}
+
+.entrance-gate .eg-panel.is-active {
+  display: block;
+}
+
+.entrance-gate .eg-panel[hidden] {
+  display: none !important;
+}
+
+.entrance-gate .eg-hours {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.entrance-gate .eg-hours li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.65rem 0.1rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  font-size: 0.88rem;
+}
+
+.entrance-gate .eg-hours li.is-today {
+  color: var(--eg-accent);
+}
+
+.entrance-gate .eg-hours-day {
+  font-weight: 600;
+}
+
+.entrance-gate .eg-hours-time {
+  color: var(--eg-muted);
+  direction: ltr;
+  font-variant-numeric: tabular-nums;
+}
+
+.entrance-gate .eg-about,
+.entrance-gate .eg-contact {
+  margin: 0;
+  font-size: 0.92rem;
+  line-height: 1.75;
+  color: var(--eg-muted);
+}
+
+.entrance-gate .eg-contact a {
+  color: #fff;
+  text-decoration: none;
+  border-bottom: 1px solid color-mix(in srgb, var(--eg-accent) 62%, transparent);
+}
+
+.entrance-gate .eg-contact p {
+  margin: 0 0 0.85rem;
+}
+
+.entrance-gate .eg-scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 7;
+  background: rgba(0, 0, 0, 0.55);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 0.35s ease, visibility 0.35s;
+}
+
+.entrance-gate.is-sheet-open .eg-scrim {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+}
+
+.entrance-gate .loader_percent {
+  display: none !important;
+}
+
+/* —— Responsive —— */
+@media (min-width: 768px) {
+  .loader.entrance-gate {
+    --eg-pad-x: 1.5rem;
+  }
+
+  .entrance-gate .eg-shell {
+    width: 100% !important;
+  }
+
+  .entrance-gate .eg-top {
+    width: min(40rem, 100%);
+    margin-inline: auto;
+  }
+
+  .entrance-gate .eg-card {
+    width: 32.5rem;
+    /* Hug the content; the row only caps it. Stretching left dead bands inside. */
+    height: auto;
+    max-height: 100%;
+    overflow: hidden;
+  }
+
+  .entrance-gate .eg-glass-pill__label {
+    display: inline;
+  }
+
+  .entrance-gate .eg-sheet {
+    left: 50%;
+    right: auto;
+    width: min(28rem, 100%);
+    transform: translate(-50%, 110%);
+  }
+
+  .entrance-gate.is-sheet-open .eg-sheet {
+    transform: translate(-50%, 0);
+  }
+}
+
+@media (max-width: 767px) {
+  .loader.entrance-gate {
+    --eg-blur: 16px;
+  }
+
+  .entrance-gate .eg-glass-pill__label {
+    display: none;
+  }
+
+  .entrance-gate .eg-glass-pill {
+    width: 2.6rem;
+    padding: 0;
+    justify-content: center;
+  }
+
+  .entrance-gate .eg-card {
+    width: 90vw;
+    max-height: 100%;
+  }
+
+  .entrance-gate .eg-ambient__rays {
+    animation: none;
+    opacity: 0.4;
+  }
+
+  .entrance-gate .eg-brand-title {
+    font-size: clamp(1.85rem, 8.5vw, 2.35rem);
+    letter-spacing: 0.12em;
+    text-indent: 0.12em;
+  }
+
+  .entrance-gate .eg-cup-stage {
+    width: min(48vw, 11rem);
+    opacity: 0.9;
+  }
+
+  .entrance-gate .eg-corner__label {
+    display: none;
+  }
+
+  .entrance-gate .eg-dock__label {
+    font-size: 0.52rem;
+  }
+
+  .entrance-gate .eg-step-icon {
+    width: 2.35rem;
+    height: 2.35rem;
+  }
+
+  .entrance-gate .eg-foot {
+    gap: 0.35rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .entrance-gate .eg-ambient__rays,
+  .entrance-gate .eg-card__reflect,
+  .entrance-gate .eg-steam__wisp,
+  .entrance-gate .eg-status.is-loading .eg-status-dot {
+    animation: none !important;
+  }
+}
+
+/* Kill continuous CSS FX once entrance hands off to the scene */
+.entrance-gate.is-fx-off .eg-ambient__rays,
+.entrance-gate.is-fx-off .eg-card__reflect,
+.entrance-gate.is-fx-off .eg-steam__wisp,
+.entrance-gate.is-fx-off .eg-status-dot,
+.entrance-gate[hidden] .eg-ambient__rays,
+.entrance-gate[hidden] .eg-card__reflect,
+.entrance-gate[hidden] .eg-steam__wisp {
+  animation: none !important;
+}
+
+.entrance-gate.is-fx-off .eg-ambient__particles,
+.entrance-gate[hidden] .eg-ambient__particles {
+  display: none !important;
+}
+
+/* ─── Light theme — cream paper + charcoal ink + cyan accent ─── */
+html[data-theme='light'] .loader.entrance-gate,
+html[data-theme='light'] .entrance-gate {
+  --eg-bg: #ebe4d6;
+  --eg-bg-deep: #e3d9c8;
+  --eg-ink: #1a1714;
+  --eg-muted: rgba(26, 23, 20, 0.62);
+  --eg-faint: rgba(26, 23, 20, 0.42);
+  --eg-accent: #2a7a86;
+  --eg-accent-deep: #1f636e;
+  --eg-accent-soft: rgba(42, 122, 134, 0.14);
+  --eg-accent-glow: rgba(42, 122, 134, 0.22);
+  --eg-line: rgba(26, 23, 20, 0.12);
+  --eg-line-strong: rgba(26, 23, 20, 0.2);
+  --eg-glass: rgba(253, 251, 247, 0.72);
+  --eg-glass-strong: rgba(253, 251, 247, 0.9);
+  --eg-glass-edge: rgba(255, 255, 255, 0.85);
+  --eg-shadow: 0 18px 48px rgba(26, 23, 20, 0.1), 0 4px 14px rgba(26, 23, 20, 0.06);
+  --eg-shadow-soft: 0 10px 28px rgba(26, 23, 20, 0.08);
+  --eg-cta-bg: #1a1714;
+  --eg-cta-ink: #f4efe6;
+  --eg-cta-hover: #2a241e;
+  --eg-paper: #fdfbf7;
+  --eg-paper-raised: #fffcf7;
+  --eg-chrome: rgba(253, 251, 247, 0.78);
+  color: var(--eg-ink);
+  background:
+    radial-gradient(ellipse 90% 55% at 50% -8%, rgba(42, 122, 134, 0.1), transparent 55%),
+    radial-gradient(ellipse 70% 45% at 100% 100%, rgba(42, 122, 134, 0.06), transparent 50%),
+    linear-gradient(165deg, #f3ede2 0%, var(--eg-bg) 42%, var(--eg-bg-deep) 100%);
+}
+
+html[data-theme='light'] .entrance-gate .eg-ambient__photo {
+  opacity: 0.5;
+  mix-blend-mode: multiply;
+}
+
+/* The base img carries a darkening filter for the dark theme — re-light it
+   here instead of stacking a second filter on the <picture>. */
+html[data-theme='light'] .entrance-gate .eg-ambient__photo img {
+  filter: saturate(0.7) brightness(1.32) contrast(0.88) sepia(0.14);
+}
+
+/* Without this the dark base bled through the multiply layers and turned the
+   whole light gate into flat grey. */
+html[data-theme='light'] .entrance-gate .eg-ambient__base {
+  background: linear-gradient(
+    180deg,
+    #f6f1e7 0%,
+    var(--eg-bg) 52%,
+    var(--eg-bg-deep) 100%
+  );
+}
+
+html[data-theme='light'] .entrance-gate .eg-ambient__veil {
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--eg-bg) 26%, transparent) 0%,
+      color-mix(in srgb, var(--eg-bg) 44%, transparent) 48%,
+      color-mix(in srgb, var(--eg-bg-deep) 68%, transparent) 100%
+    ),
+    radial-gradient(
+      ellipse 70% 50% at 50% 32%,
+      transparent 25%,
+      color-mix(in srgb, var(--eg-bg) 22%, transparent) 100%
+    );
+}
+
+html[data-theme='light'] .entrance-gate .eg-ambient__fog {
+  background:
+    radial-gradient(ellipse 80% 50% at 50% 100%, color-mix(in srgb, var(--eg-bg-deep) 55%, transparent), transparent 62%),
+    radial-gradient(ellipse 60% 40% at 20% 20%, color-mix(in srgb, var(--eg-accent) 12%, transparent), transparent 50%);
+  opacity: 0.5;
+}
+
+html[data-theme='light'] .entrance-gate .eg-ambient__noise {
+  opacity: 0.18;
+  mix-blend-mode: multiply;
+}
+
+html[data-theme='light'] .entrance-gate .eg-shell {
+  color: var(--eg-ink);
+}
+
+html[data-theme='light'] .entrance-gate .eg-brand__mark {
+  color: var(--eg-ink);
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.55);
+}
+
+html[data-theme='light'] .entrance-gate .eg-brand__tag {
+  color: var(--eg-muted);
+  border-color: var(--eg-line);
+  background: color-mix(in srgb, var(--eg-paper) 55%, transparent);
+}
+
+html[data-theme='light'] .entrance-gate .eg-hours {
+  background: var(--eg-chrome);
+  border-color: var(--eg-line);
+  box-shadow: var(--eg-shadow-soft);
+  backdrop-filter: blur(18px) saturate(1.15);
+  -webkit-backdrop-filter: blur(18px) saturate(1.15);
+}
+
+html[data-theme='light'] .entrance-gate .eg-hours__badge {
+  background: var(--eg-accent-soft);
+  border-color: color-mix(in srgb, var(--eg-accent) 35%, transparent);
+  color: var(--eg-accent-deep);
+}
+
+html[data-theme='light'] .entrance-gate .eg-hours.is-open .eg-hours__badge {
+  background: color-mix(in srgb, #2d6a4f 12%, transparent);
+  border-color: color-mix(in srgb, #2d6a4f 35%, transparent);
+  color: #1b4332;
+}
+
+html[data-theme='light'] .entrance-gate .eg-hours.is-closed .eg-hours__badge {
+  background: color-mix(in srgb, #9b2c2c 10%, transparent);
+  border-color: color-mix(in srgb, #9b2c2c 30%, transparent);
+  color: #7f1d1d;
+}
+
+html[data-theme='light'] .entrance-gate .eg-card {
+  background:
+    linear-gradient(165deg, var(--eg-paper-raised) 0%, var(--eg-paper) 55%, color-mix(in srgb, var(--eg-bg) 40%, var(--eg-paper)) 100%);
+  border-color: var(--eg-line-strong);
+  box-shadow:
+    var(--eg-shadow),
+    inset 0 1px 0 rgba(255, 255, 255, 0.92),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.35);
+}
+
+html[data-theme='light'] .entrance-gate .eg-card__reflect {
+  opacity: 0.35;
+  background: linear-gradient(
+    115deg,
+    transparent 30%,
+    rgba(255, 255, 255, 0.55) 48%,
+    transparent 62%
+  );
+}
+
+html[data-theme='light'] .entrance-gate .eg-cup-stage {
+  filter: drop-shadow(0 14px 28px rgba(26, 23, 20, 0.12));
+}
+
+html[data-theme='light'] .entrance-gate .eg-quote {
+  color: var(--eg-muted);
+  border-color: var(--eg-line);
+}
+
+html[data-theme='light'] .entrance-gate .eg-status {
+  color: var(--eg-ink);
+  background: color-mix(in srgb, var(--eg-paper) 82%, transparent);
+  border-color: var(--eg-line);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8);
+}
+
+html[data-theme='light'] .entrance-gate .eg-status-meta,
+html[data-theme='light'] .entrance-gate .eg-status-loc {
+  color: var(--eg-muted);
+}
+
+html[data-theme='light'] .entrance-gate .eg-status-dot {
+  background: var(--eg-accent);
+  box-shadow: 0 0 0 3px var(--eg-accent-soft);
+}
+
+html[data-theme='light'] .entrance-gate .eg-progress__track {
+  background: color-mix(in srgb, var(--eg-ink) 8%, transparent);
+  border-color: var(--eg-line);
+}
+
+html[data-theme='light'] .entrance-gate .eg-progress__fill {
+  background: linear-gradient(90deg, var(--eg-accent-deep), var(--eg-accent));
+  box-shadow: 0 0 12px var(--eg-accent-glow);
+}
+
+html[data-theme='light'] .entrance-gate .eg-progress__pct {
+  color: var(--eg-accent-deep);
+}
+
+html[data-theme='light'] .entrance-gate .eg-steps-row::before {
+  background: linear-gradient(
+    90deg,
+    transparent,
+    var(--eg-line-strong) 12%,
+    var(--eg-line-strong) 88%,
+    transparent
+  );
+}
+
+html[data-theme='light'] .entrance-gate .eg-step-icon {
+  background: color-mix(in srgb, var(--eg-paper) 88%, transparent);
+  border-color: var(--eg-line);
+  color: var(--eg-faint);
+  box-shadow: none;
+}
+
+html[data-theme='light'] .entrance-gate .eg-step-icon.is-active {
+  background: var(--eg-accent-soft);
+  border-color: color-mix(in srgb, var(--eg-accent) 45%, transparent);
+  color: var(--eg-accent-deep);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--eg-accent) 20%, transparent);
+}
+
+html[data-theme='light'] .entrance-gate .eg-step-icon.is-done {
+  background: color-mix(in srgb, var(--eg-accent) 9%, var(--eg-paper));
+  border-color: color-mix(in srgb, var(--eg-accent) 38%, transparent);
+  color: var(--eg-accent-deep);
+}
+
+html[data-theme='light'] .entrance-gate .eg-cta {
+  background: var(--eg-cta-bg);
+  color: var(--eg-cta-ink);
+  border-color: transparent;
+  box-shadow:
+    0 12px 28px rgba(26, 23, 20, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+
+html[data-theme='light'] .entrance-gate .eg-cta:hover,
+html[data-theme='light'] .entrance-gate .eg-cta:focus-visible {
+  background: var(--eg-cta-hover);
+  color: var(--eg-cta-ink);
+  box-shadow:
+    0 16px 36px rgba(26, 23, 20, 0.22),
+    0 0 0 1px color-mix(in srgb, var(--eg-accent) 40%, transparent);
+}
+
+html[data-theme='light'] .entrance-gate .eg-cta:disabled,
+html[data-theme='light'] .entrance-gate .eg-cta.is-busy {
+  opacity: 0.55;
+  box-shadow: none;
+}
+
+html[data-theme='light'] .entrance-gate .eg-dock,
+html[data-theme='light'] .entrance-gate .eg-corner {
+  background: var(--eg-chrome);
+  border-color: var(--eg-line);
+  box-shadow: var(--eg-shadow-soft);
+  backdrop-filter: blur(18px) saturate(1.15);
+  -webkit-backdrop-filter: blur(18px) saturate(1.15);
+}
+
+html[data-theme='light'] .entrance-gate .eg-dock__btn,
+html[data-theme='light'] .entrance-gate .eg-chip-icon,
+html[data-theme='light'] .entrance-gate .eg-glass-btn {
+  color: var(--eg-ink);
+  border-color: transparent;
+}
+
+html[data-theme='light'] .entrance-gate .eg-dock__btn:hover,
+html[data-theme='light'] .entrance-gate .eg-dock__btn:focus-visible,
+html[data-theme='light'] .entrance-gate .eg-chip-icon:hover,
+html[data-theme='light'] .entrance-gate .eg-chip-icon:focus-visible,
+html[data-theme='light'] .entrance-gate .eg-glass-btn:hover,
+html[data-theme='light'] .entrance-gate .eg-glass-btn:focus-visible {
+  background: var(--eg-accent-soft);
+  border-color: color-mix(in srgb, var(--eg-accent) 40%, transparent);
+  color: var(--eg-accent-deep);
+  box-shadow: 0 0 18px var(--eg-accent-glow);
+}
+
+html[data-theme='light'] .entrance-gate .eg-dock__label,
+html[data-theme='light'] .entrance-gate .eg-corner__label {
+  color: var(--eg-muted);
+}
+
+html[data-theme='light'] .entrance-gate .eg-lang,
+html[data-theme='light'] .entrance-gate .eg-theme-toggle {
+  background: var(--eg-chrome);
+  border-color: var(--eg-line);
+  color: var(--eg-ink);
+  box-shadow: var(--eg-shadow-soft);
+}
+
+html[data-theme='light'] .entrance-gate .eg-lang:hover,
+html[data-theme='light'] .entrance-gate .eg-theme-toggle:hover,
+html[data-theme='light'] .entrance-gate .eg-lang:focus-visible,
+html[data-theme='light'] .entrance-gate .eg-theme-toggle:focus-visible {
+  border-color: color-mix(in srgb, var(--eg-accent) 45%, transparent);
+  background: var(--eg-accent-soft);
+  color: var(--eg-accent-deep);
+}
+
+html[data-theme='light'] .entrance-gate .eg-sheet {
+  background: var(--eg-paper);
+  border-color: var(--eg-line-strong);
+  box-shadow: var(--eg-shadow);
+  color: var(--eg-ink);
+}
+
+html[data-theme='light'] .entrance-gate .eg-sheet__handle {
+  background: color-mix(in srgb, var(--eg-ink) 18%, transparent);
+}
+
+html[data-theme='light'] .entrance-gate .eg-sheet__title {
+  color: var(--eg-ink);
+  border-bottom-color: color-mix(in srgb, var(--eg-accent) 55%, transparent);
+}
+
+html[data-theme='light'] .entrance-gate .eg-sheet__body {
+  color: var(--eg-muted);
+}
+
+html[data-theme='light'] .entrance-gate .eg-install-chip,
+html[data-theme='light'] .eg-install-chip {
+  background: var(--eg-chrome);
+  border-color: var(--eg-line);
+  color: var(--eg-ink);
+}
+
+html[data-theme='light'] .entrance-gate .eg-install-chip:hover,
+html[data-theme='light'] .eg-install-chip:hover {
+  background: var(--eg-accent-soft);
+  border-color: color-mix(in srgb, var(--eg-accent) 40%, transparent);
+  color: var(--eg-accent-deep);
+}
+
+/* Primary entrance action: the same calm, legible glass as the header pills.
+   It stays prominent through width and placement, rather than a heavy solid fill. */
+.entrance-gate .eg-cta {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  background: var(--wg-action-bg, rgba(255, 255, 255, 0.08));
+  color: var(--wg-action-ink, #f8f6f0);
+  border-color: var(--wg-action-edge, rgba(255, 255, 255, 0.2));
+  font-weight: 600;
+  font-size: 0.9rem;
+  letter-spacing: 0.005em;
+  -webkit-backdrop-filter: blur(16px) saturate(1.16);
+  backdrop-filter: blur(16px) saturate(1.16);
+  box-shadow: var(--wg-action-shadow);
+  transition:
+    transform var(--wg-hover-time, 0.22s) var(--wg-ease, cubic-bezier(0.22, 1, 0.36, 1)),
+    background var(--wg-hover-time, 0.22s) ease,
+    border-color var(--wg-hover-time, 0.22s) ease,
+    box-shadow var(--wg-hover-time, 0.22s) ease,
+    opacity 0.2s ease;
+}
+
+.entrance-gate .eg-cta::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  padding: 1px;
+  border-radius: inherit;
+  background: var(--eg-glass-edge, var(--wg-glass-edge));
+  -webkit-mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+}
+
+.entrance-gate .eg-cta::after {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto;
+  z-index: 0;
+  height: 44%;
+  background: linear-gradient(var(--wg-action-highlight, rgba(255, 255, 255, 0.16)), transparent);
+  pointer-events: none;
+}
+
+.entrance-gate .eg-cta-label,
+.entrance-gate .eg-cta-arrow {
+  position: relative;
+  z-index: 1;
+}
+
+.entrance-gate .eg-cta:not(:disabled):hover,
+.entrance-gate .eg-cta:not(:disabled):focus-visible {
+  transform: translateY(-1px);
+  background: var(--wg-action-bg-hover, rgba(255, 255, 255, 0.14));
+  border-color: var(--wg-action-edge-hover, rgba(120, 208, 216, 0.58));
+  box-shadow:
+    var(--wg-action-shadow),
+    0 0 1.15rem var(--wg-action-glow, rgba(120, 208, 216, 0.18));
+  outline: none;
+}
+
+.entrance-gate .eg-cta:focus-visible {
+  box-shadow:
+    var(--wg-action-shadow),
+    0 0 0 2px var(--wg-focus-ring, rgba(120, 208, 216, 0.7));
+}
+
+.entrance-gate .eg-cta:disabled,
+html[data-theme='light'] .entrance-gate .eg-cta:disabled,
+html[data-theme='light'] .entrance-gate .eg-cta.is-busy {
+  background: var(--wg-action-bg, rgba(255, 255, 255, 0.08));
+  color: var(--wg-action-ink, #f8f6f0);
+  border-color: var(--wg-action-edge, rgba(255, 255, 255, 0.2));
+  opacity: 0.56;
+  box-shadow: var(--wg-action-shadow);
+}
+
+html[data-theme='light'] .entrance-gate .eg-cta,
+html[data-theme='light'] .entrance-gate .eg-cta:hover,
+html[data-theme='light'] .entrance-gate .eg-cta:focus-visible {
+  background: var(--wg-action-bg, rgba(255, 252, 247, 0.72));
+  color: var(--wg-action-ink, #1a1714);
+  border-color: var(--wg-action-edge, rgba(26, 23, 20, 0.15));
+  box-shadow: var(--wg-action-shadow);
+}
+
+html[data-theme='light'] .entrance-gate .eg-cta:hover,
+html[data-theme='light'] .entrance-gate .eg-cta:focus-visible {
+  background: var(--wg-action-bg-hover, rgba(255, 252, 247, 0.9));
+  border-color: var(--wg-action-edge-hover, rgba(42, 122, 134, 0.5));
+  box-shadow:
+    var(--wg-action-shadow),
+    0 0 1rem var(--wg-action-glow, rgba(42, 122, 134, 0.14));
+}
+
+/* ===== WESTO entrance GPU budget (release3) ===== */
+html[data-perf-tier="economy"] #westo-entrance [class*="glass"],
+html[data-perf-tier="economy"] #westo-entrance .eg-panel,
+html[data-perf-tier="economy"] #westo-entrance .eg-card,
+html[data-perf-tier="economy"] #westo-entrance .eg-enter {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+html[data-perf-tier="economy"] #eg-particles {
+  display: none !important;
+}
+html[data-perf-tier="balanced"] #westo-entrance [class*="glass"] {
+  --eg-blur: 8px;
+}

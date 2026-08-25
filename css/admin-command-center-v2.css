@@ -1,0 +1,106 @@
+/* WESTO Command Center UX v2 — admin-only refinement, no product features. */
+.admin-app {
+  --admin-content-max: 1360px;
+  --admin-control-h: 2.75rem;
+  --admin-soft: color-mix(in srgb, var(--p-text-dim) 72%, transparent);
+  --admin-line: color-mix(in srgb, var(--p-border) 78%, transparent);
+  --admin-panel: color-mix(in srgb, var(--p-surface) 90%, transparent);
+  --admin-panel-2: color-mix(in srgb, var(--p-surface-2) 84%, transparent);
+  --admin-focus: color-mix(in srgb, var(--p-accent) 72%, white 8%);
+}
+.admin-skip-link { position:fixed; inset-inline-start:1rem; top:-4rem; z-index:9999; padding:.65rem .9rem; border-radius:.65rem; background:var(--p-accent); color:var(--p-accent-ink); font-weight:800; transition:top .15s ease; }
+.admin-skip-link:focus { top:1rem; }
+.admin-noscript { position:fixed; inset:1rem; z-index:9999; padding:1rem; border:1px solid var(--p-danger); border-radius:.8rem; background:var(--p-bg); color:var(--p-text); }
+.admin-app .admin-layout { min-height:100dvh; background:radial-gradient(70% 45% at 92% -8%, color-mix(in srgb,var(--p-accent) 9%, transparent), transparent 58%), var(--p-bg); }
+.admin-app .admin-sidebar { width:284px; padding:1rem .75rem 1.25rem; gap:.1rem; scrollbar-gutter:stable; overscroll-behavior:contain; }
+.admin-app .admin-sidebar .brand { position:sticky; top:-1rem; z-index:3; margin:-.2rem -.15rem .45rem; padding:.8rem .7rem .85rem; background:linear-gradient(180deg,var(--p-bg) 78%,transparent); }
+.admin-app .brand-text strong { font-size:.92rem; }
+.admin-app .brand-text span { font-size:.69rem; }
+.admin-app .admin-theme-switch { position:sticky; top:3.75rem; z-index:2; margin:0 .35rem .75rem; padding:.25rem; border:1px solid var(--admin-line); border-radius:.85rem; background:color-mix(in srgb,var(--p-bg) 86%,transparent); }
+.admin-app .nav-workspace { border:1px solid transparent; padding:.12rem; transition:border-color .15s ease,background .15s ease; }
+.admin-app .nav-workspace[open] { border-color:var(--admin-line); background:rgba(255,255,255,.018); }
+.admin-app .nav-label { padding:.6rem .65rem .38rem; font-size:.72rem; color:var(--admin-soft); }
+.admin-app .admin-nav-item { min-height:2.55rem; padding:.58rem .72rem; border-radius:.72rem; font-size:.84rem; line-height:1.35; }
+.admin-app .admin-nav-item.active { box-shadow:inset 3px 0 0 var(--p-accent), inset 0 1px 0 rgba(255,255,255,.09); }
+[dir='rtl'] .admin-app .admin-nav-item.active { box-shadow:inset -3px 0 0 var(--p-accent), inset 0 1px 0 rgba(255,255,255,.09); }
+.admin-app .admin-shell { min-height:100dvh; }
+.admin-app .admin-topbar { min-height:4.35rem; padding:.7rem clamp(.85rem,2vw,1.5rem); border-color:var(--admin-line); background:color-mix(in srgb,var(--p-bg) 84%,transparent); -webkit-backdrop-filter:blur(18px) saturate(1.06); backdrop-filter:blur(18px) saturate(1.06); }
+.admin-topbar-heading { display:grid; gap:.06rem; min-width:9rem; }
+.admin-topbar-context { color:var(--admin-soft); font-size:.64rem; line-height:1.2; }
+.admin-app .admin-topbar-title { font-size:1.02rem; line-height:1.35; }
+.admin-app .branch-select { min-height:2.35rem; max-width:11rem; }
+.admin-app .admin-command-trigger,.admin-app .admin-user-chip { min-height:2.35rem; }
+.admin-app .admin-topbar-meta { font-variant-numeric:tabular-nums; }
+.admin-app.admin-network-busy .admin-topbar-meta::before { content:''; display:inline-block; width:.45rem; height:.45rem; margin-inline-end:.4rem; border-radius:50%; background:var(--p-accent); box-shadow:0 0 .6rem color-mix(in srgb,var(--p-accent) 70%,transparent); animation:adminPulse 1s ease-in-out infinite; }
+@keyframes adminPulse { 50% { opacity:.3; transform:scale(.75); } }
+.admin-app .admin-main { width:100%; max-width:var(--admin-content-max); margin-inline:auto; padding:clamp(1rem,2vw,1.75rem) clamp(.9rem,2.4vw,2.1rem) 4rem; }
+.admin-app .section-box,.admin-app .ops-panel,.admin-app .card,.admin-app .menu-studio__row,.admin-app .delivery-zone-card { border-color:var(--admin-line); }
+.admin-app .section-box { border-radius:1rem; padding:clamp(.9rem,1.7vw,1.25rem); }
+.admin-app .section-box + .section-box { margin-top:1rem; }
+.admin-app h1,.admin-app h2,.admin-app h3 { text-wrap:balance; }
+.admin-app .lead { color:var(--admin-soft); line-height:1.75; }
+.admin-app .hint { line-height:1.65; }
+.admin-app .field { margin-bottom:.85rem; min-width:0; }
+.admin-app .field label { margin-bottom:.35rem; font-size:.76rem; color:var(--admin-soft); font-weight:600; }
+.admin-app .field input,.admin-app .field textarea,.admin-app .field select,.admin-app .ops-filters input,.admin-app .ops-filters select { min-height:var(--admin-control-h); border-radius:.72rem; border-color:var(--admin-line); background:rgba(255,255,255,.045); -webkit-backdrop-filter:none; backdrop-filter:none; transition:border-color .15s ease,background .15s ease,box-shadow .15s ease; }
+.admin-app .field textarea { min-height:7rem; resize:vertical; line-height:1.7; }
+.admin-app .field input:hover,.admin-app .field textarea:hover,.admin-app .field select:hover { border-color:color-mix(in srgb,var(--p-text-dim) 45%,transparent); }
+.admin-app .field input:focus,.admin-app .field textarea:focus,.admin-app .field select:focus { border-color:var(--admin-focus); box-shadow:0 0 0 3px color-mix(in srgb,var(--p-accent) 13%,transparent); background:rgba(255,255,255,.065); }
+.admin-app input:invalid:not(:placeholder-shown) { border-color:color-mix(in srgb,var(--p-danger) 58%,transparent); }
+.admin-app .btn { min-height:2.55rem; padding:.62rem 1rem; border-radius:.75rem; font-size:.88rem; -webkit-backdrop-filter:none; backdrop-filter:none; transform:none; }
+.admin-app .btn:hover:not(:disabled) { transform:none; }
+.admin-app .btn:active:not(:disabled) { transform:translateY(1px); }
+.admin-app .btn.btn-danger { background:rgba(255,118,118,.08); color:#ff9b9b; border-color:rgba(255,118,118,.24); box-shadow:none; }
+.admin-app .btn.btn-danger:hover:not(:disabled) { background:rgba(255,118,118,.14); border-color:rgba(255,118,118,.42); }
+.admin-app .cards { gap:.7rem; margin-bottom:1rem; }
+.admin-app .card { padding:.95rem 1rem; border-radius:.9rem; background:linear-gradient(150deg,rgba(255,255,255,.065),rgba(255,255,255,.018)); -webkit-backdrop-filter:none; backdrop-filter:none; }
+.admin-app .card .num { font-variant-numeric:tabular-nums; }
+.admin-app .table-scroll { width:100%; overflow:auto; overscroll-behavior-inline:contain; border:1px solid var(--admin-line); border-radius:.85rem; background:rgba(255,255,255,.012); }
+.admin-app .table-scroll > .tbl { margin:0; min-width:42rem; border:0; }
+.admin-app .tbl { font-variant-numeric:tabular-nums; }
+.admin-app .tbl thead { position:sticky; top:0; z-index:1; background:color-mix(in srgb,var(--p-surface) 94%,transparent); }
+.admin-app .tbl th { white-space:nowrap; }
+.admin-app .tbl tr { transition:background .12s ease; }
+.admin-app .tbl tbody tr:hover { background:rgba(255,255,255,.025); }
+.admin-app .menu-studio__drawer { width:min(34rem,100vw); }
+.admin-app .menu-studio__drawer-head { position:sticky; top:0; z-index:2; background:color-mix(in srgb,var(--p-surface) 94%,transparent); -webkit-backdrop-filter:blur(14px); backdrop-filter:blur(14px); }
+.admin-app .menu-studio__row { min-height:4.75rem; }
+.admin-app .ops-status { font-weight:700; }
+.admin-app .ops-order-card,.admin-app .ops-metric { -webkit-backdrop-filter:none; backdrop-filter:none; }
+.admin-app .toast { max-width:min(30rem,calc(100vw - 2rem)); text-align:right; }
+.admin-app .toast.is-error { border-color:rgba(255,118,118,.42); color:#ffd3d3; }
+.admin-app .toast.is-success { border-color:rgba(125,216,125,.38); }
+.admin-app .toast.is-info { border-color:rgba(120,208,216,.34); }
+.admin-app :is(button,a,input,textarea,select,summary):focus-visible { outline:2px solid var(--admin-focus); outline-offset:2px; }
+.admin-app [aria-busy='true'] { cursor:progress; }
+.admin-app .sr-only { position:absolute!important; width:1px!important; height:1px!important; padding:0!important; margin:-1px!important; overflow:hidden!important; clip:rect(0,0,0,0)!important; white-space:nowrap!important; border:0!important; }
+html[data-theme='light'] .admin-app { --admin-panel:#fff; --admin-panel-2:#f6f8f8; --admin-line:rgba(30,59,63,.13); }
+html[data-theme='light'] .admin-app .admin-sidebar,html[data-theme='light'] .admin-app .admin-topbar { background:rgba(248,251,251,.92); }
+html[data-theme='light'] .admin-app .field input,html[data-theme='light'] .admin-app .field textarea,html[data-theme='light'] .admin-app .field select { background:rgba(255,255,255,.82); }
+@media (max-width: 860px) {
+  .admin-app .admin-sidebar { width:min(88vw,22rem); max-width:22rem; position:fixed; inset-block:0; inset-inline-start:auto; inset-inline-end:0; transform:translateX(105%); transition:transform .2s cubic-bezier(.22,1,.36,1); box-shadow:-1.5rem 0 3rem rgba(0,0,0,.4); }
+  [dir='rtl'] .admin-app .admin-sidebar { inset-inline-start:auto; inset-inline-end:0; transform:translateX(105%); }
+  body.sidebar-open.admin-app .admin-sidebar { transform:translateX(0); }
+  .admin-app .admin-topbar { min-height:4rem; }
+  .admin-topbar-context { display:none; }
+  .admin-app .admin-main { padding-inline:.75rem; }
+  .admin-app .cards { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .admin-app .grid-2,.admin-app .grid-3 { grid-template-columns:1fr; }
+  .admin-app .menu-studio__toolbar { align-items:stretch; }
+  .admin-app .table-scroll > .tbl { min-width:38rem; }
+}
+@media (max-width: 520px) {
+  .admin-app .admin-topbar { gap:.4rem; }
+  .admin-app .admin-topbar-heading { min-width:0; flex:1; }
+  .admin-app .branch-select-wrap { max-width:7.5rem; }
+  .admin-app .admin-topbar-title { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .admin-app .cards { grid-template-columns:1fr 1fr; gap:.55rem; }
+  .admin-app .card { padding:.8rem; }
+  .admin-app .section-box { border-radius:.85rem; }
+  .admin-app .ops-metrics { grid-template-columns:1fr 1fr; }
+  .admin-app .ops-quick-actions { width:100%; }
+  .admin-app .ops-quick-actions .btn { flex:1 1 calc(50% - .5rem); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .admin-app *, .admin-app *::before, .admin-app *::after { scroll-behavior:auto!important; animation-duration:.01ms!important; animation-iteration-count:1!important; transition-duration:.01ms!important; }
+}

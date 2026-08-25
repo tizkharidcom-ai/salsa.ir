@@ -1,0 +1,505 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+  <link rel="manifest" href="/manifest.webmanifest?v=release14uf1d8-mobile-category-swipe" />
+  <script src="/js/pwa-bootstrap.js?v=release14uf1d8-mobile-category-swipe" defer></script>
+
+  <meta charset="utf-8" />
+  <title data-i18n="feedback.documentTitle">بازخورد — وستو</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=5, user-scalable=yes, viewport-fit=cover" />
+  <script>
+    (function () {
+      try {
+        var pref = localStorage.getItem('westo_theme');
+        if (pref !== 'light' && pref !== 'dark' && pref !== 'system') pref = 'system';
+        var t = pref === 'system'
+          ? (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark')
+          : pref;
+        document.documentElement.setAttribute('data-theme', t);
+        document.documentElement.setAttribute('data-theme-pref', pref);
+      } catch (e) {
+        document.documentElement.setAttribute('data-theme', 'dark');
+        document.documentElement.setAttribute('data-theme-pref', 'system');
+      }
+    })();
+  </script>
+<meta name="theme-color" content="#121416" />
+
+
+<link rel="apple-touch-icon" href="/assets/icons/apple-touch-icon.png?v=brandCyan2" />
+  <link rel="stylesheet" href="css/mobile-forms.css?v=brandCyan2" />
+  <link rel="icon" type="image/png" sizes="32x32" href="assets/images/6a1d9bb2854e5557fe84e7d1_westo-fav-dark.png" />
+  <link rel="stylesheet" href="css/westo-glass.css?v=glassAction1" />
+  <link rel="stylesheet" href="css/panel.css?v=logic9" />
+  <style>
+    .fb-wrap { max-width: 480px; margin: 0 auto; padding: 2rem 1.1rem 3rem; }
+    .fb-brand { text-align: center; margin-bottom: 1.35rem; }
+    .fb-brand img { height: 36px; }
+    .fb-brand h1 { margin: 0.85rem 0 0.35rem; font-size: 1.35rem; }
+    .fb-brand p { margin: 0; color: var(--p-text-dim, #9a958c); font-size: 0.9rem; line-height: 1.55; }
+    .score-grid {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(44px, 1fr));
+      gap: 0.28rem;
+      margin: 0.75rem 0 0.35rem;
+      direction: ltr;
+    }
+    .score-btn {
+      appearance: none;
+      border: 1px solid var(--p-border, #2a2f3a);
+      background: var(--p-surface, #111318);
+      color: var(--p-text, #ece8e2);
+      border-radius: 10px;
+      padding: 0.55rem 0;
+      font: inherit;
+      font-size: 0.8rem;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .score-btn.is-on {
+      background: var(--p-accent, #78d0d8);
+      color: var(--p-accent-ink, #0a1a1c);
+      border-color: transparent;
+    }
+    .score-hint {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.72rem;
+      color: var(--p-text-dim, #9a958c);
+      direction: ltr;
+      margin-bottom: 1rem;
+    }
+    .fb-done {
+      text-align: center;
+      padding: 1.75rem 1rem;
+      border-radius: 14px;
+      background: var(--p-surface, #111318);
+      border: 1px solid var(--p-border, #2a2f3a);
+    }
+  </style>
+
+  <script src="js/theme.js?v=stable1" defer></script>
+  <link rel="stylesheet" href="css/vazir-system.css?v=font1" />
+  <link rel="stylesheet" href="css/westo-production-v11.css?v=prod11" />
+  <link rel="stylesheet" href="css/westo-production-v12.css?v=prod13r9" />
+  <script src="js/design-logic-v13.js?v=logic13r1" defer></script>
+</head>
+<body class="panel-body">
+  <main class="fb-wrap" id="main-content" tabindex="-1">
+    <div class="fb-brand">
+      <a href="/"><img src="assets/images/brand/westo-wordmark.png?v=brandCyan2" alt="WESTO" width="768" height="431" /></a>
+      <h1 id="title" data-i18n="feedback.title">نظر شما</h1>
+      <p id="subtitle"></p>
+    </div>
+
+    <div id="form-box" class="section-box" style="margin:0;">
+      <div class="field" id="branch-wrap" hidden>
+        <label for="branch" data-i18n="feedback.branch">شعبه</label>
+        <select id="branch"></select>
+      </div>
+      <div class="field">
+        <span id="feedback-nps-label" class="field-group-label" data-i18n="feedback.nps">امتیاز NPS (۰–۱۰)</span>
+        <div class="score-grid" id="scores" role="group" aria-labelledby="feedback-nps-label"></div>
+        <div class="score-hint"><span data-i18n="feedback.low">۰ — بعید</span><span data-i18n="feedback.high">۱۰ — حتماً</span></div>
+      </div>
+      <div class="field">
+        <label for="comment" data-i18n="feedback.comment">نظر (اختیاری)</label>
+        <textarea id="comment" rows="3" data-i18n-placeholder="feedback.commentPh" placeholder="چه چیزی خوب بود؟ چه چیزی بهتر شود؟"></textarea>
+      </div>
+      <div class="grid-2">
+        <div class="field">
+          <label for="name" data-i18n="feedback.name">نام (اختیاری)</label>
+          <input id="name" autocomplete="name" />
+        </div>
+        <div class="field">
+          <label for="phone" data-i18n="feedback.phone">موبایل (اختیاری)</label>
+          <input id="phone" autocomplete="tel" dir="ltr" type="tel" inputmode="numeric" maxlength="11" placeholder="09xxxxxxxxx" />
+        </div>
+      </div>
+      <button class="btn" id="submit" data-i18n="feedback.submit" type="button">ارسال بازخورد</button>
+      <p id="msg" class="msg" role="status" aria-live="polite" aria-atomic="true"></p>
+      <p class="hint" style="margin-top:1rem;"><a href="/" data-i18n="feedback.backSite">بازگشت به سایت</a></p>
+    </div>
+
+    <div id="done-box" class="fb-done" hidden>
+      <div id="thank" data-i18n="feedback.thanks">ممنون</div>
+      <a class="btn btn-sm" href="/" style="display:inline-block;width:auto;margin-top:1rem;text-decoration:none;" data-i18n="feedback.back">بازگشت</a>
+    </div>
+  </div>
+  <script src="js/i18n.js?v=logic9-fa-default1"></script>
+  <script>
+    (() => {
+      'use strict';
+
+      const params = new URLSearchParams(location.search);
+      const byId = (id) => document.getElementById(id);
+      const tr = (key, vars) => window.westoI18n?.t?.(key, vars) || key;
+      const localName = (obj) => window.westoI18n?.pickLocalized?.(obj, 'name', 'nameEn', 'nameAr') || String(obj?.name || '');
+      document.title = tr('feedback.documentTitle');
+
+      const scoresEl = byId('scores');
+      const formBox = byId('form-box');
+      const doneBox = byId('done-box');
+      const branchWrap = byId('branch-wrap');
+      const branchSelect = byId('branch');
+      const submitButton = byId('submit');
+
+      let score = null;
+      let selectedScoreButton = null;
+      let meta = null;
+
+      let metaController = null;
+      let metaGeneration = 0;
+      let pageSuspended = false;
+      let submitInFlight = false;
+      let feedbackSubmitted = false;
+      let branchDirty = false;
+
+      function abortController(controller) {
+        if (!controller) return;
+        try {
+          controller.abort();
+        } catch (_) {}
+      }
+
+      function setMessage(text, ok = false) {
+        const message = byId('msg');
+        if (!message) return;
+
+        message.textContent = text || '';
+        message.className =
+          'msg' + (text ? (ok ? ' ok' : ' error') : '');
+      }
+
+      async function readJson(response) {
+        try {
+          return await response.json();
+        } catch (_) {
+          return {};
+        }
+      }
+
+      function setScore(nextScore, button = null) {
+        const numeric = Number(nextScore);
+        if (
+          !Number.isInteger(numeric) ||
+          numeric < 0 ||
+          numeric > 10
+        ) {
+          return false;
+        }
+
+        if (
+          selectedScoreButton &&
+          selectedScoreButton !== button &&
+          selectedScoreButton.isConnected
+        ) {
+          selectedScoreButton.classList.remove('is-on');
+        }
+
+        score = numeric;
+
+        if (!button) {
+          button = scoresEl.querySelector(
+            `.score-btn[data-score="${numeric}"]`
+          );
+        }
+
+        selectedScoreButton = button || null;
+        selectedScoreButton?.classList.add('is-on');
+        return true;
+      }
+
+      function buildScoreButtons() {
+        if (scoresEl.childElementCount) return;
+
+        const fragment = document.createDocumentFragment();
+
+        for (let i = 0; i <= 10; i += 1) {
+          const button = document.createElement('button');
+          button.type = 'button';
+          button.className = 'score-btn';
+          button.dataset.score = String(i);
+          button.textContent = String(i);
+          fragment.appendChild(button);
+        }
+
+        scoresEl.appendChild(fragment);
+      }
+
+      function applyPreselectedScore() {
+        const raw = params.get('score');
+        if (raw == null || raw === '') return;
+
+        const numeric = Number(raw);
+        if (
+          Number.isInteger(numeric) &&
+          numeric >= 0 &&
+          numeric <= 10
+        ) {
+          setScore(numeric);
+        }
+      }
+
+      function setFeedbackEnabled(enabled) {
+        if (feedbackSubmitted) return;
+
+        formBox.hidden = !enabled;
+        doneBox.hidden = enabled;
+
+        if (!enabled) {
+          byId('thank').textContent = tr('feedback.disabled');
+        }
+      }
+
+      function populateBranches(branches, preferredBranchId) {
+        const list = Array.isArray(branches) ? branches : [];
+        const previousValue = branchSelect.value;
+        const fragment = document.createDocumentFragment();
+
+        for (const branch of list) {
+          const option = document.createElement('option');
+          option.value = String(branch.id);
+          option.textContent = localName(branch);
+          fragment.appendChild(option);
+        }
+
+        branchSelect.replaceChildren(fragment);
+
+        if (list.length > 1) {
+          branchWrap.hidden = false;
+        } else {
+          branchWrap.hidden = true;
+        }
+
+        const availableIds = new Set(
+          list.map((branch) => String(branch.id))
+        );
+
+        if (
+          branchDirty &&
+          previousValue &&
+          availableIds.has(previousValue)
+        ) {
+          branchSelect.value = previousValue;
+          return;
+        }
+
+        if (
+          preferredBranchId != null &&
+          availableIds.has(String(preferredBranchId))
+        ) {
+          branchSelect.value = String(preferredBranchId);
+          return;
+        }
+
+        if (list.length === 1) {
+          branchSelect.value = String(list[0].id);
+        }
+      }
+
+      async function loadMeta({ preserveMessage = false } = {}) {
+        if (pageSuspended || feedbackSubmitted) return;
+
+        const generation = ++metaGeneration;
+        abortController(metaController);
+
+        const controller = new AbortController();
+        metaController = controller;
+
+        if (!preserveMessage) setMessage('');
+
+        try {
+          const branchParam = params.get('branch');
+          const query = branchParam
+            ? `?branchId=${encodeURIComponent(branchParam)}`
+            : '';
+
+          const response = await fetch('/api/feedback/meta' + query, {
+            credentials: 'same-origin',
+            cache: 'no-store',
+            signal: controller.signal,
+          });
+
+          const data = await readJson(response);
+
+          if (!response.ok) {
+            throw new Error(
+              data?.error || tr('feedback.loadInfoFail')
+            );
+          }
+
+          if (
+            controller.signal.aborted ||
+            generation !== metaGeneration ||
+            pageSuspended ||
+            feedbackSubmitted
+          ) {
+            return;
+          }
+
+          meta = data;
+
+          if (!meta.enabled) {
+            setFeedbackEnabled(false);
+            return;
+          }
+
+          setFeedbackEnabled(true);
+
+          byId('title').textContent = window.westoI18n?.pickLocalized?.(meta, 'title', 'titleEn', 'titleAr') || tr('feedback.title');
+          byId('subtitle').textContent = window.westoI18n?.pickLocalized?.(meta, 'subtitle', 'subtitleEn', 'subtitleAr') || meta.subtitle || '';
+
+          populateBranches(
+            meta.branches,
+            meta.branch?.id
+          );
+        } catch (error) {
+          if (error?.name === 'AbortError') return;
+          if (
+            generation !== metaGeneration ||
+            pageSuspended ||
+            feedbackSubmitted
+          ) {
+            return;
+          }
+
+          setMessage(
+            error?.message || tr('feedback.loadFail')
+          );
+        } finally {
+          if (metaController === controller) {
+            metaController = null;
+          }
+        }
+      }
+
+      scoresEl.addEventListener('click', (event) => {
+        const button = event.target.closest('.score-btn');
+        if (!button || !scoresEl.contains(button)) return;
+
+        setScore(
+          Number(button.dataset.score),
+          button
+        );
+      });
+
+      branchSelect.addEventListener('change', () => {
+        branchDirty = true;
+      });
+
+      submitButton.addEventListener('click', async () => {
+        if (
+          submitInFlight ||
+          feedbackSubmitted ||
+          submitButton.disabled
+        ) {
+          return;
+        }
+
+        setMessage('');
+
+        if (score == null) {
+          setMessage(tr('feedback.chooseScore'));
+          return;
+        }
+
+        const body = {
+          score,
+          comment: byId('comment').value,
+          name: byId('name').value,
+          phone: byId('phone').value,
+          branchId: branchSelect.value || undefined,
+          orderId: params.get('order') || undefined,
+          source: params.get('src') || 'feedback-page',
+        };
+
+        /*
+         * Feedback creation is intentionally not auto-aborted or retried.
+         * The current /api/feedback endpoint has no idempotency-key contract;
+         * retrying after a server-side commit could create a duplicate entry.
+         */
+        submitInFlight = true;
+        submitButton.disabled = true;
+
+        try {
+          const response = await fetch('/api/feedback', {
+            method: 'POST',
+            credentials: 'same-origin',
+            cache: 'no-store',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(body),
+          });
+
+          const data = await readJson(response);
+
+          if (!response.ok) {
+            throw new Error(data?.error || tr('feedback.error'));
+          }
+
+          feedbackSubmitted = true;
+          abortController(metaController);
+          metaController = null;
+
+          formBox.hidden = true;
+          doneBox.hidden = false;
+          byId('thank').textContent =
+            data?.thankYou ||
+            meta?.thankYou ||
+            tr('feedback.thanks');
+        } catch (error) {
+          setMessage(error?.message || tr('feedback.sendFail'));
+        } finally {
+          submitInFlight = false;
+          submitButton.disabled = feedbackSubmitted;
+        }
+      });
+
+      window.addEventListener('offline', () => {
+        abortController(metaController);
+        metaController = null;
+
+        if (!feedbackSubmitted) {
+          setMessage(tr('feedback.offline'));
+        }
+      });
+
+      window.addEventListener('online', () => {
+        if (
+          pageSuspended ||
+          feedbackSubmitted
+        ) {
+          return;
+        }
+
+        loadMeta({ preserveMessage: true });
+      });
+
+      window.addEventListener('pagehide', () => {
+        pageSuspended = true;
+        ++metaGeneration;
+        abortController(metaController);
+        metaController = null;
+      });
+
+      window.addEventListener('pageshow', (event) => {
+        if (!event.persisted) return;
+
+        pageSuspended = false;
+
+        if (!feedbackSubmitted) {
+          loadMeta({ preserveMessage: true });
+        }
+      });
+
+      buildScoreButtons();
+      applyPreselectedScore();
+      loadMeta();
+    })();
+  </script>
+
+  
+</body>
+</html>

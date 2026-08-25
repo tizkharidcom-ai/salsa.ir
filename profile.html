@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+  <link rel="manifest" href="/manifest.webmanifest?v=release14uf1d8-mobile-category-swipe" />
+  <script src="/js/pwa-bootstrap.js?v=release14uf1d8-mobile-category-swipe" defer></script>
+
+  <meta charset="utf-8" />
+  <title data-i18n="profile.documentTitle">پروفایل — Westo</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=5, user-scalable=yes, viewport-fit=cover" />
+  <script>
+    (function () {
+      try {
+        var pref = localStorage.getItem('westo_theme');
+        if (pref !== 'light' && pref !== 'dark' && pref !== 'system') pref = 'system';
+        var t = pref === 'system'
+          ? (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark')
+          : pref;
+        document.documentElement.setAttribute('data-theme', t);
+        document.documentElement.setAttribute('data-theme-pref', pref);
+      } catch (e) {
+        document.documentElement.setAttribute('data-theme', 'dark');
+        document.documentElement.setAttribute('data-theme-pref', 'system');
+      }
+    })();
+  </script>
+<meta name="theme-color" content="#121416" />
+
+
+<link rel="apple-touch-icon" href="/assets/icons/apple-touch-icon.png?v=brandCyan2" />
+  <link rel="stylesheet" href="css/mobile-forms.css?v=brandCyan2" />
+  <meta name="robots" content="noindex" />
+  <link rel="icon" type="image/png" sizes="32x32" href="assets/images/6a1d9bb2854e5557fe84e7d1_westo-fav-dark.png" />
+  <link rel="stylesheet" href="css/westo-glass.css?v=glassAction1" />
+  <link rel="stylesheet" href="css/panel.css?v=logic9" />
+  <script src="js/shamsi-core.js?v=shamsi1"></script>
+
+  <script src="js/theme.js?v=stable1" defer></script>
+  <link rel="stylesheet" href="css/vazir-system.css?v=font1" />
+  <link rel="stylesheet" href="css/westo-production-v11.css?v=prod11" />
+  <link rel="stylesheet" href="css/westo-production-v12.css?v=prod13r9" />
+  <script src="js/design-logic-v13.js?v=logic13r1" defer></script>
+</head>
+<body class="panel-body">
+  <main class="auth-wrap" id="main-content" tabindex="-1">
+    <div class="auth-card">
+      <a href="/"><img class="auth-logo" src="assets/images/brand/westo-wordmark.png?v=brandCyan2" alt="WESTO" width="768" height="431" /></a>
+      <h1 class="auth-title" data-i18n="profile.title">پروفایل من</h1>
+      <p class="auth-sub" id="member-since"></p>
+      <div class="card" id="loyalty-card" style="margin-bottom:1.25rem; text-align:center;">
+        <div class="num" id="loyalty-points">0</div>
+        <div class="lbl" data-i18n="profile.points">امتیاز باشگاه مشتریان</div>
+        <p class="hint" id="loyalty-hint" style="margin-top:0.5rem;"></p>
+      </div>
+
+      <div class="field">
+        <label for="phone" data-i18n="profile.phone">شماره موبایل</label>
+        <input id="phone" autocomplete="tel" dir="ltr" disabled />
+      </div>
+      <div class="field">
+        <label for="name" data-i18n="profile.name">نام</label>
+        <input id="name" autocomplete="name" data-i18n-placeholder="profile.namePh" placeholder="نام شما" />
+      </div>
+      <div class="field">
+        <label for="email" data-i18n="profile.email">ایمیل</label>
+        <input id="email" autocomplete="email" dir="ltr" type="email" placeholder="you@example.com" />
+      </div>
+
+      <button id="save-btn" class="btn" data-i18n="profile.save" type="button">ذخیره تغییرات</button>
+      <p id="msg" class="msg" role="status" aria-live="polite" aria-atomic="true"></p>
+
+      <div style="margin-top: 1rem; display: flex; gap: 0.75rem;">
+        <a href="/" class="btn btn-ghost" style="text-decoration: none;" data-i18n="profile.backSite">بازگشت به سایت</a>
+        <button id="logout-btn" class="btn btn-ghost" data-i18n="profile.logout" type="button">خروج</button>
+      </div>
+      <div id="admin-link-wrap" class="auth-foot hidden"><a href="/admin" data-i18n="profile.admin">ورود به پنل مدیریت</a></div>
+    </div>
+  </main>
+
+  <script src="js/i18n.js?v=logic9-fa-default1"></script>
+  <script>
+    (() => {
+      'use strict';
+
+      const $ = (selector) => document.querySelector(selector);
+      const tr = (key, vars) => window.westoI18n?.t?.(key, vars) || key;
+      const localeTag = () => window.westoI18n?.lang === 'fa' ? 'fa-IR' : window.westoI18n?.lang === 'ar' ? 'ar-SA' : 'en-US';
+      document.title = tr('profile.documentTitle');
+      const ADMIN_ROLES = new Set([
+        'owner',
+        'manager',
+        'cashier',
+        'kitchen',
+        'admin',
+      ]);
+
+      let loadGeneration = 0;
+      let authController = null;
+      let loyaltyController = null;
+      let pageSuspended = false;
+      let profileDirty = false;
+      let currentPhone = '';
+
+      function abortController(controller) {
+        if (!controller) return;
+        try {
+          controller.abort();
+        } catch (_) {}
+      }
+
+      function createController(owner) {
+        const previous =
+          owner === 'auth' ? authController : loyaltyController;
+        abortController(previous);
+
+        const controller = new AbortController();
+        if (owner === 'auth') authController = controller;
+        else loyaltyController = controller;
+        return controller;
+      }
+
+      function setMsg(text, ok = false) {
+        const el = $('#msg');
+        if (!el) return;
+        el.textContent = text || '';
+        el.className = 'msg ' + (text ? (ok ? 'ok' : 'error') : '');
+      }
+
+      async function readJson(response) {
+        try {
+          return await response.json();
+        } catch (_) {
+          return {};
+        }
+      }
+
+      function isAdminRole(role) {
+        return ADMIN_ROLES.has(String(role || '').toLowerCase());
+      }
+
+      function renderUser(user, { preserveEditable = false } = {}) {
+        if (!user) return;
+
+        currentPhone = String(user.phone || '');
+        $('#phone').value = currentPhone;
+
+        if (!preserveEditable || !profileDirty) {
+          $('#name').value = String(user.name || '');
+          $('#email').value = String(user.email || '');
+        }
+
+        const memberSince = $('#member-since');
+        if (user.createdAt) {
+          const date = new Date(user.createdAt);
+          const dateStr = window.ShamsiCore
+            ? window.ShamsiCore.formatShamsiDateLong(date)
+            : date.toLocaleDateString(localeTag(), { year: 'numeric', month: 'long', day: 'numeric' });
+          memberSince.textContent = Number.isNaN(date.getTime())
+            ? ''
+            : tr('profile.memberSince', { date: dateStr });
+        } else {
+          memberSince.textContent = '';
+        }
+
+        const adminWrap = $('#admin-link-wrap');
+        adminWrap.classList.toggle('hidden', !isAdminRole(user.role));
+      }
+
+      function renderLoyalty(data) {
+        const card = $('#loyalty-card');
+        const points = $('#loyalty-points');
+        const hint = $('#loyalty-hint');
+
+        points.textContent = Number(data?.points || 0).toLocaleString(localeTag());
+
+        if (!data?.loyalty?.enabled) {
+          hint.textContent = '';
+          card.style.display = 'none';
+          return;
+        }
+
+        card.style.display = '';
+
+        const rate = Number(data.loyalty.pointsPerToman) || 0;
+        const per = rate > 0 ? Math.round(1 / rate) : 0;
+        const redeemValue = Number(data.loyalty.redeemValue) || 0;
+
+        hint.textContent = per
+          ? tr('profile.loyaltyDesc', { per: per.toLocaleString(localeTag()), value: redeemValue.toLocaleString(localeTag()) })
+          : tr('profile.loyaltyActive');
+      }
+
+      async function loadLoyalty(generation) {
+        if (pageSuspended) return;
+
+        const controller = createController('loyalty');
+
+        try {
+          const response = await fetch('/api/loyalty/me', {
+            credentials: 'same-origin',
+            cache: 'no-store',
+            signal: controller.signal,
+          });
+
+          if (response.status === 401 || response.status === 403) return;
+          if (!response.ok) return;
+
+          const data = await readJson(response);
+
+          if (
+            controller.signal.aborted ||
+            pageSuspended ||
+            generation !== loadGeneration
+          ) {
+            return;
+          }
+
+          renderLoyalty(data);
+        } catch (error) {
+          if (error?.name !== 'AbortError') {
+            // Loyalty is secondary profile content. A transient failure must
+            // never make the authenticated profile unusable.
+          }
+        } finally {
+          if (loyaltyController === controller) loyaltyController = null;
+        }
+      }
+
+      async function loadProfile({ preserveEditable = false } = {}) {
+        if (pageSuspended) return;
+
+        const generation = ++loadGeneration;
+        const controller = createController('auth');
+
+        try {
+          const response = await fetch('/api/auth/me', {
+            credentials: 'same-origin',
+            cache: 'no-store',
+            signal: controller.signal,
+          });
+
+          const data = response.ok ? await readJson(response) : {};
+          const user = data?.user || null;
+
+          if (
+            controller.signal.aborted ||
+            pageSuspended ||
+            generation !== loadGeneration
+          ) {
+            return;
+          }
+
+          if (!user) {
+            location.replace('/login');
+            return;
+          }
+
+          renderUser(user, { preserveEditable });
+
+          // Loyalty is intentionally requested only after authentication is
+          // confirmed, so direct guest visits do not create a guaranteed 401.
+          loadLoyalty(generation);
+        } catch (error) {
+          if (error?.name === 'AbortError') return;
+          if (generation !== loadGeneration || pageSuspended) return;
+          setMsg(tr('profile.loadFail'));
+        } finally {
+          if (authController === controller) authController = null;
+        }
+      }
+
+      $('#name').addEventListener('input', () => {
+        profileDirty = true;
+      });
+
+      $('#email').addEventListener('input', () => {
+        profileDirty = true;
+      });
+
+      $('#save-btn').addEventListener('click', async () => {
+        const button = $('#save-btn');
+        if (button.disabled) return;
+
+        setMsg('');
+        button.disabled = true;
+
+        try {
+          const response = await fetch('/api/auth/profile', {
+            method: 'PATCH',
+            credentials: 'same-origin',
+            cache: 'no-store',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              name: $('#name').value,
+              email: $('#email').value,
+            }),
+          });
+
+          const data = await readJson(response);
+
+          if (response.status === 401) {
+            location.replace('/login');
+            return;
+          }
+
+          if (!response.ok) {
+            setMsg(data?.error || tr('profile.saveFail'));
+            return;
+          }
+
+          if (data?.user) {
+            renderUser(data.user);
+          }
+
+          profileDirty = false;
+          setMsg(tr('profile.saved'), true);
+        } catch (_) {
+          setMsg(tr('profile.networkSave'));
+        } finally {
+          button.disabled = false;
+        }
+      });
+
+      $('#logout-btn').addEventListener('click', async () => {
+        const button = $('#logout-btn');
+        if (button.disabled) return;
+
+        button.disabled = true;
+        setMsg('');
+
+        try {
+          const response = await fetch('/api/auth/logout', {
+            method: 'POST',
+            credentials: 'same-origin',
+            cache: 'no-store',
+          });
+
+          if (!response.ok) {
+            setMsg(tr('profile.logoutFail'));
+            button.disabled = false;
+            return;
+          }
+
+          location.replace('/');
+        } catch (_) {
+          setMsg(tr('profile.networkLogout'));
+          button.disabled = false;
+        }
+      });
+
+      window.addEventListener('offline', () => {
+        abortController(authController);
+        abortController(loyaltyController);
+        authController = null;
+        loyaltyController = null;
+      });
+
+      window.addEventListener('online', () => {
+        if (pageSuspended) return;
+        loadProfile({ preserveEditable: true });
+      });
+
+      window.addEventListener('pagehide', () => {
+        pageSuspended = true;
+        ++loadGeneration;
+        abortController(authController);
+        abortController(loyaltyController);
+        authController = null;
+        loyaltyController = null;
+      });
+
+      window.addEventListener('pageshow', (event) => {
+        if (!event.persisted) return;
+
+        pageSuspended = false;
+
+        // Revalidate the session after bfcache restore, but keep unsaved user
+        // edits intact if authentication is still valid.
+        loadProfile({ preserveEditable: true });
+      });
+
+      loadProfile();
+    })();
+  </script>
+
+  
+</body>
+</html>

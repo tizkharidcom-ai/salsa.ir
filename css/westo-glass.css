@@ -1,0 +1,507 @@
+/* Westo shared glass language — extracted from entrance-gate DNA.
+   Tokens: --wg-* | Components: .wg-glass-btn .wg-chip .wg-cta .wg-panel
+   Brand accent = logo cyan (#78d0d8), not legacy gold. */
+
+:root {
+  --wg-ink: #f4efe6;
+  --wg-muted: rgba(244, 239, 230, 0.66);
+  /* Brand cyan from westo-mark — jewel accent only */
+  --wg-accent: #78d0d8;
+  --wg-accent-deep: #50c0d0;
+  --wg-accent-soft: rgba(120, 208, 216, 0.16);
+  --wg-accent-glow: rgba(120, 208, 216, 0.32);
+  --wg-accent-line: rgba(120, 208, 216, 0.45);
+  /* Legacy alias — do not set independently */
+  --wg-gold: var(--wg-accent);
+  --wg-gold-soft: var(--wg-accent-soft);
+  --wg-gold-line: var(--wg-accent-line);
+  --wg-open: #8fd49a;
+  --wg-closed: #e08a78;
+  --wg-blur: 12px;
+  --wg-blur-panel: 18px;
+  --wg-r-btn: 0.8rem;
+  --wg-r-chip: 0.9rem;
+  --wg-r-panel: 1.35rem;
+  --wg-chip-bg: linear-gradient(
+    160deg,
+    rgba(255, 255, 255, 0.18) 0%,
+    rgba(28, 24, 20, 0.34) 52%,
+    rgba(12, 10, 9, 0.42) 100%
+  );
+  --wg-chip-bg-hover: linear-gradient(
+    160deg,
+    rgba(255, 255, 255, 0.28) 0%,
+    rgba(40, 70, 75, 0.4) 100%
+  );
+  --wg-glass-edge: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.42) 0%,
+    rgba(120, 208, 216, 0.18) 42%,
+    rgba(255, 255, 255, 0.04) 58%,
+    rgba(255, 255, 255, 0.28) 100%
+  );
+  --wg-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --wg-hover-time: 0.22s;
+  --wg-btn-fill: rgba(255, 255, 255, 0.08);
+  --wg-btn-fill-hover: rgba(255, 255, 255, 0.14);
+  --wg-btn-ink: #fff;
+  --wg-chip-ink: rgb(238, 245, 241);
+  --wg-chip-border: rgba(255, 255, 255, 0.13);
+  --wg-chip-border-hover: rgba(255, 255, 255, 0.26);
+  --wg-panel-border: rgba(255, 255, 255, 0.14);
+  --wg-panel-bg: linear-gradient(
+    155deg,
+    rgba(255, 255, 255, 0.14) 0%,
+    rgba(255, 255, 255, 0.05) 42%,
+    rgba(14, 12, 11, 0.55) 100%
+  );
+  --wg-cta-bg: #f4efe6;
+  --wg-cta-ink: #1a1714;
+  --wg-cta-border: transparent;
+  --wg-theme-color: #121416;
+  --wg-focus-ring: rgba(120, 208, 216, 0.7);
+}
+
+/* Light contract: cream surfaces + charcoal ink; primary CTA = charcoal/cream.
+   Accent deep teal for contrast on cream. Never flood cyan backgrounds. */
+html[data-theme='light'] {
+  --wg-ink: #1a1714;
+  --wg-muted: rgba(26, 23, 20, 0.64);
+  --wg-accent: #2a7a86;
+  --wg-accent-deep: #1f636e;
+  --wg-accent-soft: rgba(42, 122, 134, 0.14);
+  --wg-accent-glow: rgba(42, 122, 134, 0.22);
+  --wg-accent-line: rgba(42, 122, 134, 0.42);
+  --wg-gold: var(--wg-accent);
+  --wg-gold-soft: var(--wg-accent-soft);
+  --wg-gold-line: var(--wg-accent-line);
+  /* Raised paper chrome — not muddy translucent gray */
+  --wg-chrome-bg: #fffcf7;
+  --wg-chrome-bg-hover: #fff8ef;
+  --wg-chrome-border: rgba(26, 23, 20, 0.14);
+  --wg-chrome-border-hover: rgba(42, 122, 134, 0.45);
+  --wg-chrome-shadow:
+    0 1px 1px rgba(26, 23, 20, 0.04),
+    0 0.35rem 0.85rem rgba(26, 23, 20, 0.08);
+  --wg-chip-bg: linear-gradient(165deg, #ffffff 0%, #fffcf7 48%, #f7f0e6 100%);
+  --wg-chip-bg-hover: linear-gradient(165deg, #ffffff 0%, #faf3e8 100%);
+  --wg-glass-edge: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.95) 0%,
+    rgba(26, 23, 20, 0.08) 42%,
+    rgba(42, 122, 134, 0.28) 58%,
+    rgba(26, 23, 20, 0.12) 100%
+  );
+  --wg-btn-fill: var(--wg-chrome-bg);
+  --wg-btn-fill-hover: var(--wg-chrome-bg-hover);
+  --wg-btn-ink: #1a1714;
+  --wg-chip-ink: #1a1714;
+  --wg-chip-border: var(--wg-chrome-border);
+  --wg-focus-ring: rgba(42, 122, 134, 0.7);
+  --wg-chip-border-hover: var(--wg-chrome-border-hover);
+  --wg-panel-border: rgba(26, 23, 20, 0.1);
+  --wg-panel-bg: linear-gradient(
+    165deg,
+    #ffffff 0%,
+    #fffcf8 42%,
+    #f8f2e9 100%
+  );
+  --wg-cta-bg: #1a1714;
+  --wg-cta-ink: #f7f2ea;
+  --wg-cta-border: transparent;
+  --wg-theme-color: #ebe4d8;
+  /* Atmosphere defaults — soft; chrome accent stays brand cyan */
+  --cat-wash: #ebe4d8;
+  --cat-surface: #f4efe6;
+  --cat-accent: var(--wg-accent);
+  --cat-accent-soft: var(--wg-accent-soft);
+  --cat-glow: var(--wg-accent-glow);
+  --lux-page: #ebe4d8;
+  --lux-surface: #f4efe6;
+  --lux-raised: #fffcf7;
+  --lux-price-bg: linear-gradient(165deg, #f4fbfc 0%, #e4f2f4 100%);
+  --lux-price-border: rgba(42, 122, 134, 0.38);
+  --lux-price-ink: #1a1714;
+}
+
+/* —— Glass control (header pills / icon squares) —— */
+.wg-glass-btn {
+  appearance: none;
+  position: relative;
+  overflow: hidden;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--wg-r-btn);
+  background: var(--wg-btn-fill);
+  color: var(--wg-btn-ink);
+  text-decoration: none;
+  cursor: pointer;
+  font-family: 'Vazirmatn', 'Geist', system-ui, sans-serif;
+  font-weight: 600;
+  line-height: 1;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-backdrop-filter: blur(var(--wg-blur));
+  backdrop-filter: blur(var(--wg-blur));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18);
+  transition:
+    transform var(--wg-hover-time) var(--wg-ease),
+    background var(--wg-hover-time) ease;
+}
+
+.wg-glass-btn::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: var(--wg-glass-edge);
+  -webkit-mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+}
+
+.wg-glass-btn:hover,
+.wg-glass-btn:focus-visible,
+.wg-glass-btn.is-active,
+.wg-glass-btn.is-open {
+  background: var(--wg-btn-fill-hover);
+  outline: none;
+  transform: translateY(-1px);
+}
+
+.wg-glass-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.wg-glass-btn--pill {
+  border-radius: 999px;
+  padding: 0 0.85rem;
+  min-height: 2.6rem;
+}
+
+.wg-glass-btn--icon {
+  width: 2.6rem;
+  height: 2.6rem;
+  flex: 0 0 auto;
+}
+
+/* —— Chip material (icon chips + primary CTAs) —— */
+.wg-chip,
+.wg-cta {
+  appearance: none;
+  position: relative;
+  overflow: hidden;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  margin: 0;
+  border: 1px solid var(--wg-chip-border);
+  border-radius: var(--wg-r-chip);
+  background: var(--wg-chip-bg);
+  color: var(--wg-chip-ink);
+  cursor: pointer;
+  font-family: 'Vazirmatn', 'Geist', system-ui, sans-serif;
+  font-weight: 700;
+  text-decoration: none;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-backdrop-filter: blur(var(--wg-blur));
+  backdrop-filter: blur(var(--wg-blur));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.24),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.22);
+  transition:
+    background 0.2s ease,
+    border-color 0.2s ease,
+    transform 0.2s var(--wg-ease);
+}
+
+.wg-chip::after,
+.wg-cta::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 44%;
+  background: linear-gradient(rgba(255, 255, 255, 0.22) 0%, rgba(255, 255, 255, 0) 100%);
+  pointer-events: none;
+  z-index: 1;
+}
+
+.wg-chip > *,
+.wg-cta > * {
+  position: relative;
+  z-index: 2;
+}
+
+.wg-chip {
+  width: 3.05rem;
+  height: 3.05rem;
+  flex: 0 0 auto;
+  padding: 0;
+}
+
+.wg-chip:hover,
+.wg-chip:focus-visible,
+.wg-chip.is-active {
+  background: var(--wg-chip-bg-hover);
+  border-color: var(--wg-chip-border-hover);
+  outline: none;
+  transform: translateY(-2px);
+}
+
+.wg-cta {
+  width: 100%;
+  min-height: 3.15rem;
+  padding: 0.85rem 1.2rem;
+  font-size: 1rem;
+  background: var(--wg-cta-bg, var(--wg-chip-bg));
+  color: var(--wg-cta-ink, var(--wg-btn-ink));
+  border-color: var(--wg-cta-border, var(--wg-chip-border));
+}
+
+html[data-theme='light'] .wg-cta {
+  background: var(--wg-cta-bg);
+  color: var(--wg-cta-ink);
+  border-color: var(--wg-cta-border);
+  box-shadow: 0 0.65rem 1.5rem rgba(26, 23, 20, 0.2);
+}
+
+html[data-theme='light'] .wg-cta::after {
+  opacity: 0.12;
+}
+
+.wg-cta:not(:disabled):hover,
+.wg-cta:not(:disabled):focus-visible {
+  transform: translateY(-2px);
+  border-color: rgba(120, 208, 216, 0.45);
+  background: var(--wg-chip-bg-hover);
+  outline: none;
+}
+
+html[data-theme='light'] .wg-cta:not(:disabled):hover,
+html[data-theme='light'] .wg-cta:not(:disabled):focus-visible {
+  background: #2a2521;
+  border-color: rgba(42, 122, 134, 0.55);
+  color: var(--wg-cta-ink);
+}
+
+.wg-cta:disabled {
+  cursor: wait;
+  opacity: 0.8;
+}
+
+.wg-cta--sm {
+  min-height: 2.55rem;
+  padding: 0.65rem 1rem;
+  font-size: 0.9rem;
+  border-radius: 0.75rem;
+}
+
+.wg-cta--inline {
+  width: auto;
+  min-width: 8rem;
+  padding-inline: 1.25rem;
+}
+
+/* —— Glass panel / card —— */
+.wg-panel {
+  position: relative;
+  box-sizing: border-box;
+  border-radius: var(--wg-r-panel);
+  border: 1px solid var(--wg-panel-border);
+  background: var(--wg-panel-bg);
+  color: var(--wg-ink);
+  -webkit-backdrop-filter: blur(var(--wg-blur-panel)) saturate(1.15);
+  backdrop-filter: blur(var(--wg-blur-panel)) saturate(1.15);
+  box-shadow:
+    0 1.2rem 2.8rem rgba(0, 0, 0, 0.42),
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.05);
+}
+
+html[data-theme='light'] .wg-panel {
+  box-shadow:
+    0 1rem 2.2rem rgba(26, 23, 20, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.7),
+    inset 0 -1px 0 rgba(26, 23, 20, 0.04);
+}
+
+.wg-panel--dense {
+  --wg-blur-panel: 10px;
+  border-radius: 1rem;
+  background:
+    linear-gradient(
+      155deg,
+      rgba(255, 255, 255, 0.1) 0%,
+      rgba(18, 16, 18, 0.72) 55%,
+      rgba(10, 9, 11, 0.82) 100%
+    );
+}
+
+/* Must follow .wg-panel--dense so light wins cascade */
+html[data-theme='light'] .wg-panel--dense {
+  background: linear-gradient(
+    155deg,
+    rgba(255, 255, 255, 0.95) 0%,
+    rgba(242, 235, 224, 0.92) 55%,
+    rgba(232, 222, 206, 0.95) 100%
+  );
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wg-glass-btn,
+  .wg-chip,
+  .wg-cta {
+    transition: none !important;
+  }
+  .wg-glass-btn:hover,
+  .wg-glass-btn:focus-visible,
+  .wg-chip:hover,
+  .wg-chip:focus-visible,
+  .wg-cta:not(:disabled):hover,
+  .wg-cta:not(:disabled):focus-visible {
+    transform: none;
+  }
+}
+
+/* ---- Pass2: secondary densify + focus ---- */
+html[data-theme='light'] .wg-glass-btn {
+  background: var(--wg-chrome-bg, #fffcf7);
+  color: var(--wg-btn-ink);
+  border: 1px solid var(--wg-chrome-border, rgba(26, 23, 20, 0.14));
+  box-shadow: var(--wg-chrome-shadow);
+}
+html[data-theme='light'] .wg-glass-btn:hover,
+html[data-theme='light'] .wg-glass-btn:focus-visible,
+html[data-theme='light'] .wg-glass-btn.is-active,
+html[data-theme='light'] .wg-glass-btn.is-open {
+  background: var(--wg-chrome-bg-hover, #fff8ef);
+  border-color: var(--wg-chrome-border-hover);
+}
+html[data-theme='light'] .wg-glass-btn:focus-visible,
+html[data-theme='light'] .wg-chip:focus-visible,
+html[data-theme='light'] .wg-cta:focus-visible {
+  outline: 2px solid rgba(42, 122, 134, 0.65);
+  outline-offset: 2px;
+}
+html[data-theme='light'] .wg-chip {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.85),
+    0 0.35rem 0.85rem rgba(26, 23, 20, 0.1);
+}
+
+/* ---- Pass3 stage2: secondary contract ---- */
+html[data-theme='light'] .wg-glass-btn:focus-visible,
+html[data-theme='light'] .wg-chip:focus-visible,
+html[data-theme='light'] .wg-cta:focus-visible {
+  outline-color: var(--wg-focus-ring, rgba(42, 122, 134, 0.65));
+}
+
+/* ---- Pass3 stage9: sitewide light safety net ---- */
+html[data-theme='light'] ::selection {
+  background: rgba(42, 122, 134, 0.28);
+  color: #1a1714;
+}
+html[data-theme='light'] body {
+  color: var(--wg-ink, #1a1714);
+}
+html[data-theme='light'] a {
+  color: inherit;
+}
+
+/* Shared action material. It deliberately uses the same quiet glass language
+   as the header chrome: a readable surface, a fine rim, and no heavy fill. */
+:root {
+  --wg-action-bg: rgba(255, 255, 255, 0.08);
+  --wg-action-bg-hover: rgba(255, 255, 255, 0.14);
+  --wg-action-ink: #f8f6f0;
+  --wg-action-edge: rgba(255, 255, 255, 0.2);
+  --wg-action-edge-hover: rgba(120, 208, 216, 0.58);
+  --wg-action-glow: rgba(120, 208, 216, 0.18);
+  --wg-action-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.2),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.22),
+    0 0.35rem 0.95rem rgba(0, 0, 0, 0.2);
+  --wg-action-highlight: rgba(255, 255, 255, 0.16);
+}
+
+html[data-theme='light'] {
+  --wg-action-bg: rgba(255, 252, 247, 0.72);
+  --wg-action-bg-hover: rgba(255, 252, 247, 0.9);
+  --wg-action-ink: #1a1714;
+  --wg-action-edge: rgba(26, 23, 20, 0.15);
+  --wg-action-edge-hover: rgba(42, 122, 134, 0.5);
+  --wg-action-glow: rgba(42, 122, 134, 0.14);
+  --wg-action-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.78),
+    inset 0 -1px 0 rgba(26, 23, 20, 0.06),
+    0 0.32rem 0.9rem rgba(26, 23, 20, 0.1);
+  --wg-action-highlight: rgba(255, 255, 255, 0.52);
+}
+
+/* ===== WESTO shared GPU budget (release3 / mobile adaptive) ===== */
+html[data-perf-tier="economy"] {
+  --wg-blur: 0px;
+  --wg-blur-panel: 0px;
+}
+html[data-perf-tier="balanced"] {
+  --wg-blur: 4px;
+  --wg-blur-panel: 8px;
+}
+html[data-perf-tier="premium"] {
+  --wg-blur: 10px;
+  --wg-blur-panel: 14px;
+}
+html[data-perf-tier="economy"] .wg-glass-btn,
+html[data-perf-tier="economy"] .wg-chip,
+html[data-perf-tier="economy"] .wg-panel,
+html[data-perf-tier="economy"] .eg-card,
+html[data-perf-tier="economy"] .eg-sheet,
+html[data-perf-tier="economy"] .navbar,
+html[data-perf-tier="economy"] .table-drawer,
+html.perf-economy .wg-glass-btn,
+html.perf-economy .wg-chip,
+html.perf-economy .wg-panel,
+html.perf-economy .eg-card,
+html.perf-economy .eg-sheet,
+html.perf-economy .navbar,
+html.perf-economy .table-drawer {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+
+@media (max-width: 991px), (pointer: coarse) {
+  html[data-perf-tier="economy"],
+  html[data-perf-tier="balanced"] {
+    --wg-blur: 0px;
+    --wg-blur-panel: 0px;
+  }
+  html[data-perf-tier="economy"] .wg-glass-btn,
+  html[data-perf-tier="economy"] .wg-chip,
+  html[data-perf-tier="economy"] .wg-panel,
+  html[data-perf-tier="economy"] .eg-card,
+  html[data-perf-tier="economy"] .eg-sheet,
+  html[data-perf-tier="balanced"] .eg-card,
+  html[data-perf-tier="balanced"] .eg-sheet {
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+  }
+}
+
