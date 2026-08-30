@@ -14,8 +14,9 @@
   const lang = () => i18n()?.lang || 'fa';
   const tr = (key, vars) => i18n()?.t?.(key, vars) || key;
   const localeTag = () => (lang() === 'fa' ? 'fa-IR' : lang() === 'ar' ? 'ar-SA' : 'en-US');
-  const fmtMoney = (value) => `${Number(value || 0).toLocaleString(localeTag())} ${tr('currency.toman')}`;
-  const fmtNum = (value) => Number(value || 0).toLocaleString(localeTag());
+  const fmtNumber = (value, options = {}) => window.WestoPersianFormat?.number(value, { ...options, locale: localeTag() }) ?? Number(value || 0).toLocaleString(localeTag(), options);
+  const fmtMoney = (value) => `${fmtNumber(value)} ${tr('currency.toman')}`;
+  const fmtNum = (value) => fmtNumber(value);
   const itemName = (item) => i18n()?.itemName?.(item) || String(item?.name || '');
   const itemDesc = (item) => i18n()?.itemDesc?.(item) || String(item?.desc || '');
   const categoryTitle = (category) => i18n()?.catTitle?.(category) || String(category?.title || category?.name || '');
@@ -267,9 +268,23 @@
     );
     const quote = state.quote?.ok ? state.quote : null;
     const deliveryFee = quote?.deliveryFee || 0;
-    const total = quote?.total ?? subtotal + deliveryFee;
+    const tierDiscount = quote?.tierDiscountToman || 0;
+    const pointsDiscount = quote?.pointsDiscountToman || 0;
+    const total = quote?.total ?? Math.max(0, subtotal + deliveryFee - (tierDiscount + pointsDiscount));
 
-    totals.innerHTML = `<div><span>${esc(tr('checkout.subtotal'))}</span><b>${fmtMoney(subtotal)}</b></div>${deliveryFee ? `<div><span>${esc(tr('checkout.deliveryFee'))}</span><b>${fmtMoney(deliveryFee)}</b></div>` : ''}<div class="is-total"><span>${esc(tr('checkout.payable'))}</span><b>${fmtMoney(total)}</b></div>`;
+    let html = `<div><span>${esc(tr('checkout.subtotal'))}</span><b>${fmtMoney(subtotal)}</b></div>`;
+    if (tierDiscount) {
+      html += `<div style="color:#a855f7;"><span>تخفیف باشگاه (${esc(quote?.tier?.name || 'وفاداری')}):</span><b>-${fmtMoney(tierDiscount)}</b></div>`;
+    }
+    if (pointsDiscount) {
+      html += `<div style="color:#f59e0b;"><span>کسر امتیاز باشگاه (${fmtNum(quote?.pointsRedeemed || 0)} امتیاز):</span><b>-${fmtMoney(pointsDiscount)}</b></div>`;
+    }
+    if (deliveryFee) {
+      html += `<div><span>${esc(tr('checkout.deliveryFee'))}</span><b>${fmtMoney(deliveryFee)}</b></div>`;
+    }
+    html += `<div class="is-total"><span>${esc(tr('checkout.payable'))}</span><b>${fmtMoney(total)}</b></div>`;
+
+    totals.innerHTML = html;
     submitButton.disabled = !state.cart.size || state.submitting;
   }
 
@@ -279,6 +294,11 @@
     setHidden($('checkout-zone-wrap'), fulfillment !== 'delivery');
     setHidden($('checkout-address-wrap'), fulfillment !== 'delivery');
     setHidden($('checkout-instructions-wrap'), fulfillment !== 'delivery');
+    setHidden($('checkout-saved-addresses-wrap'), fulfillment !== 'delivery' || !(state.userAddresses?.length));
+
+    if (fulfillment === 'delivery' && state.userAddresses?.length) {
+      renderCheckoutAddresses();
+    }
 
     const submit = $('checkout-submit');
     const payment = $('checkout-payment');
@@ -290,6 +310,218 @@
     }
 
     refreshQuote();
+  }
+
+  function renderCheckoutAddresses() {
+    const wrap = $('checkout-saved-addresses-wrap');
+    const list = $('checkout-addresses-list');
+    if (!wrap || !list) return;
+
+    const fulfillment = activeFulfillment();
+    const addresses = state.userAddresses || [];
+
+    if (fulfillment !== 'delivery' || !addresses.length) {
+      setHidden(wrap, true);
+      return;
+    }
+
+    setHidden(wrap, false);
+    list.innerHTML = addresses.map((addr, idx) => {
+      const isDef = !!addr.isDefault || idx === 0;
+      const fullAddr = [
+        addr.city,
+        addr.district,
+        addr.address,
+        addr.plaque ? `پلاک ${addr.plaque}` : '',
+        addr.unit ? `واحد ${addr.unit}` : '',
+      ].filter(Boolean).join('، ');
+
+      return `
+        <label class="checkout-addr-option" style="display:flex; align-items:flex-start; gap:0.5rem; background:rgba(255,255,255,0.04); border:1px solid ${isDef ? '#10b981' : 'rgba(255,255,255,0.1)'}; border-radius:0.5rem; padding:0.5rem; cursor:pointer;">
+          <input type="radio" name="selected_checkout_addr" value="${esc(addr.id)}" ${isDef ? 'checked' : ''} style="margin-top:0.2rem;" />
+          <div style="flex:1; font-size:0.78rem;">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <b style="color:#fff;">${esc(addr.title || '📍 نشانی')}</b>
+              ${addr.isDefault ? '<span class="pill" style="font-size:0.65rem; background:#10b981; color:#fff; padding:0 0.35rem;">پیش‌فرض</span>' : ''}
+            </div>
+            <div style="color:var(--text-muted); margin-top:0.15rem; line-height:1.35;">${esc(fullAddr)}</div>
+          </div>
+        </label>
+      `;
+    }).join('') + `
+      <label class="checkout-addr-option" style="display:flex; align-items:center; gap:0.5rem; background:rgba(255,255,255,0.02); border:1px dashed rgba(255,255,255,0.15); border-radius:0.5rem; padding:0.45rem 0.5rem; cursor:pointer;">
+        <input type="radio" name="selected_checkout_addr" value="custom" style="margin-top:0;" />
+        <span style="font-size:0.75rem; color:var(--text-muted);">✍️ آدرس جدید یا دستی (وارد کردن در کادر زیر)</span>
+      </label>
+    `;
+
+    // Automatically fill the default address if empty
+    const addrField = $('checkout-address');
+    if (!addrField?.value) {
+      const defaultAddr = addresses.find((a) => a.isDefault) || addresses[0];
+      if (defaultAddr) applyAddressToFields(defaultAddr);
+    }
+
+    list.querySelectorAll('input[name="selected_checkout_addr"]').forEach((radio) => {
+      radio.addEventListener('change', () => {
+        list.querySelectorAll('.checkout-addr-option').forEach(o => {
+          o.style.borderColor = 'rgba(255,255,255,0.1)';
+        });
+        radio.closest('.checkout-addr-option').style.borderColor = '#10b981';
+
+        if (radio.value === 'custom') {
+          if (addrField) {
+            addrField.value = '';
+            addrField.focus();
+          }
+        } else {
+          const chosen = addresses.find((a) => a.id === radio.value);
+          if (chosen) applyAddressToFields(chosen);
+        }
+      });
+    });
+  }
+
+  function applyAddressToFields(addr) {
+    const fullAddr = [
+      addr.city,
+      addr.district,
+      addr.address,
+      addr.plaque ? `پلاک ${addr.plaque}` : '',
+      addr.floor ? `طبقه ${addr.floor}` : '',
+      addr.unit ? `واحد ${addr.unit}` : '',
+    ].filter(Boolean).join('، ');
+
+    const addrField = $('checkout-address');
+    const noteField = $('checkout-instructions');
+    if (addrField) addrField.value = fullAddr;
+    if (noteField && addr.note) noteField.value = addr.note;
+  }
+
+  function initCheckoutAddressModal() {
+    const modal = $('address-modal');
+    if (!modal) return;
+
+    $('checkout-add-addr-btn')?.addEventListener('click', () => {
+      $('#modal-addr-id').value = '';
+      $('#modal-addr-title').value = '🏠 منزل';
+      document.querySelectorAll('.addr-title-pill').forEach(pill => {
+        pill.classList.toggle('is-active', pill.dataset.title === '🏠 منزل');
+      });
+      $('#modal-addr-city').value = 'مشهد';
+      $('#modal-addr-district').value = '';
+      $('#modal-addr-street').value = '';
+      $('#modal-addr-plaque').value = '';
+      $('#modal-addr-floor').value = '';
+      $('#modal-addr-unit').value = '';
+      $('#modal-addr-receiver-name').value = $('checkout-name')?.value || state.user?.name || '';
+      $('#modal-addr-receiver-phone').value = $('checkout-phone')?.value || state.user?.phone || '';
+      $('#modal-addr-note').value = '';
+      $('#modal-addr-default').checked = true;
+
+      const msgEl = $('#modal-addr-msg');
+      if (msgEl) msgEl.textContent = '';
+
+      modal.style.display = 'flex';
+    });
+
+    $('#close-address-modal-btn')?.addEventListener('click', () => {
+      modal.style.display = 'none';
+    });
+
+    modal.addEventListener('click', (e) => {
+      if (e.target === modal) modal.style.display = 'none';
+    });
+
+    document.querySelectorAll('.addr-title-pill').forEach(pill => {
+      pill.addEventListener('click', () => {
+        document.querySelectorAll('.addr-title-pill').forEach(p => {
+          p.style.color = 'var(--text-muted)';
+          p.classList.remove('is-active');
+        });
+        pill.classList.add('is-active');
+        pill.style.color = '#10b981';
+        $('#modal-addr-title').value = pill.dataset.title;
+      });
+    });
+
+    $('#save-address-modal-btn')?.addEventListener('click', async () => {
+      const street = $('#modal-addr-street').value.trim();
+      const msgEl = $('#modal-addr-msg');
+      if (!street) {
+        if (msgEl) {
+          msgEl.className = 'msg error';
+          msgEl.textContent = 'لطفاً نشانی پستی دقیق (خیابان، کوچه) را وارد کنید.';
+        }
+        return;
+      }
+
+      const btn = $('#save-address-modal-btn');
+      btn.disabled = true;
+      btn.textContent = 'در حال ذخیره…';
+
+      try {
+        const res = await fetch('/api/user/addresses', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'same-origin',
+          body: JSON.stringify({
+            title: $('#modal-addr-title').value.trim(),
+            city: $('#modal-addr-city').value.trim(),
+            district: $('#modal-addr-district').value.trim(),
+            address: street,
+            plaque: $('#modal-addr-plaque').value.trim(),
+            floor: $('#modal-addr-floor').value.trim(),
+            unit: $('#modal-addr-unit').value.trim(),
+            receiverName: $('#modal-addr-receiver-name').value.trim(),
+            receiverPhone: $('#modal-addr-receiver-phone').value.trim(),
+            note: $('#modal-addr-note').value.trim(),
+            isDefault: $('#modal-addr-default').checked,
+          }),
+        });
+
+        const data = await res.json();
+        if (res.ok && data.ok) {
+          state.userAddresses = data.addresses || [];
+          renderCheckoutAddresses();
+          if (data.address) applyAddressToFields(data.address);
+          modal.style.display = 'none';
+        } else {
+          if (msgEl) {
+            msgEl.className = 'msg error';
+            msgEl.textContent = data.error || 'خطا در ذخیره نشانی';
+          }
+        }
+      } catch (_) {
+        if (msgEl) {
+          msgEl.className = 'msg error';
+          msgEl.textContent = 'خطای اتصال به سرور';
+        }
+      } finally {
+        btn.disabled = false;
+        btn.textContent = '💾 ذخیره نشانی';
+      }
+    });
+  }
+
+  async function loadUserAddresses() {
+    try {
+      const res = await api('/api/auth/me');
+      if (res && res.user) {
+        state.user = res.user;
+        const nameInput = $('checkout-name');
+        const phoneInput = $('checkout-phone');
+        if (nameInput && !nameInput.value) nameInput.value = res.user.name || '';
+        if (phoneInput && !phoneInput.value) phoneInput.value = res.user.phone || '';
+
+        const addresses = Array.isArray(res.user.addresses) ? res.user.addresses : [];
+        state.userAddresses = addresses;
+        if (activeFulfillment() === 'delivery') {
+          renderCheckoutAddresses();
+        }
+      }
+    } catch (_) {}
+    initCheckoutAddressModal();
   }
 
   async function loadCheckoutMeta(requestedBranchId = state.branchId) {
@@ -390,6 +622,8 @@
             branchId: state.branchId,
             tableNo: $('checkout-table')?.value || '',
             deliveryZoneId: $('checkout-zone')?.value || '',
+            phone: $('checkout-phone')?.value.trim() || '',
+            redeemPoints: state.redeemPoints || 0,
           }),
           signal: controller.signal,
           timeoutMs: 10000,
@@ -446,19 +680,35 @@
     const form = $('checkout-form');
     const success = $('checkout-success');
     const sandbox = $('sandbox-confirm');
+    const badge = $('checkout-order-badge');
+
+    state.submitting = false;
+    state.cart.clear();
+    renderCart();
+    renderTotals();
 
     setHidden(form, true);
     setHidden(success, false);
+
+    if (badge) {
+      badge.textContent = order.orderNo || `W-${order.id}`;
+    }
+
+    const isOnlinePending = payment?.status === 'pending';
     setText(
       $('checkout-success-title'),
-      payment?.status === 'pending'
-        ? tr('checkout.pendingOnline')
-        : tr('checkout.orderSuccess'),
+      isOnlinePending
+        ? 'ثبت اولیه سفارش (در انتظار پرداخت آنلاین)'
+        : 'سفارش با موفقیت به آشپزخانه ارسال شد',
     );
-    setText(
-      $('checkout-success-body'),
-      `${tr('checkout.orderBody', { id: order.id, total: fmtMoney(order.total) })}${order.fulfillment === 'delivery' ? ` ${tr('checkout.deliveryEta', { n: fmtNum(order.delivery?.etaMinutes || 0) })}` : ''}`,
-    );
+
+    let summaryText = `سفارش شما به مبلغ ${fmtMoney(order.total)} با موفقیت در سیستم ثبت گردید.`;
+    if (order.fulfillment === 'delivery') {
+      summaryText += ` زمان تقریبی ارسال پیک: حدود ${fmtNum(order.delivery?.etaMinutes || 35)} دقیقه.`;
+    } else if (order.fulfillment === 'dine_in') {
+      summaryText += ` شماره میز: ${esc(order.tableNo)}.`;
+    }
+    setText($('checkout-success-body'), summaryText);
 
     if (!sandbox) return;
     sandbox.onclick = null;
@@ -473,6 +723,7 @@
       sandbox.onclick = async () => {
         if (sandbox.disabled) return;
         sandbox.disabled = true;
+        sandbox.textContent = 'در حال اعتبارسنجی پرداخت…';
 
         try {
           const result = await api(
@@ -483,14 +734,15 @@
               timeoutMs: 15000,
             },
           );
-          setText($('checkout-success-title'), tr('checkout.sandboxSuccess'));
+          setText($('checkout-success-title'), 'پرداخت آنلاین با موفقیت تأیید شد');
           setText(
             $('checkout-success-body'),
-            tr('checkout.sandboxBody', { id: result.order.id }),
+            `سفارش شماره ${result.order?.orderNo || result.order?.id} با موفقیت تسویه و امتیاز باشگاه برای شما منظور گردید.`,
           );
           sandbox.hidden = true;
         } catch (error) {
           sandbox.disabled = false;
+          sandbox.textContent = '✓ تأیید پرداخت آنلاین';
           setText($('checkout-success-body'), error.message);
         }
       };
@@ -517,6 +769,7 @@
       name: $('checkout-name')?.value.trim() || '',
       phone: $('checkout-phone')?.value.trim() || '',
       paymentMethod: $('checkout-payment')?.value || 'online',
+      redeemPoints: state.redeemPoints || 0,
       note: $('checkout-note')?.value.trim() || '',
     };
 
@@ -634,6 +887,7 @@
       rebuildIndexes();
 
       bindListeners();
+      loadUserAddresses();
       if (context.tableNo) {
         const dineIn = document.querySelector('input[name="fulfillment"][value="dine_in"]');
         if (dineIn) dineIn.checked = true;
@@ -648,11 +902,26 @@
           const hint = document.createElement('small');
           hint.id = 'checkout-qr-hint';
           hint.className = 'checkout-qr-hint';
-          hint.textContent = 'شماره میز از QR همین میز وارد شده است.';
+          hint.textContent = tr('cart.qrPrefilled');
           tableWrap.appendChild(hint);
         }
       }
       renderCategories();
+      try {
+        const reorderRaw = sessionStorage.getItem('westo_reorder_items');
+        if (reorderRaw) {
+          sessionStorage.removeItem('westo_reorder_items');
+          const items = JSON.parse(reorderRaw);
+          if (Array.isArray(items)) {
+            items.forEach(it => {
+              const mId = it.menuItemId || it.id;
+              if (mId && (it.qty || it.quantity)) {
+                state.cart.set(mId, Number(it.qty || it.quantity) || 1);
+              }
+            });
+          }
+        }
+      } catch (_) {}
       renderCart();
       syncFulfillmentFields();
 

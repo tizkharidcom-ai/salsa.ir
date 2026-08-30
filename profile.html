@@ -1,11 +1,11 @@
 <!DOCTYPE html>
 <html lang="fa" dir="rtl">
 <head>
-  <link rel="manifest" href="/manifest.webmanifest?v=release14uf1d8-mobile-category-swipe" />
-  <script src="/js/pwa-bootstrap.js?v=release14uf1d8-mobile-category-swipe" defer></script>
+  <link rel="manifest" href="/manifest.webmanifest?v=release14uf1d28-webp-only" />
+  <script src="/js/pwa-bootstrap.js?v=release14uf1d28-webp-only" defer></script>
 
   <meta charset="utf-8" />
-  <title data-i18n="profile.documentTitle">پروفایل — Westo</title>
+  <title data-i18n="profile.documentTitle">پروفایل — وستو</title>
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=5, user-scalable=yes, viewport-fit=cover" />
   <script>
     (function () {
@@ -23,60 +23,1054 @@
       }
     })();
   </script>
-<meta name="theme-color" content="#121416" />
+  <meta name="theme-color" content="#121416" />
 
-
-<link rel="apple-touch-icon" href="/assets/icons/apple-touch-icon.png?v=brandCyan2" />
+  <link rel="apple-touch-icon" href="/assets/icons/apple-touch-icon.png?v=brandCyan2" />
   <link rel="stylesheet" href="css/mobile-forms.css?v=brandCyan2" />
   <meta name="robots" content="noindex" />
   <link rel="icon" type="image/png" sizes="32x32" href="assets/images/6a1d9bb2854e5557fe84e7d1_westo-fav-dark.png" />
   <link rel="stylesheet" href="css/westo-glass.css?v=glassAction1" />
   <link rel="stylesheet" href="css/panel.css?v=logic9" />
+  <link rel="stylesheet" href="css/shamsi-wheel-picker.css?v=applePicker2" />
+  <link rel="stylesheet" href="css/profile-dashboard.css?v=dashV2" />
+  
   <script src="js/shamsi-core.js?v=shamsi1"></script>
-
+  <script src="js/persian-format.js?v=persianNumbers1"></script>
+  <script src="js/shamsi-wheel-picker.js?v=applePicker2"></script>
   <script src="js/theme.js?v=stable1" defer></script>
   <link rel="stylesheet" href="css/vazir-system.css?v=font1" />
   <link rel="stylesheet" href="css/westo-production-v11.css?v=prod11" />
   <link rel="stylesheet" href="css/westo-production-v12.css?v=prod13r9" />
   <script src="js/design-logic-v13.js?v=logic13r1" defer></script>
+
+  <style>
+    .tier-badge { display:inline-flex; align-items:center; gap:0.35rem; padding:0.2rem 0.6rem; border-radius:9999px; font-size:0.8rem; font-weight:700; }
+    .tier-badge-bronze { background:rgba(205,127,50,0.15); color:#d97706; border:1px solid rgba(205,127,50,0.4); }
+    .tier-badge-silver { background:rgba(148,163,184,0.15); color:#94a3b8; border:1px solid rgba(148,163,184,0.4); }
+    .tier-badge-gold { background:rgba(245,158,11,0.18); color:#fbbf24; border:1px solid rgba(245,158,11,0.45); }
+    .tier-badge-vip { background:linear-gradient(135deg,rgba(168,85,247,0.25),rgba(236,72,153,0.25)); color:#e879f9; border:1px solid rgba(216,70,239,0.5); }
+
+    .apple-date-trigger {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      width: 100%;
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      border-radius: 0.5rem;
+      padding: 0.6rem 0.85rem;
+      color: #ffffff;
+      font-family: inherit;
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+      text-align: right;
+      transition: all 0.2s;
+    }
+    .apple-date-trigger:hover:not(.is-locked) {
+      border-color: #10b981;
+      background: rgba(16, 185, 129, 0.12);
+    }
+    .apple-date-trigger.is-locked {
+      background: rgba(255, 255, 255, 0.03);
+      border-color: rgba(245, 158, 11, 0.35);
+      cursor: not-allowed;
+      opacity: 0.9;
+    }
+    html[data-theme='light'] .apple-date-trigger {
+      background: #f8fafc;
+      border-color: #cbd5e1;
+      color: #0f172a;
+    }
+    html[data-theme='light'] .apple-date-trigger.is-locked {
+      background: #f1f5f9;
+      border-color: #fcd34d;
+    }
+
+    .addr-card-item {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 0.85rem;
+      padding: 0.85rem 1rem;
+      transition: all 0.2s;
+    }
+    .addr-card-item:hover {
+      border-color: rgba(16, 185, 129, 0.4);
+    }
+    .addr-card-item.is-default {
+      border-color: rgba(16, 185, 129, 0.5);
+      background: rgba(16, 185, 129, 0.06);
+    }
+    html[data-theme='light'] .addr-card-item {
+      background: #f8fafc;
+      border-color: #e2e8f0;
+    }
+    html[data-theme='light'] .addr-card-item.is-default {
+      background: #f0fdf4;
+      border-color: #86efac;
+    }
+
+    .addr-title-pill {
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      color: var(--text-muted, #94a3b8);
+      border-radius: 0.5rem;
+      padding: 0.35rem 0.65rem;
+      font-size: 0.78rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .addr-title-pill:hover,
+    .addr-title-pill.is-active {
+      background: rgba(16, 185, 129, 0.16);
+      border-color: #10b981;
+      color: #10b981;
+      font-weight: 700;
+    }
+    html[data-theme='light'] .addr-title-pill {
+      background: #f1f5f9;
+      border-color: #cbd5e1;
+      color: #475569;
+    }
+
+    .gender-radio-group {
+      display: flex;
+      gap: 0.5rem;
+      margin-top: 0.3rem;
+    }
+    .gender-radio-pill {
+      flex: 1;
+      text-align: center;
+      padding: 0.45rem 0.5rem;
+      border-radius: 0.5rem;
+      font-size: 0.8rem;
+      font-weight: 600;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      color: var(--text-muted, #94a3b8);
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .gender-radio-pill.is-active {
+      background: rgba(16, 185, 129, 0.16);
+      border-color: #10b981;
+      color: #10b981;
+      font-weight: 700;
+    }
+    html[data-theme='light'] .gender-radio-pill {
+      background: #f8fafc;
+      border-color: #e2e8f0;
+    }
+    html[data-theme='light'] .gender-radio-pill.is-active {
+      background: #dcfce7;
+      border-color: #10b981;
+      color: #15803d;
+    }
+  </style>
 </head>
 <body class="panel-body">
-  <main class="auth-wrap" id="main-content" tabindex="-1">
-    <div class="auth-card">
-      <a href="/"><img class="auth-logo" src="assets/images/brand/westo-wordmark.png?v=brandCyan2" alt="WESTO" width="768" height="431" /></a>
-      <h1 class="auth-title" data-i18n="profile.title">پروفایل من</h1>
-      <p class="auth-sub" id="member-since"></p>
-      <div class="card" id="loyalty-card" style="margin-bottom:1.25rem; text-align:center;">
-        <div class="num" id="loyalty-points">0</div>
-        <div class="lbl" data-i18n="profile.points">امتیاز باشگاه مشتریان</div>
-        <p class="hint" id="loyalty-hint" style="margin-top:0.5rem;"></p>
+  <div class="profile-app-container">
+    
+    <!-- Top Header Brand Navigation (Westo Unified Header) -->
+    <header class="profile-topbar">
+      <div style="display:flex; align-items:center; gap:1rem;">
+        <a href="/" class="profile-brand-wrap" title="صفحه اصلی وستو">
+          <img src="assets/images/brand/westo-wordmark.png?v=brandCyan2" alt="WESTO" class="profile-brand-logo" />
+        </a>
+        <span class="profile-brand-tagline">باشگاه مشتریان و حساب کاربری</span>
       </div>
 
-      <div class="field">
-        <label for="phone" data-i18n="profile.phone">شماره موبایل</label>
-        <input id="phone" autocomplete="tel" dir="ltr" disabled />
-      </div>
-      <div class="field">
-        <label for="name" data-i18n="profile.name">نام</label>
-        <input id="name" autocomplete="name" data-i18n-placeholder="profile.namePh" placeholder="نام شما" />
-      </div>
-      <div class="field">
-        <label for="email" data-i18n="profile.email">ایمیل</label>
-        <input id="email" autocomplete="email" dir="ltr" type="email" placeholder="you@example.com" />
-      </div>
+      <div class="profile-topbar-actions">
+        <!-- Main Quick Links -->
+        <a href="/menu" class="btn btn-sm btn-ghost" style="text-decoration:none; font-size:0.78rem; padding:0.4rem 0.75rem;">🍽️ منو</a>
+        <a href="/order" class="btn btn-sm btn-ghost" style="text-decoration:none; font-size:0.78rem; padding:0.4rem 0.75rem;">🛍️ ثبت سفارش</a>
+        <a href="/reserve" class="btn btn-sm btn-ghost" style="text-decoration:none; font-size:0.78rem; padding:0.4rem 0.75rem;">🛎️ رزرو میز</a>
 
-      <button id="save-btn" class="btn" data-i18n="profile.save" type="button">ذخیره تغییرات</button>
-      <p id="msg" class="msg" role="status" aria-live="polite" aria-atomic="true"></p>
+        <!-- Sitewide Theme Switcher -->
+        <div class="navbar_theme" role="group" aria-label="تم نمایش">
+          <button type="button" class="navbar_theme-btn" data-theme-set="system" aria-pressed="false" title="هماهنگ با تم سیستم">
+            <span class="navbar_theme-dot navbar_theme-dot--system" aria-hidden="true"></span>
+            <span>سیستم</span>
+          </button>
+          <button type="button" class="navbar_theme-btn" data-theme-set="dark" aria-pressed="false" title="تم تاریک">
+            <span class="navbar_theme-dot navbar_theme-dot--dark" aria-hidden="true"></span>
+            <span>تیره</span>
+          </button>
+          <button type="button" class="navbar_theme-btn" data-theme-set="light" aria-pressed="false" title="تم روشن">
+            <span class="navbar_theme-dot navbar_theme-dot--light" aria-hidden="true"></span>
+            <span>روشن</span>
+          </button>
+        </div>
 
-      <div style="margin-top: 1rem; display: flex; gap: 0.75rem;">
-        <a href="/" class="btn btn-ghost" style="text-decoration: none;" data-i18n="profile.backSite">بازگشت به سایت</a>
-        <button id="logout-btn" class="btn btn-ghost" data-i18n="profile.logout" type="button">خروج</button>
+        <button id="logout-btn" class="btn btn-sm btn-ghost" style="font-size:0.78rem; color:#ef4444; padding:0.4rem 0.75rem;" data-i18n="profile.logout" type="button">خروج</button>
       </div>
-      <div id="admin-link-wrap" class="auth-foot hidden"><a href="/admin" data-i18n="profile.admin">ورود به پنل مدیریت</a></div>
+    </header>
+
+    <!-- Offline & Network Status Alert Banner -->
+    <div id="network-status-banner" style="display:none; padding:0.55rem 1rem; border-radius:0.75rem; margin-bottom:1rem; font-size:0.8rem; font-weight:700; text-align:center; align-items:center; justify-content:center; gap:0.5rem; transition:all 0.3s ease;">
+      <span id="network-status-icon">⚠️</span>
+      <span id="network-status-text">ارتباط با اینترنت قطع شد. در حال کار در حالت آفلاین…</span>
     </div>
-  </main>
 
-  <script src="js/i18n.js?v=logic9-fa-default1"></script>
+    <!-- Main Dashboard Responsive Layout -->
+    <div class="profile-dashboard-layout">
+      
+      <!-- Sidebar Navigation -->
+      <aside class="profile-sidebar">
+        <div class="profile-user-summary">
+          <div style="position:relative; cursor:pointer;" id="sidebar-avatar-wrap" title="تغییر عکس پروفایل">
+            <div class="profile-avatar-circle" id="avatar-initials">و</div>
+            <span style="position:absolute; bottom:0; right:0; width:20px; height:20px; border-radius:50%; background:var(--profile-accent, #78d0d8); color:#042f2e; border:2px solid #181d26; display:flex; align-items:center; justify-content:center; font-size:0.65rem; font-weight:bold;">📷</span>
+          </div>
+          <div style="min-width:0; flex:1;">
+            <div style="display:flex; align-items:center; gap:0.35rem; flex-wrap:wrap;">
+              <b id="user-display-name" style="font-size:1rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">مهمان گرامی</b>
+              <span id="loyalty-tier-badge" class="tier-badge tier-badge-bronze">🥉 برنزی</span>
+            </div>
+            <div class="ltr" id="user-display-phone" style="font-size:0.75rem; color:var(--text-muted, #94a3b8); margin-top:0.15rem;">—</div>
+            <p class="auth-sub" id="member-since" style="margin:0.2rem 0 0 0; font-size:0.7rem; color:var(--text-muted, #94a3b8);"></p>
+          </div>
+        </div>
+
+        <!-- Quick Balance & Points Strip -->
+        <div class="profile-quick-stats">
+          <div class="profile-quick-stat-item">
+            <div class="num" id="wallet-balance">۰ تومان</div>
+            <div class="lbl">موجودی کیف پول</div>
+          </div>
+          <div class="profile-quick-stat-item">
+            <div class="num" id="loyalty-points">۰</div>
+            <div class="lbl">امتیاز باشگاه</div>
+          </div>
+        </div>
+
+        <!-- Navigation Tabs Menu -->
+        <nav class="profile-nav-menu" aria-label="بخش‌های حساب کاربری">
+          <button class="profile-nav-btn is-active" data-tab="details" type="button">
+            <span style="display:flex; align-items:center; gap:0.4rem;">
+              <span>👤</span> مشخصات فردی و تم
+            </span>
+            <kbd class="kbd-hint">Alt+1</kbd>
+          </button>
+          <button class="profile-nav-btn" data-tab="orders" type="button">
+            <span style="display:flex; align-items:center; gap:0.4rem;">
+              <span>📦</span> تاریخچه سفارش‌ها
+            </span>
+            <kbd class="kbd-hint">Alt+2</kbd>
+          </button>
+          <button class="profile-nav-btn" data-tab="wallet" type="button">
+            <span style="display:flex; align-items:center; gap:0.4rem;">
+              <span>💳</span> کیف پول و شارژ
+            </span>
+            <kbd class="kbd-hint">Alt+3</kbd>
+          </button>
+          <button class="profile-nav-btn" data-tab="loyalty" type="button">
+            <span style="display:flex; align-items:center; gap:0.4rem;">
+              <span>🏆</span> باشگاه مشتریان
+            </span>
+            <kbd class="kbd-hint">Alt+4</kbd>
+          </button>
+          <button class="profile-nav-btn" data-tab="gifts" type="button">
+            <span style="display:flex; align-items:center; gap:0.4rem;">
+              <span>🎁</span> هدایا و کد معرف
+            </span>
+            <kbd class="kbd-hint">Alt+5</kbd>
+          </button>
+        </nav>
+
+        <!-- Support Card in Sidebar -->
+        <div class="profile-support-box" style="margin-top:1rem; padding:0.75rem; background:rgba(255,255,255,0.025); border:1px solid rgba(255,255,255,0.07); border-radius:0.75rem; font-size:0.76rem;">
+          <div style="display:flex; align-items:center; gap:0.4rem; margin-bottom:0.35rem; color:#78d0d8; font-weight:700;">
+            <span>🎧</span> پشتیبانی مشتریان مشهد
+          </div>
+          <p style="margin:0 0 0.5rem 0; color:var(--text-muted); font-size:0.72rem; line-height:1.4;">
+            پاسخگویی روزانه از ۱۱:۳۰ الی ۲۳:۳۰
+          </p>
+          <a href="tel:05138450000" style="display:flex; justify-content:center; align-items:center; gap:0.35rem; background:rgba(120,208,216,0.12); border:1px solid rgba(120,208,216,0.3); color:#78d0d8; text-decoration:none; padding:0.3rem 0.5rem; border-radius:0.5rem; font-weight:700; font-size:0.75rem;">
+            📞 تماس: ۰۵۱-۳۸۴۵۰۰۰۰
+          </a>
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.35rem; margin-top:0.45rem;">
+            <a href="https://wa.me/989150000000?text=%D8%B3%D9%84%D8%A7%D9%85%20%D9%88%D8%B3%D8%AA%D9%88%D8%8C%20%D8%AF%D8%B1%D8%AE%D9%88%D8%A7%D8%B3%D8%AA%20%D8%B3%D9%81%D8%A7%D8%B1%D8%B4%20%D8%AF%D8%A7%D8%B1%D9%85" target="_blank" rel="noopener noreferrer" style="display:flex; justify-content:center; align-items:center; gap:0.25rem; background:rgba(37,211,102,0.12); border:1px solid rgba(37,211,102,0.3); color:#25d366; text-decoration:none; padding:0.3rem 0.25rem; border-radius:0.45rem; font-weight:700; font-size:0.72rem;">
+              🟢 واتساپ
+            </a>
+            <a href="https://eitaa.com" target="_blank" rel="noopener noreferrer" style="display:flex; justify-content:center; align-items:center; gap:0.25rem; background:rgba(245,158,11,0.12); border:1px solid rgba(245,158,11,0.3); color:#f59e0b; text-decoration:none; padding:0.3rem 0.25rem; border-radius:0.45rem; font-weight:700; font-size:0.72rem;">
+              🟠 ایتا
+            </a>
+          </div>
+          <button type="button" id="open-feedback-modal-btn" class="btn btn-sm" style="width:100%; margin-top:0.55rem; padding:0.35rem 0.5rem; font-size:0.75rem; background:rgba(245,158,11,0.15); border:1px solid rgba(245,158,11,0.4); color:#fbbf24; font-weight:700;">
+            ⭐ ثبت نظر و امتیاز (+۵۰ امتیاز)
+          </button>
+        </div>
+
+        <div id="admin-link-wrap" class="auth-foot hidden" style="margin-top:0.75rem; padding-top:0.6rem; border-top:1px solid rgba(255,255,255,0.08); text-align:center;">
+          <a href="/admin" data-i18n="profile.admin" style="font-size:0.78rem; color:#a855f7; text-decoration:none; font-weight:600;">⚙️ ورود به پنل مدیریت</a>
+        </div>
+      </aside>
+
+      <!-- Main Content Area -->
+      <main class="profile-main-workspace" id="main-content" tabindex="-1">
+        
+        <!-- Profile Completion Meter Box -->
+        <div style="background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:1rem; padding:0.85rem 1rem; margin-bottom:1.25rem;">
+          <div style="display:flex; justify-content:space-between; align-items:center; font-size:0.82rem;">
+            <span>میزان تکمیل پروفایل شما:</span>
+            <b id="profile-meter-text" style="color:#10b981; font-weight:800;">۴۰٪</b>
+          </div>
+          <div style="width:100%; height:7px; background:rgba(255,255,255,0.1); border-radius:999px; overflow:hidden; margin:0.45rem 0 0.25rem;">
+            <div id="profile-meter-bar" style="height:100%; width:40%; border-radius:999px; background:linear-gradient(90deg, #10b981, #34d399); transition:width 0.4s ease;"></div>
+          </div>
+          <div id="profile-meter-hint" style="font-size:0.75rem; color:var(--text-muted, #94a3b8); margin-top:0.25rem;">
+            با تکمیل تاریخ تولد و آدرس، ۵۰ امتیاز هدیه باشگاه دریافت نمایید.
+          </div>
+        </div>
+
+        <!-- ═══════════════════════════════════════════════════════════════════
+             TAB 1: مشخصات فردی و هویتی
+             ═══════════════════════════════════════════════════════════════════ -->
+        <section class="profile-tab-panel is-active" id="panel-details">
+          <h2 style="font-size:1.05rem; font-weight:800; margin:0 0 1rem 0;">👤 مشخصات کاربری و تنظیمات</h2>
+
+          <!-- ═══════════════════════════════════════════════════════════════════
+               AVATAR & PROFILE PICTURE SECTION
+               ═══════════════════════════════════════════════════════════════════ -->
+          <div class="card" style="display:flex; align-items:center; gap:1.25rem; padding:1.15rem; border-radius:1rem; margin-bottom:1.25rem; flex-wrap:wrap; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08);">
+            <div style="position:relative;">
+              <div class="profile-avatar-circle" id="profile-avatar-preview" style="width:72px; height:72px; font-size:1.8rem; box-shadow:0 6px 20px rgba(120,208,216,0.3);">و</div>
+              <button type="button" id="change-avatar-badge-btn" title="تغییر تصویر پروفایل" style="position:absolute; bottom:-2px; right:-2px; width:26px; height:26px; border-radius:50%; background:var(--profile-accent, #78d0d8); color:#042f2e; border:2px solid #181d26; display:flex; align-items:center; justify-content:center; cursor:pointer; font-size:0.75rem; font-weight:bold;">📷</button>
+            </div>
+            
+            <div style="flex:1; min-width:200px;">
+              <div style="font-size:0.95rem; font-weight:800; color:#fff; margin-bottom:0.25rem;">تصویر پروفایل و آواتار</div>
+              <p style="font-size:0.75rem; color:var(--p-text-dim, #94a3b8); margin:0 0 0.65rem 0;">می‌توانید عکس دلخواه خود را آپلود کنید یا یکی از آواتارهای آماده وستو را انتخاب فرمایید.</p>
+              
+              <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
+                <input type="file" id="avatar-file-input" accept="image/*" style="display:none;" />
+                <button type="button" class="btn btn-sm" id="upload-avatar-btn" style="font-size:0.78rem; padding:0.4rem 0.85rem; background:linear-gradient(135deg, #10b981, #059669); border-color:#10b981; color:#fff; font-weight:700;">
+                  📁 آپلود عکس از دستگاه
+                </button>
+                <button type="button" class="btn btn-sm btn-ghost" id="open-preset-avatars-btn" style="font-size:0.78rem; padding:0.4rem 0.85rem; border-color:rgba(255,255,255,0.15);">
+                  🎭 انتخاب آواتار آماده
+                </button>
+                <button type="button" class="btn btn-sm btn-ghost" id="remove-avatar-btn" style="font-size:0.78rem; padding:0.4rem 0.65rem; color:#ef4444;">
+                  🗑️ حذف
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:0.85rem; margin-bottom:0.85rem;">
+            <div class="field">
+              <label for="name" style="font-size:0.8rem;">نام و نام خانوادگی</label>
+              <input id="name" autocomplete="name" placeholder="مثلاً: علی رضایی" />
+            </div>
+
+            <div class="field">
+              <label for="phone" style="font-size:0.8rem;">شماره موبایل (تأییدشده)</label>
+              <div style="position:relative;">
+                <input id="phone" autocomplete="tel" dir="ltr" disabled style="opacity:0.85; background:rgba(255,255,255,0.02); padding-left:2rem;" />
+                <span style="position:absolute; left:0.6rem; top:50%; transform:translateY(-50%); font-size:0.85rem; color:#10b981;">✓</span>
+              </div>
+            </div>
+          </div>
+
+          <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:0.85rem; margin-bottom:0.85rem;">
+            <div class="field">
+              <label for="email" style="font-size:0.8rem;">آدرس ایمیل</label>
+              <input id="email" autocomplete="email" dir="ltr" type="email" placeholder="name@example.com" />
+            </div>
+
+            <!-- Apple Shamsi Date Wheel Picker Trigger -->
+            <div class="field">
+              <label for="birthdate-btn" style="font-size:0.8rem; display:flex; justify-content:space-between; align-items:center;">
+                <span>تاریخ تولد (شمسی)</span>
+                <span id="bday-lock-badge" style="display:none; color:#f59e0b; font-size:0.72rem; font-weight:700;">🔒 ثبت‌شده (قفل ۱ ساله)</span>
+              </label>
+              <button type="button" id="birthdate-btn" class="apple-date-trigger">
+                <span id="birthdate-display" style="color:var(--text, #ffffff); font-weight:700;">انتخاب تاریخ تولد…</span>
+                <span id="birthdate-icon" style="color:#10b981; font-size:1rem;">🗓️</span>
+              </button>
+              <input type="hidden" id="birthdate-val" value="" />
+              <div id="bday-lock-hint" style="display:none; font-size:0.74rem; color:#f59e0b; margin-top:0.25rem; font-weight:600;">
+                🔒 تاریخ تولد ثبت شده و تا ۱ سال امکان تغییر آن وجود ندارد (ویرایش فقط توسط مدیر).
+              </div>
+            </div>
+          </div>
+
+          <!-- Gender Radio -->
+          <div class="field" style="margin-bottom:1rem;">
+            <label style="font-size:0.8rem;">جنسیت</label>
+            <div class="gender-radio-group">
+              <div class="gender-radio-pill is-active" data-gender="male">👨 آقا</div>
+              <div class="gender-radio-pill" data-gender="female">👩 خانم</div>
+              <div class="gender-radio-pill" data-gender="other">✨ ترجیح می‌دهم نگویم</div>
+            </div>
+          </div>
+
+          <!-- Theme & Appearance Customizer Box -->
+          <div style="margin-top:1.25rem; padding-top:1rem; border-top:1px solid rgba(255,255,255,0.08);">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.45rem;">
+              <h3 style="font-size:0.95rem; font-weight:700; margin:0;">🎨 حالت و تم نمایش (تیره / روشن)</h3>
+              <span style="font-size:0.74rem; color:var(--p-text-dim, #94a3b8);">هماهنگ با تمام صفحات وستو</span>
+            </div>
+            <p style="font-size:0.75rem; color:var(--text-muted); margin:0 0 0.65rem 0;">می‌توانید تم مورد علاقه خود را انتخاب کنید یا آن را با سیستم‌عامل دستگاه خود هماهنگ سازید.</p>
+            
+            <div class="theme-selector-grid" id="profile-theme-grid">
+              <div class="theme-card-option" data-theme-set="dark">
+                <div class="theme-card-icon">🌙</div>
+                <div class="theme-card-title">حالت تیره</div>
+                <div class="theme-card-desc">مشکی ابریشمی و مدرن</div>
+              </div>
+              <div class="theme-card-option" data-theme-set="light">
+                <div class="theme-card-icon">☀️</div>
+                <div class="theme-card-title">حالت روشن</div>
+                <div class="theme-card-desc">سفید و عاجی ارگونومیک</div>
+              </div>
+              <div class="theme-card-option" data-theme-set="system">
+                <div class="theme-card-icon">⚙️</div>
+                <div class="theme-card-title">سیستم دستگاه</div>
+                <div class="theme-card-desc">تنظیم خودکار با موبایل/کامپیوتر</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Multi-Address Book Management -->
+          <div style="margin-top:1.25rem; padding-top:1rem; border-top:1px solid rgba(255,255,255,0.08);">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.75rem; flex-wrap:wrap; gap:0.5rem;">
+              <div>
+                <h3 style="font-size:0.95rem; font-weight:700; margin:0;">📍 نشانی‌های ذخیره‌شده (آدرس‌های تحویل غذا)</h3>
+                <p style="font-size:0.75rem; color:var(--text-muted); margin:0.15rem 0 0;">می‌توانید چند آدرس (منزل، محل کار و...) ثبت و نشانی دلخواه را انتخاب کنید.</p>
+              </div>
+              <button type="button" class="btn btn-sm" id="add-new-address-btn" style="font-size:0.78rem; padding:0.35rem 0.85rem; background:#10b981; border-color:#10b981; color:#fff; font-weight:700;">
+                + افزودن نشانی جدید
+              </button>
+            </div>
+
+            <div id="addresses-list-wrap" style="display:flex; flex-direction:column; gap:0.65rem; margin-bottom:0.75rem;"></div>
+            <div id="addresses-empty" style="text-align:center; padding:1.5rem 1rem; background:rgba(255,255,255,0.02); border:1px dashed rgba(255,255,255,0.1); border-radius:0.75rem; color:var(--text-muted); font-size:0.8rem;">
+              <div style="font-size:1.8rem; margin-bottom:0.35rem;">📍</div>
+              <b style="color:#fff; display:block; margin-bottom:0.25rem;">هنوز نشانی ثبت نکرده‌اید</b>
+              <p style="margin:0 0 0.75rem 0; font-size:0.75rem;">با افزودن نشانی مشهد، سفارش‌های غذای خود را با ۱ کلیک و سریع‌تر تحویل بگیرید.</p>
+              <button type="button" class="btn btn-sm" id="empty-add-addr-btn" style="background:#10b981; border-color:#10b981; color:#fff; font-size:0.78rem; font-weight:700; padding:0.35rem 0.85rem;">
+                + ثبت اولین نشانی تحویل
+              </button>
+            </div>
+
+            <div class="field" style="margin-top:0.75rem;">
+              <label for="notes" style="font-size:0.8rem;">توضیحات پیش‌فرض سفارش (برای پیک یا رستوران)</label>
+              <textarea id="notes" rows="2" placeholder="توضیحات ثابت برای پیک یا نحوه ارسال (مثلاً: زنگ طبقه دوم خرابه)…" style="font-size:0.82rem;"></textarea>
+            </div>
+
+            <!-- Preferred Mashhad Branch Selection -->
+            <div style="margin-top:0.75rem;">
+              <label for="pref-branch" style="font-size:0.8rem; display:flex; justify-content:space-between; margin-bottom:0.25rem;">
+                <span>📍 شعبه منتخب شما در مشهد (تحویل حضوری / سالن):</span>
+                <span style="color:#78d0d8; font-size:0.72rem;">مشهد مقدس</span>
+              </label>
+              <select id="pref-branch" style="height:36px; font-size:0.82rem; background:rgba(255,255,255,0.05); color:#fff; border:1px solid rgba(255,255,255,0.1); border-radius:0.5rem; padding:0 0.5rem; width:100%;">
+                <option value="central" style="background:#181d26;">🍕 شعبه مرکزی: بلوار وکیل‌آباد (سرو سالن + بیرون‌بر)</option>
+                <option value="ahmadabad" style="background:#181d26;">🍕 شعبه ۲: احمدآباد، بلوار بعثت (سرو سالن + دلیوری)</option>
+                <option value="sajjad" style="background:#181d26;">🍕 شعبه ۳: بلوار سجاد، بین بهار و بزرگمهر (اکسپرس)</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Save Button -->
+          <div style="margin-top:1.25rem;">
+            <button id="save-btn" class="btn" style="width:100%; padding:0.75rem; font-size:0.95rem; font-weight:700; background:#10b981; border-color:#10b981; color:#fff;" type="button">
+              💾 ذخیره تغییرات
+            </button>
+            <p id="msg" class="msg" role="status" aria-live="polite" aria-atomic="true" style="margin-top:0.5rem; text-align:center; font-size:0.82rem;"></p>
+          </div>
+        </section>
+
+        <!-- ═══════════════════════════════════════════════════════════════════
+             TAB 2: تاریخچه سفارش‌ها و امتیاز هر سفارش
+             ═══════════════════════════════════════════════════════════════════ -->
+        <section class="profile-tab-panel" id="panel-orders">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem; flex-wrap:wrap; gap:0.5rem;">
+            <h2 style="font-size:1.05rem; font-weight:800; margin:0;">📦 تاریخچه سفارش‌ها</h2>
+            <a href="/menu" class="btn btn-sm btn-accent" style="text-decoration:none; font-size:0.78rem;">+ سفارش جدید از منو</a>
+          </div>
+
+          <!-- Personalized Order Stats Bar -->
+          <div id="orders-stats-summary-bar" style="display:none; grid-template-columns:repeat(auto-fit, minmax(130px, 1fr)); gap:0.5rem; margin-bottom:1rem;">
+            <div class="card" style="background:rgba(255,255,255,0.025); border:1px solid rgba(255,255,255,0.07); border-radius:0.75rem; padding:0.65rem 0.75rem; text-align:center;">
+              <span style="font-size:0.72rem; color:var(--text-muted); display:block;">📦 کل سفارش‌ها</span>
+              <b id="stat-total-orders" style="font-size:1.1rem; color:#fff; font-weight:800;">۰</b>
+            </div>
+            <div class="card" style="background:rgba(16,185,129,0.05); border:1px solid rgba(16,185,129,0.2); border-radius:0.75rem; padding:0.65rem 0.75rem; text-align:center;">
+              <span style="font-size:0.72rem; color:#10b981; display:block;">💰 سود و تخفیف‌ها</span>
+              <b id="stat-total-savings" style="font-size:1.1rem; color:#10b981; font-weight:800;">۰ تومان</b>
+            </div>
+            <div class="card" style="background:rgba(245,158,11,0.05); border:1px solid rgba(245,158,11,0.2); border-radius:0.75rem; padding:0.65rem 0.75rem; text-align:center;">
+              <span style="font-size:0.72rem; color:#fbbf24; display:block;">🏆 امتیازات دریافت‌شده</span>
+              <b id="stat-total-points-earned" style="font-size:1.1rem; color:#fbbf24; font-weight:800;">۰</b>
+            </div>
+            <div class="card" style="background:rgba(168,85,247,0.05); border:1px solid rgba(168,85,247,0.2); border-radius:0.75rem; padding:0.65rem 0.75rem; text-align:center;">
+              <span style="font-size:0.72rem; color:#c084fc; display:block;">🍕 غذای محبوب من</span>
+              <b id="stat-favorite-dish" style="font-size:0.82rem; color:#fff; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; display:block;">—</b>
+            </div>
+          </div>
+
+          <!-- Orders Search & Filter Toolbar -->
+          <div id="orders-filter-toolbar" style="display:none; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.5rem; margin-bottom:1rem; background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.07); padding:0.55rem 0.85rem; border-radius:0.75rem;">
+            <div style="display:flex; gap:0.4rem; align-items:center; flex:1; min-width:180px;">
+              <input id="orders-search-input" placeholder="🔍 جستجو در شماره فاکتور یا نام غذا…" style="height:32px; font-size:0.78rem;" />
+            </div>
+            <div style="display:flex; gap:0.35rem; align-items:center; flex-wrap:wrap;">
+              <button type="button" class="orders-filter-pill is-active" data-filter="all">همه</button>
+              <button type="button" class="orders-filter-pill" data-filter="delivered">تحویل‌شده</button>
+              <button type="button" class="orders-filter-pill" data-filter="prep">در حال پخت</button>
+              <button type="button" class="orders-filter-pill" data-filter="delivery">🛵 پیک مشهد</button>
+              <button type="button" class="orders-filter-pill" data-filter="dine_in">🍽️ سالن</button>
+            </div>
+          </div>
+
+          <div id="orders-loading" style="text-align:center; padding:2rem; color:var(--text-muted, #94a3b8);">
+            در حال بارگذاری سفارش‌ها…
+          </div>
+
+          <div id="orders-list-wrap" style="display:none;"></div>
+
+          <div id="orders-empty" style="display:none; text-align:center; padding:3rem 1rem; background:rgba(255,255,255,0.02); border:1px dashed rgba(255,255,255,0.1); border-radius:1rem;">
+            <div style="font-size:2.5rem; margin-bottom:0.5rem;">🍽️</div>
+            <h3 style="font-size:1rem; margin:0 0 0.35rem 0;">هنوز سفارشی ثبت نکرده‌اید</h3>
+            <p style="font-size:0.8rem; color:var(--text-muted, #94a3b8); margin:0 0 1rem 0;">با اولین سفارش خود، امتیاز وفاداری و هدایای ویژه باشگاه مشتریان را دریافت کنید.</p>
+            <a href="/menu" class="btn btn-sm btn-accent" style="text-decoration:none; padding:0.5rem 1.25rem;">مشاهده منوی وستو</a>
+          </div>
+
+          <!-- Popular / Favorite Dishes Quick Reorder Showcase -->
+          <div style="margin-top:1.5rem; padding-top:1.25rem; border-top:1px solid rgba(255,255,255,0.08);">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.85rem; flex-wrap:wrap; gap:0.4rem;">
+              <div>
+                <b style="font-size:0.95rem; color:#fff; display:block;">❤️ پرطرفدارترین غذاهای وستو مشهد</b>
+                <span style="font-size:0.75rem; color:var(--text-muted);">سفارش مجدد و فوری غذاهای محبوب با ۱ کلیک</span>
+              </div>
+              <a href="/menu" style="font-size:0.75rem; color:#10b981; text-decoration:none; font-weight:700;">مشاهده منوی کامل ←</a>
+            </div>
+
+            <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:0.75rem;" id="popular-favorites-grid">
+              <div class="favorite-dish-card" style="background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:0.85rem; padding:0.75rem; display:flex; flex-direction:column; justify-content:space-between; gap:0.5rem;">
+                <div style="display:flex; align-items:center; gap:0.5rem;">
+                  <span style="font-size:1.6rem;">🍕</span>
+                  <div>
+                    <b style="font-size:0.85rem; color:#fff; display:block;">پیتزا مخصوص وستو</b>
+                    <span style="font-size:0.72rem; color:#10b981; font-weight:700;">۲۸۵,۰۰۰ تومان</span>
+                  </div>
+                </div>
+                <button type="button" class="btn btn-sm" onclick='window.quickOrderDish("pizza-special", "پیتزا مخصوص وستو")' style="width:100%; font-size:0.75rem; padding:0.35rem 0.5rem; background:rgba(16,185,129,0.15); border:1px solid rgba(16,185,129,0.35); color:#10b981; font-weight:700;">
+                  + افزودن سریع به سبد
+                </button>
+              </div>
+
+              <div class="favorite-dish-card" style="background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:0.85rem; padding:0.75rem; display:flex; flex-direction:column; justify-content:space-between; gap:0.5rem;">
+                <div style="display:flex; align-items:center; gap:0.5rem;">
+                  <span style="font-size:1.6rem;">🍔</span>
+                  <div>
+                    <b style="font-size:0.85rem; color:#fff; display:block;">دبل برگر ذغالی وستو</b>
+                    <span style="font-size:0.72rem; color:#10b981; font-weight:700;">۲۶۰,۰۰۰ تومان</span>
+                  </div>
+                </div>
+                <button type="button" class="btn btn-sm" onclick='window.quickOrderDish("burger-double", "دبل برگر ذغالی وستو")' style="width:100%; font-size:0.75rem; padding:0.35rem 0.5rem; background:rgba(16,185,129,0.15); border:1px solid rgba(16,185,129,0.35); color:#10b981; font-weight:700;">
+                  + افزودن سریع به سبد
+                </button>
+              </div>
+
+              <div class="favorite-dish-card" style="background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:0.85rem; padding:0.75rem; display:flex; flex-direction:column; justify-content:space-between; gap:0.5rem;">
+                <div style="display:flex; align-items:center; gap:0.5rem;">
+                  <span style="font-size:1.6rem;">🍟</span>
+                  <div>
+                    <b style="font-size:0.85rem; color:#fff; display:block;">سیب‌زمینی ویژه با دیپ پنیر</b>
+                    <span style="font-size:0.72rem; color:#10b981; font-weight:700;">۱۲۵,۰۰۰ تومان</span>
+                  </div>
+                </div>
+                <button type="button" class="btn btn-sm" onclick='window.quickOrderDish("fries-special", "سیب‌زمینی ویژه با دیپ پنیر")' style="width:100%; font-size:0.75rem; padding:0.35rem 0.5rem; background:rgba(16,185,129,0.15); border:1px solid rgba(16,185,129,0.35); color:#10b981; font-weight:700;">
+                  + افزودن سریع به سبد
+                </button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ═══════════════════════════════════════════════════════════════════
+             TAB 3: کیف پول و شارژ آنلاین
+             ═══════════════════════════════════════════════════════════════════ -->
+        <section class="profile-tab-panel" id="panel-wallet">
+          <h2 style="font-size:1.05rem; font-weight:800; margin:0 0 1rem 0;">💳 کیف پول و بسته‌های شارژ با هدیه نقدی</h2>
+
+          <div class="card" style="background:linear-gradient(135deg, rgba(16,185,129,0.15), rgba(6,78,59,0.25)); border:1px solid rgba(16,185,129,0.35); padding:1.25rem; border-radius:1rem; margin-bottom:1.25rem;">
+            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.5rem;">
+              <div>
+                <span style="font-size:0.82rem; color:#10b981; font-weight:700;">موجودی اعتباری کیف پول شما</span>
+                <div class="num" id="tab-wallet-balance" style="font-size:1.75rem; color:#10b981; font-weight:800; margin-top:0.25rem;">۰ تومان</div>
+              </div>
+              <div style="display:flex; gap:0.45rem; align-items:center;">
+                <button type="button" id="refresh-wallet-btn" class="btn btn-sm btn-ghost" style="padding:0.3rem 0.65rem; font-size:0.75rem; border-color:rgba(16,185,129,0.4); color:#10b981; display:flex; align-items:center; gap:0.3rem;" title="استعلام و به‌روزرسانی آنی موجودی">
+                  <span id="refresh-wallet-icon">🔄</span> استعلام آنی
+                </button>
+                <span class="pill is-paid" style="font-size:0.75rem;">فعال در فاکتور</span>
+              </div>
+            </div>
+          </div>
+
+          <div style="background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:0.75rem; padding:0.75rem 1rem; margin-bottom:1rem; font-size:0.78rem; color:var(--text-muted);">
+            🛡️ <b>قانون امنیتی شارژ:</b> شارژ کیف پول صرفاً پس از <b>تأییدیه مستقیم درگاه بانکی</b> یا <b>تأیید حضوری توسط گارسون / صندوقدار</b> انجام می‌پذیرد.
+          </div>
+
+          <h3 style="font-size:0.95rem; font-weight:700; margin:0 0 0.65rem 0;">انتخاب بسته شارژ با بونوس نقدی:</h3>
+          <div id="tab-packages-grid" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:0.75rem; margin-bottom:0.85rem;"></div>
+
+          <!-- Custom Top-up Strip -->
+          <div class="card" style="background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.08); border-radius:0.85rem; padding:0.85rem 1rem; margin-bottom:1rem;">
+            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.5rem;">
+              <span style="font-size:0.82rem; font-weight:700; color:#cbd5e1;">یا شارژ با مبلغ دلخواه:</span>
+              <div style="display:flex; gap:0.4rem; align-items:center; flex:1; max-width:320px;">
+                <input id="custom-topup-amount" type="number" placeholder="مبلغ به تومان…" style="height:34px; font-size:0.8rem;" />
+                <button type="button" class="btn btn-sm" id="custom-topup-btn" style="background:#10b981; border-color:#10b981; color:#fff; font-size:0.78rem; font-weight:700; white-space:nowrap; padding:0.35rem 0.85rem;">شارژ حساب</button>
+              </div>
+            </div>
+            <div id="custom-topup-hint" style="font-size:0.72rem; color:var(--text-muted); margin-top:0.35rem;"></div>
+          </div>
+
+          <!-- Smart Bonus & Savings Calculator -->
+          <div class="card" style="background:rgba(255,255,255,0.025); border:1px solid rgba(16,185,129,0.25); border-radius:0.85rem; padding:0.85rem 1rem; margin-bottom:1rem;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.6rem;">
+              <b style="font-size:0.85rem; color:#10b981; display:flex; align-items:center; gap:0.35rem;">
+                <span>🧮</span> محاسبه‌گر هوشمند هدیه شارژ و سود نقدی
+              </b>
+              <span class="pill is-paid" style="font-size:0.68rem; font-weight:700;">۱۰٪ هدیه آنی</span>
+            </div>
+
+            <div style="display:flex; flex-direction:column; gap:0.5rem;">
+              <div style="display:flex; justify-content:space-between; font-size:0.78rem; color:var(--text-muted);">
+                <span>مبلغ انتخابی شما:</span>
+                <b id="calc-slider-val" style="color:#fff; font-weight:700;">۲۰۰,۰۰۰ تومان</b>
+              </div>
+              <input type="range" id="calc-topup-range" min="50000" max="2000000" step="50000" value="200000" style="width:100%; accent-color:#10b981; cursor:pointer;" />
+              
+              <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(130px, 1fr)); gap:0.5rem; background:rgba(16,185,129,0.06); padding:0.6rem 0.75rem; border-radius:0.6rem; border:1px dashed rgba(16,185,129,0.25); font-size:0.75rem;">
+                <div>
+                  <span style="color:var(--text-muted); display:block;">🎁 هدیه نقدی (۱۰٪):</span>
+                  <b id="calc-bonus-result" style="color:#fbbf24; font-weight:800; font-size:0.88rem;">+۲۰,۰۰۰ تومان</b>
+                </div>
+                <div>
+                  <span style="color:var(--text-muted); display:block;">💰 شارژ کل دریافتی:</span>
+                  <b id="calc-total-result" style="color:#10b981; font-weight:800; font-size:0.88rem;">۲۲۰,۰۰۰ تومان</b>
+                </div>
+              </div>
+
+              <button type="button" id="calc-apply-btn" class="btn btn-sm" style="background:#10b981; border-color:#10b981; color:#fff; font-weight:700; font-size:0.75rem; padding:0.35rem; margin-top:0.25rem;">
+                ⚡ انتخاب و شارژ فوری این مبلغ
+              </button>
+            </div>
+          </div>
+
+          <!-- Active Topup Action Box -->
+          <div id="tab-topup-action-box" style="display:none; background:rgba(255,255,255,0.04); border:1px solid rgba(16,185,129,0.4); border-radius:1rem; padding:1.25rem; margin-top:1rem;">
+            <div id="tab-topup-action-content"></div>
+          </div>
+
+          <div id="tab-topup-msg" class="msg" style="margin-top:0.5rem;"></div>
+
+          <!-- Wallet Transaction Ledger / History -->
+          <div style="margin-top:1.5rem; border-top:1px solid rgba(255,255,255,0.08); padding-top:1rem;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.75rem;">
+              <h3 style="font-size:0.95rem; font-weight:700; margin:0;">📜 تاریخچه تراکنش‌ها و گردش حساب</h3>
+              <span style="font-size:0.72rem; color:var(--text-muted);">آخرین تغییرات موجودی</span>
+            </div>
+            
+            <div id="wallet-ledger-loading" style="text-align:center; padding:1.5rem; color:var(--text-muted); font-size:0.8rem;">در حال بارگذاری تراکنش‌ها…</div>
+            <div id="wallet-ledger-list" style="display:none;"></div>
+            <div id="wallet-ledger-empty" style="display:none; text-align:center; padding:2rem 1rem; background:rgba(255,255,255,0.02); border:1px dashed rgba(255,255,255,0.08); border-radius:0.75rem; font-size:0.8rem; color:var(--text-muted);">
+              هنوز تراکنشی در کیف پول شما ثبت نشده است.
+            </div>
+          </div>
+        </section>
+
+        <!-- ═══════════════════════════════════════════════════════════════════
+             TAB 4: باشگاه مشتریان و سطوح وفاداری
+             ═══════════════════════════════════════════════════════════════════ -->
+        <section class="profile-tab-panel" id="panel-loyalty">
+          <h2 style="font-size:1.05rem; font-weight:800; margin:0 0 1rem 0;">🏆 باشگاه وفاداری و رتبه‌بندی</h2>
+
+          <!-- Current Tier Hero Card -->
+          <div class="card" style="padding:1.25rem; border-radius:1rem; margin-bottom:1.25rem; background:radial-gradient(circle at 10% 20%, rgba(115,87,206,0.15) 0%, transparent 60%), rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.09);">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.75rem;">
+              <span id="tab-loyalty-tier-badge" class="tier-badge tier-badge-bronze" style="font-size:0.9rem; padding:0.3rem 0.85rem;">🥉 سطح برنزی</span>
+              <div style="text-align:left;">
+                <div class="num" id="tab-loyalty-points" style="font-size:1.6rem; font-weight:800; color:#fbbf24;">۰</div>
+                <div class="lbl" style="font-size:0.72rem; color:var(--text-muted, #94a3b8);">امتیاز در گردش شما</div>
+              </div>
+            </div>
+
+            <div style="margin:0.75rem 0;">
+              <div style="display:flex; justify-content:space-between; font-size:0.78rem; color:var(--text-muted, #94a3b8); margin-bottom:0.3rem;">
+                <span id="tab-loyalty-next-label">ارتقا به سطح بعد</span>
+                <b id="tab-loyalty-progress-pct" style="color:#78d0d8;">۰٪</b>
+              </div>
+              <div style="height:8px; background:rgba(255,255,255,0.1); border-radius:999px; overflow:hidden;">
+                <div id="tab-loyalty-progress-fill" style="height:100%; width:0%; background:linear-gradient(90deg, #7357ce, #78d0d8); transition:width 0.4s ease;"></div>
+              </div>
+              <p class="hint" id="tab-loyalty-hint" style="margin-top:0.45rem; font-size:0.78rem;"></p>
+            </div>
+
+            <div id="tab-loyalty-perks" style="font-size:0.78rem; border-top:1px solid rgba(255,255,255,0.08); padding-top:0.65rem; margin-top:0.65rem;"></div>
+          </div>
+
+          <!-- Next-Tier Simulator & Goal Box -->
+          <div class="card" id="tab-loyalty-simulator-box" style="background:rgba(255,255,255,0.025); border:1px solid rgba(120,208,216,0.25); border-radius:0.85rem; padding:0.85rem 1rem; margin-bottom:1rem;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.5rem; flex-wrap:wrap; gap:0.4rem;">
+              <b style="font-size:0.85rem; color:#78d0d8; display:flex; align-items:center; gap:0.35rem;">
+                <span>🎯</span> هدف‌گذاری هوشمند ارتقای رتبه
+              </b>
+              <span class="pill" id="sim-target-badge" style="font-size:0.68rem; background:rgba(120,208,216,0.15); color:#78d0d8; border:1px solid rgba(120,208,216,0.3);">هدف بعدی: سطح نقره‌ای</span>
+            </div>
+            
+            <p id="sim-target-desc" style="font-size:0.78rem; color:var(--text-muted); margin:0 0 0.65rem 0; line-height:1.5;">
+              تنها با ثبت ۱ الی ۲ سفارش دیگر، به سطح بعدی ارتقا یافته و از تخفیف‌های دائمی بیشتر و امتیاز دوبرابر بهره‌مند شوید.
+            </p>
+
+            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.5rem; border-top:1px solid rgba(255,255,255,0.06); padding-top:0.6rem;">
+              <div style="font-size:0.75rem; color:#10b981; font-weight:700;" id="sim-target-perks">
+                🎁 هدیه ارتقا: تخفیف بیشتر روی کل فاکتورها
+              </div>
+              <a href="/menu" class="btn btn-sm" style="background:linear-gradient(135deg, #7357ce, #a855f7); color:#fff; border:none; font-size:0.75rem; padding:0.3rem 0.85rem; text-decoration:none; font-weight:700;">
+                🍕 افزایش امتیاز با ثبت سفارش
+              </a>
+            </div>
+          </div>
+
+          <!-- 4-Tier Roadmap Grid -->
+          <h3 style="font-size:0.95rem; font-weight:700; margin:1.25rem 0 0.5rem 0;">🗺️ نقشه راه و مزایای سطوح ۴گانه باشگاه:</h3>
+          <div id="tab-loyalty-roadmap" class="loyalty-roadmap-grid"></div>
+
+          <!-- Achievements Wall -->
+          <h3 style="font-size:0.95rem; font-weight:700; margin:1.25rem 0 0.5rem 0;">🏅 مدال‌ها و دستاوردهای افتخار شما:</h3>
+          <div id="tab-achievements-grid" class="achievements-grid"></div>
+
+          <!-- Points Earning Rules -->
+          <div class="card" style="background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.07); border-radius:0.85rem; padding:0.85rem 1rem; margin-top:1rem;">
+            <b style="font-size:0.82rem; color:#78d0d8; display:block; margin-bottom:0.4rem;">💡 چگونه سریع‌تر امتیاز جمع‌آوری کنیم؟</b>
+            <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(170px, 1fr)); gap:0.5rem; font-size:0.75rem; color:var(--text-muted);">
+              <div>🛍️ <b>خرید از منو:</b> کسب امتیاز متناسب با سطح</div>
+              <div>🎂 <b>ثبت تولد:</b> ۵۰ امتیاز هدیه فوری</div>
+              <div>👥 <b>دعوت هر دوست:</b> ۷۵ امتیاز پاداش</div>
+              <div>⭐️ <b>تکمیل پروفایل:</b> ۵۰ امتیاز ویژه</div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ═══════════════════════════════════════════════════════════════════
+             TAB 5: هدایا و معرفی دوستان
+             ═══════════════════════════════════════════════════════════════════ -->
+        <section class="profile-tab-panel" id="panel-gifts">
+          <h2 style="font-size:1.05rem; font-weight:800; margin:0 0 1rem 0;">🎁 جوایز، کمپین‌ها و کد معرف</h2>
+
+          <!-- Birthday Reward Card -->
+          <div class="card" style="background:linear-gradient(135deg, rgba(245,158,11,0.12), rgba(180,83,9,0.18)); border:1px solid rgba(245,158,11,0.35); padding:1.1rem; border-radius:1rem; margin-bottom:1rem;">
+            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.4rem;">
+              <b style="font-size:0.95rem; color:#f59e0b;">🎂 هدیه سالروز تولد</b>
+              <span class="pill" style="background:#f59e0b; color:#fff; font-size:0.72rem; font-weight:700;">۱۰۰ هزار تومان اعتبار</span>
+            </div>
+            <p class="hint" id="tab-bday-hint" style="font-size:0.78rem; margin:0.4rem 0 0 0;">تاریخ تولد خود را در تب مشخصات فردی ثبت کنید تا در هفته تولدتان هدیه نقدی دریافت نمایید.</p>
+            <div id="tab-bday-claim-wrap" style="display:none; margin-top:0.75rem;">
+              <button type="button" class="btn btn-sm btn-accent" id="tab-claim-bday-btn" style="width:100%; background:#f59e0b; border-color:#f59e0b; color:#fff; font-weight:700;">🎉 دریافت هدیه ۱۰۰ هزار تومانی تولد</button>
+            </div>
+            <div id="tab-bday-status-msg" class="msg" style="margin-top:0.4rem; font-size:0.78rem;"></div>
+          </div>
+
+          <!-- Referral Program Card -->
+          <div class="card" style="background:linear-gradient(135deg, rgba(115,87,206,0.12), rgba(168,85,247,0.15)); border:1px solid rgba(168,85,247,0.35); padding:1.1rem; border-radius:1rem; margin-bottom:1.25rem;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.4rem; flex-wrap:wrap; gap:0.4rem;">
+              <b style="font-size:0.95rem; color:#a855f7;">👥 معرفی و دعوت از دوستان</b>
+              <span class="pill" style="background:#a855f7; color:#fff; font-size:0.72rem; font-weight:700;">۷۵ هزار تومان هدیه</span>
+            </div>
+            <p class="hint" style="font-size:0.78rem; margin:0 0 0.75rem 0;">با ارسال کد معرف، دوستان شما ۵۰ هزار تومان تخفیف اولین سفارش می‌گیرند و ۷۵ هزار تومان اعتبار نقدی به کیف پول شما افزوده می‌شود.</p>
+            
+            <div style="display:flex; gap:0.5rem; align-items:center; background:rgba(255,255,255,0.05); padding:0.5rem 0.75rem; border-radius:0.5rem; border:1px dashed rgba(168,85,247,0.4); margin-bottom:0.65rem;">
+              <span style="font-size:0.78rem; color:var(--text-muted);">کد معرف شما:</span>
+              <b id="tab-referral-code" class="ltr" style="font-size:1.15rem; color:#fff; letter-spacing:2px; flex:1; text-align:center;">—</b>
+              <button type="button" class="btn btn-sm" id="tab-copy-ref-btn" style="font-size:0.75rem; padding:0.25rem 0.65rem;">📋 کپی</button>
+            </div>
+            
+            <button type="button" class="btn btn-sm" id="tab-share-ref-btn" style="width:100%; font-size:0.78rem; font-weight:700; background:linear-gradient(135deg,#7357ce,#a855f7); color:#fff; border:none; padding:0.45rem;">
+              📲 اشتراک‌گذاری در ایتا، بله، تلگرام و واتساپ
+            </button>
+          </div>
+
+          <!-- Active Coupons & Promo Codes -->
+          <h3 style="font-size:0.95rem; font-weight:700; margin:0 0 0.65rem 0;">🎟️ کوپن‌ها و کدهای تخفیف فعال شما:</h3>
+          <div class="coupons-grid" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(240px, 1fr)); gap:0.75rem;">
+            
+            <div class="card" style="background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.09); border-radius:0.85rem; padding:0.85rem; display:flex; flex-direction:column; justify-content:space-between;">
+              <div>
+                <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:0.35rem;">
+                  <b style="font-size:0.88rem; color:#10b981;">🛵 پیک رایگان مشهد</b>
+                  <span class="pill is-paid" style="font-size:0.68rem;">فعال</span>
+                </div>
+                <p style="font-size:0.74rem; color:var(--text-muted); margin:0 0 0.65rem 0;">ارسال کاملاً رایگان با پیک وستو برای سفارش‌های بالای ۲۰۰ هزار تومان.</p>
+              </div>
+              <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(255,255,255,0.04); padding:0.35rem 0.6rem; border-radius:0.4rem; gap:0.3rem;">
+                <code class="ltr" style="color:#78d0d8; font-weight:700; font-size:0.8rem;">FREE-DELIVERY</code>
+                <div style="display:flex; gap:0.3rem;">
+                  <button type="button" class="btn btn-ghost btn-sm promo-copy-btn" data-code="FREE-DELIVERY" style="padding:0.15rem 0.45rem; font-size:0.7rem;">📋 کپی</button>
+                  <button type="button" class="btn btn-sm promo-apply-btn" data-code="FREE-DELIVERY" style="padding:0.15rem 0.55rem; font-size:0.7rem; background:#10b981; border-color:#10b981; color:#fff; font-weight:700;">🚀 سفارش</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="card" style="background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.09); border-radius:0.85rem; padding:0.85rem; display:flex; flex-direction:column; justify-content:space-between;">
+              <div>
+                <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:0.35rem;">
+                  <b style="font-size:0.88rem; color:#f59e0b;">🍕 جشن پیتزا وستو</b>
+                  <span class="pill" style="font-size:0.68rem; background:rgba(245,158,11,0.15); color:#fbbf24; border:1px solid rgba(245,158,11,0.3);">۳۰,۰۰۰ ت تخفیف</span>
+                </div>
+                <p style="font-size:0.74rem; color:var(--text-muted); margin:0 0 0.65rem 0;">تخفیف ویژه ۳۰ هزار تومانی روی تمام پیتزاهای لذیذ خانواده وستو.</p>
+              </div>
+              <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(255,255,255,0.04); padding:0.35rem 0.6rem; border-radius:0.4rem; gap:0.3rem;">
+                <code class="ltr" style="color:#78d0d8; font-weight:700; font-size:0.8rem;">PIZZA-PARTY</code>
+                <div style="display:flex; gap:0.3rem;">
+                  <button type="button" class="btn btn-ghost btn-sm promo-copy-btn" data-code="PIZZA-PARTY" style="padding:0.15rem 0.45rem; font-size:0.7rem;">📋 کپی</button>
+                  <button type="button" class="btn btn-sm promo-apply-btn" data-code="PIZZA-PARTY" style="padding:0.15rem 0.55rem; font-size:0.7rem; background:#10b981; border-color:#10b981; color:#fff; font-weight:700;">🚀 سفارش</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="card" style="background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.09); border-radius:0.85rem; padding:0.85rem; display:flex; flex-direction:column; justify-content:space-between;">
+              <div>
+                <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:0.35rem;">
+                  <b style="font-size:0.88rem; color:#a855f7;">🎁 خوش‌آمدگویی وستو</b>
+                  <span class="pill" style="font-size:0.68rem; background:rgba(168,85,247,0.15); color:#c084fc; border:1px solid rgba(168,85,247,0.3);">۵۰,۰۰۰ ت تخفیف</span>
+                </div>
+                <p style="font-size:0.74rem; color:var(--text-muted); margin:0 0 0.65rem 0;">تخفیف ویژه ۵۰ هزار تومانی برای ثبت اولین سفارش آنلاین در مشهد.</p>
+              </div>
+              <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(255,255,255,0.04); padding:0.35rem 0.6rem; border-radius:0.4rem; gap:0.3rem;">
+                <code class="ltr" style="color:#78d0d8; font-weight:700; font-size:0.8rem;">FIRST-WESTO</code>
+                <div style="display:flex; gap:0.3rem;">
+                  <button type="button" class="btn btn-ghost btn-sm promo-copy-btn" data-code="FIRST-WESTO" style="padding:0.15rem 0.45rem; font-size:0.7rem;">📋 کپی</button>
+                  <button type="button" class="btn btn-sm promo-apply-btn" data-code="FIRST-WESTO" style="padding:0.15rem 0.55rem; font-size:0.7rem; background:#10b981; border-color:#10b981; color:#fff; font-weight:700;">🚀 سفارش</button>
+                </div>
+              </div>
+            </div>
+
+          </div>
+
+          <!-- FAQ & Customer Help Accordion -->
+          <div style="margin-top:1.5rem; padding-top:1.25rem; border-top:1px solid rgba(255,255,255,0.08);">
+            <h3 style="font-size:0.95rem; font-weight:700; margin:0 0 0.75rem 0; display:flex; align-items:center; gap:0.4rem;">
+              <span>❓</span> سوالات متداول و راهنمای مشتریان مشهد
+            </h3>
+
+            <div class="faq-accordion-group" style="display:flex; flex-direction:column; gap:0.5rem;">
+              
+              <details class="faq-item-details" style="background:rgba(255,255,255,0.025); border:1px solid rgba(255,255,255,0.07); border-radius:0.65rem; padding:0.65rem 0.85rem;">
+                <summary style="cursor:pointer; font-size:0.82rem; font-weight:700; color:#fff; display:flex; justify-content:space-between; align-items:center;">
+                  <span>🛵 نحوه ارسال غذا با پیک در مشهد چگونه است؟</span>
+                  <span class="faq-arrow" style="font-size:0.75rem; color:var(--text-muted);">▼</span>
+                </summary>
+                <p style="font-size:0.78rem; color:var(--text-muted); margin:0.5rem 0 0; line-height:1.6;">
+                  سفارش‌های آنلاین با بسته‌بندی عایق حرارتی ویژه وستو توسط سفیران اختصاصی در سراسر شهر مشهد ارسال می‌شوند. زمان تحویل معمولاً بین ۲۵ الی ۴۵ دقیقه است.
+                </p>
+              </details>
+
+              <details class="faq-item-details" style="background:rgba(255,255,255,0.025); border:1px solid rgba(255,255,255,0.07); border-radius:0.65rem; padding:0.65rem 0.85rem;">
+                <summary style="cursor:pointer; font-size:0.82rem; font-weight:700; color:#fff; display:flex; justify-content:space-between; align-items:center;">
+                  <span>🏆 امتیازات باشگاه مشتریان چه کاربردی دارند؟</span>
+                  <span class="faq-arrow" style="font-size:0.75rem; color:var(--text-muted);">▼</span>
+                </summary>
+                <p style="font-size:0.78rem; color:var(--text-muted); margin:0.5rem 0 0; line-height:1.6;">
+                  به ازای هر سفارش و ثبت نظر امتیاز دریافت می‌کنید. با افزایش امتیاز، سطح شما به نقره‌ای، طلایی و VIP ارتقا یافته و از تخفیف‌های دائمی تا ۸٪ و پیش‌غذاهای رایگان بهره‌مند می‌شوید.
+                </p>
+              </details>
+
+              <details class="faq-item-details" style="background:rgba(255,255,255,0.025); border:1px solid rgba(255,255,255,0.07); border-radius:0.65rem; padding:0.65rem 0.85rem;">
+                <summary style="cursor:pointer; font-size:0.82rem; font-weight:700; color:#fff; display:flex; justify-content:space-between; align-items:center;">
+                  <span>💳 شارژ کیف پول چه مزیتی دارد؟</span>
+                  <span class="faq-arrow" style="font-size:0.75rem; color:var(--text-muted);">▼</span>
+                </summary>
+                <p style="font-size:0.78rem; color:var(--text-muted); margin:0.5rem 0 0; line-height:1.6;">
+                  با شارژ کیف پول، ۱۰٪ مبلغ شارژ به عنوان بونوس هدیه آنی دریافت می‌کنید و پرداخت سفارش‌های خود را بدون نیاز به رمز پویا و با ۱ کلیک انجام می‌دهید.
+                </p>
+              </details>
+
+              <details class="faq-item-details" style="background:rgba(255,255,255,0.025); border:1px solid rgba(255,255,255,0.07); border-radius:0.65rem; padding:0.65rem 0.85rem;">
+                <summary style="cursor:pointer; font-size:0.82rem; font-weight:700; color:#fff; display:flex; justify-content:space-between; align-items:center;">
+                  <span>🎂 هدیه ۱۰۰ هزار تومانی سالروز تولد را چگونه دریافت کنم؟</span>
+                  <span class="faq-arrow" style="font-size:0.75rem; color:var(--text-muted);">▼</span>
+                </summary>
+                <p style="font-size:0.78rem; color:var(--text-muted); margin:0.5rem 0 0; line-height:1.6;">
+                  کافیست در تب مشخصات فردی، تاریخ تولد شمسی خود را ثبت فرمایید. در روز تولد شما، کوپن ۱۰۰ هزار تومانی به طور خودکار فعال و پیامک تبریک ارسال می‌گردد.
+                </p>
+              </details>
+
+            </div>
+          </div>
+        </section>
+
+      </main>
+    </div>
+  </div>
+
+  <!-- Address Modal (پاپ‌آپ تک‌صفحه‌ای فشرده، بدون نیاز به اسکرول حتی در موبایل با پیش‌فرض مشهد) -->
+  <div id="address-modal" class="address-modal-overlay" style="display:none;">
+    <div class="address-modal-box">
+      
+      <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid rgba(255,255,255,0.12); padding-bottom:0.4rem; margin-bottom:0.45rem;">
+        <h3 id="address-modal-title">📍 افزودن نشانی جدید</h3>
+        <button type="button" class="btn btn-sm btn-ghost" id="close-address-modal-btn" style="padding:0.15rem 0.5rem; font-size:0.75rem; border-color:rgba(255,255,255,0.2);">✕ بستن</button>
+      </div>
+
+      <input type="hidden" id="modal-addr-id" value="" />
+
+      <!-- Row 1: Title chips + custom title inline -->
+      <div style="display:flex; gap:0.35rem; align-items:center; margin-bottom:0.35rem;">
+        <div style="display:flex; gap:0.25rem; flex-shrink:0;">
+          <button type="button" class="addr-title-pill is-active" data-title="🏠 منزل">🏠 منزل</button>
+          <button type="button" class="addr-title-pill" data-title="🏢 محل کار">🏢 کار</button>
+          <button type="button" class="addr-title-pill" data-title="📍 سایر">📍 سایر</button>
+        </div>
+        <input id="modal-addr-title" placeholder="عنوان نشانی" value="🏠 منزل" style="flex:1; height:32px; font-size:0.75rem;" />
+      </div>
+
+      <!-- Row 2: City (Default Mashhad) & District -->
+      <div style="display:grid; grid-template-columns:1fr 1.3fr; gap:0.4rem; margin-bottom:0.35rem;">
+        <div class="field">
+          <label for="modal-addr-city">شهر</label>
+          <input id="modal-addr-city" placeholder="مشهد" value="مشهد" />
+        </div>
+        <div class="field">
+          <label for="modal-addr-district">محله / منطقه</label>
+          <input id="modal-addr-district" placeholder="مثلاً: سجاد، احمدآباد، وکیل‌آباد…" />
+        </div>
+      </div>
+
+      <!-- Row 3: Detailed Street Address -->
+      <div class="field" style="margin-bottom:0.35rem;">
+        <label for="modal-addr-street">نشانی دقیق (خیابان اصلی، فرعی، کوچه)</label>
+        <input id="modal-addr-street" placeholder="خیابان، کوچه، بن‌بست…" />
+      </div>
+
+      <!-- Row 4: Plaque, Floor, Unit, Receiver Name -->
+      <div style="display:grid; grid-template-columns:0.8fr 0.8fr 0.8fr 1.6fr; gap:0.35rem; margin-bottom:0.35rem;">
+        <div class="field">
+          <label for="modal-addr-plaque">پلاک</label>
+          <input id="modal-addr-plaque" placeholder="۱۲" />
+        </div>
+        <div class="field">
+          <label for="modal-addr-floor">طبقه</label>
+          <input id="modal-addr-floor" placeholder="۲" />
+        </div>
+        <div class="field">
+          <label for="modal-addr-unit">واحد</label>
+          <input id="modal-addr-unit" placeholder="۴" />
+        </div>
+        <div class="field">
+          <label for="modal-addr-receiver-name">تحویل‌گیرنده</label>
+          <input id="modal-addr-receiver-name" placeholder="نام و نام خانوادگی" />
+        </div>
+      </div>
+
+      <!-- Row 5: Receiver Phone & Delivery Note -->
+      <div style="display:grid; grid-template-columns:1fr 1.2fr; gap:0.4rem; margin-bottom:0.35rem;">
+        <div class="field">
+          <label for="modal-addr-receiver-phone">شماره تحویل‌گیرنده</label>
+          <input id="modal-addr-receiver-phone" class="ltr" placeholder="0915..." />
+        </div>
+        <div class="field">
+          <label for="modal-addr-note">توضیحات پیک</label>
+          <input id="modal-addr-note" placeholder="مثلاً: زنگ دوم…" />
+        </div>
+      </div>
+
+      <!-- Row 6: Default Checkbox & Save Button -->
+      <div style="display:flex; justify-content:space-between; align-items:center; gap:0.5rem; margin-top:0.4rem;">
+        <label style="display:flex; align-items:center; gap:0.35rem; font-size:0.75rem; cursor:pointer; margin:0;">
+          <input type="checkbox" id="modal-addr-default" style="width:16px; height:16px; margin:0; cursor:pointer;" />
+          <span>⭐️ نشانی پیش‌فرض تحویل غذا</span>
+        </label>
+        <button type="button" class="btn" id="save-address-modal-btn" style="padding:0.45rem 1.25rem; font-size:0.82rem; font-weight:700; background:#10b981; border-color:#10b981; color:#fff; flex-shrink:0;">
+          💾 ذخیره نشانی
+        </button>
+      </div>
+
+      <div id="modal-addr-msg" class="msg" style="margin-top:0.25rem; font-size:0.75rem;"></div>
+    </div>
+  </div>
+
+  <!-- Preset Avatars Modal (پاپ‌آپ انتخاب آواتارهای جذاب و متنوع) -->
+  <div id="avatar-presets-modal" class="address-modal-overlay" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.75); backdrop-filter:blur(14px); z-index:99999; align-items:center; justify-content:center; padding:1rem;">
+    <div class="address-modal-box" style="max-width:440px;">
+      <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid rgba(255,255,255,0.1); padding-bottom:0.65rem; margin-bottom:0.85rem;">
+        <h3 style="margin:0; font-size:1rem; font-weight:800; color:#fff;">🎭 انتخاب آواتار کاربری وستو</h3>
+        <button type="button" class="btn btn-sm btn-ghost" id="close-avatar-presets-btn" style="padding:0.2rem 0.5rem; font-size:0.8rem;">✕ بستن</button>
+      </div>
+      
+      <p style="font-size:0.76rem; color:var(--p-text-dim, #94a3b8); margin:0 0 0.85rem 0;">آواتار مورد علاقه خود را انتخاب کنید تا بلافاصله روی پروفایلتان قرار گیرد:</p>
+      
+      <div id="avatar-presets-grid" style="display:grid; grid-template-columns:repeat(4, 1fr); gap:0.65rem; margin-bottom:1rem;"></div>
+    </div>
+  </div>
+
+  <!-- Digital Invoice & Receipt Modal (مشاهده و چاپ فاکتور دیجیتال رسمی) -->
+  <div id="invoice-modal" class="invoice-modal-overlay" style="display:none;">
+    <div class="invoice-modal-box" id="invoice-modal-content">
+      <!-- Dynamic invoice content rendered here -->
+    </div>
+  </div>
+
+  <!-- Feedback & Rating Modal (ثبت نظر، رضایت‌سنجی و دریافت ۵۰ امتیاز باشگاه) -->
+  <div id="feedback-modal" class="address-modal-overlay" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.75); backdrop-filter:blur(14px); z-index:99999; align-items:center; justify-content:center; padding:1rem;">
+    <div class="address-modal-box" style="max-width:440px;">
+      <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid rgba(255,255,255,0.1); padding-bottom:0.65rem; margin-bottom:0.85rem;">
+        <h3 style="margin:0; font-size:1rem; font-weight:800; color:#fff;">⭐ ثبت نظر و رضایت‌سنجی وستو</h3>
+        <button type="button" class="btn btn-sm btn-ghost" id="close-feedback-modal-btn" style="padding:0.2rem 0.5rem; font-size:0.8rem;">✕ بستن</button>
+      </div>
+
+      <p style="font-size:0.76rem; color:var(--text-muted); margin:0 0 0.85rem 0;">
+        نظرات ارزشمند شما به ارتقای کیفیت غذا و خدمات کمک می‌کند. با ثبت بازخورد، <b>۵۰ امتیاز باشگاه مشتریان</b> دریافت خواهید کرد! 🎁
+      </p>
+
+      <!-- Overall Star Rating -->
+      <div style="text-align:center; margin-bottom:1rem; background:rgba(255,255,255,0.02); padding:0.75rem; border-radius:0.75rem;">
+        <div style="font-size:0.8rem; color:#cbd5e1; margin-bottom:0.35rem;">امتیاز کلی شما به تجربه رستوران و غذای وستو:</div>
+        <div id="feedback-stars-wrap" style="display:flex; justify-content:center; gap:0.4rem; font-size:1.75rem; cursor:pointer;">
+          <span class="fb-star is-selected" data-star="1">★</span>
+          <span class="fb-star is-selected" data-star="2">★</span>
+          <span class="fb-star is-selected" data-star="3">★</span>
+          <span class="fb-star is-selected" data-star="4">★</span>
+          <span class="fb-star is-selected" data-star="5">★</span>
+        </div>
+        <div id="feedback-star-label" style="font-size:0.75rem; color:#fbbf24; font-weight:700; margin-top:0.25rem;">عالی و بی‌نظیر (۵ از ۵)</div>
+      </div>
+
+      <!-- Quick Compliments / Issues Tags -->
+      <div style="margin-bottom:0.85rem;">
+        <label style="font-size:0.78rem; display:block; margin-bottom:0.35rem;">برچسب‌های تجربه شما:</label>
+        <div style="display:flex; flex-wrap:wrap; gap:0.35rem;" id="feedback-quick-tags">
+          <button type="button" class="dietary-tag-pill is-active" data-ftag="taste">🍕 طعم عالی</button>
+          <button type="button" class="dietary-tag-pill is-active" data-ftag="speed">🛵 ارسال سریع</button>
+          <button type="button" class="dietary-tag-pill" data-ftag="packaging">📦 بسته‌بندی گرم</button>
+          <button type="button" class="dietary-tag-pill" data-ftag="staff">😊 برخورد پرسنل</button>
+          <button type="button" class="dietary-tag-pill" data-ftag="portion">🥗 حجم مناسب</button>
+        </div>
+      </div>
+
+      <!-- Comment Textarea -->
+      <div class="field" style="margin-bottom:1rem;">
+        <label for="feedback-comment-txt" style="font-size:0.78rem;">توضیحات و پیشنهادات شما (اختیاری):</label>
+        <textarea id="feedback-comment-txt" rows="3" placeholder="اگر پیشنهاد یا انتقادی برای بهتر شدن غذا یا پیک دارید بنویسید…" style="font-size:0.8rem;"></textarea>
+      </div>
+
+      <button type="button" class="btn" id="submit-feedback-btn" style="width:100%; padding:0.65rem; background:#10b981; border-color:#10b981; color:#fff; font-weight:700; font-size:0.88rem;">
+        🚀 ارسال نظر و دریافت ۵۰ امتیاز
+      </button>
+
+      <div id="feedback-modal-msg" class="msg" style="margin-top:0.5rem; font-size:0.78rem;"></div>
+    </div>
+  </div>
+
+  <script src="js/i18n.js?v=logic10-persian2"></script>
   <script>
     (() => {
       'use strict';
@@ -85,13 +1079,7 @@
       const tr = (key, vars) => window.westoI18n?.t?.(key, vars) || key;
       const localeTag = () => window.westoI18n?.lang === 'fa' ? 'fa-IR' : window.westoI18n?.lang === 'ar' ? 'ar-SA' : 'en-US';
       document.title = tr('profile.documentTitle');
-      const ADMIN_ROLES = new Set([
-        'owner',
-        'manager',
-        'cashier',
-        'kitchen',
-        'admin',
-      ]);
+      const ADMIN_ROLES = new Set(['owner', 'manager', 'cashier', 'kitchen', 'admin']);
 
       let loadGeneration = 0;
       let authController = null;
@@ -99,19 +1087,256 @@
       let pageSuspended = false;
       let profileDirty = false;
       let currentPhone = '';
+      let selectedGender = 'male';
+      let selectedPreferences = [];
+      let datePickerInstance = null;
+      let cachedLoyaltyData = null;
+      let currentUserAddresses = [];
+
+      function esc(str) {
+        if (!str) return '';
+        return String(str)
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&#39;');
+      }
+
+      function renderAddressesList(addresses) {
+        const wrap = $('#addresses-list-wrap');
+        const emptyEl = $('#addresses-empty');
+        if (!wrap || !emptyEl) return;
+
+        if (!addresses || addresses.length === 0) {
+          wrap.innerHTML = '';
+          wrap.style.display = 'none';
+          emptyEl.style.display = 'block';
+          return;
+        }
+
+        emptyEl.style.display = 'none';
+        wrap.style.display = 'flex';
+
+        wrap.innerHTML = addresses.map((addr) => {
+          const isDef = !!addr.isDefault;
+          const fullAddr = [
+            addr.city,
+            addr.district,
+            addr.address,
+            addr.plaque ? `پلاک ${addr.plaque}` : '',
+            addr.floor ? `طبقه ${addr.floor}` : '',
+            addr.unit ? `واحد ${addr.unit}` : '',
+          ].filter(Boolean).join('، ');
+
+          return `
+            <div class="addr-card-item ${isDef ? 'is-default' : ''}" data-addr-id="${esc(addr.id)}">
+              <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:0.35rem; flex-wrap:wrap; gap:0.35rem;">
+                <div style="display:flex; align-items:center; gap:0.5rem;">
+                  <b style="font-size:0.88rem; color:#fff;">${esc(addr.title || '📍 نشانی')}</b>
+                  ${isDef ? '<span class="pill" style="background:#10b981; color:#fff; font-size:0.68rem; padding:0.1rem 0.5rem;">⭐️ نشانی پیش‌فرض</span>' : ''}
+                </div>
+                <div style="display:flex; gap:0.35rem;">
+                  ${!isDef ? `<button type="button" class="btn btn-sm btn-ghost set-default-addr-btn" data-addr-id="${esc(addr.id)}" style="font-size:0.72rem; padding:0.15rem 0.45rem; color:#10b981;">⭐️ پیش‌فرض</button>` : ''}
+                  <button type="button" class="btn btn-sm btn-ghost edit-addr-btn" data-addr-id="${esc(addr.id)}" style="font-size:0.72rem; padding:0.15rem 0.45rem;">✏️ ویرایش</button>
+                  <button type="button" class="btn btn-sm btn-ghost delete-addr-btn" data-addr-id="${esc(addr.id)}" style="font-size:0.72rem; padding:0.15rem 0.45rem; color:#ef4444;">🗑️ حذف</button>
+                </div>
+              </div>
+              <p style="font-size:0.82rem; color:var(--text, #e2e8f0); margin:0 0 0.35rem 0; line-height:1.45;">
+                ${esc(fullAddr)}
+              </p>
+              ${addr.note ? `<div style="font-size:0.75rem; color:var(--text-muted); margin-bottom:0.25rem;">📝 <b>راهنمای پیک:</b> ${esc(addr.note)}</div>` : ''}
+              ${(addr.receiverName || addr.receiverPhone) ? `<div style="font-size:0.72rem; color:var(--text-muted);">👤 تحویل‌گیرنده: ${esc(addr.receiverName || 'صاحب حساب')} ${addr.receiverPhone ? `(${esc(addr.receiverPhone)})` : ''}</div>` : ''}
+            </div>
+          `;
+        }).join('');
+
+        // Bind events
+        wrap.querySelectorAll('.set-default-addr-btn').forEach(btn => {
+          btn.addEventListener('click', async () => {
+            const id = btn.dataset.addrId;
+            btn.disabled = true;
+            try {
+              const res = await fetch(`/api/user/addresses/${id}/default`, {
+                method: 'POST',
+                credentials: 'same-origin',
+              });
+              const data = await res.json();
+              if (res.ok && data.ok) {
+                currentUserAddresses = data.addresses || [];
+                renderAddressesList(currentUserAddresses);
+              }
+            } catch (_) {}
+          });
+        });
+
+        wrap.querySelectorAll('.edit-addr-btn').forEach(btn => {
+          btn.addEventListener('click', () => {
+            const id = btn.dataset.addrId;
+            const target = currentUserAddresses.find(a => a.id === id);
+            if (target) openAddressModal(target);
+          });
+        });
+
+        wrap.querySelectorAll('.delete-addr-btn').forEach(btn => {
+          btn.addEventListener('click', async () => {
+            if (!confirm('آیا از حذف این نشانی اطمینان دارید؟')) return;
+            const id = btn.dataset.addrId;
+            btn.disabled = true;
+            try {
+              const res = await fetch(`/api/user/addresses/${id}`, {
+                method: 'DELETE',
+                credentials: 'same-origin',
+              });
+              const data = await res.json();
+              if (res.ok && data.ok) {
+                currentUserAddresses = data.addresses || [];
+                renderAddressesList(currentUserAddresses);
+              }
+            } catch (_) {}
+          });
+        });
+      }
+
+      function openAddressModal(addr = null) {
+        const modal = $('#address-modal');
+        if (!modal) return;
+
+        const isEdit = !!addr;
+        $('#address-modal-title').textContent = isEdit ? '✏️ ویرایش نشانی' : '📍 افزودن نشانی جدید';
+        $('#modal-addr-id').value = isEdit ? addr.id : '';
+
+        const titleVal = isEdit ? (addr.title || '🏠 منزل') : '🏠 منزل';
+        $('#modal-addr-title').value = titleVal;
+        document.querySelectorAll('.addr-title-pill').forEach(pill => {
+          pill.classList.toggle('is-active', pill.dataset.title === titleVal);
+        });
+
+        $('#modal-addr-city').value = isEdit ? (addr.city || '') : 'مشهد';
+        $('#modal-addr-district').value = isEdit ? (addr.district || '') : '';
+        $('#modal-addr-street').value = isEdit ? (addr.address || '') : '';
+        $('#modal-addr-plaque').value = isEdit ? (addr.plaque || '') : '';
+        $('#modal-addr-floor').value = isEdit ? (addr.floor || '') : '';
+        $('#modal-addr-unit').value = isEdit ? (addr.unit || '') : '';
+        $('#modal-addr-receiver-name').value = isEdit ? (addr.receiverName || '') : ($('#name')?.value || '');
+        $('#modal-addr-receiver-phone').value = isEdit ? (addr.receiverPhone || '') : currentPhone;
+        $('#modal-addr-note').value = isEdit ? (addr.note || '') : '';
+        $('#modal-addr-default').checked = isEdit ? !!addr.isDefault : (currentUserAddresses.length === 0);
+
+        const msgEl = $('#modal-addr-msg');
+        if (msgEl) msgEl.textContent = '';
+
+        modal.style.display = 'flex';
+      }
+
+      function initAddressModal() {
+        const modal = $('#address-modal');
+        if (!modal) return;
+
+        $('#add-new-address-btn')?.addEventListener('click', () => {
+          openAddressModal(null);
+        });
+
+        $('#empty-add-addr-btn')?.addEventListener('click', () => {
+          openAddressModal(null);
+        });
+
+        $('#close-address-modal-btn')?.addEventListener('click', () => {
+          modal.style.display = 'none';
+        });
+
+        modal.addEventListener('click', (e) => {
+          if (e.target === modal) modal.style.display = 'none';
+        });
+
+        document.querySelectorAll('.addr-title-pill').forEach(pill => {
+          pill.addEventListener('click', () => {
+            document.querySelectorAll('.addr-title-pill').forEach(p => p.classList.remove('is-active'));
+            pill.classList.add('is-active');
+            $('#modal-addr-title').value = pill.dataset.title;
+          });
+        });
+
+        $('#save-address-modal-btn')?.addEventListener('click', async () => {
+          const id = $('#modal-addr-id').value.trim();
+          const title = $('#modal-addr-title').value.trim();
+          const city = $('#modal-addr-city').value.trim();
+          const district = $('#modal-addr-district').value.trim();
+          const street = $('#modal-addr-street').value.trim();
+          const plaque = $('#modal-addr-plaque').value.trim();
+          const floor = $('#modal-addr-floor').value.trim();
+          const unit = $('#modal-addr-unit').value.trim();
+          const receiverName = $('#modal-addr-receiver-name').value.trim();
+          const receiverPhone = $('#modal-addr-receiver-phone').value.trim();
+          const note = $('#modal-addr-note').value.trim();
+          const isDefault = $('#modal-addr-default').checked;
+
+          const msgEl = $('#modal-addr-msg');
+          if (!street) {
+            if (msgEl) {
+              msgEl.className = 'msg error';
+              msgEl.textContent = 'لطفاً نشانی پستی دقیق (خیابان، کوچه) را وارد کنید.';
+            }
+            return;
+          }
+
+          const btn = $('#save-address-modal-btn');
+          btn.disabled = true;
+          btn.textContent = 'در حال ذخیره…';
+
+          try {
+            const url = id ? `/api/user/addresses/${id}` : '/api/user/addresses';
+            const method = id ? 'PUT' : 'POST';
+            const res = await fetch(url, {
+              method,
+              headers: { 'Content-Type': 'application/json' },
+              credentials: 'same-origin',
+              body: JSON.stringify({
+                title,
+                city,
+                district,
+                address: street,
+                plaque,
+                floor,
+                unit,
+                receiverName,
+                receiverPhone,
+                note,
+                isDefault,
+              }),
+            });
+
+            const data = await res.json();
+            if (res.ok && data.ok) {
+              currentUserAddresses = data.addresses || [];
+              renderAddressesList(currentUserAddresses);
+              modal.style.display = 'none';
+            } else {
+              if (msgEl) {
+                msgEl.className = 'msg error';
+                msgEl.textContent = data.error || 'خطا در ذخیره نشانی';
+              }
+            }
+          } catch (_) {
+            if (msgEl) {
+              msgEl.className = 'msg error';
+              msgEl.textContent = 'خطای اتصال به سرور';
+            }
+          } finally {
+            btn.disabled = false;
+            btn.textContent = '💾 ذخیره نشانی';
+          }
+        });
+      }
 
       function abortController(controller) {
         if (!controller) return;
-        try {
-          controller.abort();
-        } catch (_) {}
+        try { controller.abort(); } catch (_) {}
       }
 
       function createController(owner) {
-        const previous =
-          owner === 'auth' ? authController : loyaltyController;
+        const previous = owner === 'auth' ? authController : loyaltyController;
         abortController(previous);
-
         const controller = new AbortController();
         if (owner === 'auth') authController = controller;
         else loyaltyController = controller;
@@ -126,15 +1351,86 @@
       }
 
       async function readJson(response) {
-        try {
-          return await response.json();
-        } catch (_) {
-          return {};
-        }
+        try { return await response.json(); } catch (_) { return {}; }
       }
 
       function isAdminRole(role) {
         return ADMIN_ROLES.has(String(role || '').toLowerCase());
+      }
+
+      function switchTab(tabName) {
+        document.querySelectorAll('.profile-nav-btn').forEach(b => {
+          b.classList.toggle('is-active', b.dataset.tab === tabName);
+        });
+        document.querySelectorAll('.profile-tab-panel').forEach(p => p.classList.remove('is-active'));
+        const targetPanel = $(`#panel-${tabName}`);
+        if (targetPanel) targetPanel.classList.add('is-active');
+
+        if (tabName === 'orders') loadOrderHistory();
+      }
+
+      // Tab Switching
+      document.querySelectorAll('.profile-nav-btn').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          switchTab(btn.dataset.tab);
+        });
+      });
+
+      function calculateCompleteness(user) {
+        let score = 20; // Verified mobile
+        const missing = [];
+        if (user.name && user.name.trim()) score += 20;
+        else missing.push('نام و نام خانوادگی');
+
+        if (user.email && user.email.trim()) score += 20;
+        else missing.push('آدرس ایمیل');
+
+        if (user.birthdate && user.birthdate.trim()) score += 20;
+        else missing.push('تاریخ تولد');
+
+        if ((user.addresses && user.addresses.length > 0) || (user.city && user.city.trim())) score += 10;
+        else missing.push('نشانی تحویل مشهد');
+
+        if (user.avatar && user.avatar.trim()) score += 10;
+        else missing.push('تصویر پروفایل');
+
+        score = Math.min(100, Math.max(20, score));
+
+        const bar = $('#profile-meter-bar');
+        const text = $('#profile-meter-text');
+        const hint = $('#profile-meter-hint');
+        if (bar) bar.style.width = `${score}%`;
+        if (text) text.textContent = `${score}٪`;
+        if (hint) {
+          if (score === 100) {
+            hint.textContent = '🎉 تبریک! مشخصات کاربری شما ۱۰۰٪ تکمیل است (+۵۰ امتیاز هدیه باشگاه دریافت شد).';
+            hint.style.color = '#10b981';
+          } else {
+            hint.textContent = `پروفایل شما ${score}٪ تکمیل است. با ثبت (${missing.slice(0, 2).join(' و ')}) ۵۰ امتیاز هدیه بگیرید.`;
+            hint.style.color = 'var(--p-text-dim, #94a3b8)';
+          }
+        }
+      }
+
+      function applyAvatarToNode(node, avatarUrl, initial) {
+        if (!node) return;
+        if (avatarUrl) {
+          if (avatarUrl.startsWith('preset:')) {
+            const emoji = avatarUrl.replace('preset:', '');
+            node.textContent = emoji;
+            node.style.backgroundImage = 'none';
+            node.style.fontSize = node.offsetWidth > 60 ? '2.2rem' : '1.35rem';
+          } else {
+            node.textContent = '';
+            node.style.backgroundImage = `url('${avatarUrl}')`;
+            node.style.backgroundSize = 'cover';
+            node.style.backgroundPosition = 'center';
+          }
+        } else {
+          node.textContent = initial;
+          node.style.backgroundImage = 'none';
+          node.style.fontSize = '';
+        }
       }
 
       function renderUser(user, { preserveEditable = false } = {}) {
@@ -142,11 +1438,57 @@
 
         currentPhone = String(user.phone || '');
         $('#phone').value = currentPhone;
+        $('#user-display-phone').textContent = currentPhone;
+
+        const displayName = $('#user-display-name');
+        const initials = $('#avatar-initials');
+        const previewAvatar = $('#profile-avatar-preview');
+        if (displayName) displayName.textContent = user.name || 'مهمان گرامی';
+
+        const initialChar = (user.name || 'و').trim().charAt(0) || 'و';
+        applyAvatarToNode(initials, user.avatar, initialChar);
+        applyAvatarToNode(previewAvatar, user.avatar, initialChar);
 
         if (!preserveEditable || !profileDirty) {
           $('#name').value = String(user.name || '');
           $('#email').value = String(user.email || '');
+          $('#notes').value = String(user.notes || '');
+
+          selectedGender = user.gender || 'male';
+          document.querySelectorAll('.gender-radio-pill').forEach(pill => {
+            pill.classList.toggle('is-active', pill.dataset.gender === selectedGender);
+          });
+
+          const userPrefs = Array.isArray(user.preferences) ? user.preferences : [];
+          document.querySelectorAll('.dietary-tag-pill').forEach(pill => {
+            pill.classList.toggle('is-active', userPrefs.includes(pill.dataset.tag));
+          });
+
+          if (user.preferredBranch && $('#pref-branch')) {
+            $('#pref-branch').value = user.preferredBranch;
+          }
+
+          if (user.birthdate) {
+            $('#birthdate-val').value = user.birthdate;
+            $('#birthdate-display').textContent = user.birthdate;
+          }
         }
+
+        currentUserAddresses = Array.isArray(user.addresses) ? user.addresses : [];
+        renderAddressesList(currentUserAddresses);
+
+        isBirthdateLockedState = !!user.birthdateLocked;
+        const lockBadge = $('#bday-lock-badge');
+        const lockHint = $('#bday-lock-hint');
+        const bdayBtn = $('#birthdate-btn');
+        const bdayIcon = $('#birthdate-icon');
+
+        if (lockBadge) lockBadge.style.display = isBirthdateLockedState ? 'inline' : 'none';
+        if (lockHint) lockHint.style.display = isBirthdateLockedState ? 'block' : 'none';
+        if (bdayBtn) bdayBtn.classList.toggle('is-locked', isBirthdateLockedState);
+        if (bdayIcon) bdayIcon.textContent = isBirthdateLockedState ? '🔒' : '🗓️';
+
+        calculateCompleteness(user);
 
         const memberSince = $('#member-since');
         if (user.createdAt) {
@@ -154,11 +1496,7 @@
           const dateStr = window.ShamsiCore
             ? window.ShamsiCore.formatShamsiDateLong(date)
             : date.toLocaleDateString(localeTag(), { year: 'numeric', month: 'long', day: 'numeric' });
-          memberSince.textContent = Number.isNaN(date.getTime())
-            ? ''
-            : tr('profile.memberSince', { date: dateStr });
-        } else {
-          memberSince.textContent = '';
+          memberSince.textContent = Number.isNaN(date.getTime()) ? '' : tr('profile.memberSince', { date: dateStr });
         }
 
         const adminWrap = $('#admin-link-wrap');
@@ -166,88 +1504,1032 @@
       }
 
       function renderLoyalty(data) {
-        const card = $('#loyalty-card');
-        const points = $('#loyalty-points');
-        const hint = $('#loyalty-hint');
+        cachedLoyaltyData = data;
+        const tier = data?.tier || { id: 'bronze', name: 'برنزی', badgeIcon: '🥉', multiplier: 1.0, discountPct: 1 };
+        const next = data?.nextTier;
+        const pts = data?.points || 0;
+        const walletBal = Number(data?.walletBalanceToman) || 0;
 
-        points.textContent = Number(data?.points || 0).toLocaleString(localeTag());
+        const formattedWallet = `${(window.WestoPersianFormat?.number(walletBal, { locale: localeTag() }) ?? walletBal.toLocaleString(localeTag()))} تومان`;
+        const formattedPoints = window.WestoPersianFormat?.number(pts, { locale: localeTag() }) ?? Number(pts).toLocaleString(localeTag());
 
-        if (!data?.loyalty?.enabled) {
-          hint.textContent = '';
-          card.style.display = 'none';
-          return;
+        $('#wallet-balance').textContent = formattedWallet;
+        $('#tab-wallet-balance').textContent = formattedWallet;
+        $('#loyalty-points').textContent = formattedPoints;
+        $('#tab-loyalty-points').textContent = formattedPoints;
+
+        ['#loyalty-tier-badge', '#tab-loyalty-tier-badge'].forEach(sel => {
+          const el = $(sel);
+          if (el) {
+            el.className = `tier-badge tier-badge-${tier.id || 'bronze'}`;
+            el.textContent = `${tier.badgeIcon || '🥉'} ${tier.name || 'برنزی'}`;
+          }
+        });
+
+        const nextText = next
+          ? `ارتقا به سطح ${next.name} (${data?.pointsToNext ? (window.WestoPersianFormat?.number(data.pointsToNext, { locale: localeTag() }) ?? data.pointsToNext) + ' امتیاز دیگر' : ''})`
+          : 'سطح الماسی (بالاترین)';
+        const tabNextLabel = $('#tab-loyalty-next-label');
+        if (tabNextLabel) tabNextLabel.textContent = nextText;
+
+        const pct = Math.min(100, Math.max(0, data?.progressPct || 0));
+        const pctEl = $('#tab-loyalty-progress-pct');
+        const fillEl = $('#tab-loyalty-progress-fill');
+        if (pctEl) pctEl.textContent = `${window.WestoPersianFormat?.number(pct, { locale: localeTag() }) ?? pct}٪`;
+        if (fillEl) fillEl.style.width = `${pct}%`;
+
+        const perksEl = $('#tab-loyalty-perks');
+        if (perksEl) {
+          const perks = Array.isArray(tier.perks) && tier.perks.length > 0
+            ? tier.perks
+            : [`ضریب کسب امتیاز: ${tier.multiplier || 1}x`, `تخفیف دائم فاکتور: ${tier.discountPct || 0}٪`];
+          perksEl.innerHTML = `<b style="display:block; margin-bottom:0.3rem;">مزایای سطح شما:</b> ${perks.map(p => `<span style="display:inline-block; margin-left:0.6rem; color:#10b981;">✓ ${p}</span>`).join(' ')}`;
         }
 
-        card.style.display = '';
+        // Populate Next-Tier Simulator & Goal Card
+        const simTargetBadge = $('#sim-target-badge');
+        const simTargetDesc = $('#sim-target-desc');
+        const simTargetPerks = $('#sim-target-perks');
 
-        const rate = Number(data.loyalty.pointsPerToman) || 0;
-        const per = rate > 0 ? Math.round(1 / rate) : 0;
-        const redeemValue = Number(data.loyalty.redeemValue) || 0;
+        if (next) {
+          const ptsNeeded = data?.pointsToNext || 0;
+          if (simTargetBadge) simTargetBadge.textContent = `🎯 هدف بعدی: ${next.name}`;
+          if (simTargetDesc) {
+            simTargetDesc.textContent = `تنها با کسب ${ptsNeeded.toLocaleString('fa-IR')} امتیاز دیگر، به سطح ${next.name} ارتقا یافته و از مزایای جدید و ضرایب بالاتر بهره‌مند می‌شوید.`;
+          }
+          if (simTargetPerks) {
+            simTargetPerks.textContent = `🎁 هدیه ارتقا: ضریب امتیاز ${next.multiplier || 1.25}x و تخفیف دائمی ${next.discountPct || 3}٪`;
+          }
+        } else {
+          if (simTargetBadge) simTargetBadge.textContent = '💎 سطح الماس VIP';
+          if (simTargetDesc) {
+            simTargetDesc.textContent = 'تبریک! شما در بالاترین سطح باشگاه وفاداری وستو قرار دارید و از حداکثر امتیازات، هدایا و تخفیف‌ها بهره‌مند هستید.';
+          }
+          if (simTargetPerks) {
+            simTargetPerks.textContent = '🌟 کلیه مزایای VIP (ضریب ۲x و تخفیف ۸٪) برای شما فعال است.';
+          }
+        }
 
-        hint.textContent = per
-          ? tr('profile.loyaltyDesc', { per: per.toLocaleString(localeTag()), value: redeemValue.toLocaleString(localeTag()) })
-          : tr('profile.loyaltyActive');
+        // Render 4-Tier Comparison Roadmap
+        const roadmapEl = $('#tab-loyalty-roadmap');
+        if (roadmapEl) {
+          const allTiers = [
+            { id: 'bronze', name: 'سطح برنزی', badgeIcon: '🥉', minPoints: 0, multiplier: 1.0, discountPct: 1, perks: ['۱ امتیاز به ازای هر ۱۰۰ ت', '۱٪ تخفیف روی فاکتور'] },
+            { id: 'silver', name: 'سطح نقره‌ای', badgeIcon: '🥈', minPoints: 500, multiplier: 1.25, discountPct: 3, perks: ['ضریب ۱٫۲۵ برابری امتیاز', '۳٪ تخفیف دائمی', 'آفرهای هفتگی'] },
+            { id: 'gold', name: 'سطح طلایی', badgeIcon: '🥇', minPoints: 2000, multiplier: 1.5, discountPct: 5, perks: ['ضریب ۱٫۵ برابری امتیاز', '۵٪ تخفیف دائمی', 'پیش‌غذای رایگان تولد'] },
+            { id: 'vip', name: 'الماسی VIP', badgeIcon: '💎', minPoints: 5000, multiplier: 2.0, discountPct: 8, perks: ['ضریب ۲ برابری امتیاز', '۸٪ تخفیف تمام سفارش‌ها', 'رزرو میز VIP'] },
+          ];
+
+          roadmapEl.innerHTML = allTiers.map(t => {
+            const isCurrent = t.id === (tier.id || 'bronze');
+            return `
+              <div class="loyalty-tier-card ${isCurrent ? 'is-current' : ''}">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.45rem;">
+                  <b style="font-size:0.95rem; color:#fff;">${t.badgeIcon} ${t.name}</b>
+                  ${isCurrent ? '<span class="pill is-paid" style="font-size:0.68rem;">سطح فعلی</span>' : ''}
+                </div>
+                <div style="font-size:0.72rem; color:var(--text-muted); margin-bottom:0.4rem;">حداقل امتیاز: ${(t.minPoints).toLocaleString('fa-IR')}</div>
+                <div style="border-top:1px solid rgba(255,255,255,0.06); padding-top:0.35rem; font-size:0.72rem;">
+                  ${t.perks.map(p => `<div style="color:${isCurrent ? '#10b981' : 'var(--text-muted)'}; margin-bottom:0.15rem;">✓ ${p}</div>`).join('')}
+                </div>
+              </div>
+            `;
+          }).join('');
+        }
+
+        // Render Achievements Badges
+        const achieveEl = $('#tab-achievements-grid');
+        if (achieveEl) {
+          const hasBday = !!$('#birthdate-val')?.value;
+          const hasAddr = (currentUserAddresses && currentUserAddresses.length > 0);
+          const hasWallet = walletBal > 0;
+
+          const achievements = [
+            { icon: '🌟', title: 'عضو وستو', desc: 'عضویت در خانواده وستو', unlocked: true },
+            { icon: '🎂', title: 'ستاره تولد', desc: 'ثبت تاریخ تولد', unlocked: hasBday },
+            { icon: '📍', title: 'شهروند مشهد', desc: 'ثبت نشانی تحویل', unlocked: hasAddr },
+            { icon: '💳', title: 'کیف هوشمند', desc: 'شارژ کیف پول', unlocked: hasWallet },
+            { icon: '👑', title: 'مشتری وفادار', desc: 'رسیدن به نقره‌ای/طلایی', unlocked: pts >= 500 },
+          ];
+
+          achieveEl.innerHTML = achievements.map(a => `
+            <div class="achievement-badge-card ${a.unlocked ? 'is-unlocked' : 'is-locked'}">
+              <span style="font-size:1.6rem; line-height:1; margin-bottom:0.3rem;">${a.icon}</span>
+              <b style="font-size:0.78rem; color:${a.unlocked ? '#fbbf24' : 'var(--text-muted)'};">${a.title}</b>
+              <span style="font-size:0.68rem; color:var(--text-muted); margin-top:0.15rem;">${a.desc}</span>
+            </div>
+          `).join('');
+        }
+
+        renderWalletPackages();
+      }
+
+      async function renderWalletPackages() {
+        try {
+          const res = await fetch('/api/wallet/me', { credentials: 'same-origin', cache: 'no-store' });
+          if (!res.ok) return;
+          const wData = await res.json();
+          const grid = $('#tab-packages-grid');
+          if (!grid) return;
+          const packages = wData.packages || [];
+          grid.innerHTML = packages.map(p => `
+            <div class="topup-pack-item" data-pack-id="${p.id}" style="background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.1); border-radius:0.75rem; padding:0.85rem; text-align:center;">
+              <b style="font-size:0.95rem; display:block; color:#fff;">${(p.amountToman / 1000).toLocaleString('fa-IR')} هزار تومان</b>
+              ${p.badge ? `<span style="display:inline-block; font-size:0.7rem; background:#10b981; color:#fff; border-radius:999px; padding:0.1rem 0.45rem; margin:0.25rem 0;">${p.badge}</span>` : ''}
+              <div style="font-size:0.78rem; color:#10b981; font-weight:700;">+ ${(p.bonusToman / 1000).toLocaleString('fa-IR')} تومان هدیه</div>
+              <button type="button" class="btn btn-sm pack-buy-btn" data-pack-id="${p.id}" style="margin-top:0.5rem; width:100%; font-size:0.78rem; background:#10b981; border-color:#10b981; color:#fff; font-weight:700;">انتخاب و شارژ</button>
+            </div>
+          `).join('');
+
+          // Connect Refresh Button
+          const refreshWalletBtn = $('#refresh-wallet-btn');
+          const refreshIcon = $('#refresh-wallet-icon');
+          if (refreshWalletBtn && !refreshWalletBtn.dataset.bound) {
+            refreshWalletBtn.dataset.bound = 'true';
+            refreshWalletBtn.onclick = async () => {
+              if (refreshIcon) refreshIcon.classList.add('is-spinning');
+              refreshWalletBtn.disabled = true;
+              try {
+                await loadLoyalty(loadGeneration);
+                setMsg('✓ موجودی کیف پول و امتیازات باشگاه به‌روزرسانی شد.', true);
+              } catch (_) {}
+              finally {
+                setTimeout(() => {
+                  if (refreshIcon) refreshIcon.classList.remove('is-spinning');
+                  refreshWalletBtn.disabled = false;
+                }, 600);
+              }
+            };
+          }
+
+          let pollInterval = null;
+
+          grid.querySelectorAll('.pack-buy-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+              const packId = btn.dataset.packId;
+              const pack = packages.find(p => p.id === packId);
+              if (!pack) return;
+
+              const actionBox = $('#tab-topup-action-box');
+              const contentEl = $('#tab-topup-action-content');
+              const msgEl = $('#tab-topup-msg');
+              if (msgEl) msgEl.textContent = '';
+              if (pollInterval) clearInterval(pollInterval);
+
+              actionBox.style.display = 'block';
+              contentEl.innerHTML = `
+                <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid rgba(255,255,255,0.1); padding-bottom:0.6rem; margin-bottom:0.75rem;">
+                  <b style="font-size:0.95rem; color:#fff;">روش شارژ بسته ${(pack.amountToman / 1000).toLocaleString('fa-IR')} هزار تومانی</b>
+                  <button type="button" class="btn btn-sm btn-ghost" id="close-topup-action-btn" style="padding:0.2rem 0.5rem; font-size:0.75rem;">✕ بستن</button>
+                </div>
+                <p style="font-size:0.8rem; color:var(--text-muted); margin:0 0 0.85rem 0;">
+                  مبلغ شارژ: ${(pack.amountToman).toLocaleString('fa-IR')} تومان + ${(pack.bonusToman).toLocaleString('fa-IR')} تومان هدیه (مجموع اعتبار: ${((pack.amountToman + pack.bonusToman)).toLocaleString('fa-IR')} تومان). لطفاً روش تأیید پرداخت را انتخاب فرمایید:
+                </p>
+                <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(160px, 1fr)); gap:0.75rem;">
+                  <button type="button" class="btn" id="topup-via-gateway-btn" style="padding:0.75rem 0.5rem; font-size:0.82rem; background:linear-gradient(135deg,#059669,#10b981); color:#fff; border:none; border-radius:0.75rem; font-weight:700;">
+                    💳 پرداخت با درگاه بانکی<br><small style="font-size:0.7rem; font-weight:400; opacity:0.9;">(تأییدیه آنی شاپرک)</small>
+                  </button>
+                  <button type="button" class="btn" id="topup-via-staff-btn" style="padding:0.75rem 0.5rem; font-size:0.82rem; background:linear-gradient(135deg,#6366f1,#8b5cf6); color:#fff; border:none; border-radius:0.75rem; font-weight:700;">
+                    👨‍🍳 پرداخت حضوری در سالن<br><small style="font-size:0.7rem; font-weight:400; opacity:0.9;">(تأیید گارسون / صندوق)</small>
+                  </button>
+                </div>
+                <div id="topup-flow-result" style="margin-top:0.85rem;"></div>
+              `;
+
+              contentEl.querySelector('#close-topup-action-btn').onclick = () => {
+                actionBox.style.display = 'none';
+                if (pollInterval) clearInterval(pollInterval);
+              };
+
+              // Option 1: Gateway Verification
+              contentEl.querySelector('#topup-via-gateway-btn').onclick = async () => {
+                const resDiv = contentEl.querySelector('#topup-flow-result');
+                resDiv.innerHTML = '<div style="color:#10b981; font-size:0.82rem;">در حال ارتباط با درگاه پرداخت شاپرک…</div>';
+
+                try {
+                  const reqRes = await fetch('/api/wallet/topup/request', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'same-origin',
+                    body: JSON.stringify({ packageId: pack.id, channel: 'online_gateway' }),
+                  });
+                  const reqData = await reqRes.json();
+                  if (!reqRes.ok || !reqData.ok) {
+                    resDiv.innerHTML = `<div class="msg error">${reqData.error || 'خطا در اتصال به درگاه'}</div>`;
+                    return;
+                  }
+
+                  resDiv.innerHTML = `
+                    <div style="background:rgba(16,185,129,0.1); border:1px solid rgba(16,185,129,0.3); border-radius:0.75rem; padding:0.85rem; text-align:center;">
+                      <div style="font-size:0.85rem; color:#10b981; font-weight:700;">اتصال به درگاه امن بانکی</div>
+                      <div style="font-size:0.78rem; color:var(--text-muted); margin:0.3rem 0 0.65rem;">شناسه پرداخت: <span class="ltr" style="color:#fff;">${reqData.request.authority}</span></div>
+                      <button type="button" class="btn btn-sm" id="confirm-gateway-btn" style="background:#10b981; border-color:#10b981; color:#fff; font-weight:700; width:100%;">
+                        ✓ تأیید و تکمیل پرداخت درگاه بانکی
+                      </button>
+                    </div>
+                  `;
+
+                  resDiv.querySelector('#confirm-gateway-btn').onclick = async () => {
+                    const btnEl = resDiv.querySelector('#confirm-gateway-btn');
+                    btnEl.disabled = true;
+                    btnEl.textContent = 'در حال اعتبارسنجی تأییدیه بانک…';
+
+                    const vRes = await fetch('/api/wallet/topup/gateway-verify', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      credentials: 'same-origin',
+                      body: JSON.stringify({ requestId: reqData.request.id, gatewayToken: reqData.request.gatewayToken }),
+                    });
+                    const vData = await vRes.json();
+
+                    if (vRes.ok && vData.ok) {
+                      resDiv.innerHTML = `
+                        <div class="msg ok" style="font-size:0.85rem; padding:0.75rem;">
+                          🎉 پرداخت بانکی با موفقیت تأیید شد!<br>
+                          مبلغ ${(vData.totalCredit || 0).toLocaleString('fa-IR')} تومان اعتبار به کیف پول شما افزوده شد.
+                        </div>
+                      `;
+                      $('#wallet-balance').textContent = `${(vData.newBalance || 0).toLocaleString('fa-IR')} تومان`;
+                      $('#tab-wallet-balance').textContent = `${(vData.newBalance || 0).toLocaleString('fa-IR')} تومان`;
+                    } else {
+                      resDiv.innerHTML = `<div class="msg error">${vData.error || 'تأییدیه درگاه با خطا مواجه شد.'}</div>`;
+                    }
+                  };
+                } catch (_) {
+                  resDiv.innerHTML = '<div class="msg error">خطای اتصال به سرور درگاه</div>';
+                }
+              };
+
+              // Option 2: Waiter / Cashier Approval
+              contentEl.querySelector('#topup-via-staff-btn').onclick = async () => {
+                const resDiv = contentEl.querySelector('#topup-flow-result');
+                resDiv.innerHTML = '<div style="color:#8b5cf6; font-size:0.82rem;">در حال ثبت درخواست شارژ حضوری…</div>';
+
+                try {
+                  const reqRes = await fetch('/api/wallet/topup/request', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'same-origin',
+                    body: JSON.stringify({ packageId: pack.id, channel: 'instore_staff' }),
+                  });
+                  const reqData = await reqRes.json();
+                  if (!reqRes.ok || !reqData.ok) {
+                    resDiv.innerHTML = `<div class="msg error">${reqData.error || 'خطا در ثبت درخواست'}</div>`;
+                    return;
+                  }
+
+                  const tracking = reqData.request.trackingCode;
+                  resDiv.innerHTML = `
+                    <div style="background:rgba(99,102,241,0.12); border:1px solid rgba(99,102,241,0.35); border-radius:0.75rem; padding:0.85rem; text-align:center;">
+                      <div style="font-size:0.8rem; color:#a5b4fc;">کد پیگیری پرداخت حضوری شما:</div>
+                      <div style="font-size:2rem; font-weight:900; color:#fff; letter-spacing:4px; margin:0.35rem 0;" class="ltr">${tracking}</div>
+                      <p style="font-size:0.76rem; color:var(--text-muted); margin:0 0 0.6rem 0;">
+                        لطفاً این کد یا شماره همراه خود را جهت پرداخت نقدی یا کارتخوان به <b>گارسون یا صندوقدار</b> اعلام فرمایید.
+                      </p>
+                      <div id="staff-wait-status" style="font-size:0.75rem; color:#f59e0b; font-weight:600;">
+                        ⏳ در انتظار تأیید و ثبت توسط گارسون / صندوقدار…
+                      </div>
+                    </div>
+                  `;
+
+                  // Poll for staff approval status
+                  pollInterval = setInterval(async () => {
+                    try {
+                      const checkRes = await fetch('/api/wallet/topup-requests/my', { credentials: 'same-origin' });
+                      const checkData = await checkRes.json();
+                      const thisReq = (checkData.requests || []).find(r => r.id === reqData.request.id);
+
+                      if (thisReq && thisReq.status === 'completed') {
+                        clearInterval(pollInterval);
+                        resDiv.innerHTML = `
+                          <div class="msg ok" style="font-size:0.85rem; padding:0.75rem;">
+                            🎉 شارژ حضوری توسط ${esc(thisReq.approvedBy?.roleLabel || 'صندوقدار/گارسون')} تأیید شد!<br>
+                            مبلغ ${(thisReq.totalCredit || 0).toLocaleString('fa-IR')} تومان به کیف پول افزوده شد.
+                          </div>
+                        `;
+                        const meRes = await fetch('/api/wallet/me', { credentials: 'same-origin' });
+                        const meData = await meRes.json();
+                        const b = meData.walletBalanceToman || 0;
+                        $('#wallet-balance').textContent = `${b.toLocaleString('fa-IR')} تومان`;
+                        $('#tab-wallet-balance').textContent = `${b.toLocaleString('fa-IR')} تومان`;
+                      }
+                    } catch (_) {}
+                  }, 2500);
+
+                } catch (_) {
+                  resDiv.innerHTML = '<div class="msg error">خطا در ارتباط با سرور</div>';
+                }
+              };
+
+            });
+          });
+
+          // Custom amount top-up handling
+          const customInput = $('#custom-topup-amount');
+          const customBtn = $('#custom-topup-btn');
+          const customHint = $('#custom-topup-hint');
+
+          if (customInput && customHint) {
+            customInput.oninput = () => {
+              const val = Number(customInput.value) || 0;
+              if (val >= 100000) {
+                const bonus = Math.floor(val * 0.1);
+                customHint.innerHTML = `✨ هدیه بونوس محاسبه‌شده: <b style="color:#10b981;">+${bonus.toLocaleString('fa-IR')} تومان</b> (مجموع اعتبار دریافتی: ${(val + bonus).toLocaleString('fa-IR')} تومان)`;
+              } else if (val > 0) {
+                customHint.innerHTML = 'حداقل مبلغ شارژ دلخواه ۵۰,۰۰۰ تومان می‌باشد.';
+              } else {
+                customHint.innerHTML = '';
+              }
+            };
+          }
+
+          if (customBtn && customInput) {
+            customBtn.onclick = () => {
+              const val = Number(customInput.value) || 0;
+              if (val < 50000) {
+                setMsg('حداقل مبلغ شارژ کیف پول ۵۰ هزار تومان است.');
+                return;
+              }
+              const bonus = val >= 100000 ? Math.floor(val * 0.1) : 0;
+              const actionBox = $('#tab-topup-action-box');
+              const contentEl = $('#tab-topup-action-content');
+              actionBox.style.display = 'block';
+              contentEl.innerHTML = `
+                <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid rgba(255,255,255,0.1); padding-bottom:0.6rem; margin-bottom:0.75rem;">
+                  <b style="font-size:0.95rem; color:#fff;">شارژ سفارشی ${(val).toLocaleString('fa-IR')} تومانی</b>
+                  <button type="button" class="btn btn-sm btn-ghost" id="close-custom-topup-btn" style="padding:0.2rem 0.5rem; font-size:0.75rem;">✕ بستن</button>
+                </div>
+                <p style="font-size:0.8rem; color:var(--text-muted); margin:0 0 0.85rem 0;">
+                  مبلغ شارژ: ${(val).toLocaleString('fa-IR')} تومان ${bonus > 0 ? `+ ${(bonus).toLocaleString('fa-IR')} تومان هدیه` : ''}. روش پرداخت را انتخاب فرمایید:
+                </p>
+                <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(160px, 1fr)); gap:0.75rem;">
+                  <button type="button" class="btn" id="custom-gateway-btn" style="padding:0.75rem 0.5rem; font-size:0.82rem; background:linear-gradient(135deg,#059669,#10b981); color:#fff; border:none; border-radius:0.75rem; font-weight:700;">
+                    💳 پرداخت با درگاه بانکی
+                  </button>
+                </div>
+                <div id="custom-flow-result" style="margin-top:0.85rem;"></div>
+              `;
+              contentEl.querySelector('#close-custom-topup-btn').onclick = () => { actionBox.style.display = 'none'; };
+              contentEl.querySelector('#custom-gateway-btn').onclick = async () => {
+                const resDiv = contentEl.querySelector('#custom-flow-result');
+                resDiv.innerHTML = '<div style="color:#10b981; font-size:0.82rem;">در حال اتصال به درگاه…</div>';
+                try {
+                  const reqRes = await fetch('/api/wallet/topup/request', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'same-origin',
+                    body: JSON.stringify({ amountToman: val, channel: 'online_gateway' }),
+                  });
+                  const reqData = await reqRes.json();
+                  if (reqRes.ok && reqData.ok) {
+                    resDiv.innerHTML = `
+                      <div style="background:rgba(16,185,129,0.1); border:1px solid rgba(16,185,129,0.3); border-radius:0.75rem; padding:0.85rem; text-align:center;">
+                        <div style="font-size:0.85rem; color:#10b981; font-weight:700;">اتصال به درگاه امن بانکی</div>
+                        <div style="font-size:0.78rem; color:var(--text-muted); margin:0.3rem 0 0.65rem;">شناسه پرداخت: <span class="ltr" style="color:#fff;">${reqData.request.authority}</span></div>
+                        <button type="button" class="btn btn-sm" id="confirm-custom-gw-btn" style="background:#10b981; border-color:#10b981; color:#fff; font-weight:700; width:100%;">
+                          ✓ تأیید و پرداخت نهایی
+                        </button>
+                      </div>
+                    `;
+                    resDiv.querySelector('#confirm-custom-gw-btn').onclick = async () => {
+                      const vRes = await fetch('/api/wallet/topup/gateway-verify', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        credentials: 'same-origin',
+                        body: JSON.stringify({ requestId: reqData.request.id, gatewayToken: reqData.request.gatewayToken }),
+                      });
+                      const vData = await vRes.json();
+                      if (vRes.ok && vData.ok) {
+                        resDiv.innerHTML = `<div class="msg ok">🎉 مبلغ ${(vData.totalCredit || val).toLocaleString('fa-IR')} تومان با موفقیت شارژ شد!</div>`;
+                        renderWalletPackages();
+                      }
+                    };
+                  }
+                } catch (_) {
+                  resDiv.innerHTML = '<div class="msg error">خطا در پرداخت</div>';
+                }
+              };
+            };
+          }
+
+          // Interactive Calculator Slider Logic
+          const calcRange = $('#calc-topup-range');
+          const calcSliderVal = $('#calc-slider-val');
+          const calcBonus = $('#calc-bonus-result');
+          const calcTotal = $('#calc-total-result');
+          const calcApplyBtn = $('#calc-apply-btn');
+
+          function updateCalculator(val) {
+            const num = Number(val) || 200000;
+            const bonus = Math.floor(num * 0.1);
+            const total = num + bonus;
+            if (calcSliderVal) calcSliderVal.textContent = `${num.toLocaleString('fa-IR')} تومان`;
+            if (calcBonus) calcBonus.textContent = `+${bonus.toLocaleString('fa-IR')} تومان`;
+            if (calcTotal) calcTotal.textContent = `${total.toLocaleString('fa-IR')} تومان`;
+          }
+
+          if (calcRange) {
+            calcRange.addEventListener('input', () => {
+              updateCalculator(calcRange.value);
+            });
+          }
+
+          if (calcApplyBtn && customInput && customBtn) {
+            calcApplyBtn.addEventListener('click', () => {
+              const selectedVal = Number(calcRange?.value) || 200000;
+              customInput.value = selectedVal;
+              customInput.dispatchEvent(new Event('input'));
+              customBtn.click();
+            });
+          }
+
+          // Render Wallet Ledger
+          const ledgerList = $('#wallet-ledger-list');
+          const ledgerEmpty = $('#wallet-ledger-empty');
+          const ledgerLoading = $('#wallet-ledger-loading');
+          if (ledgerLoading) ledgerLoading.style.display = 'none';
+
+          const ledger = wData.ledger || [];
+          if (!ledger.length) {
+            if (ledgerList) ledgerList.style.display = 'none';
+            if (ledgerEmpty) ledgerEmpty.style.display = 'block';
+          } else {
+            if (ledgerEmpty) ledgerEmpty.style.display = 'none';
+            if (ledgerList) {
+              ledgerList.style.display = 'block';
+              ledgerList.innerHTML = ledger.map(item => {
+                const isPositive = item.delta > 0;
+                const sign = isPositive ? '+' : '';
+                const color = isPositive ? '#10b981' : '#ef4444';
+                const badgeBg = isPositive ? 'rgba(16,185,129,0.12)' : 'rgba(239,68,68,0.12)';
+                const badgeBorder = isPositive ? 'rgba(16,185,129,0.3)' : 'rgba(239,68,68,0.3)';
+                const icon = item.type === 'topup' ? '💳'
+                  : item.type === 'bonus' ? '🎁'
+                  : item.type === 'birthday' ? '🎂'
+                  : item.type === 'referral' ? '👥'
+                  : item.type === 'payment' ? '🍽️' : '📝';
+
+                const dt = new Date(item.at);
+                const dateStr = window.ShamsiCore ? window.ShamsiCore.formatShamsiDateLong(dt) : dt.toLocaleDateString(localeTag());
+                const timeStr = dt.toLocaleTimeString(localeTag(), { hour: '2-digit', minute: '2-digit' });
+
+                return `
+                  <div class="ledger-item-row" style="display:flex; justify-content:space-between; align-items:center; padding:0.65rem 0.85rem; margin-bottom:0.45rem; background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.06); border-radius:0.75rem; flex-wrap:wrap; gap:0.4rem;">
+                    <div style="display:flex; align-items:center; gap:0.5rem;">
+                      <span style="font-size:1.1rem;">${icon}</span>
+                      <div>
+                        <div style="font-size:0.82rem; font-weight:700; color:#fff;">${esc(item.description || 'تراکنش کیف پول')}</div>
+                        <div style="font-size:0.7rem; color:var(--text-muted);">${dateStr} · ساعت ${timeStr}</div>
+                      </div>
+                    </div>
+                    <div style="text-align:left;">
+                      <span class="num" style="font-size:0.92rem; font-weight:800; color:${color}; background:${badgeBg}; border:1px solid ${badgeBorder}; border-radius:0.5rem; padding:0.15rem 0.6rem;">
+                        ${sign}${(item.delta).toLocaleString('fa-IR')} تومان
+                      </span>
+                    </div>
+                  </div>
+                `;
+              }).join('');
+            }
+          }
+        } catch (_) {}
+      }
+
+      // Order History Loader
+      async function loadOrderHistory() {
+        const loadingEl = $('#orders-loading');
+        const listWrap = $('#orders-list-wrap');
+        const emptyEl = $('#orders-empty');
+
+        if (loadingEl) loadingEl.style.display = 'block';
+        if (listWrap) listWrap.style.display = 'none';
+        if (emptyEl) emptyEl.style.display = 'none';
+
+        let activeOrdersFilter = 'all';
+        let ordersSearchQuery = '';
+
+        function renderOrdersView() {
+          const listWrap = $('#orders-list-wrap');
+          const toolbar = $('#orders-filter-toolbar');
+          const statsBar = $('#orders-stats-summary-bar');
+
+          if (!window.cachedOrders || !window.cachedOrders.length) {
+            if (statsBar) statsBar.style.display = 'none';
+            if (toolbar) toolbar.style.display = 'none';
+            if (listWrap) listWrap.style.display = 'none';
+            if (emptyEl) emptyEl.style.display = 'block';
+            return;
+          }
+
+          if (statsBar) {
+            statsBar.style.display = 'grid';
+            const totalOrders = window.cachedOrders.length;
+            const totalPoints = window.cachedOrders.reduce((sum, o) => sum + (Number(o.pointsEarned) || 0), 0);
+            const totalSavings = window.cachedOrders.reduce((sum, o) => sum + (Number(o.discount) || Number(o.savings) || Math.floor((o.total || 0) * 0.05)), 0);
+            
+            // Calculate favorite dish
+            const dishCounts = {};
+            window.cachedOrders.forEach(o => {
+              (o.items || []).forEach(it => {
+                const n = it.name || 'پیتزا';
+                dishCounts[n] = (dishCounts[n] || 0) + (it.quantity || 1);
+              });
+            });
+            let favoriteDish = 'پیتزا مخصوص وستو';
+            let maxCount = 0;
+            Object.entries(dishCounts).forEach(([d, c]) => {
+              if (c > maxCount) {
+                maxCount = c;
+                favoriteDish = d;
+              }
+            });
+
+            $('#stat-total-orders').textContent = totalOrders.toLocaleString('fa-IR');
+            $('#stat-total-savings').textContent = `${totalSavings.toLocaleString('fa-IR')} تومان`;
+            $('#stat-total-points-earned').textContent = totalPoints.toLocaleString('fa-IR');
+            $('#stat-favorite-dish').textContent = favoriteDish;
+          }
+
+          if (toolbar) toolbar.style.display = 'flex';
+          if (emptyEl) emptyEl.style.display = 'none';
+
+          let filtered = window.cachedOrders;
+
+          if (activeOrdersFilter === 'delivered') {
+            filtered = filtered.filter(o => o.status === 'delivered' || o.status === 'paid');
+          } else if (activeOrdersFilter === 'prep') {
+            filtered = filtered.filter(o => o.status !== 'delivered' && o.status !== 'paid');
+          } else if (activeOrdersFilter === 'delivery') {
+            filtered = filtered.filter(o => o.fulfillment === 'delivery');
+          } else if (activeOrdersFilter === 'dine_in') {
+            filtered = filtered.filter(o => o.fulfillment === 'dine_in');
+          }
+
+          if (ordersSearchQuery) {
+            const q = ordersSearchQuery.toLowerCase();
+            filtered = filtered.filter(o => {
+              const noMatch = String(o.orderNo || '').toLowerCase().includes(q);
+              const itemsMatch = (o.items || []).some(it => String(it.name || '').toLowerCase().includes(q));
+              const addrMatch = String(o.delivery?.address || '').toLowerCase().includes(q);
+              return noMatch || itemsMatch || addrMatch;
+            });
+          }
+
+          if (!filtered.length) {
+            listWrap.style.display = 'block';
+            listWrap.innerHTML = `
+              <div style="text-align:center; padding:2rem 1rem; color:var(--text-muted); font-size:0.82rem; background:rgba(255,255,255,0.02); border:1px dashed rgba(255,255,255,0.08); border-radius:0.75rem;">
+                🔍 موردی مطابق با فیلتر یا جستجوی شما یافت نشد.
+              </div>
+            `;
+            return;
+          }
+
+          listWrap.style.display = 'block';
+          listWrap.innerHTML = filtered.map((o) => {
+            const dt = new Date(o.createdAt);
+            const dateStr = window.ShamsiCore
+              ? window.ShamsiCore.formatShamsiDateLong(dt)
+              : dt.toLocaleDateString(localeTag());
+            const timeStr = dt.toLocaleTimeString(localeTag(), { hour: '2-digit', minute: '2-digit' });
+
+            const pointsText = o.pointsEarned > 0 ? `+${o.pointsEarned} امتیاز باشگاه` : 'بدون امتیاز';
+
+            const fulfillmentLabel = o.fulfillment === 'delivery'
+              ? '🛵 ارسال با پیک'
+              : o.fulfillment === 'dine_in'
+                ? `🍽️ سالن (میز ${esc(o.tableNo || '—')})`
+                : '🛍️ تحویل حضوری';
+
+            const isDelivered = o.status === 'delivered' || o.status === 'paid';
+            const isPrep = o.status === 'prep' || o.status === 'preparing' || o.status === 'confirmed';
+            const reorderData = JSON.stringify((o.items || []).map(it => ({ menuItemId: it.menuItemId || it.id, qty: it.quantity || 1 })));
+
+            return `
+              <div class="order-history-card">
+                <div class="order-card-header" style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:0.65rem; flex-wrap:wrap; gap:0.4rem;">
+                  <div>
+                    <div style="display:flex; align-items:center; gap:0.5rem;">
+                      <b style="font-size:1rem; color:#fff;">سفارش #${esc(o.orderNo)}</b>
+                      <span class="pill" style="font-size:0.72rem; background:rgba(255,255,255,0.08); color:var(--text-muted); font-weight:700;">${fulfillmentLabel}</span>
+                    </div>
+                    <div class="hint" style="font-size:0.75rem; margin-top:0.25rem;">📅 ${dateStr} · ساعت ${timeStr}</div>
+                  </div>
+                  <div style="display:flex; align-items:center; gap:0.4rem; flex-wrap:wrap;">
+                    <span class="pill ${isDelivered ? 'is-paid' : 'is-prep'}" style="font-size:0.74rem; font-weight:800;">${esc(o.statusLabel || (isDelivered ? 'تکمیل و پرداخت‌شده' : 'در حال آماده‌سازی'))}</span>
+                    <span class="order-points-badge">🏆 ${pointsText}</span>
+                  </div>
+                </div>
+
+                <!-- Visual Progress Stepper -->
+                <div class="order-stepper-wrap">
+                  <div class="order-stepper-track">
+                    <div class="order-step-node is-done">
+                      <div class="order-step-dot">✓</div>
+                      <span>ثبت فاکتور</span>
+                    </div>
+                    <div class="order-step-node ${isDelivered ? 'is-done' : isPrep ? 'is-active' : ''}">
+                      <div class="order-step-dot">${isDelivered ? '✓' : '۲'}</div>
+                      <span>آشپزخانه و پخت</span>
+                    </div>
+                    <div class="order-step-node ${isDelivered ? 'is-done' : ''}">
+                      <div class="order-step-dot">${isDelivered ? '✓' : '۳'}</div>
+                      <span>تحویل و ارسال</span>
+                    </div>
+                  </div>
+                </div>
+
+                ${isPrep ? `
+                  <div class="active-delivery-badge" style="background:rgba(245,158,11,0.08); border:1px solid rgba(245,158,11,0.25); border-radius:0.65rem; padding:0.55rem 0.85rem; margin:0.65rem 0; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.4rem; font-size:0.78rem;">
+                    <div style="display:flex; align-items:center; gap:0.45rem; color:#fbbf24; font-weight:700;">
+                      <span class="pulse-dot" style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#fbbf24;"></span>
+                      <span>سفارش شما در حال آماده‌سازی و ارسال با پیک اختصاصی مشهد است.</span>
+                    </div>
+                    <div style="display:flex; gap:0.5rem; align-items:center;">
+                      <span style="color:var(--text-muted); font-size:0.75rem;">⏱️ زمان تحویل: حدود ۲۵ الی ۳۵ دقیقه</span>
+                      <a href="tel:05138450000" class="btn btn-sm btn-ghost" style="padding:0.15rem 0.5rem; font-size:0.72rem; color:#78d0d8; border-color:rgba(120,208,216,0.3); text-decoration:none;">📞 پیگیری</a>
+                    </div>
+                  </div>
+                ` : ''}
+
+                <div class="order-items-list" style="border-top:1px solid rgba(255,255,255,0.06); border-bottom:1px solid rgba(255,255,255,0.06); padding:0.6rem 0; margin:0.6rem 0;">
+                  ${(o.items || []).map(it => `
+                    <div class="order-item-row" style="display:flex; justify-content:space-between; font-size:0.82rem; padding:0.25rem 0;">
+                      <span>🍽️ ${esc(it.name)} <b style="color:#10b981; margin-right:0.35rem;">×${it.quantity}</b></span>
+                      <span style="font-weight:700;">${(it.total || 0).toLocaleString('fa-IR')} تومان</span>
+                    </div>
+                  `).join('')}
+                </div>
+
+                ${o.delivery?.address ? `
+                  <div style="font-size:0.78rem; color:var(--text-muted); margin-bottom:0.65rem; line-height:1.45; background:rgba(255,255,255,0.02); padding:0.5rem 0.75rem; border-radius:0.5rem;">
+                    📍 <b>نشانی ارسال مشهد:</b> ${esc(o.delivery.address)}
+                    ${o.delivery.instructions ? `<br>📝 <b>راهنمای پیک:</b> ${esc(o.delivery.instructions)}` : ''}
+                  </div>
+                ` : ''}
+
+                <div class="order-card-footer" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.65rem; padding-top:0.35rem;">
+                  <div style="font-size:0.82rem; color:var(--text-muted);">
+                    روش تسویه: <b style="color:#fff;">${esc(o.paymentMethod || 'پرداخت آنلاین')}</b>
+                  </div>
+                  <div style="display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap;">
+                    <div style="font-size:1rem; font-weight:800; color:#10b981; margin-left:0.25rem;">
+                      مجموع: ${(o.total || 0).toLocaleString('fa-IR')} تومان
+                    </div>
+                    <button type="button" class="btn btn-sm btn-ghost" onclick='window.viewDigitalReceipt("${esc(o.orderNo || o.id)}")' style="font-size:0.78rem; padding:0.35rem 0.75rem; border-color:rgba(255,255,255,0.2); color:#e2e8f0;">
+                      🧾 فاکتور
+                    </button>
+                    <button type="button" class="btn btn-sm" onclick='window.reorderItems(${reorderData})' style="font-size:0.78rem; padding:0.35rem 0.85rem; background:linear-gradient(135deg, #10b981, #059669); border-color:#10b981; color:#fff; font-weight:700;">
+                      🔁 تکرار سفارش
+                    </button>
+                  </div>
+                </div>
+              </div>
+            `;
+          }).join('');
+        }
+
+        try {
+          const res = await fetch('/api/orders/my-orders', { credentials: 'same-origin', cache: 'no-store' });
+          if (!res.ok) throw new Error('خطا در دریافت تاریخچه');
+          const data = await res.json();
+          window.cachedOrders = data.orders || [];
+
+          if (loadingEl) loadingEl.style.display = 'none';
+
+          renderOrdersView();
+
+          // Bind toolbar search and filter
+          const sInput = $('#orders-search-input');
+          if (sInput) {
+            sInput.oninput = () => {
+              ordersSearchQuery = sInput.value.trim();
+              renderOrdersView();
+            };
+          }
+
+          document.querySelectorAll('.orders-filter-pill').forEach(pill => {
+            pill.onclick = () => {
+              document.querySelectorAll('.orders-filter-pill').forEach(p => p.classList.remove('is-active'));
+              pill.classList.add('is-active');
+              activeOrdersFilter = pill.dataset.filter || 'all';
+              renderOrdersView();
+            };
+          });
+        } catch (_) {
+          if (loadingEl) loadingEl.style.display = 'none';
+          if (emptyEl) emptyEl.style.display = 'block';
+        }
+      }
+
+      window.viewDigitalReceipt = function(orderId) {
+        const target = (cachedOrders || []).find(o => String(o.orderNo) === String(orderId) || String(o.id) === String(orderId));
+        if (!target) return;
+        const modal = $('#invoice-modal');
+        const content = $('#invoice-modal-content');
+        if (!modal || !content) return;
+
+        const dt = new Date(target.createdAt);
+        const dateStr = window.ShamsiCore ? window.ShamsiCore.formatShamsiDateLong(dt) : dt.toLocaleDateString(localeTag());
+        const timeStr = dt.toLocaleTimeString(localeTag(), { hour: '2-digit', minute: '2-digit' });
+
+        content.innerHTML = `
+          <div id="invoice-printable">
+            <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:2px dashed rgba(255,255,255,0.15); padding-bottom:0.75rem; margin-bottom:0.85rem;">
+              <div>
+                <b style="font-size:1.1rem; color:#fff; display:block;">🍕 رستوران وستو (مشهد)</b>
+                <span style="font-size:0.75rem; color:var(--text-muted);">رسید رسمی پرداخت و فاکتور الکترونیک</span>
+              </div>
+              <div style="text-align:left;">
+                <span class="pill is-paid" style="font-size:0.75rem; font-weight:700;">سفارش #${esc(target.orderNo)}</span>
+              </div>
+            </div>
+
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.5rem; font-size:0.78rem; margin-bottom:0.85rem; background:rgba(255,255,255,0.02); padding:0.6rem 0.75rem; border-radius:0.6rem;">
+              <div>📅 <b>تاریخ:</b> ${dateStr}</div>
+              <div>⏰ <b>ساعت:</b> ${timeStr}</div>
+              <div>🛵 <b>تحویل:</b> ${target.fulfillment === 'delivery' ? 'پیک مشهد' : target.fulfillment === 'dine_in' ? `سالن (میز ${target.tableNo || '—'})` : 'حضوری'}</div>
+              <div>💳 <b>تسویه:</b> ${esc(target.paymentMethod || 'آنلاین')}</div>
+            </div>
+
+            ${target.delivery?.address ? `
+              <div style="font-size:0.78rem; margin-bottom:0.85rem; padding:0.5rem 0.75rem; background:rgba(255,255,255,0.02); border-radius:0.5rem;">
+                📍 <b>نشانی ارسال مشهد:</b> ${esc(target.delivery.address)}
+                ${target.delivery.instructions ? `<br>📝 <b>راهنما:</b> ${esc(target.delivery.instructions)}` : ''}
+              </div>
+            ` : ''}
+
+            <div style="border-top:1px solid rgba(255,255,255,0.1); border-bottom:1px solid rgba(255,255,255,0.1); padding:0.6rem 0; margin-bottom:0.85rem;">
+              <table style="width:100%; font-size:0.8rem; border-collapse:collapse;">
+                <thead>
+                  <tr style="color:var(--text-muted); text-align:right;">
+                    <th style="padding:0.25rem 0;">شرح غذا</th>
+                    <th style="text-align:center;">تعداد</th>
+                    <th style="text-align:left;">مبلغ (تومان)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${(target.items || []).map(it => `
+                    <tr style="border-bottom:1px solid rgba(255,255,255,0.04);">
+                      <td style="padding:0.4rem 0;">🍽️ ${esc(it.name)}</td>
+                      <td style="text-align:center; font-weight:700; color:#10b981;">×${it.quantity}</td>
+                      <td style="text-align:left; font-weight:700;">${(it.total || 0).toLocaleString('fa-IR')}</td>
+                    </tr>
+                  `).join('')}
+                </tbody>
+              </table>
+            </div>
+
+            <div style="display:flex; flex-direction:column; gap:0.35rem; font-size:0.82rem; margin-bottom:1rem;">
+              <div style="display:flex; justify-content:space-between;">
+                <span style="color:var(--text-muted);">جمع کل اقلام:</span>
+                <span>${(target.subtotal || target.total || 0).toLocaleString('fa-IR')} تومان</span>
+              </div>
+              ${target.pointsEarned > 0 ? `
+                <div style="display:flex; justify-content:space-between; color:#fbbf24;">
+                  <span>🏆 امتیاز کسب‌شده:</span>
+                  <b>+${target.pointsEarned} امتیاز</b>
+                </div>
+              ` : ''}
+              <div style="display:flex; justify-content:space-between; font-size:1.05rem; font-weight:900; color:#10b981; border-top:1px solid rgba(255,255,255,0.1); padding-top:0.5rem; margin-top:0.25rem;">
+                <span>مجموع نهایی فاکتور:</span>
+                <span>${(target.total || 0).toLocaleString('fa-IR')} تومان</span>
+              </div>
+            </div>
+          </div>
+
+          <div style="display:flex; gap:0.5rem; justify-content:flex-end;">
+            <button type="button" class="btn btn-sm btn-ghost" id="close-invoice-modal-btn" style="padding:0.4rem 0.85rem;">✕ بستن</button>
+            <button type="button" class="btn btn-sm" onclick="window.print()" style="background:#10b981; border-color:#10b981; color:#fff; font-weight:700; padding:0.4rem 1rem;">
+              🖨️ چاپ فاکتور (Print / PDF)
+            </button>
+          </div>
+        `;
+
+        modal.style.display = 'flex';
+        content.querySelector('#close-invoice-modal-btn').onclick = () => { modal.style.display = 'none'; };
+        modal.onclick = (e) => { if (e.target === modal) modal.style.display = 'none'; };
+      };
+
+      window.reorderItems = function(items) {
+        if (!items || !items.length) {
+          location.href = '/order';
+          return;
+        }
+        try {
+          sessionStorage.setItem('westo_reorder_items', JSON.stringify(items));
+          location.href = '/order';
+        } catch (_) {
+          location.href = '/order';
+        }
+      };
+
+      window.quickOrderDish = function(dishId, dishName) {
+        try {
+          sessionStorage.setItem('westo_reorder_items', JSON.stringify([{ menuItemId: dishId, qty: 1 }]));
+          location.href = '/order';
+        } catch (_) {
+          location.href = '/order';
+        }
+      };
+
+      function esc(str) {
+        if (!str) return '';
+        return String(str).replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));
+      }
+
+      function initAppleDatePicker() {
+        if (!window.ShamsiWheelDatePicker) return;
+        datePickerInstance = new window.ShamsiWheelDatePicker({
+          minYear: 1320,
+          maxYear: 1405,
+          defaultDate: { year: 1375, month: 6, day: 15 },
+          onConfirm: (dateObj) => {
+            $('#birthdate-val').value = dateObj.isoShamsi;
+            $('#birthdate-display').textContent = dateObj.label;
+            profileDirty = true;
+            checkBirthdayStatus(dateObj.isoShamsi);
+          }
+        });
+
+        const bdayBtn = $('#birthdate-btn');
+        if (bdayBtn) {
+          bdayBtn.addEventListener('click', () => {
+            if (isBirthdateLockedState) {
+              setMsg('تاریخ تولد شما قبلاً ثبت شده و تا ۱ سال امکان تغییر آن وجود ندارد. در صورت نیاز با مدیریت هماهنگ فرمایید.');
+              return;
+            }
+            const currentVal = $('#birthdate-val').value;
+            datePickerInstance.open(currentVal);
+          });
+        }
+      }
+
+      async function checkBirthdayStatus(dateVal) {
+        if (!dateVal) return;
+        try {
+          const res = await fetch('/api/profile/birthday', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'same-origin',
+            body: JSON.stringify({ birthdate: dateVal }),
+          });
+          const data = await res.json();
+          const claimWrap = $('#tab-bday-claim-wrap');
+          const statusMsg = $('#tab-bday-status-msg');
+          if (data.eligibility) {
+            if (data.eligibility.eligible) {
+              if (claimWrap) claimWrap.style.display = 'block';
+              if (statusMsg) {
+                statusMsg.className = 'msg ok';
+                statusMsg.textContent = '🎉 تبریک! شما واجد شرایط دریافت هدیه تولد هستید.';
+              }
+            } else {
+              if (claimWrap) claimWrap.style.display = 'none';
+              if (statusMsg) {
+                statusMsg.className = 'msg';
+                statusMsg.textContent = data.eligibility.reason || 'تاریخ تولد ثبت شد.';
+              }
+            }
+          }
+        } catch (_) {}
+      }
+
+      async function loadBirthday(user) {
+        if (user?.birthdate) {
+          $('#birthdate-val').value = user.birthdate;
+          $('#birthdate-display').textContent = user.birthdate;
+          checkBirthdayStatus(user.birthdate);
+        }
+
+        const claimBtn = $('#tab-claim-bday-btn');
+        const statusMsg = $('#tab-bday-status-msg');
+        const claimWrap = $('#tab-bday-claim-wrap');
+
+        if (claimBtn) {
+          claimBtn.onclick = async () => {
+            claimBtn.disabled = true;
+            try {
+              const res = await fetch('/api/campaigns/claim-birthday', { method: 'POST', credentials: 'same-origin' });
+              const data = await res.json();
+              if (res.ok && data.ok) {
+                if (statusMsg) {
+                  statusMsg.className = 'msg ok';
+                  statusMsg.textContent = `هدیه تولد (${(data.walletBonusToman || 0).toLocaleString('fa-IR')} تومان) به کیف پول واریز شد!`;
+                }
+                if (claimWrap) claimWrap.style.display = 'none';
+                loadLoyalty(loadGeneration);
+              } else {
+                if (statusMsg) {
+                  statusMsg.className = 'msg error';
+                  statusMsg.textContent = data.error || 'خطا در دریافت هدیه تولد';
+                }
+              }
+            } catch (_) {
+              if (statusMsg) {
+                statusMsg.className = 'msg error';
+                statusMsg.textContent = 'خطای اتصال به سرور';
+              }
+            } finally {
+              claimBtn.disabled = false;
+            }
+          };
+        }
       }
 
       async function loadLoyalty(generation) {
         if (pageSuspended) return;
-
         const controller = createController('loyalty');
-
         try {
           const response = await fetch('/api/loyalty/me', {
             credentials: 'same-origin',
             cache: 'no-store',
             signal: controller.signal,
           });
-
-          if (response.status === 401 || response.status === 403) return;
           if (!response.ok) return;
-
           const data = await readJson(response);
-
-          if (
-            controller.signal.aborted ||
-            pageSuspended ||
-            generation !== loadGeneration
-          ) {
-            return;
-          }
-
+          if (controller.signal.aborted || pageSuspended || generation !== loadGeneration) return;
           renderLoyalty(data);
-        } catch (error) {
-          if (error?.name !== 'AbortError') {
-            // Loyalty is secondary profile content. A transient failure must
-            // never make the authenticated profile unusable.
+        } catch (_) {}
+      }
+
+      async function loadReferral() {
+        try {
+          const res = await fetch('/api/referrals/me', { credentials: 'same-origin', cache: 'no-store' });
+          if (!res.ok) return;
+          const data = await res.json();
+          const codeEl = $('#tab-referral-code');
+          if (codeEl && data.referralCode) codeEl.textContent = data.referralCode;
+          const copyBtn = $('#tab-copy-ref-btn');
+          if (copyBtn) {
+            copyBtn.onclick = () => {
+              navigator.clipboard?.writeText(data.referralCode || '');
+              copyBtn.textContent = '✓ کپی شد';
+              setTimeout(() => { copyBtn.textContent = '📋 کپی'; }, 2000);
+            };
           }
-        } finally {
-          if (loyaltyController === controller) loyaltyController = null;
-        }
+
+          const shareBtn = $('#tab-share-ref-btn');
+          if (shareBtn) {
+            shareBtn.onclick = () => {
+              const code = data.referralCode || '';
+              const shareText = `سلام! با کد معرف ${code} در رستوران وستو ۵۰,۰۰۰ تومان تخفیف روی اولین سفارش خوشمزه‌ات هدیه بگیر: https://westo.ir/order?ref=${code}`;
+              if (navigator.share) {
+                navigator.share({
+                  title: 'هدیه ۵۰ هزار تومانی رستوران وستو',
+                  text: shareText,
+                  url: `https://westo.ir/order?ref=${code}`,
+                }).catch(() => {});
+              } else {
+                navigator.clipboard?.writeText(shareText);
+                shareBtn.textContent = '✓ متن و لینک دعوت کپی شد!';
+                setTimeout(() => { shareBtn.textContent = '📲 اشتراک‌گذاری در ایتا، بله، تلگرام و واتساپ'; }, 2500);
+              }
+            };
+          }
+
+          document.querySelectorAll('.promo-copy-btn').forEach(btn => {
+            btn.onclick = () => {
+              const code = btn.dataset.code;
+              if (code) {
+                navigator.clipboard?.writeText(code);
+                btn.textContent = '✓ کپی شد';
+                setTimeout(() => { btn.textContent = '📋 کپی'; }, 2000);
+              }
+            };
+          });
+
+          document.querySelectorAll('.promo-apply-btn').forEach(btn => {
+            btn.onclick = () => {
+              const code = btn.dataset.code;
+              if (code) {
+                navigator.clipboard?.writeText(code);
+                try { localStorage.setItem('westo_applied_coupon', code); } catch (_) {}
+                btn.textContent = '🚀 در حال انتقال به منو…';
+                btn.style.background = '#059669';
+                setTimeout(() => {
+                  location.href = `/menu?coupon=${encodeURIComponent(code)}`;
+                }, 350);
+              }
+            };
+          });
+        } catch (_) {}
       }
 
       async function loadProfile({ preserveEditable = false } = {}) {
         if (pageSuspended) return;
-
         const generation = ++loadGeneration;
         const controller = createController('auth');
-
         try {
           const response = await fetch('/api/auth/me', {
             credentials: 'same-origin',
             cache: 'no-store',
             signal: controller.signal,
           });
-
           const data = response.ok ? await readJson(response) : {};
           const user = data?.user || null;
 
-          if (
-            controller.signal.aborted ||
-            pageSuspended ||
-            generation !== loadGeneration
-          ) {
-            return;
-          }
+          if (controller.signal.aborted || pageSuspended || generation !== loadGeneration) return;
 
           if (!user) {
             location.replace('/login');
@@ -255,33 +2537,35 @@
           }
 
           renderUser(user, { preserveEditable });
-
-          // Loyalty is intentionally requested only after authentication is
-          // confirmed, so direct guest visits do not create a guaranteed 401.
           loadLoyalty(generation);
+          loadReferral();
+          loadBirthday(user);
         } catch (error) {
           if (error?.name === 'AbortError') return;
-          if (generation !== loadGeneration || pageSuspended) return;
           setMsg(tr('profile.loadFail'));
-        } finally {
-          if (authController === controller) authController = null;
         }
       }
 
-      $('#name').addEventListener('input', () => {
-        profileDirty = true;
+      document.querySelectorAll('.gender-radio-pill').forEach(pill => {
+        pill.addEventListener('click', () => {
+          document.querySelectorAll('.gender-radio-pill').forEach(p => p.classList.remove('is-active'));
+          pill.classList.add('is-active');
+          selectedGender = pill.dataset.gender;
+          profileDirty = true;
+        });
       });
 
-      $('#email').addEventListener('input', () => {
-        profileDirty = true;
+      ['#name', '#email', '#notes'].forEach(id => {
+        $(id)?.addEventListener('input', () => { profileDirty = true; });
       });
+      $('#pref-branch')?.addEventListener('change', () => { profileDirty = true; });
 
       $('#save-btn').addEventListener('click', async () => {
         const button = $('#save-btn');
         if (button.disabled) return;
-
         setMsg('');
         button.disabled = true;
+        button.textContent = 'در حال ذخیره…';
 
         try {
           const response = await fetch('/api/auth/profile', {
@@ -292,11 +2576,14 @@
             body: JSON.stringify({
               name: $('#name').value,
               email: $('#email').value,
+              birthdate: $('#birthdate-val').value,
+              gender: selectedGender,
+              preferredBranch: $('#pref-branch')?.value || 'central',
+              notes: $('#notes').value,
             }),
           });
 
           const data = await readJson(response);
-
           if (response.status === 401) {
             location.replace('/login');
             return;
@@ -312,34 +2599,22 @@
           }
 
           profileDirty = false;
-          setMsg(tr('profile.saved'), true);
+          setMsg('✓ مشخصات شما با موفقیت ذخیره و به‌روزرسانی شد.', true);
         } catch (_) {
           setMsg(tr('profile.networkSave'));
         } finally {
           button.disabled = false;
+          button.textContent = '💾 ذخیره تغییرات';
         }
       });
 
       $('#logout-btn').addEventListener('click', async () => {
         const button = $('#logout-btn');
         if (button.disabled) return;
-
         button.disabled = true;
         setMsg('');
-
         try {
-          const response = await fetch('/api/auth/logout', {
-            method: 'POST',
-            credentials: 'same-origin',
-            cache: 'no-store',
-          });
-
-          if (!response.ok) {
-            setMsg(tr('profile.logoutFail'));
-            button.disabled = false;
-            return;
-          }
-
+          await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin', cache: 'no-store' });
           location.replace('/');
         } catch (_) {
           setMsg(tr('profile.networkLogout'));
@@ -347,41 +2622,386 @@
         }
       });
 
-      window.addEventListener('offline', () => {
-        abortController(authController);
-        abortController(loyaltyController);
-        authController = null;
-        loyaltyController = null;
-      });
+      const PRESET_AVATARS = [
+        { id: '👨‍🍳', name: 'سرآشپز' },
+        { id: '☕', name: 'عاشق قهوه' },
+        { id: '🍕', name: 'پیتزادیر' },
+        { id: '🍔', name: 'برگرباز' },
+        { id: '🥗', name: 'وگن و سلامت' },
+        { id: '👑', name: 'مشتری VIP' },
+        { id: '🧁', name: 'کاپ‌کیک' },
+        { id: '🍹', name: 'موکتل' },
+        { id: '🥑', name: 'آووکادو' },
+        { id: '🦁', name: 'شیر مقتدر' },
+        { id: '🦊', name: 'روباه جذاب' },
+        { id: '🐼', name: 'پاندا' },
+        { id: '🚀', name: 'پیشرو' },
+        { id: '🌟', name: 'ستاره' },
+        { id: '🎩', name: 'لوکس' },
+        { id: '🌸', name: 'شکوفه' },
+      ];
 
-      window.addEventListener('online', () => {
-        if (pageSuspended) return;
-        loadProfile({ preserveEditable: true });
-      });
+      async function saveUserAvatar(avatarVal) {
+        try {
+          const res = await fetch('/api/user/avatar', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'same-origin',
+            body: JSON.stringify({ avatar: avatarVal }),
+          });
+          const data = await res.json();
+          if (res.ok && data.ok && data.user) {
+            renderUser(data.user);
+            setMsg('✓ تصویر پروفایل شما با موفقیت ذخیره شد.', true);
+          }
+        } catch (_) {
+          setMsg('خطا در ذخیره تصویر پروفایل');
+        }
+      }
 
-      window.addEventListener('pagehide', () => {
-        pageSuspended = true;
-        ++loadGeneration;
-        abortController(authController);
-        abortController(loyaltyController);
-        authController = null;
-        loyaltyController = null;
-      });
+      function initAvatarControls() {
+        const presetsModal = $('#avatar-presets-modal');
+        const presetsGrid = $('#avatar-presets-grid');
+        const fileInput = $('#avatar-file-input');
 
-      window.addEventListener('pageshow', (event) => {
-        if (!event.persisted) return;
+        if (presetsGrid) {
+          presetsGrid.innerHTML = PRESET_AVATARS.map(p => `
+            <div class="avatar-preset-card" data-preset="${p.id}" style="display:flex; flex-direction:column; align-items:center; justify-content:center; padding:0.65rem 0.35rem; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.09); border-radius:0.85rem; cursor:pointer; transition:all 0.18s;">
+              <span style="font-size:1.9rem; line-height:1; margin-bottom:0.25rem;">${p.id}</span>
+              <span style="font-size:0.68rem; color:var(--p-text-dim, #94a3b8);">${p.name}</span>
+            </div>
+          `).join('');
 
-        pageSuspended = false;
+          presetsGrid.querySelectorAll('.avatar-preset-card').forEach(card => {
+            card.addEventListener('mouseenter', () => { card.style.borderColor = 'var(--profile-accent, #78d0d8)'; card.style.transform = 'translateY(-2px)'; });
+            card.addEventListener('mouseleave', () => { card.style.borderColor = 'rgba(255,255,255,0.09)'; card.style.transform = ''; });
+            card.addEventListener('click', async () => {
+              const emoji = card.dataset.preset;
+              await saveUserAvatar(`preset:${emoji}`);
+              if (presetsModal) presetsModal.style.display = 'none';
+            });
+          });
+        }
 
-        // Revalidate the session after bfcache restore, but keep unsaved user
-        // edits intact if authentication is still valid.
-        loadProfile({ preserveEditable: true });
-      });
+        $('#open-preset-avatars-btn')?.addEventListener('click', () => {
+          if (presetsModal) presetsModal.style.display = 'flex';
+        });
 
+        $('#close-avatar-presets-btn')?.addEventListener('click', () => {
+          if (presetsModal) presetsModal.style.display = 'none';
+        });
+
+        presetsModal?.addEventListener('click', (e) => {
+          if (e.target === presetsModal) presetsModal.style.display = 'none';
+        });
+
+        const triggerUpload = () => fileInput?.click();
+        $('#upload-avatar-btn')?.addEventListener('click', triggerUpload);
+        $('#change-avatar-badge-btn')?.addEventListener('click', triggerUpload);
+        $('#sidebar-avatar-wrap')?.addEventListener('click', triggerUpload);
+
+        fileInput?.addEventListener('change', async (e) => {
+          const file = e.target.files?.[0];
+          if (!file) return;
+
+          if (file.size > 4 * 1024 * 1024) {
+            setMsg('حجم فایل تصویر نباید بیشتر از ۴ مگابایت باشد.');
+            return;
+          }
+
+          const uploadBtn = $('#upload-avatar-btn');
+          if (uploadBtn) { uploadBtn.disabled = true; uploadBtn.textContent = 'در حال آپلود…'; }
+
+          try {
+            const formData = new FormData();
+            formData.append('avatar', file);
+
+            const res = await fetch('/api/user/avatar/upload', {
+              method: 'POST',
+              credentials: 'same-origin',
+              body: formData,
+            });
+
+            const data = await res.json();
+            if (res.ok && data.ok && data.user) {
+              renderUser(data.user);
+              setMsg('✓ عکس پروفایل شما با موفقیت آپلود و تنظیم شد.', true);
+            } else {
+              setMsg(data.error || 'خطا در آپلود عکس');
+            }
+          } catch (_) {
+            const reader = new FileReader();
+            reader.onload = async (evt) => {
+              const dataUrl = evt.target.result;
+              await saveUserAvatar(dataUrl);
+            };
+            reader.readAsDataURL(file);
+          } finally {
+            if (uploadBtn) { uploadBtn.disabled = false; uploadBtn.textContent = '📁 آپلود عکس از دستگاه'; }
+            fileInput.value = '';
+          }
+        });
+
+        $('#remove-avatar-btn')?.addEventListener('click', async () => {
+          await saveUserAvatar('');
+        });
+      }
+
+      function initFeedbackModal() {
+        const modal = $('#feedback-modal');
+        const openBtn = $('#open-feedback-modal-btn');
+        const closeBtn = $('#close-feedback-modal-btn');
+        const submitBtn = $('#submit-feedback-btn');
+        const msgEl = $('#feedback-modal-msg');
+        if (!modal) return;
+
+        let currentRating = 5;
+
+        const starLabels = {
+          1: 'بسیار ضعیف (۱ از ۵)',
+          2: 'نیاز به بهبود (۲ از ۵)',
+          3: 'معمولی و متوسط (۳ از ۵)',
+          4: 'خوب و رضایت‌بخش (۴ از ۵)',
+          5: 'عالی و بی‌نظیر (۵ از ۵)',
+        };
+
+        openBtn?.addEventListener('click', () => {
+          modal.style.display = 'flex';
+          if (msgEl) msgEl.textContent = '';
+        });
+
+        closeBtn?.addEventListener('click', () => {
+          modal.style.display = 'none';
+        });
+
+        modal.addEventListener('click', (e) => {
+          if (e.target === modal) modal.style.display = 'none';
+        });
+
+        // Stars handler
+        const stars = document.querySelectorAll('.fb-star');
+        stars.forEach(star => {
+          star.addEventListener('click', () => {
+            currentRating = Number(star.dataset.star) || 5;
+            stars.forEach(s => {
+              const val = Number(s.dataset.star) || 1;
+              s.classList.toggle('is-selected', val <= currentRating);
+            });
+            const lbl = $('#feedback-star-label');
+            if (lbl) lbl.textContent = starLabels[currentRating] || `${currentRating} از ۵`;
+          });
+        });
+
+        // Quick tags handler
+        document.querySelectorAll('#feedback-quick-tags .dietary-tag-pill').forEach(pill => {
+          pill.addEventListener('click', () => {
+            pill.classList.toggle('is-active');
+          });
+        });
+
+        // Submit review
+        submitBtn?.addEventListener('click', async () => {
+          if (submitBtn.disabled) return;
+          submitBtn.disabled = true;
+          submitBtn.textContent = 'در حال ثبت نظر…';
+          if (msgEl) {
+            msgEl.className = 'msg';
+            msgEl.textContent = '';
+          }
+
+          const selectedTags = [...document.querySelectorAll('#feedback-quick-tags .dietary-tag-pill.is-active')].map(p => p.dataset.ftag || p.textContent.trim());
+          const comment = $('#feedback-comment-txt')?.value.trim() || '';
+
+          try {
+            const res = await fetch('/api/user/feedback', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              credentials: 'same-origin',
+              body: JSON.stringify({ rating: currentRating, comment, tags: selectedTags }),
+            });
+            const data = await res.json();
+
+            if (res.ok && data.ok) {
+              if (msgEl) {
+                msgEl.className = 'msg ok';
+                msgEl.textContent = data.pointsAwarded > 0
+                  ? `🎉 نظر شما ثبت شد و ${data.pointsAwarded} امتیاز به باشگاه مشتریان شما اضافه گردید!`
+                  : `✓ با تشکر! بازخورد شما با موفقیت ثبت شد.`;
+              }
+              if (data.newPoints !== undefined) {
+                $('#loyalty-points').textContent = data.newPoints.toLocaleString(localeTag());
+                $('#tab-loyalty-points').textContent = data.newPoints.toLocaleString(localeTag());
+              }
+              setTimeout(() => { modal.style.display = 'none'; }, 2000);
+            } else {
+              if (msgEl) {
+                msgEl.className = 'msg error';
+                msgEl.textContent = data.error || 'خطا در ثبت نظر';
+              }
+            }
+          } catch (_) {
+            if (msgEl) {
+              msgEl.className = 'msg error';
+              msgEl.textContent = 'خطای اتصال به سرور';
+            }
+          } finally {
+            submitBtn.disabled = false;
+            submitBtn.textContent = '🚀 ارسال نظر و دریافت ۵۰ امتیاز';
+          }
+        });
+      }
+
+      function initThemeControls() {
+        function syncProfileThemeCards(pref) {
+          const currentPref = pref || (window.WestoTheme ? window.WestoTheme.getPref() : localStorage.getItem('westo_theme') || 'system');
+          document.querySelectorAll('.theme-card-option').forEach(card => {
+            const isMatch = card.getAttribute('data-theme-set') === currentPref;
+            card.classList.toggle('is-selected', isMatch);
+          });
+        }
+
+        document.querySelectorAll('.theme-card-option').forEach(card => {
+          card.addEventListener('click', () => {
+            const targetPref = card.getAttribute('data-theme-set');
+            if (window.WestoTheme && typeof window.WestoTheme.set === 'function') {
+              window.WestoTheme.set(targetPref);
+            } else {
+              const theme = targetPref === 'system'
+                ? (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark')
+                : targetPref;
+              document.documentElement.setAttribute('data-theme', theme);
+              document.documentElement.setAttribute('data-theme-pref', targetPref);
+              try { localStorage.setItem('westo_theme', targetPref); } catch (_) {}
+            }
+            syncProfileThemeCards(targetPref);
+          });
+        });
+
+        window.addEventListener('westo:theme-change', (e) => {
+          syncProfileThemeCards(e.detail?.preference);
+        });
+
+        syncProfileThemeCards();
+      }
+
+      function initKeyboardShortcuts() {
+        window.addEventListener('keydown', (e) => {
+          const tag = document.activeElement?.tagName?.toLowerCase();
+          const isInput = tag === 'input' || tag === 'textarea' || tag === 'select';
+
+          // Escape closes open modals
+          if (e.key === 'Escape') {
+            ['#address-modal', '#avatar-presets-modal', '#invoice-modal', '#feedback-modal'].forEach(sel => {
+              const m = $(sel);
+              if (m && m.style.display !== 'none') m.style.display = 'none';
+            });
+            return;
+          }
+
+          // Ctrl/Cmd + S saves profile
+          if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'س')) {
+            e.preventDefault();
+            $('#save-btn')?.click();
+            return;
+          }
+
+          // Alt + 1..5 switches tabs
+          if (e.altKey && !e.ctrlKey && !e.metaKey) {
+            const tabs = ['details', 'orders', 'wallet', 'loyalty', 'gifts'];
+            const idx = parseInt(e.key, 10);
+            if (idx >= 1 && idx <= 5) {
+              e.preventDefault();
+              switchTab(tabs[idx - 1]);
+            }
+          }
+        });
+      }
+
+      function initDataExport() {
+        $('#export-my-data-btn')?.addEventListener('click', () => {
+          const btn = $('#export-my-data-btn');
+          btn.disabled = true;
+          btn.textContent = 'در حال تهیه پشتیبان…';
+
+          try {
+            const exportData = {
+              exportedAt: new Date().toISOString(),
+              exportedAtJalali: window.ShamsiCore ? window.ShamsiCore.formatShamsiDateLong(new Date()) : new Date().toLocaleDateString(localeTag()),
+              profile: {
+                name: $('#name')?.value,
+                phone: $('#phone')?.value,
+                email: $('#email')?.value,
+                birthdate: $('#birthdate-val')?.value,
+                gender: selectedGender,
+                notes: $('#notes')?.value,
+                addresses: currentUserAddresses,
+              },
+              orders: window.cachedOrders || [],
+              loyalty: cachedLoyaltyData || {},
+            };
+
+            const dataStr = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(exportData, null, 2));
+            const downloadAnchor = document.createElement('a');
+            downloadAnchor.setAttribute('href', dataStr);
+            downloadAnchor.setAttribute('download', `westo-profile-backup-${Date.now()}.json`);
+            document.body.appendChild(downloadAnchor);
+            downloadAnchor.click();
+            downloadAnchor.remove();
+
+            btn.textContent = '✓ دانلود شد!';
+            setTimeout(() => {
+              btn.disabled = false;
+              btn.textContent = '📥 دریافت فایل پشتیبان سوابق من';
+            }, 2500);
+          } catch (_) {
+            btn.disabled = false;
+            btn.textContent = 'خطا در خروجی فایل';
+          }
+        });
+      }
+
+      function initNetworkMonitor() {
+        const banner = $('#network-status-banner');
+        const icon = $('#network-status-icon');
+        const text = $('#network-status-text');
+
+        window.addEventListener('offline', () => {
+          if (!banner) return;
+          banner.className = 'is-offline';
+          if (icon) icon.textContent = '📡⚠️';
+          if (text) text.textContent = 'ارتباط اینترنت شما قطع شد. اطلاعات به صورت موقت در حافظه محلی نگه‌داری می‌شوند.';
+        });
+
+        window.addEventListener('online', () => {
+          if (!banner) return;
+          banner.className = 'is-online';
+          if (icon) icon.textContent = '🟢';
+          if (text) text.textContent = 'اتصال اینترنت مجدداً برقرار شد. اطلاعات پروفایل به‌روزرسانی شد.';
+          if (!pageSuspended) loadProfile({ preserveEditable: true });
+          setTimeout(() => {
+            if (navigator.onLine && banner) {
+              banner.className = '';
+              banner.style.display = 'none';
+            }
+          }, 3500);
+        });
+      }
+
+      initAppleDatePicker();
+      initAddressModal();
+      initAvatarControls();
+      initFeedbackModal();
+      initKeyboardShortcuts();
+      initDataExport();
+      initNetworkMonitor();
+      initThemeControls();
       loadProfile();
+
+      const initialTab = (location.hash || '').replace('#', '') || new URLSearchParams(location.search).get('tab');
+      if (initialTab && $(`#panel-${initialTab}`)) {
+        switchTab(initialTab);
+      }
     })();
   </script>
-
-  
 </body>
 </html>

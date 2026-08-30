@@ -11,6 +11,7 @@ const {
   ROLE_CAPABILITIES,
   normalizeRole,
   capabilitiesFor,
+  branchScopeForUser,
   can: hasCapability,
   roleLabel,
   normalizeFulfillment,
@@ -29,6 +30,10 @@ const { registerAdminV2Routes } = require('./admin-v2');
 const financeV2 = require('./finance-v2');
 const accountingEngine = require('./accounting-engine');
 const { registerAccountingRoutes } = require('./accounting-routes');
+const loyaltyEngine = require('./finance/loyalty-engine');
+const walletEngine = require('./finance/wallet-engine');
+const campaignsEngine = require('./finance/campaigns-engine');
+const smsEngine = require('./finance/sms-engine');
 const shamsi = require('./finance/shamsi.js');
 const {
   notifyOrderWhatsApp,
@@ -39,6 +44,17 @@ const {
   toWaDigits,
 } = require('./whatsapp-notify');
 const { createNeemBridge } = require('./neem-bridge');
+const {
+  DEFAULT_PRINTER_CONFIG,
+  ensurePrintingData,
+  listSystemPrinters,
+  normalizePrinterConfig,
+  printerForBranch,
+  printOrder: sendOrderToPrinter,
+  printRasterReceipt,
+  publicPrinterConfig,
+  testPrinter,
+} = require('./network-printer');
 
 const ROOT = path.join(__dirname, '..');
 const DB_PATH = process.env.WESTO_DB_PATH || path.join(__dirname, 'data', 'db.json');
@@ -350,6 +366,7 @@ function migrateDb(data) {
   // Keep legacy hours mirror of first active branch
   const mirror = data.branches.find((b) => b.active !== false) || data.branches[0];
   if (mirror?.hours) data.hours = mirror.hours;
+  ensurePrintingData(data, primaryBranchId);
   if (!data.reservationSettings || typeof data.reservationSettings !== 'object') {
     data.reservationSettings = {
       enabled: true,
@@ -673,6 +690,40 @@ function save(opts = {}) {
   }, 50);
   return waiter;
 }
+
+// Critical operational routes update the order/cash snapshot and Finance V2
+// together. Keep a bounded rollback image so a failed durable write or a
+// finance invariant cannot leave an in-memory paid order without its ledger.
+const FINANCE_MUTATION_STATE_KEYS = Object.freeze([
+  'financeV2', 'accounting', 'orders', 'cashSessions', 'paymentAttempts', 'auditLog',
+  'users', 'loyaltyLedger', 'menuItems', 'menuComplements', 'checkoutIdempotency',
+]);
+
+function snapshotFinanceMutationState() {
+  return Object.fromEntries(FINANCE_MUTATION_STATE_KEYS.map((key) => [
+    key,
+    Object.prototype.hasOwnProperty.call(db, key) && db[key] !== undefined
+      ? JSON.parse(JSON.stringify(db[key]))
+      : undefined,
+  ]));
+}
+
+function restoreFinanceMutationState(snapshot) {
+  for (const [key, before] of Object.entries(snapshot || {})) {
+    if (before === undefined) delete db[key];
+    else db[key] = before;
+  }
+}
+
+async function persistFinanceMutation(snapshot) {
+  try {
+    await save({ requireDurable: true });
+  } catch (error) {
+    restoreFinanceMutationState(snapshot);
+    throw error;
+  }
+}
+
 if (db.menuComplementsV1Pending) {
   delete db.menuComplementsV1Pending;
   save({ bumpMenu: true });
@@ -739,10 +790,55 @@ function resolveBranch(q) {
   return (db.branches || []).find((b) => String(b.slug || '').toLowerCase() === slug) || defaultBranch();
 }
 
+function requestBranchValue(req) {
+  const values = [req.query?.branchId, req.query?.branch, req.body?.branchId, req.body?.branch];
+  return values.find((value) => value !== undefined && value !== null && String(value).trim() !== '') ?? null;
+}
+
+function resolveBranchExact(value) {
+  if (value == null || String(value).trim() === '') return defaultBranch();
+  const id = Number(value);
+  if (Number.isFinite(id) && id > 0) return (db.branches || []).find((branch) => Number(branch.id) === id) || null;
+  const slug = String(value).trim().toLowerCase();
+  return (db.branches || []).find((branch) => String(branch.slug || '').trim().toLowerCase() === slug) || null;
+}
+
+function branchScopeError(code, status, message) {
+  return Object.assign(new Error(message), { code, status });
+}
+
+function assertRequestBranchAccess(req) {
+  const allowedBranchIds = branchScopeForUser(req.user, { role: effectiveRole(req.user) });
+  if (allowedBranchIds !== null && !allowedBranchIds.length) {
+    throw branchScopeError('branch_scope_empty', 403, 'برای این کاربر هیچ شعبهٔ مجازی مجاز تعریف نشده است.');
+  }
+  const raw = requestBranchValue(req);
+  if (raw == null) return;
+  const branch = resolveBranchExact(raw);
+  if (!branch) throw branchScopeError('branch_invalid', 400, 'شعبهٔ انتخاب‌شده معتبر نیست.');
+  if (allowedBranchIds !== null && !allowedBranchIds.includes(Number(branch.id))) {
+    throw branchScopeError('branch_access_denied', 403, 'دسترسی به شعبهٔ انتخاب‌شده مجاز نیست.');
+  }
+}
+
 function parseBranchId(req) {
-  const q = req.query.branchId || req.query.branch || req.body?.branchId || req.body?.branch;
-  const b = resolveBranch(q);
-  return b ? b.id : null;
+  const raw = requestBranchValue(req);
+  const allowedBranchIds = branchScopeForUser(req.user, { role: effectiveRole(req.user) });
+  if (raw == null) {
+    if (allowedBranchIds !== null) {
+      if (!allowedBranchIds.length) return null;
+      const preferred = defaultBranch();
+      return preferred && allowedBranchIds.includes(Number(preferred.id)) ? preferred.id : allowedBranchIds[0];
+    }
+    const preferred = defaultBranch();
+    return preferred ? preferred.id : null;
+  }
+  const branch = resolveBranchExact(raw);
+  if (!branch) throw branchScopeError('branch_invalid', 400, 'شعبهٔ انتخاب‌شده معتبر نیست.');
+  if (allowedBranchIds !== null && !allowedBranchIds.includes(Number(branch.id))) {
+    throw branchScopeError('branch_access_denied', 403, 'دسترسی به شعبهٔ انتخاب‌شده مجاز نیست.');
+  }
+  return branch.id;
 }
 
 function syncLegacyHours() {
@@ -830,8 +926,19 @@ function requireCapability(capability) {
     const user = currentUser(req);
     if (!userCan(user, capability)) return res.status(403).json({ error: 'forbidden', capability });
     req.user = user;
+    try {
+      assertRequestBranchAccess(req);
+    } catch (error) {
+      return res.status(error.status || 400).json({ error: error.code || 'branch_access_denied', message: error.message, requestId: req.requestId });
+    }
     next();
   };
+}
+function assertUserBranchAccess(user, branchId) {
+  const allowedBranchIds = branchScopeForUser(user, { role: effectiveRole(user) });
+  if (allowedBranchIds !== null && !allowedBranchIds.includes(Number(branchId))) {
+    throw branchScopeError('branch_access_denied', 403, 'دسترسی به شعبهٔ این سفارش مجاز نیست.');
+  }
 }
 function requireAdmin(req, res, next) {
   return requireCapability('admin.access')(req, res, next);
@@ -843,6 +950,11 @@ function requireCommandCenterAccess(req, res, next) {
     return res.status(403).json({ error: 'command_center_forbidden' });
   }
   req.user = user;
+  try {
+    assertRequestBranchAccess(req);
+  } catch (error) {
+    return res.status(error.status || 400).json({ error: error.code || 'branch_access_denied', message: error.message, requestId: req.requestId });
+  }
   next();
 }
 function requireKitchen(req, res, next) {
@@ -854,8 +966,33 @@ function requireOwner(req, res, next) {
   req.user = user;
   next();
 }
+function isBirthdateLocked(u) {
+  if (!u || !u.birthdate) return false;
+  if (!u.birthdateUpdatedAt) return true; // If birthdate is already set, lock by default until 1 year passes
+  const elapsedMs = Date.now() - new Date(u.birthdateUpdatedAt).getTime();
+  const oneYearMs = 365 * 24 * 60 * 60 * 1000;
+  return elapsedMs < oneYearMs;
+}
+
 function publicUser(u) {
   const role = effectiveRole(u);
+  const allowedBranchIds = branchScopeForUser(u, { role });
+  const addresses = Array.isArray(u.addresses) ? u.addresses : (u.address ? [{
+    id: 'addr_default',
+    title: '🏠 منزل',
+    city: u.city || '',
+    district: '',
+    address: u.address,
+    plaque: '',
+    unit: '',
+    floor: '',
+    receiverName: u.name || '',
+    receiverPhone: u.phone || '',
+    note: u.notes || '',
+    isDefault: true,
+    createdAt: u.createdAt || new Date().toISOString(),
+  }] : []);
+
   return {
     phone: u.phone,
     name: u.name || '',
@@ -863,7 +1000,19 @@ function publicUser(u) {
     role,
     roleLabel: roleLabel(role),
     capabilities: capabilitiesFor(u, db.settings || {}),
+    allowedBranchIds,
     points: Math.max(0, Math.round(Number(u.points) || 0)),
+    birthdate: u.birthdate || '',
+    birthdateLocked: isBirthdateLocked(u),
+    birthdateUpdatedAt: u.birthdateUpdatedAt || null,
+    gender: u.gender || '',
+    city: u.city || '',
+    address: u.address || '',
+    addresses,
+    defaultAddress: addresses.find((a) => a.isDefault) || addresses[0] || null,
+    avatar: u.avatar || '',
+    preferences: Array.isArray(u.preferences) ? u.preferences : [],
+    notes: u.notes || '',
     createdAt: u.createdAt,
     lastLoginAt: u.lastLoginAt,
     blocked: !!u.blocked,
@@ -929,9 +1078,10 @@ function awardLoyaltyPoints(phone, points, reason, meta = {}) {
   return entry;
 }
 
-function pointsForOrderTotal(total) {
-  const rate = Number(db.loyalty?.pointsPerToman) || 0;
-  return Math.max(0, Math.floor(Number(total || 0) * rate));
+function pointsForOrderTotal(total, phone) {
+  const user = phone ? db.users.find((u) => u.phone === phone) : null;
+  const resolved = loyaltyEngine.resolveCustomerTier(db, user);
+  return loyaltyEngine.calculateOrderPointsEarned(db, total, resolved.tier);
 }
 
 // ---- OTP ---------------------------------------------------------------
@@ -946,6 +1096,21 @@ function normalizeDigits(str) {
   return String(str)
     .replace(/[۰-۹]/g, (d) => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d))
     .replace(/[٠-٩]/g, (d) => '٠١٢٣٤٥٦٧٨٩'.indexOf(d));
+}
+
+function normalizePhoneKey(phone) {
+  if (!phone) return '';
+  let digits = normalizeDigits(String(phone)).replace(/\D/g, '');
+  if (digits.startsWith('0098')) digits = digits.slice(4);
+  else if (digits.startsWith('98') && digits.length === 12) digits = digits.slice(2);
+  else if (digits.startsWith('0') && digits.length === 11) digits = digits.slice(1);
+  return digits;
+}
+
+function phonesMatch(p1, p2) {
+  const k1 = normalizePhoneKey(p1);
+  const k2 = normalizePhoneKey(p2);
+  return !!(k1 && k2 && k1 === k2);
 }
 
 // ---- app ----------------------------------------------------------------
@@ -967,6 +1132,12 @@ app.use((req, res, next) => {
   next();
 });
 app.use(express.json({ limit: '1mb' }));
+app.use((error, req, res, next) => {
+  if (error?.type === 'entity.parse.failed' || (error instanceof SyntaxError && error.status === 400)) {
+    return res.status(400).json({ error: 'invalid_json', requestId: req.requestId });
+  }
+  return next(error);
+});
 app.use((req, res, next) => {
   if (!['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) return next();
   if (!/^\/api\/(?:admin|kitchen)\b/.test(req.path) && !/^\/api\/(?:content|menu|faq(?:-|\/|$)|v2\/orders(?:\/|$)|auth\/(?:logout|profile)$)/.test(req.path)) return next();
@@ -1038,10 +1209,18 @@ function commandCenterPayload(branchId = null) {
       ageMinutes: Math.max(0, Math.floor((now - new Date(order.createdAt).getTime()) / 60000)),
       items: (order.items || []).map((line) => ({ name: line.name, qty: line.qty })),
     }));
-  const lowStock = (db.menuItems || [])
-    .filter((item) => typeof item.stock === 'number' && item.stock <= Math.max(0, Number(item.lowStockAt) || 5))
-    .slice(0, 12)
-    .map((item) => ({ id: item.id, name: item.name, stock: item.stock, lowStockAt: item.lowStockAt }));
+  const legacyLowStock = (db.menuItems || [])
+    .filter((item) => !financeV2.menuItemUsesInventoryV2(db, item.id, branchId)
+      && typeof item.stock === 'number' && item.stock <= Math.max(0, Number(item.lowStockAt) || 5))
+    .map((item) => ({ id: item.id, name: item.name, stock: item.stock, lowStockAt: item.lowStockAt, kind: 'menu' }));
+  const materialLowStock = financeV2.inventoryItemsView(db, { branchId }).items
+    .filter((item) => Number(item.minStock || 0) > 0
+      && Number(item.availableQuantity ?? item.qtyOnHand ?? item.onHand ?? item.quantity) <= Number(item.minStock))
+    .map((item) => ({
+      id: item.id, name: item.name, stock: Number(item.availableQuantity ?? item.qtyOnHand ?? item.onHand ?? item.quantity) || 0,
+      lowStockAt: Number(item.minStock) || 0, unit: item.unit || null, kind: 'material',
+    }));
+  const lowStock = [...materialLowStock, ...legacyLowStock].slice(0, 12);
   const activeReservations = reservations.filter((item) => item.date === today && !['cancelled', 'no_show'].includes(item.status));
   const tableCapacity = tables.reduce((sum, table) => sum + (Number(table.seats) || 0), 0);
   const usedCapacity = activeReservations.reduce((sum, item) => sum + (Number(item.partySize) || 0), 0);
@@ -1068,10 +1247,12 @@ function commandCenterPayload(branchId = null) {
 }
 
 app.get('/api/admin/session', requireCommandCenterAccess, (req, res) => {
+  const allowedBranchIds = branchScopeForUser(req.user, { role: effectiveRole(req.user) });
   res.json({
     user: publicUser(req.user),
     branchId: parseBranchId(req),
-    branches: (db.branches || []).filter((branch) => branch.active !== false),
+    branches: (db.branches || []).filter((branch) => branch.active !== false
+      && (allowedBranchIds === null || allowedBranchIds.includes(Number(branch.id)))),
   });
 });
 
@@ -1129,6 +1310,7 @@ app.get('/api/staff/session/:workspace', requireCommandCenterAccess, (req, res) 
   if (!canOpenWorkspace(req.user, workspace)) return res.status(403).json({ error: 'workspace_forbidden', workspace });
   const branchId = parseBranchId(req) || defaultBranch()?.id || null;
   const actualRole = effectiveRole(req.user);
+  const allowedBranchIds = branchScopeForUser(req.user, { role: actualRole });
   res.json({
     user: publicUser(req.user),
     workspace: {
@@ -1139,7 +1321,8 @@ app.get('/api/staff/session/:workspace', requireCommandCenterAccess, (req, res) 
       returnPath: actualRole === 'owner' || actualRole === 'manager' ? '/admin' : null,
     },
     branchId,
-    branches: (db.branches || []).filter((branch) => branch.active !== false),
+    branches: (db.branches || []).filter((branch) => branch.active !== false
+      && (allowedBranchIds === null || allowedBranchIds.includes(Number(branch.id)))),
     shift: activeStaffShift(req.user, branchId),
   });
 });
@@ -1179,10 +1362,11 @@ app.get('/api/cashier/drawer', requireCapability('cash.manage'), (req, res) => {
   res.json({ session, totals: session ? cashSessionTotals(session) : null });
 });
 
-app.post('/api/cashier/drawer/open', requireCapability('cash.manage'), (req, res) => {
+app.post('/api/cashier/drawer/open', requireCapability('cash.manage'), async (req, res) => {
   const branchId = Number(req.body?.branchId) || defaultBranch()?.id || 1;
   const existing = activeCashSession(req.user, branchId);
   if (existing) return res.json({ ok: true, idempotent: true, session: existing, totals: cashSessionTotals(existing) });
+  const snapshot = snapshotFinanceMutationState();
   const openingAmount = Math.max(0, Math.round(Number(req.body?.openingAmount) || 0));
   const session = {
     id: nextId(db.cashSessions),
@@ -1193,19 +1377,25 @@ app.post('/api/cashier/drawer/open', requireCapability('cash.manage'), (req, res
     closedAt: null,
     movements: [],
   };
-  db.cashSessions.unshift(session);
-  recordAudit(req, 'cash_drawer.opened', 'cash_session', session.id, { openingAmount }, branchId);
-  save();
-  res.status(201).json({ ok: true, session, totals: cashSessionTotals(session) });
+  try {
+    db.cashSessions.unshift(session);
+    recordAudit(req, 'cash_drawer.opened', 'cash_session', session.id, { openingAmount }, branchId);
+    await persistFinanceMutation(snapshot);
+    res.status(201).json({ ok: true, session, totals: cashSessionTotals(session) });
+  } catch (error) {
+    restoreFinanceMutationState(snapshot);
+    return res.status(error.status || 503).json({ error: error.code || error.message });
+  }
 });
 
-app.post('/api/cashier/drawer/movements', requireCapability('cash.manage'), (req, res) => {
+app.post('/api/cashier/drawer/movements', requireCapability('cash.manage'), async (req, res) => {
   const branchId = Number(req.body?.branchId) || defaultBranch()?.id || 1;
   const session = activeCashSession(req.user, branchId);
   if (!session) return res.status(409).json({ error: 'cash_drawer_not_open' });
   const type = String(req.body?.type || '');
   if (!['pay_in', 'pay_out'].includes(type)) return res.status(400).json({ error: 'cash_movement_invalid' });
   const rawAmount = Math.max(1, Math.round(Number(req.body?.amount) || 0));
+  const snapshot = snapshotFinanceMutationState();
   const movement = {
     id: nextId(session.movements),
     type,
@@ -1214,25 +1404,36 @@ app.post('/api/cashier/drawer/movements', requireCapability('cash.manage'), (req
     at: new Date().toISOString(),
     by: req.user.phone,
   };
-  session.movements.unshift(movement);
-  recordAudit(req, `cash_drawer.${type}`, 'cash_session', session.id, { amount: movement.amount, note: movement.note }, branchId);
-  const financeResult = financeV2.captureCashMovement(db, session, movement, { actor: req.user.phone });
-  save();
-  res.status(201).json({ ok: true, movement, session, totals: cashSessionTotals(session), finance: financeResult });
+  try {
+    session.movements.unshift(movement);
+    recordAudit(req, `cash_drawer.${type}`, 'cash_session', session.id, { amount: movement.amount, note: movement.note }, branchId);
+    const financeResult = financeV2.captureCashMovement(db, session, movement, { actor: req.user.phone });
+    await persistFinanceMutation(snapshot);
+    res.status(201).json({ ok: true, movement, session, totals: cashSessionTotals(session), finance: financeResult });
+  } catch (error) {
+    restoreFinanceMutationState(snapshot);
+    return res.status(error.status || 503).json({ error: error.code || error.message });
+  }
 });
 
-app.post('/api/cashier/drawer/close', requireCapability('cash.manage'), (req, res) => {
+app.post('/api/cashier/drawer/close', requireCapability('cash.manage'), async (req, res) => {
   const branchId = Number(req.body?.branchId) || defaultBranch()?.id || 1;
   const session = activeCashSession(req.user, branchId);
   if (!session) return res.status(409).json({ error: 'cash_drawer_not_open' });
   const totals = cashSessionTotals(session);
+  const snapshot = snapshotFinanceMutationState();
   session.countedAmount = Math.max(0, Math.round(Number(req.body?.countedAmount) || 0));
   session.variance = session.countedAmount - totals.expected;
   session.closedAt = new Date().toISOString();
   recordAudit(req, 'cash_drawer.closed', 'cash_session', session.id, { countedAmount: session.countedAmount, variance: session.variance }, branchId);
-  const financeResult = financeV2.captureCashClose(db, session, { actor: req.user.phone });
-  save();
-  res.json({ ok: true, session, totals: { ...totals, counted: session.countedAmount, variance: session.variance }, finance: financeResult });
+  try {
+    const financeResult = financeV2.captureCashClose(db, session, { actor: req.user.phone });
+    await persistFinanceMutation(snapshot);
+    res.json({ ok: true, session, totals: { ...totals, counted: session.countedAmount, variance: session.variance }, finance: financeResult });
+  } catch (error) {
+    restoreFinanceMutationState(snapshot);
+    return res.status(error.status || 503).json({ error: error.code || error.message });
+  }
 });
 
 registerAdminV2Routes({
@@ -1265,6 +1466,21 @@ app.use('/api/admin/finance', (req, res, next) => {
     error: { code: 'finance_v1_read_only', message: 'عملیات نوشتنی مالی به Finance V2 منتقل شده است.' },
   });
 });
+
+// The remaining /v1 and taxpayer write aliases are legacy compatibility
+// surfaces too. Keep their read routes available, but fail closed before any
+// old accounting engine can create a parallel ledger outside Finance V2.
+const blockLegacyFinanceWrites = (req, res, next) => {
+  if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) return next();
+  if (req.baseUrl === '/v1' && req.path === '/audit/validate-permission') return next();
+  return res.status(410).json({
+    data: null,
+    meta: { generatedAt: new Date().toISOString(), replacement: '/api/admin/v2/finance' },
+    error: { code: 'finance_v1_read_only', message: 'عملیات نوشتنی مالی به Finance V2 منتقل شده است.' },
+  });
+};
+app.use('/v1', blockLegacyFinanceWrites);
+app.use('/api/tax', blockLegacyFinanceWrites);
 
 registerAccountingRoutes({
   app,
@@ -1392,18 +1608,294 @@ app.post('/api/auth/logout', (req, res) => {
 });
 
 app.patch('/api/auth/profile', requireAuth, (req, res) => {
-  const { name, email } = req.body;
-  if (typeof name === 'string') req.user.name = name.trim().slice(0, 100);
-  if (typeof email === 'string') req.user.email = email.trim().slice(0, 200);
+  const { name, email, birthdate, gender, city, address, preferences, notes, avatar } = req.body || {};
+  const user = (db.users || []).find((u) => u.phone === req.user.phone) || req.user;
+  if (typeof name === 'string') user.name = name.trim().slice(0, 100);
+  if (typeof email === 'string') user.email = email.trim().slice(0, 200);
+
+  if (typeof birthdate === 'string' && birthdate.trim()) {
+    const trimmedBday = birthdate.trim().slice(0, 50);
+    if (trimmedBday !== (user.birthdate || '')) {
+      if (isBirthdateLocked(user)) {
+        return res.status(400).json({
+          error: 'تاریخ تولد قبلاً ثبت شده و امکان تغییر آن تا ۱ سال وجود ندارد. برای تغییر، با مدیریت هماهنگ فرمایید.'
+        });
+      }
+      user.birthdate = trimmedBday;
+      user.birthdateUpdatedAt = new Date().toISOString();
+      try {
+        campaignsEngine.checkBirthdayEligibility(db, user);
+      } catch (_) {}
+    }
+  }
+
+  if (typeof gender === 'string') user.gender = gender.trim().slice(0, 20);
+  if (typeof city === 'string') user.city = city.trim().slice(0, 100);
+  if (typeof address === 'string') user.address = address.trim().slice(0, 300);
+  if (Array.isArray(preferences)) user.preferences = preferences.map((p) => String(p).trim().slice(0, 50)).filter(Boolean);
+  if (typeof notes === 'string') user.notes = notes.trim().slice(0, 500);
+  if (typeof avatar === 'string') user.avatar = avatar.trim().slice(0, 200000);
+
   save();
-  res.json({ ok: true, user: publicUser(req.user) });
+  res.json({ ok: true, user: publicUser(user) });
+});
+
+// --- user avatar endpoints ---
+const userAvatarUpload = multer({
+  limits: { fileSize: 4 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    if (!/^image\/(png|jpe?g|webp|gif|svg\+xml)$/i.test(file.mimetype)) {
+      return cb(new Error('فقط فایل‌های تصویری (PNG, JPG, WebP, GIF) مجاز هستند.'));
+    }
+    cb(null, true);
+  },
+  storage: multer.diskStorage({
+    destination: (req, file, cb) => {
+      const dir = path.join(UPLOADS, 'avatars');
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+      cb(null, dir);
+    },
+    filename: (req, file, cb) => {
+      const ext = path.extname(file.originalname || '.png') || '.png';
+      cb(null, `avatar-${Date.now()}-${crypto.randomBytes(6).toString('hex')}${ext}`);
+    },
+  }),
+});
+
+app.post('/api/user/avatar/upload', requireAuth, (req, res) => {
+  userAvatarUpload.single('avatar')(req, res, (err) => {
+    if (err) {
+      return res.status(400).json({ ok: false, error: err.message || 'خطا در آپلود تصویر' });
+    }
+    if (!req.file) {
+      return res.status(400).json({ ok: false, error: 'فایل تصویری انتخاب نشده است.' });
+    }
+    const avatarUrl = `uploads/avatars/${req.file.filename}`;
+    const user = (db.users || []).find((u) => phonesMatch(u.phone, req.user.phone)) || req.user;
+    user.avatar = avatarUrl;
+    save();
+    res.json({ ok: true, avatar: avatarUrl, user: publicUser(user) });
+  });
+});
+
+app.post('/api/user/avatar', requireAuth, (req, res) => {
+  const { avatar } = req.body || {};
+  const user = (db.users || []).find((u) => phonesMatch(u.phone, req.user.phone)) || req.user;
+  user.avatar = typeof avatar === 'string' ? avatar.trim().slice(0, 200000) : '';
+  save();
+  res.json({ ok: true, avatar: user.avatar, user: publicUser(user) });
+});
+
+// --- user multi-addresses API ---
+app.get('/api/user/addresses', requireAuth, (req, res) => {
+  const user = (db.users || []).find((u) => u.phone === req.user.phone) || req.user;
+  const addresses = Array.isArray(user.addresses) ? user.addresses : (user.address ? [{
+    id: 'addr_default',
+    title: '🏠 منزل',
+    city: user.city || '',
+    district: '',
+    address: user.address,
+    plaque: '',
+    unit: '',
+    floor: '',
+    receiverName: user.name || '',
+    receiverPhone: user.phone || '',
+    note: user.notes || '',
+    isDefault: true,
+    createdAt: user.createdAt || new Date().toISOString(),
+  }] : []);
+  res.json({ ok: true, addresses });
+});
+
+app.post('/api/user/addresses', requireAuth, (req, res) => {
+  const user = (db.users || []).find((u) => u.phone === req.user.phone) || req.user;
+  user.addresses = Array.isArray(user.addresses) ? user.addresses : [];
+
+  const {
+    title = '🏠 منزل',
+    city = '',
+    district = '',
+    address = '',
+    plaque = '',
+    unit = '',
+    floor = '',
+    receiverName = '',
+    receiverPhone = '',
+    note = '',
+    isDefault = false,
+  } = req.body || {};
+
+  const cleanAddress = String(address).trim();
+  if (!cleanAddress) {
+    return res.status(400).json({ error: 'نشانی پستی الزامی است.' });
+  }
+
+  const newAddressId = `addr_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+  const shouldBeDefault = isDefault || user.addresses.length === 0;
+
+  if (shouldBeDefault) {
+    user.addresses.forEach((a) => { a.isDefault = false; });
+  }
+
+  const newAddr = {
+    id: newAddressId,
+    title: String(title).trim().slice(0, 50) || '🏠 منزل',
+    city: String(city).trim().slice(0, 100),
+    district: String(district).trim().slice(0, 100),
+    address: cleanAddress.slice(0, 300),
+    plaque: String(plaque).trim().slice(0, 20),
+    unit: String(unit).trim().slice(0, 20),
+    floor: String(floor).trim().slice(0, 20),
+    receiverName: String(receiverName || user.name || '').trim().slice(0, 100),
+    receiverPhone: String(receiverPhone || user.phone || '').trim().slice(0, 30),
+    note: String(note).trim().slice(0, 300),
+    isDefault: shouldBeDefault,
+    createdAt: new Date().toISOString(),
+  };
+
+  user.addresses.unshift(newAddr);
+  if (shouldBeDefault) {
+    user.address = newAddr.address;
+    user.city = newAddr.city;
+    if (newAddr.note) user.notes = newAddr.note;
+  }
+
+  save();
+  res.json({ ok: true, address: newAddr, addresses: user.addresses });
+});
+
+app.put('/api/user/addresses/:id', requireAuth, (req, res) => {
+  const user = (db.users || []).find((u) => u.phone === req.user.phone) || req.user;
+  user.addresses = Array.isArray(user.addresses) ? user.addresses : [];
+
+  const addr = user.addresses.find((a) => a.id === req.params.id);
+  if (!addr) return res.status(404).json({ error: 'نشانی یافت نشد.' });
+
+  const {
+    title,
+    city,
+    district,
+    address,
+    plaque,
+    unit,
+    floor,
+    receiverName,
+    receiverPhone,
+    note,
+    isDefault,
+  } = req.body || {};
+
+  if (typeof title === 'string') addr.title = title.trim().slice(0, 50);
+  if (typeof city === 'string') addr.city = city.trim().slice(0, 100);
+  if (typeof district === 'string') addr.district = district.trim().slice(0, 100);
+  if (typeof address === 'string') {
+    const trimmed = address.trim();
+    if (!trimmed) return res.status(400).json({ error: 'نشانی پستی نمی‌تواند خالی باشد.' });
+    addr.address = trimmed.slice(0, 300);
+  }
+  if (typeof plaque === 'string') addr.plaque = plaque.trim().slice(0, 20);
+  if (typeof unit === 'string') addr.unit = unit.trim().slice(0, 20);
+  if (typeof floor === 'string') addr.floor = floor.trim().slice(0, 20);
+  if (typeof receiverName === 'string') addr.receiverName = receiverName.trim().slice(0, 100);
+  if (typeof receiverPhone === 'string') addr.receiverPhone = receiverPhone.trim().slice(0, 30);
+  if (typeof note === 'string') addr.note = note.trim().slice(0, 300);
+
+  if (typeof isDefault === 'boolean' && isDefault) {
+    user.addresses.forEach((a) => { a.isDefault = (a.id === addr.id); });
+    user.address = addr.address;
+    user.city = addr.city;
+    if (addr.note) user.notes = addr.note;
+  }
+
+  save();
+  res.json({ ok: true, address: addr, addresses: user.addresses });
+});
+
+app.delete('/api/user/addresses/:id', requireAuth, (req, res) => {
+  const user = (db.users || []).find((u) => u.phone === req.user.phone) || req.user;
+  user.addresses = Array.isArray(user.addresses) ? user.addresses : [];
+
+  const wasDefault = user.addresses.find((a) => a.id === req.params.id)?.isDefault;
+  user.addresses = user.addresses.filter((a) => a.id !== req.params.id);
+
+  if (wasDefault && user.addresses.length > 0) {
+    user.addresses[0].isDefault = true;
+    user.address = user.addresses[0].address;
+    user.city = user.addresses[0].city;
+  } else if (user.addresses.length === 0) {
+    user.address = '';
+  }
+
+  save();
+  res.json({ ok: true, addresses: user.addresses });
+});
+
+app.post('/api/user/addresses/:id/default', requireAuth, (req, res) => {
+  const user = (db.users || []).find((u) => u.phone === req.user.phone) || req.user;
+  user.addresses = Array.isArray(user.addresses) ? user.addresses : [];
+
+  const target = user.addresses.find((a) => a.id === req.params.id);
+  if (!target) return res.status(404).json({ error: 'نشانی یافت نشد.' });
+
+  user.addresses.forEach((a) => { a.isDefault = (a.id === target.id); });
+  user.address = target.address;
+  user.city = target.city;
+  if (target.note) user.notes = target.note;
+
+  save();
+  res.json({ ok: true, addresses: user.addresses, defaultAddress: target });
+});
+
+// --- Customer Feedback & Reviews ---
+app.post('/api/user/feedback', requireAuth, (req, res) => {
+  const { rating, comment, tags, aspectRatings } = req.body || {};
+  const user = (db.users || []).find((u) => u.phone === req.user.phone) || req.user;
+  db.feedbacks = Array.isArray(db.feedbacks) ? db.feedbacks : [];
+
+  const feedbackId = `fb_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
+  const numRating = Math.min(5, Math.max(1, Number(rating) || 5));
+  const newFeedback = {
+    id: feedbackId,
+    phone: user.phone,
+    userName: user.name || 'مشتری وستو',
+    rating: numRating,
+    comment: typeof comment === 'string' ? comment.trim().slice(0, 1000) : '',
+    tags: Array.isArray(tags) ? tags.map((t) => String(t).slice(0, 50)) : [],
+    aspectRatings: typeof aspectRatings === 'object' && aspectRatings ? aspectRatings : {},
+    createdAt: new Date().toISOString(),
+  };
+
+  db.feedbacks.unshift(newFeedback);
+
+  let pointsAwarded = 0;
+  const lastAwardTime = user.lastFeedbackRewardAt ? new Date(user.lastFeedbackRewardAt).getTime() : 0;
+  const monthMs = 30 * 24 * 60 * 60 * 1000;
+  if (Date.now() - lastAwardTime > monthMs) {
+    pointsAwarded = 50;
+    user.points = (Number(user.points) || 0) + pointsAwarded;
+    user.lastFeedbackRewardAt = new Date().toISOString();
+  }
+
+  save();
+  res.json({
+    ok: true,
+    message: 'با تشکر! بازخورد شما با موفقیت ثبت شد.',
+    pointsAwarded,
+    newPoints: user.points,
+  });
 });
 
 // --- content ---
 function publicGuestMenuPayload(query = {}) {
   let items = db.menuItems;
+  const branch = resolveBranch(query.branchId || query.branch);
+  const branchId = branch?.id || null;
   if (!query.all) {
-    items = items.filter((m) => m.available !== false && itemVisibleNow(m));
+    items = items.filter((m) => {
+      if (m.available === false || !itemVisibleNow(m)) return false;
+      const availability = branchId ? financeV2.menuItemAvailability(db, m.id, branchId) : null;
+      return !availability?.tracked || availability.available;
+    });
   }
   if (query.categoryId) {
     const cid = Number(query.categoryId);
@@ -1469,7 +1961,7 @@ function publicContentPayload() {
     // the performance loader. This removes two startup API round trips without
     // changing the public API contracts.
     menuCategories: db.menuCategories,
-    menuItems: db.menuItems.filter((m) => m.available !== false),
+    menuItems: menu.menuItems,
     siteCategories: activeMenuCategories(db),
     menuRevision: db.menuRevision || 0,
     menu,
@@ -1525,10 +2017,16 @@ function complementRulesForMenuItem(menuItem) {
   ));
 }
 
-function staffMenuPayload() {
+function staffMenuPayload(branchToken = null) {
+  const branch = resolveBranch(branchToken);
+  const branchId = branch?.id || null;
   return {
     menuCategories: db.menuCategories || [],
-    menuItems: (db.menuItems || []).filter((item) => item.available !== false && itemVisibleNow(item)),
+    menuItems: (db.menuItems || []).filter((item) => {
+      if (item.available === false || !itemVisibleNow(item)) return false;
+      const availability = branchId ? financeV2.menuItemAvailability(db, item.id, branchId) : null;
+      return !availability?.tracked || availability.available;
+    }),
     menuComplements: (db.menuComplements || []).filter((item) => item.available !== false && (item.stock == null || Number(item.stock) > 0)),
     menuComplementRules: (db.menuComplementRules || []).filter((rule) => rule.active !== false),
     menuRevision: db.menuRevision || 0,
@@ -1536,7 +2034,7 @@ function staffMenuPayload() {
 }
 
 app.get('/api/staff/menu', requireCapability('orders.create'), (req, res) => {
-  res.json(staffMenuPayload());
+  res.json(staffMenuPayload(req.query.branchId || req.query.branch));
 });
 
 function normalizeComplementInput(input = {}, current = {}) {
@@ -1934,7 +2432,7 @@ app.delete('/api/menu/:id', requireAdmin, (req, res) => {
 });
 
 // --- orders ---
-function orderLinesFromRequest(rawItems, { allowMenuItemIds = new Set(), allowComplementIds = new Set() } = {}) {
+function orderLinesFromRequest(rawItems, { allowMenuItemIds = new Set(), allowComplementIds = new Set(), branchId = null } = {}) {
   const items = Array.isArray(rawItems) ? rawItems : [];
   const lines = [];
   let subtotal = 0;
@@ -1946,7 +2444,13 @@ function orderLinesFromRequest(rawItems, { allowMenuItemIds = new Set(), allowCo
     if (!menuItem || (!allowMenuItemIds.has(menuItemId) && !itemVisibleNow(menuItem))) continue;
     const qty = Math.min(99, Math.max(1, Math.round(Number(line.qty) || 1)));
     const accumulatedMenuQty = (requestedMenuQty.get(menuItemId) || 0) + qty;
-    if (typeof menuItem.stock === 'number' && menuItem.stock < accumulatedMenuQty) {
+    const v2Availability = branchId ? financeV2.menuItemAvailability(db, menuItem.id, branchId, accumulatedMenuQty) : null;
+    if (v2Availability?.tracked) {
+      if (!v2Availability.available) {
+        const shortage = v2Availability.issues?.find((issue) => issue.code === 'inventory_shortage');
+        return { error: shortage?.itemName ? `مواد لازم برای «${menuItem.name}» کافی نیست (ماده: ${shortage.itemName})` : `موجودی مواد لازم برای «${menuItem.name}» کافی نیست` };
+      }
+    } else if (typeof menuItem.stock === 'number' && menuItem.stock < accumulatedMenuQty) {
       return { error: `موجودی «${menuItem.name}» کافی نیست (باقی‌مانده: ${menuItem.stock})` };
     }
     requestedMenuQty.set(menuItemId, accumulatedMenuQty);
@@ -2015,10 +2519,11 @@ function restoreOrderInventorySnapshot(snapshot) {
   }
 }
 
-function adjustOrderInventory(lines, direction) {
+function adjustOrderInventory(lines, direction, branchId = null) {
   for (const line of lines || []) {
     const menuItem = (db.menuItems || []).find((item) => Number(item.id) === Number(line.menuItemId));
-    if (menuItem && typeof menuItem.stock === 'number') {
+    const usesV2 = branchId && menuItem ? financeV2.menuItemUsesInventoryV2(db, menuItem.id, branchId) : false;
+    if (menuItem && !usesV2 && typeof menuItem.stock === 'number') {
       menuItem.stock = Math.max(0, menuItem.stock + direction * Number(line.qty || 0));
       if (direction > 0 && menuItem.stock > 0) menuItem.available = true;
       if (direction < 0 && menuItem.stock === 0) menuItem.available = false;
@@ -2086,10 +2591,10 @@ async function createCheckoutOrder(input, { requireTable = false, requirePhone =
     if (order) return { order, payment, idempotent: true, whatsapp: null };
   }
 
-  const lineResult = orderLinesFromRequest(input.items);
-  if (lineResult.error) return lineResult;
   const branch = findOrderBranch(input, tableNo, fulfillment);
   if (!branch) return { error: 'شعبه پیدا نشد' };
+  const lineResult = orderLinesFromRequest(input.items, { branchId: branch.id });
+  if (lineResult.error) return lineResult;
   const zoneId = Number(input.deliveryZoneId || input.zoneId) || null;
   const zone = fulfillment === 'delivery'
     ? (db.deliveryZones || []).find((item) => Number(item.id) === zoneId)
@@ -2107,7 +2612,8 @@ async function createCheckoutOrder(input, { requireTable = false, requirePhone =
   // Deduct stock only after every validation and delivery quote has passed.
   for (const line of lineResult.lines) {
     const menuItem = db.menuItems.find((item) => item.id === line.menuItemId);
-    if (menuItem && typeof menuItem.stock === 'number') {
+    const usesV2 = menuItem && financeV2.menuItemUsesInventoryV2(db, menuItem.id, branch.id);
+    if (menuItem && !usesV2 && typeof menuItem.stock === 'number') {
       menuItem.stock = Math.max(0, menuItem.stock - line.qty);
       if (menuItem.stock === 0) menuItem.available = false;
     }
@@ -2121,6 +2627,26 @@ async function createCheckoutOrder(input, { requireTable = false, requirePhone =
   }
 
   const createdAt = new Date().toISOString();
+
+  // Loyalty tier and points redemption calculation
+  const customerUser = phone ? (db.users || []).find((u) => u.phone === phone) : null;
+  const discountCalc = loyaltyEngine.calculateOrderDiscounts(db, {
+    subtotalToman: lineResult.subtotal,
+    phone,
+    user: customerUser,
+    redeemPoints: input.redeemPoints || input.pointsToRedeem || 0,
+  });
+
+  const orderDiscount = discountCalc.totalDiscountToman;
+  const orderTotal = Math.max(0, lineResult.subtotal + fulfillmentQuote.deliveryFee - orderDiscount);
+
+  if (discountCalc.pointsRedeemed > 0 && customerUser) {
+    customerUser.points = Math.max(0, customerUser.points - discountCalc.pointsRedeemed);
+    awardLoyaltyPoints(customerUser.phone, -discountCalc.pointsRedeemed, 'redeem_order', {
+      discountToman: discountCalc.pointsDiscountToman,
+    });
+  }
+
   const order = {
     id: nextId(db.orders),
     orderNo: `W-${String(Date.now()).slice(-6)}-${nextId(db.orders)}`,
@@ -2134,8 +2660,13 @@ async function createCheckoutOrder(input, { requireTable = false, requirePhone =
     status: initialOrderStatus({ paymentMethod, fulfillment }),
     items: lineResult.lines,
     subtotal: lineResult.subtotal,
+    discount: orderDiscount,
+    tierDiscountToman: discountCalc.tierDiscountToman,
+    pointsRedeemed: discountCalc.pointsRedeemed,
+    pointsDiscountToman: discountCalc.pointsDiscountToman,
+    loyaltyTier: discountCalc.tier?.id || 'bronze',
     deliveryFee: fulfillmentQuote.deliveryFee,
-    total: fulfillmentQuote.total,
+    total: orderTotal,
     delivery: fulfillment === 'delivery'
       ? {
           zoneId: zone.id,
@@ -2194,11 +2725,43 @@ async function createCheckoutOrder(input, { requireTable = false, requirePhone =
   db.auditLog = Array.isArray(db.auditLog) ? db.auditLog : [];
   db.auditLog.unshift(auditEntry);
   db.auditLog = db.auditLog.slice(0, 5000);
-  publishOperationalEvent('order.created', { orderId: order.id, branchId: order.branchId, status: order.status });
-  neemBridge.enqueueOrder(order, payment);
-  const notify = await notifyOrderWhatsApp(db, order);
-  save();
-  return { order, payment, whatsapp: notify.skipped ? null : notify };
+  return { order, payment, whatsapp: null };
+}
+
+async function createAndPersistCheckoutOrder(input, options = {}, afterCreate = null) {
+  const snapshot = snapshotFinanceMutationState();
+  let deferredCommit = null;
+  let result;
+  try {
+    result = await createCheckoutOrder(input, options);
+    if (result.error) {
+      restoreFinanceMutationState(snapshot);
+      return result;
+    }
+    if (!result.idempotent && afterCreate) deferredCommit = await afterCreate(result);
+    await persistFinanceMutation(snapshot);
+  } catch (error) {
+    restoreFinanceMutationState(snapshot);
+    throw error;
+  }
+
+  // These integrations are post-commit effects. A failed persistence must
+  // never leave a live event, NEEM outbox row, or notification for a missing
+  // order in the durable store.
+  if (!result.idempotent) {
+    try {
+      publishOperationalEvent('order.created', { orderId: result.order.id, branchId: result.order.branchId, status: result.order.status });
+      neemBridge.enqueueOrder(result.order, result.payment);
+      if (typeof deferredCommit === 'function') await deferredCommit();
+      const notify = await notifyOrderWhatsApp(db, result.order);
+      result.whatsapp = notify.skipped ? null : notify;
+      await save({ requireDurable: true });
+    } catch (error) {
+      console.error('[order-post-commit] integration effect failed', error?.message || error);
+      result.whatsapp = null;
+    }
+  }
+  return result;
 }
 
 function settlePaymentAttempt(payment, { status = 'paid', reference = '', source = 'sandbox' } = {}) {
@@ -2220,11 +2783,18 @@ function settlePaymentAttempt(payment, { status = 'paid', reference = '', source
     }
   }
   recordAudit(null, `payment.${status}`, 'payment', payment.id, { orderId: payment.orderId, source }, payment.branchId);
-  publishOperationalEvent('payment.updated', { paymentId: payment.id, orderId: payment.orderId, branchId: payment.branchId, status });
-  if (order) publishOperationalEvent('order.updated', { orderId: order.id, branchId: order.branchId, status: order.status });
-  if (order) neemBridge.enqueueOrder(order, payment);
-  save();
   return { payment, order, finance: financeResult, idempotent: alreadyPaid };
+}
+
+function publishPaymentCommitEffects(result, status) {
+  if (!result?.payment) return;
+  publishOperationalEvent('payment.updated', {
+    paymentId: result.payment.id, orderId: result.payment.orderId, branchId: result.payment.branchId, status,
+  });
+  if (result.order) publishOperationalEvent('order.updated', {
+    orderId: result.order.id, branchId: result.order.branchId, status: result.order.status,
+  });
+  if (result.order) neemBridge.enqueueOrder(result.order, result.payment);
 }
 
 app.get('/api/checkout/meta', (req, res) => {
@@ -2249,56 +2819,176 @@ app.post('/api/checkout/quote', (req, res) => {
     : null;
   const quote = quoteFulfillment({ fulfillment, subtotal: lineResult.subtotal, zone, branchId: branch?.id });
   if (!quote.ok) return res.status(400).json(quote);
-  res.json({ ok: true, subtotal: lineResult.subtotal, ...quote, branchId: branch?.id || null });
+
+  const phone = normalizeDigits(req.body?.phone || req.user?.phone || '').trim();
+  const customerUser = phone ? (db.users || []).find((u) => u.phone === phone) : null;
+  const discountCalc = loyaltyEngine.calculateOrderDiscounts(db, {
+    subtotalToman: lineResult.subtotal,
+    phone,
+    user: customerUser,
+    redeemPoints: req.body?.redeemPoints || req.body?.pointsToRedeem || 0,
+  });
+
+  const finalTotal = Math.max(0, quote.total - discountCalc.totalDiscountToman);
+
+  res.json({
+    ok: true,
+    subtotal: lineResult.subtotal,
+    deliveryFee: quote.deliveryFee,
+    discount: discountCalc.totalDiscountToman,
+    tierDiscountToman: discountCalc.tierDiscountToman,
+    tier: discountCalc.tier,
+    pointsRedeemed: discountCalc.pointsRedeemed,
+    pointsDiscountToman: discountCalc.pointsDiscountToman,
+    maxRedeemablePoints: discountCalc.maxRedeemablePoints,
+    availablePoints: discountCalc.availablePoints,
+    total: finalTotal,
+    minimum: quote.minimum,
+    etaMinutes: quote.etaMinutes,
+    branchId: branch?.id || null,
+  });
 });
 
 app.post('/api/checkout/orders', async (req, res) => {
-  const result = await createCheckoutOrder(req.body || {}, {
-    idempotencyKey: req.get('Idempotency-Key') || req.body?.idempotencyKey,
-  });
-  if (result.error) return res.status(400).json(result);
-  res.status(result.idempotent ? 200 : 201).json({
-    ok: true,
-    idempotent: !!result.idempotent,
-    order: result.order,
-    payment: result.payment
-      ? { ...publicPaymentAttempt(result.payment), sandboxToken: result.payment.mode === 'sandbox' ? result.payment.sandboxToken : undefined }
-      : null,
-    whatsapp: result.whatsapp,
-  });
+  try {
+    const result = await createAndPersistCheckoutOrder(req.body || {}, {
+      idempotencyKey: req.get('Idempotency-Key') || req.body?.idempotencyKey,
+    });
+    if (result.error) return res.status(400).json(result);
+    res.status(result.idempotent ? 200 : 201).json({
+      ok: true,
+      idempotent: !!result.idempotent,
+      order: result.order,
+      payment: result.payment
+        ? { ...publicPaymentAttempt(result.payment), sandboxToken: result.payment.mode === 'sandbox' ? result.payment.sandboxToken : undefined }
+        : null,
+      whatsapp: result.whatsapp,
+    });
+  } catch (error) {
+    return res.status(error.status || 503).json({ error: error.code || error.message });
+  }
 });
 
-app.post('/api/checkout/payments/:id/sandbox-confirm', (req, res) => {
+app.post('/api/checkout/payments/:id/sandbox-confirm', async (req, res) => {
   const payment = (db.paymentAttempts || []).find((item) => Number(item.id) === Number(req.params.id));
   if (!payment) return res.status(404).json({ error: 'payment_not_found' });
   if (payment.mode !== 'sandbox') return res.status(409).json({ error: 'sandbox_disabled' });
   if (!req.body?.token || req.body.token !== payment.sandboxToken) return res.status(403).json({ error: 'payment_token_invalid' });
-  const result = settlePaymentAttempt(payment, { status: 'paid', reference: `sandbox-${payment.id}`, source: 'sandbox-confirm' });
-  if (result.error) return res.status(400).json(result);
+  const snapshot = snapshotFinanceMutationState();
+  let result;
+  try {
+    result = settlePaymentAttempt(payment, { status: 'paid', reference: `sandbox-${payment.id}`, source: 'sandbox-confirm' });
+    if (result.error) return res.status(400).json(result);
+    await persistFinanceMutation(snapshot);
+  } catch (error) {
+    restoreFinanceMutationState(snapshot);
+    return res.status(error.status || 503).json({ error: error.code || error.message });
+  }
+  try { publishPaymentCommitEffects(result, 'paid'); } catch (error) { console.error('[payment-post-commit] integration effect failed', error?.message || error); }
   res.json({ ok: true, idempotent: result.idempotent, payment: publicPaymentAttempt(result.payment), order: result.order });
 });
 
-app.post('/api/payments/webhook/:provider', (req, res) => {
+app.post('/api/payments/webhook/:provider', async (req, res) => {
   const payment = (db.paymentAttempts || []).find((item) => Number(item.id) === Number(req.body?.paymentAttemptId));
   if (!payment || payment.provider !== String(req.params.provider || '')) return res.status(404).json({ error: 'payment_not_found' });
   const secret = process.env.PAYMENT_WEBHOOK_SECRET;
   const signature = req.get('X-Westo-Payment-Signature');
   const validSandbox = payment.mode === 'sandbox' && req.body?.token === payment.sandboxToken;
   if (!validSandbox && (!secret || signature !== secret)) return res.status(401).json({ error: 'webhook_unauthorized' });
-  const result = settlePaymentAttempt(payment, {
-    status: String(req.body?.status || 'paid'),
-    reference: req.body?.reference,
-    source: `webhook:${payment.provider}`,
-  });
-  if (result.error) return res.status(400).json(result);
+  const snapshot = snapshotFinanceMutationState();
+  let result;
+  try {
+    result = settlePaymentAttempt(payment, {
+      status: String(req.body?.status || 'paid'),
+      reference: req.body?.reference,
+      source: `webhook:${payment.provider}`,
+    });
+    if (result.error) return res.status(400).json(result);
+    await persistFinanceMutation(snapshot);
+  } catch (error) {
+    restoreFinanceMutationState(snapshot);
+    return res.status(error.status || 503).json({ error: error.code || error.message });
+  }
+  try { publishPaymentCommitEffects(result, result.payment.status); } catch (error) { console.error('[payment-post-commit] integration effect failed', error?.message || error); }
   res.json({ ok: true, idempotent: result.idempotent, payment: publicPaymentAttempt(result.payment), order: result.order });
+});
+
+function getOrderStatusFaLabel(status) {
+  const map = {
+    pending: 'در انتظار تأیید',
+    pending_online: 'در انتظار پرداخت آنلاین',
+    pending_cashier: 'در انتظار پرداخت صندوق/پیک',
+    awaiting_confirmation: 'در انتظار تأیید',
+    prep: 'در حال آماده‌سازی',
+    preparing: 'در حال پخت و آماده‌سازی',
+    kitchen: 'در حال پخت در آشپزخانه',
+    ready: 'آماده تحویل',
+    delivering: 'در حال ارسال پیک',
+    delivered: 'تحویل داده شد',
+    picked_up: 'تحویل حضوری شد',
+    paid: 'پرداخت و تکمیل‌شده',
+    done: 'تکمیل‌شده',
+    cancelled: 'لغوشده',
+    rejected: 'رد شده',
+  };
+  return map[String(status || '').toLowerCase()] || 'در جریان';
+}
+
+app.get('/api/orders/my-orders', requireAuth, (req, res) => {
+  const userPhone = String(req.user?.phone || '').trim();
+  const userOrders = (db.orders || [])
+    .filter((o) => {
+      if (o.userId && req.user?.id && String(o.userId) === String(req.user.id)) return true;
+      const p = o.phone || o.userPhone || o.customerPhone || '';
+      return phonesMatch(p, userPhone);
+    })
+    .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+
+  const tierInfo = loyaltyEngine.resolveCustomerTier(db, req.user);
+
+  const mapped = userOrders.map((o) => {
+    const totalAmount = Number(o.total || o.finalTotal || o.subtotal || 0);
+    const calculatedPoints = loyaltyEngine.calculateOrderPointsEarned(db, totalAmount, tierInfo.tier);
+    return {
+      id: o.id,
+      orderNo: o.orderNo || `W-${o.id}`,
+      createdAt: o.createdAt || new Date().toISOString(),
+      status: o.status || 'paid',
+      statusLabel: getOrderStatusFaLabel(o.status),
+      fulfillment: o.fulfillment || 'dine_in',
+      items: Array.isArray(o.items) ? o.items.map((it) => ({
+        name: it.name || it.title || 'آیتم منو',
+        quantity: Number(it.quantity || it.qty || 1),
+        price: Number(it.price || 0),
+        total: Number(it.price || 0) * Number(it.quantity || it.qty || 1),
+      })) : [],
+      total: totalAmount,
+      subtotal: Number(o.subtotal || o.total || 0),
+      discount: Number(o.discount || o.loyaltyDiscount || 0),
+      pointsEarned: o.pointsEarned !== undefined ? Number(o.pointsEarned) : calculatedPoints,
+      paymentMethod: o.paymentMethod || o.tender || (o.paidWithWallet ? 'کیف پول' : 'آنلاین'),
+      tableNo: o.tableNo || null,
+      delivery: o.delivery || null,
+    };
+  });
+
+  res.json({ ok: true, orders: mapped });
+});
+
+app.get('/api/profile/orders', requireAuth, (req, res, next) => {
+  req.url = '/api/orders/my-orders';
+  app.handle(req, res, next);
 });
 
 // Existing table ordering clients keep their endpoint and response shape.
 app.post('/api/orders', async (req, res) => {
-  const result = await createCheckoutOrder(req.body || {}, { requireTable: true });
-  if (result.error) return res.status(400).json(result);
-  res.json({ ok: true, order: result.order, whatsapp: result.whatsapp });
+  try {
+    const result = await createAndPersistCheckoutOrder(req.body || {}, { requireTable: true });
+    if (result.error) return res.status(400).json(result);
+    res.json({ ok: true, order: result.order, whatsapp: result.whatsapp });
+  } catch (error) {
+    return res.status(error.status || 503).json({ error: error.code || error.message });
+  }
 });
 
 app.get('/api/admin/orders', requireCapability('orders.view'), (req, res) => {
@@ -2320,20 +3010,25 @@ app.get('/api/admin/orders', requireCapability('orders.view'), (req, res) => {
 });
 
 app.post('/api/staff/orders', requireCapability('orders.create'), async (req, res) => {
-  const result = await createCheckoutOrder(req.body || {}, {
-    requireTable: String(req.body?.fulfillment || 'dine_in') === 'dine_in',
-    requirePhone: false,
-    idempotencyKey: req.get('Idempotency-Key') || '',
-    actor: req.user,
-  });
-  if (result.error) return res.status(400).json(result);
-  if (req.body?.sendToKitchen && result.order.paymentMethod !== 'online' && result.order.status === 'pay_at_cashier') {
-    appendOrderStatus(result.order, 'sent_to_kitchen', req.user, { source: 'staff-pos', paymentStatus: result.order.paymentStatus });
-    recordAudit(req, 'order.sent_to_kitchen', 'order', result.order.id, { paymentStatus: result.order.paymentStatus }, result.order.branchId);
-    publishOperationalEvent('order.updated', { orderId: result.order.id, branchId: result.order.branchId, status: result.order.status });
-    save();
+  try {
+    const result = await createAndPersistCheckoutOrder(req.body || {}, {
+      requireTable: String(req.body?.fulfillment || 'dine_in') === 'dine_in',
+      requirePhone: false,
+      idempotencyKey: req.get('Idempotency-Key') || '',
+      actor: req.user,
+    }, async ({ order }) => {
+      if (req.body?.sendToKitchen && order.paymentMethod !== 'online' && order.status === 'pay_at_cashier') {
+        appendOrderStatus(order, 'sent_to_kitchen', req.user, { source: 'staff-pos', paymentStatus: order.paymentStatus });
+        recordAudit(req, 'order.sent_to_kitchen', 'order', order.id, { paymentStatus: order.paymentStatus }, order.branchId);
+        return () => publishOperationalEvent('order.updated', { orderId: order.id, branchId: order.branchId, status: order.status });
+      }
+      return null;
+    });
+    if (result.error) return res.status(400).json(result);
+    res.status(201).json({ ok: true, order: result.order });
+  } catch (error) {
+    return res.status(error.status || 503).json({ error: error.code || error.message });
   }
-  res.status(201).json({ ok: true, order: result.order });
 });
 
 app.patch('/api/cashier/orders/:id', requireCapability('orders.manage'), (req, res) => {
@@ -2357,10 +3052,11 @@ app.patch('/api/cashier/orders/:id', requireCapability('orders.manage'), (req, r
 
   // Put the order's reservation back temporarily so unchanged items remain
   // valid even when this order consumed the last tracked unit.
-  adjustOrderInventory(order.items, 1);
+  adjustOrderInventory(order.items, 1, order.branchId);
   const normalized = orderLinesFromRequest(req.body?.items, {
     allowMenuItemIds: existingMenuIds,
     allowComplementIds: existingComplementIds,
+    branchId: order.branchId,
   });
   if (normalized.error) {
     restoreOrderInventorySnapshot(snapshot);
@@ -2382,7 +3078,7 @@ app.patch('/api/cashier/orders/:id', requireCapability('orders.manage'), (req, r
     return res.status(400).json({ error: 'شماره موبایل معتبر نیست' });
   }
 
-  adjustOrderInventory(normalized.lines, -1);
+  adjustOrderInventory(normalized.lines, -1, order.branchId);
   order.items = normalized.lines;
   order.subtotal = normalized.subtotal;
   order.total = nextTotal;
@@ -2411,7 +3107,57 @@ app.patch('/api/cashier/orders/:id', requireCapability('orders.manage'), (req, r
   res.json({ ok: true, order, editable: canEditOrderBeforeKitchen(order) });
 });
 
-app.post('/api/cashier/orders/:id/settle', requireCapability('payments.manage'), (req, res) => {
+app.post('/api/cashier/orders/:id/apply-loyalty', requireCapability('orders.manage'), (req, res) => {
+  const order = (db.orders || []).find((item) => Number(item.id) === Number(req.params.id));
+  if (!order) return res.status(404).json({ error: 'not found' });
+  const phone = normalizeDigits(req.body?.phone || order.phone || '').trim();
+  const redeemPoints = Number(req.body?.redeemPoints || 0);
+
+  const user = phone ? (db.users || []).find((u) => u.phone === phone) : null;
+  const discounts = loyaltyEngine.calculateOrderDiscounts(db, {
+    subtotalToman: order.subtotal,
+    phone,
+    user,
+    redeemPoints,
+  });
+
+  if (req.body?.apply) {
+    if (discounts.pointsRedeemed > 0 && user) {
+      user.points = Math.max(0, user.points - discounts.pointsRedeemed);
+      awardLoyaltyPoints(user.phone, -discounts.pointsRedeemed, 'redeem_order', {
+        orderId: order.id,
+        discountToman: discounts.pointsDiscountToman,
+      });
+    }
+    order.phone = phone || order.phone;
+    if (user?.name && !order.name) order.name = user.name;
+    order.tierDiscountToman = discounts.tierDiscountToman;
+    order.pointsRedeemed = discounts.pointsRedeemed;
+    order.pointsDiscountToman = discounts.pointsDiscountToman;
+    order.loyaltyTier = discounts.tier?.id || 'bronze';
+    order.discount = discounts.totalDiscountToman;
+    order.total = Math.max(0, Number(order.subtotal || 0) + Number(order.deliveryFee || 0) - order.discount);
+    save();
+    publishOperationalEvent('order.updated', { orderId: order.id, branchId: order.branchId, status: order.status, edited: true });
+  }
+
+  res.json({
+    ok: true,
+    order,
+    discounts,
+    customer: user
+      ? {
+          name: user.name,
+          phone: user.phone,
+          points: user.points,
+          walletBalance: walletEngine.getWalletBalance(db, user.phone),
+          tier: discounts.tier,
+        }
+      : null,
+  });
+});
+
+app.post('/api/cashier/orders/:id/settle', requireCapability('payments.manage'), async (req, res) => {
   const order = (db.orders || []).find((item) => Number(item.id) === Number(req.params.id));
   if (!order) return res.status(404).json({ error: 'not found' });
   if (order.paymentStatus === 'paid') return res.json({ ok: true, idempotent: true, order });
@@ -2419,7 +3165,7 @@ app.post('/api/cashier/orders/:id/settle', requireCapability('payments.manage'),
     return res.status(409).json({ error: 'order_not_payable', current: order.status });
   }
   const tender = String(req.body?.tender || 'cash');
-  if (!['cash', 'card', 'manual_card', 'gift_card', 'card_on_file'].includes(tender)) return res.status(400).json({ error: 'tender_invalid' });
+  if (!['cash', 'card', 'manual_card', 'gift_card', 'card_on_file', 'wallet'].includes(tender)) return res.status(400).json({ error: 'tender_invalid' });
   const previousPayments = Array.isArray(order.partialPayments) ? order.partialPayments : [];
   const alreadyPaid = previousPayments.reduce((sum, payment) => sum + Math.max(0, Number(payment.amount) || 0), 0);
   const outstanding = Math.max(0, (Number(order.total) || 0) - alreadyPaid);
@@ -2432,6 +3178,23 @@ app.post('/api/cashier/orders/:id/settle', requireCapability('payments.manage'),
     ? Math.round(Number(req.body?.amountTendered) || requestedAmount)
     : requestedAmount;
   if (amountTendered < requestedAmount) return res.status(400).json({ error: 'cash_received_insufficient', minimum: requestedAmount });
+
+  if (tender === 'wallet') {
+    if (!order.phone) return res.status(400).json({ error: 'شماره مشتری برای پرداخت از کیف پول الزامی است.' });
+    const walletBal = walletEngine.getWalletBalance(db, order.phone);
+    if (walletBal < requestedAmount) {
+      return res.status(400).json({ error: 'موجودی کیف پول مشتری کافی نیست.', balance: walletBal, required: requestedAmount });
+    }
+    walletEngine.payFromWallet(db, {
+      phone: order.phone,
+      amountToman: requestedAmount,
+      orderId: order.id,
+      actor: req.user.phone || 'cashier',
+    });
+  }
+
+  const snapshot = snapshotFinanceMutationState();
+  try {
   const paymentAt = new Date().toISOString();
   const payment = {
     id: nextId(previousPayments), tender, amount: requestedAmount,
@@ -2466,26 +3229,150 @@ app.post('/api/cashier/orders/:id/settle', requireCapability('payments.manage'),
   const financeResult = fullyPaid
     ? financeV2.capturePaidOrder(db, order, { actor: req.user.phone, idempotencyKey: `order:${order.id}:payment:${order.paymentRevision || order.partialPayments.length}` })
     : null;
+  await persistFinanceMutation(snapshot);
   publishOperationalEvent('order.updated', { orderId: order.id, branchId, status: order.status });
-  save();
   res.json({ ok: true, order, drawer: drawer ? { session: drawer, totals: cashSessionTotals(drawer) } : null, finance: financeResult });
+  } catch (error) {
+    restoreFinanceMutationState(snapshot);
+    return res.status(error.status || 503).json({ error: error.code || error.message });
+  }
 });
 
-app.post('/api/cashier/orders/:id/receipt', requireCapability('payments.manage'), (req, res) => {
+app.get('/api/cashier/printer', requireCapability('payments.manage'), (req, res) => {
+  const branchId = parseBranchId(req) || defaultBranch()?.id || 1;
+  const printer = printerForBranch(db, branchId);
+  res.json({ ok: true, branchId, printer: publicPrinterConfig(printer), directPrint: true });
+});
+
+app.get('/api/cashier/printers/system', requireCapability('payments.manage'), async (req, res) => {
+  try {
+    const result = await listSystemPrinters();
+    return res.json({ ok: true, ...result });
+  } catch (error) {
+    return res.status(error.status || 502).json({ error: error.code || 'system_printer_discovery_failed', message: error.message });
+  }
+});
+
+app.put('/api/cashier/printer', requireCapability('payments.manage'), (req, res) => {
+  const branchId = parseBranchId(req) || defaultBranch()?.id || 1;
+  const current = printerForBranch(db, branchId);
+  try {
+    const printer = normalizePrinterConfig({ ...(req.body || {}), branchId }, current || { ...DEFAULT_PRINTER_CONFIG, branchId });
+    ensurePrintingData(db, branchId);
+    const existingIndex = db.printing.printers.findIndex((item) => Number(item.branchId) === Number(branchId));
+    if (existingIndex >= 0) db.printing.printers[existingIndex] = printer;
+    else db.printing.printers.push(printer);
+    db.printing.defaultPrinterId = printer.id;
+    recordAudit(req, 'printer.configured', 'printer', printer.id, { transport: printer.transport, host: printer.host, port: printer.port, systemPrinterName: printer.systemPrinterName, protocol: printer.protocol }, branchId);
+    save();
+    res.json({ ok: true, branchId, printer: publicPrinterConfig(printer), directPrint: true });
+  } catch (error) {
+    return res.status(error.status || 400).json({ error: error.code || 'printer_config_invalid', message: error.message, field: error.field || null });
+  }
+});
+
+app.post('/api/cashier/printer/test', requireCapability('payments.manage'), async (req, res) => {
+  const branchId = parseBranchId(req) || defaultBranch()?.id || 1;
+  const printer = printerForBranch(db, branchId);
+  if (!printer) return res.status(409).json({ error: 'printer_not_configured' });
+  try {
+    const result = req.body?.raster
+      ? await printRasterReceipt(req.body.raster, printer)
+      : await testPrinter(printer);
+    recordAudit(req, 'printer.test_printed', 'printer', printer.id, { transport: printer.transport, host: printer.host, port: printer.port, systemPrinterName: printer.systemPrinterName, bytes: result.bytes }, branchId);
+    save();
+    return res.json({ ok: true, branchId, printed: true, printer: publicPrinterConfig(printer), result });
+  } catch (error) {
+    recordAudit(req, 'printer.test_failed', 'printer', printer.id, { transport: printer.transport, host: printer.host, port: printer.port, systemPrinterName: printer.systemPrinterName, error: error.code || error.message }, branchId);
+    save();
+    return res.status(error.status || 502).json({ error: error.code || 'printer_unreachable', message: error.message, printer: publicPrinterConfig(printer) });
+  }
+});
+
+app.post('/api/cashier/orders/:id/print', requireCapability('payments.manage'), async (req, res) => {
+  const order = (db.orders || []).find((item) => Number(item.id) === Number(req.params.id));
+  if (!order) return res.status(404).json({ error: 'not found' });
+  const branchId = Number(order.branchId) || defaultBranch()?.id || 1;
+  try {
+    assertUserBranchAccess(req.user, branchId);
+  } catch (error) {
+    return res.status(error.status || 403).json({ error: error.code || 'branch_access_denied', message: error.message });
+  }
+  const printer = printerForBranch(db, branchId, req.body?.printerId);
+  if (!printer) return res.status(409).json({ error: 'printer_not_configured' });
+  try {
+    const result = req.body?.raster
+      ? await printRasterReceipt(req.body.raster, printer)
+      : await sendOrderToPrinter(order, printer, { restaurantName: db.restaurant?.name || 'وستو' });
+    const printedAt = new Date().toISOString();
+    order.lastPrint = { status: 'printed', printerId: printer.id, printedAt, by: req.user.phone };
+    recordAudit(req, 'order.printed', 'order', order.id, { printerId: printer.id, host: printer.host, port: printer.port, bytes: result.bytes, paid: order.paymentStatus === 'paid' }, branchId);
+    save();
+    return res.json({ ok: true, printed: true, printer: publicPrinterConfig(printer), result, order });
+  } catch (error) {
+    order.lastPrint = { status: 'failed', printerId: printer.id, printedAt: new Date().toISOString(), by: req.user.phone, error: error.code || error.message };
+    recordAudit(req, 'order.print_failed', 'order', order.id, { printerId: printer.id, host: printer.host, port: printer.port, error: error.code || error.message }, branchId);
+    save();
+    return res.status(error.status || 502).json({ error: error.code || 'printer_unreachable', message: error.message, printer: publicPrinterConfig(printer) });
+  }
+});
+
+app.post('/api/cashier/orders/:id/receipt', requireCapability('payments.manage'), async (req, res) => {
   const order = (db.orders || []).find((item) => Number(item.id) === Number(req.params.id));
   if (!order) return res.status(404).json({ error: 'not found' });
   if (order.paymentStatus !== 'paid') return res.status(409).json({ error: 'order_not_paid' });
   const method = String(req.body?.method || 'none');
   if (!['print', 'email', 'sms', 'none'].includes(method)) return res.status(400).json({ error: 'receipt_method_invalid' });
+  const branchId = Number(order.branchId) || defaultBranch()?.id || 1;
+  try {
+    assertUserBranchAccess(req.user, branchId);
+  } catch (error) {
+    return res.status(error.status || 403).json({ error: error.code || 'branch_access_denied', message: error.message });
+  }
+  if (method === 'print') {
+    const printer = printerForBranch(db, branchId, req.body?.printerId);
+    if (!printer) return res.status(409).json({ error: 'printer_not_configured' });
+    try {
+      const result = req.body?.raster
+        ? await printRasterReceipt(req.body.raster, printer)
+        : await sendOrderToPrinter(order, printer, { restaurantName: db.restaurant?.name || 'وستو' });
+      const printedAt = new Date().toISOString();
+      order.receipt = {
+        method,
+        status: 'printed',
+        printerId: printer.id,
+        printedAt,
+        selectedAt: printedAt,
+        by: req.user.phone,
+      };
+      order.lastPrint = { status: 'printed', printerId: printer.id, printedAt, by: req.user.phone };
+      recordAudit(req, 'order.receipt_printed', 'order', order.id, { method, printerId: printer.id, host: printer.host, port: printer.port, bytes: result.bytes }, branchId);
+      save();
+      return res.json({ ok: true, order, printed: true, deliveryConfigured: true, printer: publicPrinterConfig(printer), result });
+    } catch (error) {
+      order.receipt = {
+        method,
+        status: 'failed',
+        printerId: printer.id,
+        selectedAt: new Date().toISOString(),
+        by: req.user.phone,
+        error: error.code || error.message,
+      };
+      recordAudit(req, 'order.receipt_print_failed', 'order', order.id, { method, printerId: printer.id, host: printer.host, port: printer.port, error: error.code || error.message }, branchId);
+      save();
+      return res.status(error.status || 502).json({ error: error.code || 'printer_unreachable', message: error.message, printer: publicPrinterConfig(printer) });
+    }
+  }
   order.receipt = {
     method,
+    status: 'selected',
     destination: String(req.body?.destination || '').trim().slice(0, 180),
     selectedAt: new Date().toISOString(),
     by: req.user.phone,
   };
   recordAudit(req, 'order.receipt_selected', 'order', order.id, { method }, order.branchId);
   save();
-  res.json({ ok: true, order, deliveryConfigured: method === 'print' || method === 'none' });
+  res.json({ ok: true, order, deliveryConfigured: method === 'none' });
 });
 
 app.patch('/api/cashier/orders/:id/status', requireCapability('orders.manage'), (req, res) => {
@@ -2605,38 +3492,89 @@ app.get('/api/admin/payments', requireCapability('payments.manage'), (req, res) 
 
 function maybeAwardOrderLoyalty(order) {
   if (!order || order.loyaltyAwarded || !db.loyalty?.enabled) return;
-  const pts = pointsForOrderTotal(order.total);
-  if (pts <= 0) return;
-  awardLoyaltyPoints(order.phone, pts, 'order', { orderId: order.id, total: order.total });
-  order.loyaltyAwarded = true;
-  order.loyaltyPoints = pts;
+  const user = order.phone ? db.users.find((u) => u.phone === order.phone) : null;
+  const resolved = loyaltyEngine.resolveCustomerTier(db, user);
+  let pts = loyaltyEngine.calculateOrderPointsEarned(db, order.total, resolved.tier);
+  
+  // Happy Hour multiplier
+  const hh = campaignsEngine.checkHappyHourStatus(db);
+  if (hh.active && hh.pointsMultiplier > 1.0) {
+    pts = Math.round(pts * hh.pointsMultiplier);
+  }
+
+  if (pts > 0) {
+    awardLoyaltyPoints(order.phone, pts, 'order', {
+      orderId: order.id,
+      total: order.total,
+      tierId: resolved.tier.id,
+      tierName: resolved.tier.name,
+      multiplier: resolved.tier.multiplier,
+      happyHour: hh.active,
+    });
+    order.loyaltyAwarded = true;
+    order.loyaltyPoints = pts;
+    order.loyaltyTier = resolved.tier.id;
+
+    // Trigger Smart SMS notification
+    try {
+      const userBal = walletEngine.getWalletBalance(db, order.phone);
+      smsEngine.sendSms(db, {
+        phone: order.phone,
+        name: order.name || user?.name || '',
+        templateKey: 'points_awarded',
+        vars: {
+          name: order.name || user?.name || 'مشتری گرامی',
+          points: pts,
+          total_points: user ? user.points : pts,
+          wallet_balance: userBal,
+          tier: resolved.tier.name,
+        },
+        triggerType: 'event',
+      });
+    } catch (_) {}
+  }
+
+  // Check and unlock referral rewards
+  try {
+    campaignsEngine.checkAndRewardReferralOnOrder(db, order);
+  } catch (e) {
+    console.error('[referral-reward] order check failed:', e.message);
+  }
 }
 
-app.patch('/api/admin/orders/:id', requireCapability('orders.manage'), (req, res) => {
+app.patch('/api/admin/orders/:id', requireCapability('orders.manage'), async (req, res) => {
   if (!['owner', 'manager'].includes(effectiveRole(req.user))) return res.status(403).json({ error: 'supervisor_required' });
   const order = db.orders.find((o) => o.id === Number(req.params.id));
   if (!order) return res.status(404).json({ error: 'not found' });
   const allowed = ['pending_online', 'awaiting_confirmation', 'pay_at_cashier', 'sent_to_kitchen', 'paid', 'preparing', 'ready', 'dispatched', 'picked_up', 'delivered', 'done', 'cancelled'];
-  if (typeof req.body.status === 'string' && allowed.includes(req.body.status)) {
-    appendOrderStatus(order, req.body.status, req.user, { source: 'legacy-admin' });
-    if (['paid', 'preparing', 'ready', 'dispatched', 'picked_up', 'delivered', 'done'].includes(req.body.status)) {
-      order.paymentStatus = 'paid';
-      financeV2.capturePaidOrder(db, order, { actor: req.user.phone });
+  const snapshot = snapshotFinanceMutationState();
+  try {
+    if (typeof req.body.status === 'string' && allowed.includes(req.body.status)) {
+      appendOrderStatus(order, req.body.status, req.user, { source: 'legacy-admin' });
+      if (['paid', 'preparing', 'ready', 'dispatched', 'picked_up', 'delivered', 'done'].includes(req.body.status)) {
+        order.paymentStatus = 'paid';
+        financeV2.capturePaidOrder(db, order, { actor: req.user.phone });
+      }
+      if (['done', 'picked_up', 'delivered'].includes(req.body.status)) {
+        maybeAwardOrderLoyalty(order);
+      }
+      recordAudit(req, 'order.status_changed', 'order', order.id, { status: req.body.status, source: 'legacy-admin' }, order.branchId);
     }
-    if (['done', 'picked_up', 'delivered'].includes(req.body.status)) {
-      maybeAwardOrderLoyalty(order);
-    }
-    recordAudit(req, 'order.status_changed', 'order', order.id, { status: req.body.status, source: 'legacy-admin' }, order.branchId);
+    await persistFinanceMutation(snapshot);
+  } catch (error) {
+    restoreFinanceMutationState(snapshot);
+    return res.status(error.status || 503).json({ error: error.code || error.message });
+  }
+  try {
     publishOperationalEvent('order.updated', { orderId: order.id, branchId: order.branchId, status: order.status });
     neemBridge.enqueueOrder(order, (db.paymentAttempts || []).find((item) => Number(item.orderId) === Number(order.id)) || null);
-  }
-  save();
+  } catch (error) { console.error('[order-post-commit] integration effect failed', error?.message || error); }
   res.json({ ok: true, order });
 });
 
 // Versioned endpoint for new clients: status changes must follow the state
 // machine, while the legacy route above remains backwards compatible.
-app.patch('/api/v2/orders/:id/status', requireCapability('orders.manage'), (req, res) => {
+app.patch('/api/v2/orders/:id/status', requireCapability('orders.manage'), async (req, res) => {
   if (!['owner', 'manager'].includes(effectiveRole(req.user))) return res.status(403).json({ error: 'supervisor_required' });
   const order = (db.orders || []).find((item) => Number(item.id) === Number(req.params.id));
   const status = String(req.body?.status || '');
@@ -2645,22 +3583,30 @@ app.patch('/api/v2/orders/:id/status', requireCapability('orders.manage'), (req,
   if (!canTransitionOrder(order, status)) {
     return res.status(409).json({ error: 'order_transition_invalid', current: order.status, allowed: allowedOrderTransitions(order) });
   }
-  appendOrderStatus(order, status, req.user, { source: 'v2' });
-  if (['paid', 'preparing', 'ready', 'dispatched', 'picked_up', 'delivered', 'done'].includes(status)) {
-    order.paymentStatus = 'paid';
-    financeV2.capturePaidOrder(db, order, { actor: req.user.phone });
+  const snapshot = snapshotFinanceMutationState();
+  try {
+    appendOrderStatus(order, status, req.user, { source: 'v2' });
+    if (['paid', 'preparing', 'ready', 'dispatched', 'picked_up', 'delivered', 'done'].includes(status)) {
+      order.paymentStatus = 'paid';
+      financeV2.capturePaidOrder(db, order, { actor: req.user.phone });
+    }
+    if (['done', 'picked_up', 'delivered'].includes(status)) maybeAwardOrderLoyalty(order);
+    recordAudit(req, 'order.status_changed', 'order', order.id, { status, source: 'v2' }, order.branchId);
+    await persistFinanceMutation(snapshot);
+  } catch (error) {
+    restoreFinanceMutationState(snapshot);
+    return res.status(error.status || 503).json({ error: error.code || error.message });
   }
-  if (['done', 'picked_up', 'delivered'].includes(status)) maybeAwardOrderLoyalty(order);
-  recordAudit(req, 'order.status_changed', 'order', order.id, { status, source: 'v2' }, order.branchId);
-  publishOperationalEvent('order.updated', { orderId: order.id, branchId: order.branchId, status: order.status });
-  neemBridge.enqueueOrder(order, (db.paymentAttempts || []).find((item) => Number(item.orderId) === Number(order.id)) || null);
-  save();
+  try {
+    publishOperationalEvent('order.updated', { orderId: order.id, branchId: order.branchId, status: order.status });
+    neemBridge.enqueueOrder(order, (db.paymentAttempts || []).find((item) => Number(item.orderId) === Number(order.id)) || null);
+  } catch (error) { console.error('[order-post-commit] integration effect failed', error?.message || error); }
   res.json({ ok: true, order });
 });
 
 /* ---- Kitchen Display System (KDS) ---- */
 const KDS_STATIONS = Object.freeze([
-  { id: 'expo', label: 'اکسپو' },
+  { id: 'expo', label: 'خروج سفارش' },
   { id: 'hot', label: 'خط گرم' },
   { id: 'cold', label: 'خط سرد' },
   { id: 'bar', label: 'بار' },
@@ -3012,14 +3958,21 @@ app.put('/api/faq-order', requireAdmin, (req, res) => {
 app.get('/api/admin/users', requireOwner, (req, res) => {
   res.json({ users: db.users.map(publicUser) });
 });
-app.patch('/api/admin/users/:phone', requireOwner, (req, res) => {
+app.patch(['/api/admin/users/:phone', '/api/admin/customers/:phone'], requireAdmin, (req, res) => {
   const user = db.users.find((u) => u.phone === req.params.phone);
   if (!user) return res.status(404).json({ error: 'not found' });
   if (typeof req.body.blocked === 'boolean') user.blocked = req.body.blocked;
+  if (typeof req.body.name === 'string') user.name = req.body.name.trim();
+  if (typeof req.body.email === 'string') user.email = req.body.email.trim();
+  if (typeof req.body.birthdate === 'string') {
+    user.birthdate = req.body.birthdate.trim().slice(0, 50);
+    user.birthdateUpdatedAt = new Date().toISOString();
+    try { campaignsEngine.checkBirthdayEligibility(db, user); } catch (_) {}
+  }
   const requestedRole = String(req.body.role || '').trim().toLowerCase();
   const roleMap = { admin: 'owner', user: 'guest', owner: 'owner', manager: 'manager', cashier: 'cashier', waiter: 'waiter', kitchen: 'kitchen', guest: 'guest' };
   if (roleMap[requestedRole]) user.role = roleMap[requestedRole];
-  recordAudit(req, 'user.access_updated', 'user', user.phone, { role: user.role, blocked: !!user.blocked });
+  recordAudit(req, 'user.access_updated', 'user', user.phone, { role: user.role, blocked: !!user.blocked, birthdate: user.birthdate });
   save();
   res.json({ ok: true, user: publicUser(user) });
 });
@@ -3086,6 +4039,8 @@ app.get('/api/admin/stats', requireAdmin, (req, res) => {
   }
 
   const tablesScoped = (db.tables || []).filter((t) => (bid ? Number(t.branchId) === bid : true));
+  const v2Inventory = financeV2.inventoryItemsView(db, { branchId: bid }).items;
+  const legacyTrackedMenu = (db.menuItems || []).filter((item) => !financeV2.menuItemUsesInventoryV2(db, item.id, bid));
 
   res.json({
     users: db.users.length,
@@ -3094,10 +4049,10 @@ app.get('/api/admin/stats', requireAdmin, (req, res) => {
     openOrders: orders.filter((o) => !['done', 'cancelled', 'paid'].includes(o.status)).length,
     menuItems: (db.menuItems || []).length,
     unavailable: (db.menuItems || []).filter((m) => m.available === false).length,
-    lowStock: (db.menuItems || []).filter(
+    lowStock: v2Inventory.filter((item) => Number(item.availableQuantity ?? item.qtyOnHand ?? 0) > 0 && Number(item.minStock || 0) > 0 && Number(item.availableQuantity ?? item.qtyOnHand ?? 0) <= Number(item.minStock)).length + legacyTrackedMenu.filter(
       (m) => typeof m.stock === 'number' && m.stock > 0 && m.stock <= (m.lowStockAt ?? 5)
     ).length,
-    outOfStock: (db.menuItems || []).filter((m) => m.stock === 0).length,
+    outOfStock: v2Inventory.filter((item) => Number(item.availableQuantity ?? item.qtyOnHand ?? 0) <= 0).length + legacyTrackedMenu.filter((m) => m.stock === 0).length,
     tables: tablesScoped.filter((t) => t.active !== false).length,
     branchId: bid,
     branches: (db.branches || []).length,
@@ -3109,6 +4064,45 @@ app.get('/api/admin/stats', requireAdmin, (req, res) => {
     uniqueSessions,
     topItems,
     byHour,
+    dailySales30d: (() => {
+      const dailyMap = new Map();
+      for (let i = 29; i >= 0; i--) {
+        const d = new Date(now - i * dayMs).toISOString().slice(0, 10);
+        dailyMap.set(d, { date: d, count: 0, sales: 0 });
+      }
+      for (const o of paidLike) {
+        const d = (o.createdAt || '').slice(0, 10);
+        if (dailyMap.has(d)) {
+          const row = dailyMap.get(d);
+          row.count += 1;
+          row.sales += Number(o.total || 0);
+        }
+      }
+      return [...dailyMap.values()];
+    })(),
+    costStructure: (() => {
+      const be = financeV2.breakEvenDashboard(db, { branchId: bid || 1 });
+      const plan = be.plan || be.suggestedPlan;
+      const assumptions = Array.isArray(plan?.assumptions) ? plan.assumptions : [];
+      const totalFixedCostsToman = assumptions.reduce((sum, a) => sum + Number(a.amountToman || 0), 0)
+        || Number(plan?.monthlyFixedCostIrr ? plan.monthlyFixedCostIrr / 10 : 1_280_000_000);
+      
+      const accountingExpenses = (db.accounting?.expenses || []).filter((e) => !bid || Number(e.branchId) === bid);
+      
+      return {
+        totalFixedCostsToman,
+        totalFixedCostsIrr: totalFixedCostsToman * 10,
+        assumptions: assumptions.map((a) => ({
+          id: a.id,
+          name: a.name || a.categoryName,
+          amountToman: Number(a.amountToman || (a.amountIrr ? a.amountIrr / 10 : 0)),
+          categoryCode: a.categoryCode,
+          headcount: a.headcount,
+          salaryPerPersonToman: a.salaryPerPersonToman,
+        })),
+        actualExpensesCount: accountingExpenses.length,
+      };
+    })(),
     recentLogins: db.loginLog.slice(0, 10),
     recentOrders: orders.slice(0, 6),
     reservationsToday: (db.reservations || []).filter(
@@ -3587,15 +4581,15 @@ const upload = multer({
       cb(null, UPLOADS);
     },
     filename: (req, file, cb) => {
-      const extByMime = { 'image/jpeg': '.jpg', 'image/jpg': '.jpg', 'image/png': '.png', 'image/webp': '.webp', 'image/avif': '.avif', 'image/gif': '.gif' };
+      const extByMime = { 'image/jpeg': '.jpg', 'image/jpg': '.jpg', 'image/png': '.png', 'image/webp': '.webp', 'image/gif': '.gif' };
       const ext = extByMime[String(file.mimetype || '').toLowerCase()] || '.bin';
       cb(null, `${Date.now()}-${crypto.randomBytes(8).toString('hex')}${ext}`);
     },
   }),
   limits: { fileSize: 8 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
-    const ok = /^image\/(jpeg|jpg|png|webp|avif|gif)$/i.test(file.mimetype || '');
-    cb(ok ? null : new Error('فقط تصویر JPEG/PNG/WebP/AVIF مجاز است'), ok);
+    const ok = /^image\/(jpeg|jpg|png|webp|gif)$/i.test(file.mimetype || '');
+    cb(ok ? null : new Error('فقط تصویر JPEG/PNG/WebP/GIF مجاز است'), ok);
   },
 });
 app.post('/api/admin/upload', requireAdmin, (req, res) => {
@@ -3682,11 +4676,27 @@ app.post('/api/admin/inventory/adjust', requireAdmin, (req, res) => {
 });
 
 app.get('/api/admin/loyalty', requireAdmin, (req, res) => {
-  const members = db.users
-    .map(publicUser)
-    .sort((a, b) => b.points - a.points);
+  const rawMembers = db.users.map(publicUser).sort((a, b) => b.points - a.points);
+  const members = rawMembers.map((m) => {
+    const tierInfo = loyaltyEngine.resolveCustomerTier(db, m);
+    return {
+      ...m,
+      tier: tierInfo.tier,
+      nextTier: tierInfo.nextTier,
+      progressPct: tierInfo.progressPct,
+      pointsToNext: tierInfo.pointsToNext,
+      multiplier: tierInfo.multiplier,
+      discountPct: tierInfo.discountPct,
+      badge: tierInfo.badge,
+    };
+  });
+  const tiers = loyaltyEngine.summarizeTiersMembership(db, rawMembers);
   res.json({
-    loyalty: db.loyalty,
+    loyalty: {
+      ...(db.loyalty || {}),
+      tiers: loyaltyEngine.getLoyaltyTiers(db),
+    },
+    tiers,
     members,
     ledger: (db.loyaltyLedger || []).slice(0, 80),
     totals: {
@@ -3694,6 +4704,63 @@ app.get('/api/admin/loyalty', requireAdmin, (req, res) => {
       pointsIssued: members.reduce((s, m) => s + m.points, 0),
     },
   });
+});
+
+app.get('/api/admin/club', requireAdmin, (req, res) => {
+  const rawMembers = (db.users || []).map(publicUser).sort((a, b) => (b.points || 0) - (a.points || 0));
+  const members = rawMembers.map((m) => {
+    const tierInfo = loyaltyEngine.resolveCustomerTier(db, m);
+    const walletBalanceToman = walletEngine.getWalletBalance(db, m.phone);
+    return {
+      ...m,
+      walletBalanceToman,
+      tier: tierInfo.tier,
+      nextTier: tierInfo.nextTier,
+      progressPct: tierInfo.progressPct,
+      pointsToNext: tierInfo.pointsToNext,
+      multiplier: tierInfo.multiplier,
+      discountPct: tierInfo.discountPct,
+      badge: tierInfo.badge,
+    };
+  });
+  const walletSummary = walletEngine.summarizeWallet(db);
+  const newFeedback = (db.feedback || []).filter((f) => !f.reviewed).length;
+  res.json({
+    ok: true,
+    summary: {
+      customers: members.length,
+      points: members.reduce((s, m) => s + (m.points || 0), 0),
+      walletTotalToman: walletSummary.totalLiabilityToman || 0,
+      newFeedback,
+    },
+    customers: members,
+  });
+});
+
+app.get('/api/admin/loyalty/tiers', requireAdmin, (req, res) => {
+  const rawMembers = db.users.map(publicUser);
+  const tiers = loyaltyEngine.summarizeTiersMembership(db, rawMembers);
+  res.json({ tiers });
+});
+
+app.put('/api/admin/loyalty/tiers', requireAdmin, (req, res) => {
+  if (!Array.isArray(req.body.tiers) || !req.body.tiers.length) {
+    return res.status(400).json({ error: 'tiers_array_required' });
+  }
+  if (!db.loyalty) db.loyalty = {};
+  db.loyalty.tiers = req.body.tiers.map((t, idx) => ({
+    id: String(t.id || `tier-${idx + 1}`).trim(),
+    name: String(t.name || `سطح ${idx + 1}`).trim(),
+    minPoints: Math.max(0, Math.round(Number(t.minPoints) || 0)),
+    minSpendToman: Math.max(0, Math.round(Number(t.minSpendToman) || 0)),
+    multiplier: Math.max(1, Math.min(10, Number(t.multiplier) || 1)),
+    discountPct: Math.max(0, Math.min(50, Number(t.discountPct) || 0)),
+    color: String(t.color || '#a855f7').trim(),
+    badgeIcon: String(t.badgeIcon || '🥉').trim(),
+    perks: Array.isArray(t.perks) ? t.perks.map(String) : [],
+  }));
+  save();
+  res.json({ ok: true, tiers: db.loyalty.tiers });
 });
 
 app.post('/api/admin/loyalty/adjust', requireAdmin, (req, res) => {
@@ -3705,20 +4772,681 @@ app.post('/api/admin/loyalty/adjust', requireAdmin, (req, res) => {
   const entry = awardLoyaltyPoints(phone, delta, reason, { manual: true });
   save();
   const user = db.users.find((u) => u.phone === phone);
-  res.json({ ok: true, entry, user: publicUser(user) });
+  const resolved = loyaltyEngine.resolveCustomerTier(db, user);
+  res.json({
+    ok: true,
+    entry,
+    user: {
+      ...publicUser(user),
+      tier: resolved.tier,
+      badge: resolved.badge,
+    },
+  });
+});
+
+app.get('/api/loyalty/customer', (req, res) => {
+  const phone = normalizeDigits(req.query.phone || '').trim();
+  if (!phone || !PHONE_RE.test(phone)) {
+    return res.status(400).json({ error: 'شماره معتبر نیست' });
+  }
+  const user = db.users.find((u) => u.phone === phone);
+  const resolved = loyaltyEngine.resolveCustomerTier(db, user || { phone, points: 0 });
+  const walletBalance = walletEngine.getWalletBalance(db, phone);
+  res.json({
+    phone,
+    name: user?.name || '',
+    points: resolved.points,
+    walletBalanceToman: walletBalance,
+    tier: resolved.tier,
+    nextTier: resolved.nextTier,
+    progressPct: resolved.progressPct,
+    pointsToNext: resolved.pointsToNext,
+    spendToNext: resolved.spendToNext,
+    discountPct: resolved.discountPct,
+    multiplier: resolved.multiplier,
+    badge: resolved.badge,
+  });
 });
 
 app.get('/api/loyalty/me', requireAuth, (req, res) => {
+  const resolved = loyaltyEngine.resolveCustomerTier(db, req.user);
+  const walletBalance = walletEngine.getWalletBalance(db, req.user.phone);
   res.json({
     points: Math.max(0, Math.round(Number(req.user.points) || 0)),
+    walletBalanceToman: walletBalance,
+    tier: resolved.tier,
+    nextTier: resolved.nextTier,
+    progressPct: resolved.progressPct,
+    pointsToNext: resolved.pointsToNext,
+    spendToNext: resolved.spendToNext,
+    multiplier: resolved.multiplier,
+    discountPct: resolved.discountPct,
+    badge: resolved.badge,
     loyalty: {
       enabled: !!db.loyalty?.enabled,
       pointsPerToman: db.loyalty?.pointsPerToman ?? 0,
       redeemValue: db.loyalty?.redeemValue ?? 0,
       welcomePoints: db.loyalty?.welcomePoints ?? 0,
+      tiers: loyaltyEngine.getLoyaltyTiers(db),
     },
     ledger: (db.loyaltyLedger || []).filter((e) => e.phone === req.user.phone).slice(0, 20),
   });
+});
+
+/* ---- Customer Digital Wallet (کیف پول و شارژ اعتباری) ---- */
+app.get('/api/wallet/me', requireAuth, (req, res) => {
+  const phone = req.user.phone;
+  const balance = walletEngine.getWalletBalance(db, phone);
+  const packages = walletEngine.getWalletPackages(db);
+  const ledger = (db.walletLedger || []).filter((e) => e.phone === phone).slice(0, 30);
+  const resolved = loyaltyEngine.resolveCustomerTier(db, req.user);
+  res.json({
+    phone,
+    walletBalanceToman: balance,
+    packages,
+    ledger,
+    tier: resolved.tier,
+    badge: resolved.badge,
+  });
+});
+
+// --- Wallet Topup Requests & Multi-Factor Approval Engine ---
+db.walletTopupRequests = db.walletTopupRequests || [];
+
+function generateShortTrackingCode() {
+  return String(Math.floor(1000 + Math.random() * 9000));
+}
+
+// 1. Create a Wallet Topup Request (Online Gateway or In-store Waiter/Cashier Approval)
+app.post('/api/wallet/topup/request', requireAuth, (req, res) => {
+  const phone = req.user.phone;
+  const user = (db.users || []).find((u) => u.phone === phone) || req.user;
+  const amountToman = Math.max(0, Math.round(Number(req.body.amountToman || req.body.amount) || 0));
+  const packageId = req.body.packageId ? String(req.body.packageId).trim() : null;
+  const channel = req.body.channel === 'instore_staff' ? 'instore_staff' : 'online_gateway';
+
+  let finalAmount = amountToman;
+  const packages = walletEngine.getWalletPackages(db);
+  if (packageId) {
+    const pack = packages.find((p) => p.id === packageId);
+    if (pack) finalAmount = pack.amountToman;
+  }
+
+  if (finalAmount <= 0) {
+    return res.status(400).json({ error: 'مبلغ شارژ یا شناسه بسته معتبر نیست.' });
+  }
+
+  const bonusInfo = walletEngine.calculateTopupBonus(finalAmount, packages);
+  const requestId = `wtop_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+  const trackingCode = generateShortTrackingCode();
+  const gatewayToken = `gw_tok_${Math.random().toString(36).slice(2, 12)}`;
+
+  const topupRequest = {
+    id: requestId,
+    trackingCode,
+    phone,
+    customerName: user.name || 'مشتری گرامی',
+    amountToman: finalAmount,
+    bonusToman: bonusInfo.bonusToman,
+    totalCredit: bonusInfo.totalCreditToman,
+    packageId,
+    channel,
+    status: channel === 'online_gateway' ? 'pending_gateway' : 'pending_staff_approval',
+    gatewayToken,
+    authority: `AU_${Date.now()}_${trackingCode}`,
+    createdAt: new Date().toISOString(),
+    approvedBy: null,
+    approvedAt: null,
+    tableNo: req.body.tableNo || null,
+  };
+
+  db.walletTopupRequests.unshift(topupRequest);
+  db.walletTopupRequests = db.walletTopupRequests.slice(0, 1000);
+  save();
+
+  res.json({
+    ok: true,
+    request: {
+      id: topupRequest.id,
+      trackingCode: topupRequest.trackingCode,
+      amountToman: topupRequest.amountToman,
+      bonusToman: topupRequest.bonusToman,
+      totalCredit: topupRequest.totalCredit,
+      channel: topupRequest.channel,
+      status: topupRequest.status,
+      authority: topupRequest.authority,
+      gatewayToken: topupRequest.gatewayToken,
+      instructions: channel === 'instore_staff'
+        ? `کد پیگیری شما ${trackingCode} است. لطفاً برای پرداخت نقدی یا کارتخوان، این کد را به گارسون یا صندوقدار اعلام نمایید.`
+        : 'در حال اتصال به درگاه بانکی جهت پرداخت و دریافت تاییدیه…',
+    },
+  });
+});
+
+// 2. Gateway Verification (Online payment gateway verification callback)
+app.post('/api/wallet/topup/gateway-verify', requireAuth, (req, res) => {
+  const { requestId, gatewayToken } = req.body || {};
+  const request = (db.walletTopupRequests || []).find((r) => (requestId && r.id === requestId) || (gatewayToken && r.gatewayToken === gatewayToken));
+
+  if (!request) {
+    return res.status(404).json({ error: 'درخواست درگاه یافت نشد.' });
+  }
+
+  if (request.status === 'completed') {
+    return res.json({ ok: true, message: 'این شارژ قبلاً تایید و اعمال شده است.', newBalance: walletEngine.getWalletBalance(db, request.phone) });
+  }
+
+  if (request.gatewayToken && gatewayToken && request.gatewayToken !== gatewayToken) {
+    return res.status(403).json({ error: 'توکن تأییدیه درگاه بانکی نامعتبر است.' });
+  }
+
+  // Complete the topup
+  const result = walletEngine.topupWallet(db, {
+    phone: request.phone,
+    amountToman: request.amountToman,
+    packageId: request.packageId,
+    paymentMethod: 'online_gateway',
+    reference: `GW-${request.authority || request.trackingCode}`,
+    actor: 'تاییدیه درگاه بانکی',
+  });
+
+  request.status = 'completed';
+  request.approvedAt = new Date().toISOString();
+  request.approvedBy = { role: 'payment_gateway', name: 'تاییدیه درگاه بانکی شاپرک', ref: request.authority };
+
+  try {
+    smsEngine.sendSms(db, {
+      phone: request.phone,
+      name: request.customerName,
+      templateKey: 'wallet_topup',
+      vars: { name: request.customerName, amount: request.amountToman, wallet_balance: result.newBalance },
+      triggerType: 'event',
+    });
+  } catch (_) {}
+
+  save();
+  res.json({ ok: true, verified: true, ...result, request });
+});
+
+// 3. Staff Approval (Cashier or Waiter confirms and approves cash/POS topup)
+app.post('/api/wallet/topup/staff-approve', requireAuth, (req, res) => {
+  const role = effectiveRole(req.user);
+  if (!['cashier', 'waiter', 'manager', 'owner', 'admin'].includes(role)) {
+    return res.status(403).json({ error: 'تأیید شارژ کیف پول فقط با دسترسی گارسون، صندوقدار یا مدیریت مجاز است.' });
+  }
+
+  const { requestId, trackingCode, phone, amountToman, packageId, paymentTender = 'CASH', notes } = req.body || {};
+  let targetPhone = phone;
+  let targetAmount = amountToman;
+  let targetPackageId = packageId;
+  let targetRequest = null;
+
+  if (requestId || trackingCode) {
+    targetRequest = (db.walletTopupRequests || []).find((r) => (requestId && r.id === requestId) || (trackingCode && r.trackingCode === String(trackingCode).trim()));
+    if (targetRequest) {
+      targetPhone = targetRequest.phone;
+      targetAmount = targetRequest.amountToman;
+      targetPackageId = targetRequest.packageId;
+    }
+  }
+
+  if (!targetPhone) {
+    return res.status(400).json({ error: 'شماره مشتری یا کد پیگیری درخواست الزامی است.' });
+  }
+
+  let finalAmount = Math.max(0, Math.round(Number(targetAmount) || 0));
+  if (targetPackageId) {
+    const pack = walletEngine.getWalletPackages(db).find((p) => p.id === targetPackageId);
+    if (pack) finalAmount = pack.amountToman;
+  }
+
+  if (finalAmount <= 0) {
+    return res.status(400).json({ error: 'مبلغ شارژ نامعتبر است.' });
+  }
+
+  const approverInfo = {
+    phone: req.user.phone,
+    role,
+    roleLabel: role === 'cashier' ? 'صندوقدار' : role === 'waiter' ? 'گارسون' : 'مدیریت',
+    name: req.user.name || (role === 'cashier' ? 'صندوقدار' : 'گارسون'),
+  };
+
+  const result = walletEngine.topupWallet(db, {
+    phone: targetPhone,
+    amountToman: finalAmount,
+    packageId: targetPackageId,
+    paymentMethod: paymentTender === 'POS' ? 'pos_card' : 'cash_in_store',
+    reference: `STAFF-${role.toUpperCase()}-${Date.now()}`,
+    actor: `${approverInfo.roleLabel} (${req.user.phone})`,
+  });
+
+  if (targetRequest) {
+    targetRequest.status = 'completed';
+    targetRequest.approvedAt = new Date().toISOString();
+    targetRequest.approvedBy = approverInfo;
+  }
+
+  recordAudit(req, 'wallet.staff_approved', 'user', targetPhone, {
+    amountToman: finalAmount,
+    totalCredit: result.totalCredit,
+    approvedBy: approverInfo,
+    paymentTender,
+    notes,
+  });
+
+  try {
+    smsEngine.sendSms(db, {
+      phone: targetPhone,
+      name: '',
+      templateKey: 'wallet_topup',
+      vars: { name: 'مشتری گرامی', amount: finalAmount, wallet_balance: result.newBalance },
+      triggerType: 'event',
+    });
+  } catch (_) {}
+
+  save();
+  res.json({
+    ok: true,
+    approved: true,
+    approver: approverInfo,
+    newBalance: result.newBalance,
+    totalCredit: result.totalCredit,
+    bonusToman: result.bonusToman,
+    phone: targetPhone,
+  });
+});
+
+// 4. Pending Topup Requests Query for Cashier & Waiter Panels
+app.get('/api/wallet/topup-requests/pending', requireAuth, (req, res) => {
+  const role = effectiveRole(req.user);
+  if (!['cashier', 'waiter', 'manager', 'owner', 'admin'].includes(role)) {
+    return res.status(403).json({ error: 'دسترسی فقط برای کادر سالن و صندوق مجاز است.' });
+  }
+
+  const pending = (db.walletTopupRequests || [])
+    .filter((r) => r.status === 'pending_staff_approval')
+    .slice(0, 50);
+
+  res.json({ ok: true, requests: pending });
+});
+
+// 5. Customer Active Requests
+app.get('/api/wallet/topup-requests/my', requireAuth, (req, res) => {
+  const myRequests = (db.walletTopupRequests || [])
+    .filter((r) => r.phone === req.user.phone)
+    .slice(0, 10);
+  res.json({ ok: true, requests: myRequests });
+});
+
+// 6. Direct /api/wallet/topup Gateway or Staff Guard
+app.post('/api/wallet/topup', requireAuth, (req, res) => {
+  const role = effectiveRole(req.user);
+  const isStaff = ['cashier', 'waiter', 'manager', 'owner', 'admin'].includes(role);
+  const { gatewayToken, reference } = req.body || {};
+
+  const isGatewayRef = reference && String(reference).startsWith('GW-');
+  const isStaffRef = reference && String(reference).startsWith('STAFF-');
+
+  if (!isStaff && !gatewayToken && !isGatewayRef && !isStaffRef) {
+    return res.status(403).json({
+      error: 'شارژ کیف پول صرفاً با تأیید گارسون / صندوقدار یا دریافت تاییدیه درگاه بانکی امکان‌پذیر است.',
+      requiresVerification: true,
+    });
+  }
+
+  const phone = (isStaff && req.body.phone) ? req.body.phone : req.user.phone;
+  const amountToman = Math.max(0, Math.round(Number(req.body.amountToman || req.body.amount) || 0));
+  const packageId = req.body.packageId ? String(req.body.packageId).trim() : null;
+  const paymentMethod = req.body.paymentMethod || (isStaff ? 'in_store_staff' : 'online_gateway');
+
+  if (!amountToman && !packageId) {
+    return res.status(400).json({ error: 'مبلغ شارژ یا شناسه بسته الزامی است.' });
+  }
+
+  let finalAmount = amountToman;
+  if (packageId) {
+    const pack = walletEngine.getWalletPackages(db).find((p) => p.id === packageId);
+    if (pack) finalAmount = pack.amountToman;
+  }
+
+  if (finalAmount <= 0) {
+    return res.status(400).json({ error: 'مبلغ شارژ نامعتبر است.' });
+  }
+
+  const result = walletEngine.topupWallet(db, {
+    phone,
+    amountToman: finalAmount,
+    packageId,
+    paymentMethod,
+    reference: reference || (isStaff ? `STAFF-${role.toUpperCase()}-${Date.now()}` : `GW-${Date.now()}`),
+    actor: isStaff ? `${role} (${req.user.phone})` : (req.user.phone || 'customer'),
+  });
+
+  try {
+    smsEngine.sendSms(db, {
+      phone,
+      name: req.user?.name || '',
+      templateKey: 'wallet_topup',
+      vars: {
+        name: req.user?.name || 'مشتری گرامی',
+        amount: finalAmount,
+        wallet_balance: result.newBalance,
+      },
+      triggerType: 'event',
+    });
+  } catch (_) {}
+
+  save();
+  res.json({ ok: true, ...result });
+});
+
+app.post('/api/orders/:id/pay-wallet', async (req, res) => {
+  const orderId = Number(req.params.id);
+  const order = (db.orders || []).find((o) => o.id === orderId);
+  if (!order) return res.status(404).json({ error: 'سفارش یافت نشد.' });
+
+  const phone = req.user?.phone || order.phone;
+  if (!phone) return res.status(400).json({ error: 'شماره مشتری برای پرداخت کیف پول مشخص نیست.' });
+
+  if (['paid', 'done', 'delivered'].includes(order.paymentStatus) || order.paymentStatus === 'paid') {
+    return res.status(400).json({ error: 'این سفارش قبلاً پرداخت شده است.' });
+  }
+
+  const orderTotal = Math.max(0, Math.round(Number(order.total) || 0));
+  const currentBalance = walletEngine.getWalletBalance(db, phone);
+
+  if (currentBalance < orderTotal) {
+    return res.status(400).json({
+      error: `موجودی کیف پول (${currentBalance.toLocaleString('fa-IR')} تومان) برای پرداخت این فاکتور (${orderTotal.toLocaleString('fa-IR')} تومان) کافی نیست.`,
+      currentBalance,
+      required: orderTotal,
+    });
+  }
+
+  // Deduct from wallet
+  const paymentResult = walletEngine.payFromWallet(db, {
+    phone,
+    amountToman: orderTotal,
+    orderId: order.id,
+    orderNo: order.orderNo,
+    actor: req.user?.phone || 'customer',
+  });
+
+  // Mark order paid with wallet tender
+  order.paymentStatus = 'paid';
+  order.paymentMethod = 'wallet';
+  order.paymentTender = 'wallet';
+  order.paidAt = new Date().toISOString();
+
+  // Capture into Finance V2 double-entry accounting
+  try {
+    financeV2.capturePaidOrder(db, order, { actor: req.user?.phone || 'customer-wallet' });
+  } catch (e) {
+    console.error('[wallet-payment] finance capture:', e.message);
+  }
+
+  // Award order loyalty points with tier multiplier
+  maybeAwardOrderLoyalty(order);
+
+  // Award cashback (3% default or tier discount %)
+  const user = db.users.find((u) => u.phone === phone);
+  const tierInfo = loyaltyEngine.resolveCustomerTier(db, user);
+  const cashbackPct = tierInfo.discountPct || 3;
+  const cashbackAmount = Math.round((orderTotal * cashbackPct) / 100);
+  if (cashbackAmount > 0) {
+    walletEngine.awardWalletCashback(db, {
+      phone,
+      amountToman: cashbackAmount,
+      orderId: order.id,
+      cashbackPct,
+      actor: 'system',
+    });
+  }
+
+  save();
+  res.json({
+    ok: true,
+    order,
+    paymentResult,
+    cashbackAwarded: cashbackAmount,
+    newWalletBalance: walletEngine.getWalletBalance(db, phone),
+  });
+});
+
+app.get('/api/admin/wallet/summary', requireAdmin, (req, res) => {
+  const summary = walletEngine.summarizeWallet(db);
+  res.json(summary);
+});
+
+app.post('/api/admin/wallet/adjust', requireAdmin, (req, res) => {
+  const phone = normalizeDigits(req.body.phone || '').trim();
+  const deltaToman = Math.round(Number(req.body.deltaToman || req.body.delta) || 0);
+  const reason = String(req.body.reason || 'تعدیل دستی توسط مدیر').slice(0, 120);
+
+  if (!PHONE_RE.test(phone)) return res.status(400).json({ error: 'شماره موبایل معتبر نیست.' });
+  if (!deltaToman) return res.status(400).json({ error: 'مبلغ تغییر نمی‌تواند صفر باشد.' });
+
+  const result = walletEngine.adjustWallet(db, {
+    phone,
+    deltaToman,
+    reason,
+    actor: req.user?.phone || 'admin',
+  });
+
+  save();
+  res.json({ ok: true, ...result });
+});
+
+app.get('/api/admin/wallet/packages', requireAdmin, (req, res) => {
+  res.json({ packages: walletEngine.getWalletPackages(db) });
+});
+
+app.put('/api/admin/wallet/packages', requireAdmin, (req, res) => {
+  if (!Array.isArray(req.body.packages) || !req.body.packages.length) {
+    return res.status(400).json({ error: 'packages_array_required' });
+  }
+  db.walletPackages = req.body.packages.map((p, idx) => ({
+    id: String(p.id || `pack-${idx + 1}`).trim(),
+    title: String(p.title || `بسته ${idx + 1}`).trim(),
+    amountToman: Math.max(0, Math.round(Number(p.amountToman || p.amount) || 0)),
+    priceToman: Math.max(0, Math.round(Number(p.priceToman || p.price || p.amountToman) || 0)),
+    bonusToman: Math.max(0, Math.round(Number(p.bonusToman || p.bonus) || 0)),
+    bonusPct: Math.max(0, Math.min(100, Number(p.bonusPct) || 0)),
+    totalCreditToman: Math.max(0, Math.round(Number(p.totalCreditToman || (Number(p.amountToman) + Number(p.bonusToman))) || 0)),
+    popular: !!p.popular,
+    badge: String(p.badge || '').trim(),
+    description: String(p.description || '').trim(),
+  }));
+  save();
+  res.json({ ok: true, packages: db.walletPackages });
+});
+
+/* ---- Automated Campaigns (کمپین‌های خودکار: هدیه تولد، کد معرف، ساعت شاد) ---- */
+app.get('/api/campaigns/status', (req, res) => {
+  const happyHour = campaignsEngine.checkHappyHourStatus(db);
+  const config = campaignsEngine.getCampaignConfig(db);
+  res.json({
+    happyHour,
+    campaigns: {
+      birthdayEnabled: config.birthday.enabled,
+      referralEnabled: config.referral.enabled,
+      happyHourEnabled: config.happyHour.enabled,
+    },
+  });
+});
+
+app.get('/api/referrals/me', requireAuth, (req, res) => {
+  const user = req.user;
+  const referralCode = campaignsEngine.ensureUserReferral(user);
+  const referrals = (db.referrals || []).filter((r) => r.inviterPhone === user.phone);
+  const config = campaignsEngine.getCampaignConfig(db).referral;
+
+  res.json({
+    referralCode,
+    referralUrl: `/register?ref=${referralCode}`,
+    rewardStats: {
+      totalInvited: referrals.length,
+      rewardedCount: referrals.filter((r) => r.status === 'rewarded').length,
+      totalEarnedWalletToman: referrals.filter((r) => r.status === 'rewarded').reduce((s, r) => s + (r.inviterRewardWalletToman || 0), 0),
+      totalEarnedPoints: referrals.filter((r) => r.status === 'rewarded').reduce((s, r) => s + (r.inviterRewardPoints || 0), 0),
+    },
+    rewardsConfig: {
+      inviterRewardWalletToman: config.inviterRewardWalletToman,
+      inviterRewardPoints: config.inviterRewardPoints,
+      inviteeRewardWalletToman: config.inviteeRewardWalletToman,
+      inviteeRewardPoints: config.inviteeRewardPoints,
+      inviteeDiscountPct: config.inviteeDiscountPct,
+    },
+    referrals,
+  });
+});
+
+app.post('/api/referrals/apply', requireAuth, (req, res) => {
+  const referralCode = String(req.body.code || req.body.referralCode || '').trim();
+  if (!referralCode) return res.status(400).json({ error: 'کد معرف الزامی است.' });
+
+  try {
+    const result = campaignsEngine.applyReferralCode(db, {
+      inviteePhone: req.user.phone,
+      referralCode,
+    });
+    save();
+    res.json(result);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.post('/api/profile/birthday', requireAuth, (req, res) => {
+  const birthdate = String(req.body.birthdate || '').trim();
+  if (!birthdate) return res.status(400).json({ error: 'تاریخ تولد نامعتبر است.' });
+
+  const user = db.users.find((u) => u.phone === req.user.phone);
+  if (!user) return res.status(404).json({ error: 'کاربر یافت نشد.' });
+
+  if (birthdate !== (user.birthdate || '') && isBirthdateLocked(user)) {
+    return res.status(400).json({
+      error: 'تاریخ تولد قبلاً ثبت شده و امکان تغییر آن تا ۱ سال وجود ندارد. برای تغییر، با مدیریت هماهنگ فرمایید.',
+      birthdateLocked: true,
+      birthdate: user.birthdate,
+    });
+  }
+
+  user.birthdate = birthdate;
+  user.birthdateUpdatedAt = new Date().toISOString();
+  save();
+
+  const eligibility = campaignsEngine.checkBirthdayEligibility(db, user);
+  res.json({ ok: true, birthdate: user.birthdate, eligibility, birthdateLocked: true });
+});
+
+app.post('/api/campaigns/claim-birthday', requireAuth, (req, res) => {
+  try {
+    const result = campaignsEngine.grantBirthdayGift(db, req.user.phone);
+
+    // Trigger Smart Birthday SMS
+    try {
+      smsEngine.sendSms(db, {
+        phone: req.user.phone,
+        name: req.user.name || '',
+        templateKey: 'birthday',
+        vars: {
+          name: req.user.name || 'همراه گرامی',
+          amount: result.walletBonusToman || 100000,
+        },
+        triggerType: 'event',
+      });
+    } catch (_) {}
+
+    save();
+    res.json(result);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.get(['/api/admin/campaigns', '/api/admin/campaigns/summary'], requireAdmin, (req, res) => {
+  const summary = campaignsEngine.summarizeCampaigns(db);
+  res.json(summary);
+});
+
+app.put(['/api/admin/campaigns', '/api/admin/campaigns/settings'], requireAdmin, (req, res) => {
+  db.campaigns = db.campaigns || {};
+  if (req.body.birthday) db.campaigns.birthday = { ...db.campaigns.birthday, ...req.body.birthday };
+  if (req.body.referral) db.campaigns.referral = { ...db.campaigns.referral, ...req.body.referral };
+  if (req.body.happyHour) db.campaigns.happyHour = { ...db.campaigns.happyHour, ...req.body.happyHour };
+  save();
+  res.json({ ok: true, campaigns: campaignsEngine.getCampaignConfig(db) });
+});
+
+/* ---- Smart SMS & Retention Automation (پیامک‌های هوشمند و مدیریت ارتباط با مشتریان) ---- */
+app.get('/api/admin/sms/stats', requireAdmin, (req, res) => {
+  const summary = smsEngine.summarizeSmsEngine(db);
+  res.json(summary);
+});
+
+app.get('/api/admin/sms/rfm', requireAdmin, (req, res) => {
+  const rfm = smsEngine.calculateCustomerRfm(db);
+  res.json(rfm);
+});
+
+app.put('/api/admin/sms/settings', requireAdmin, (req, res) => {
+  db.smsConfig = db.smsConfig || {};
+  if (req.body.provider !== undefined) db.smsConfig.provider = String(req.body.provider || 'simulator').trim();
+  if (req.body.apiKey !== undefined) db.smsConfig.apiKey = String(req.body.apiKey || '').trim();
+  if (req.body.senderLine !== undefined) db.smsConfig.senderLine = String(req.body.senderLine || '1000912').trim();
+  if (req.body.enabled !== undefined) db.smsConfig.enabled = !!req.body.enabled;
+  if (req.body.templates && typeof req.body.templates === 'object') {
+    db.smsConfig.templates = db.smsConfig.templates || {};
+    for (const [k, v] of Object.entries(req.body.templates)) {
+      db.smsConfig.templates[k] = {
+        ...(db.smsConfig.templates[k] || {}),
+        ...v,
+      };
+    }
+  }
+  save();
+  res.json({ ok: true, config: smsEngine.getSmsConfig(db) });
+});
+
+app.post('/api/admin/sms/send-test', requireAdmin, async (req, res) => {
+  const phone = normalizeDigits(req.body.phone || '').trim();
+  const text = String(req.body.text || req.body.message || '').trim();
+  const templateKey = req.body.templateKey || 'custom';
+
+  if (!PHONE_RE.test(phone)) return res.status(400).json({ error: 'شماره موبایل معتبر نیست.' });
+
+  try {
+    const result = await smsEngine.sendSms(db, {
+      phone,
+      customText: text,
+      templateKey,
+      vars: req.body.vars || { name: 'تست مدیریت' },
+      triggerType: 'manual',
+    });
+    save();
+    res.json(result);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.post('/api/admin/sms/run-winback', requireAdmin, async (req, res) => {
+  const segment = req.body.segment || 'at_risk';
+  const rewardWalletToman = Number(req.body.rewardWalletToman) || 50000;
+  const maxRecipients = Number(req.body.maxRecipients) || 50;
+
+  try {
+    const result = await smsEngine.executeWinbackCampaign(db, {
+      segment,
+      rewardWalletToman,
+      maxRecipients,
+    });
+    save();
+    res.json(result);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
 });
 
 /* ---- Online reservations (رزرو میز) ---- */
@@ -4147,9 +5875,9 @@ app.get('/', (req, res, next) => {
     try {
       res.writeEarlyHints({
         link: [
-          '</css/westo-critical.smart.css?v=release14uf1d23-landscape-shell>; rel=preload; as=style',
-          '</js/westo-smart-loader.js?v=release14uf1d23-landscape-shell>; rel=preload; as=script',
-          '</js/westo-app.smart.js?v=release14uf1d23-landscape-shell>; rel=preload; as=script',
+          '</css/westo-critical.smart.css?v=release14uf1d28-webp-only>; rel=preload; as=style',
+          '</js/westo-smart-loader.js?v=release14uf1d28-webp-only>; rel=preload; as=script',
+          '</js/westo-app.smart.js?v=release14uf1d28-webp-only>; rel=preload; as=script',
           '</api/content-bootstrap.js>; rel=preload; as=script',
           '</assets/fonts/Vazirmatn-Variable.woff2>; rel=preload; as=font; type=font/woff2; crossorigin',
         ],

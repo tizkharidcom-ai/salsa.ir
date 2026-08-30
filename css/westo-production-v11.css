@@ -24,7 +24,7 @@
   --prod-radius-sm: 18px;
   --prod-ease: cubic-bezier(.22,.82,.22,1);
   --prod-pattern-micro: url('../assets/images/entrance/westo-micro-pattern-v8.png');
-  --prod-cta-pattern: image-set(url('../assets/images/entrance/westo-cta-pattern-v8.avif') type('image/avif'),url('../assets/images/entrance/westo-cta-pattern-v8.webp') type('image/webp'));
+  --prod-cta-pattern: url('../assets/images/entrance/westo-cta-pattern-v8.webp');
 
   /* category fallbacks; category-theme.js overwrites the existing --cat-* family */
   --cat-wash: #eef3e8;

@@ -7,6 +7,7 @@ const {
   allowedOrderTransitions,
   canTransitionOrder,
   canEditOrderBeforeKitchen,
+  branchScopeForUser,
 } = require('../server/command-center');
 
 test('legacy admin safely normalizes to owner without losing access', () => {
@@ -19,7 +20,17 @@ test('legacy admin safely normalizes to owner without losing access', () => {
   assert.equal(can({ role: 'waiter' }, 'service.manage'), true);
   assert.equal(can({ role: 'waiter' }, 'payments.manage'), false);
   assert.equal(can({ role: 'kitchen' }, 'kitchen.view'), true);
+  assert.equal(can({ role: 'kitchen' }, 'inventory.receiving'), true);
+  assert.equal(can({ role: 'accountant' }, 'inventory.receiving'), false);
   assert.equal(can({ role: 'kitchen' }, 'command.view'), false);
+});
+
+test('branch scope preserves owner access and normalizes explicit staff branches', () => {
+  assert.equal(branchScopeForUser({ role: 'owner', allowedBranchIds: [2] }), null);
+  assert.deepEqual(branchScopeForUser({ role: 'accountant', allowedBranchIds: ['2', 1, 2, 0, 'bad'] }), [2, 1]);
+  assert.deepEqual(branchScopeForUser({ role: 'manager', branchId: 3 }), [3]);
+  assert.equal(branchScopeForUser({ role: 'accountant' }), null);
+  assert.deepEqual(branchScopeForUser({ role: 'accountant', allowedBranchIds: [] }), []);
 });
 
 test('delivery quote enforces branch, zone activation and minimum order', () => {

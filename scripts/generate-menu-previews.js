@@ -28,7 +28,7 @@ function menuImageFiles() {
   for (const item of items) {
     const source = String(item?.img || item?.image || '').trim();
     if (!source || /^https?:\/\//i.test(source)) continue;
-    if (!/\.(?:webp|avif)(?:$|[?#])/i.test(source)) continue;
+    if (!/\.webp(?:$|[?#])/i.test(source)) continue;
     const pathname = source.split(/[?#]/, 1)[0].replace(/^\/+/, '');
     const absolute = path.resolve(ROOT, pathname);
     if (!absolute.startsWith(`${ROOT}${path.sep}`) || !fs.existsSync(absolute)) continue;
@@ -40,20 +40,17 @@ function menuImageFiles() {
 function targetsFor(source) {
   const parent = path.join(path.dirname(source), 'previews');
   const basename = path.basename(source, path.extname(source));
-  return {
-    webp: path.join(parent, `${basename}.webp`),
-    avif: path.join(parent, `${basename}.avif`),
-  };
+  return { webp: path.join(parent, `${basename}.webp`) };
 }
 
 const sources = menuImageFiles();
 const missing = sources.filter((source) => {
   const targets = targetsFor(source);
-  return !fs.existsSync(targets.webp) || !fs.existsSync(targets.avif);
+  return !fs.existsSync(targets.webp);
 });
 
 if (CHECK_ONLY) {
-  console.log(JSON.stringify({ menuImages: sources.length, missingPreviewPairs: missing.length }, null, 2));
+  console.log(JSON.stringify({ menuImages: sources.length, missingWebpPreviews: missing.length }, null, 2));
   process.exit(missing.length ? 1 : 0);
 }
 
@@ -64,22 +61,16 @@ for (const source of missing) {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'westo-preview-'));
   const png = path.join(tempDir, 'preview.png');
   const webpTemp = `${targets.webp}.tmp-${process.pid}`;
-  const avifTemp = `${targets.avif}.tmp-${process.pid}`;
   try {
     run('ffmpeg', ['-y', '-v', 'error', '-i', source, '-frames:v', '1', '-vf', `scale=${PREVIEW_SIDE}:${PREVIEW_SIDE}:force_original_aspect_ratio=decrease`, png]);
     if (!fs.existsSync(targets.webp)) {
       run('cwebp', ['-quiet', '-q', '46', png, '-o', webpTemp]);
       fs.renameSync(webpTemp, targets.webp);
     }
-    if (!fs.existsSync(targets.avif)) {
-      run('avifenc', ['-q', '30', '--qalpha', '100', '--ignore-profile', png, avifTemp]);
-      fs.renameSync(avifTemp, targets.avif);
-    }
     generated += 1;
   } finally {
     try { fs.rmSync(tempDir, { recursive: true, force: true }); } catch (_) {}
     try { fs.unlinkSync(webpTemp); } catch (_) {}
-    try { fs.unlinkSync(avifTemp); } catch (_) {}
   }
 }
 

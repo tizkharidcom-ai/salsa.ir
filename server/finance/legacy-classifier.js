@@ -22,6 +22,39 @@ function sourceId(row, index) {
   return explicit == null || String(explicit).trim() === '' ? `content-${digest(`${JSON.stringify(row || {})}:${index}`).slice(0, 20)}` : String(explicit);
 }
 
+function depreciationDuplicateKey(row) {
+  const period = String(row?.date || row?.createdAt || '').slice(0, 7);
+  if (!period) return '';
+  const explicitAsset = row?.sourceId || String(row?.description || '').match(/AST-\d+|fa-\d+/i)?.[0];
+  if (explicitAsset) return `${explicitAsset}:${period}`;
+  // Legacy batch rows often have no asset id. Do not group every row in a
+  // month together; use the immutable accounting shape as the best available
+  // evidence and leave genuinely ambiguous rows visible for review.
+  const amount = row?.amountIrr ?? row?.totalAmount ?? row?.debitIrr ?? row?.amount ?? null;
+  const description = String(row?.description || '').trim().replace(/\s+/g, ' ').toLowerCase();
+  const lines = list(row?.lines).map((line) => [
+    String(line?.accountCode || ''),
+    line?.debitIrr ?? line?.debit ?? 0,
+    line?.creditIrr ?? line?.credit ?? 0,
+    line?.branchId ?? null,
+  ]);
+  return `batch:${period}:${amount}:${description}:${JSON.stringify(lines)}`;
+}
+
+function settlementDuplicateKey(row) {
+  const provider = row?.provider || row?.psp || row?.gateway;
+  const terminal = row?.terminalId || row?.terminal || '';
+  const batch = row?.batchNo || row?.batchNumber || row?.reference;
+  return provider && batch ? `${row?.branchId ?? 'unscoped'}:${provider}:${terminal}:${batch}` : '';
+}
+
+function expenseDuplicateKey(row) {
+  const day = String(row?.date || row?.createdAt || '').slice(0, 10);
+  const amount = row?.amount ?? row?.totalAmount;
+  const description = String(row?.description || row?.title || '').trim().toLowerCase();
+  return day && amount != null ? `${row?.branchId ?? 'unscoped'}:${day}:${amount}:${description}` : '';
+}
+
 function classifyLegacyFinance(db, { analyzeSale } = {}) {
   if (typeof analyzeSale !== 'function') throw Object.assign(new Error('قاعدهٔ تحلیل فروش برای طبقه‌بندی مهاجرت الزامی است.'), { code: 'legacy_sale_analyzer_required' });
   const records = new Map();
@@ -70,21 +103,9 @@ function classifyLegacyFinance(db, { analyzeSale } = {}) {
   };
 
   const accounting = db.accounting || {};
-  duplicateRows(accounting.settlements, 'accounting.settlements', (row) => {
-    const provider = row.provider || row.psp || row.gateway;
-    const batch = row.batchNo || row.batchNumber || row.reference;
-    return provider && batch ? `${provider}:${batch}` : '';
-  }, 'duplicate_settlement_batch');
-  duplicateRows(accounting.expenses, 'accounting.expenses', (row) => {
-    const day = String(row.date || row.createdAt || '').slice(0, 10);
-    const amount = row.amount ?? row.totalAmount;
-    return day && amount != null ? `${day}:${amount}:${String(row.description || row.title || '').trim().toLowerCase()}` : '';
-  }, 'possible_duplicate_expense');
-  duplicateRows(list(accounting.journalEntries).filter((row) => row.source === 'depreciation'), 'accounting.journalEntries', (row) => {
-    const asset = row.sourceId || String(row.description || '').match(/AST-\d+|fa-\d+/i)?.[0] || 'batch';
-    const period = String(row.date || '').slice(0, 7);
-    return period ? `${asset}:${period}` : '';
-  }, 'duplicate_depreciation_asset_period');
+  duplicateRows(accounting.settlements, 'accounting.settlements', settlementDuplicateKey, 'duplicate_settlement_batch');
+  duplicateRows(accounting.expenses, 'accounting.expenses', expenseDuplicateKey, 'possible_duplicate_expense');
+  duplicateRows(list(accounting.journalEntries).filter((row) => row.source === 'depreciation' && row.status !== 'reversed'), 'accounting.journalEntries', depreciationDuplicateKey, 'duplicate_depreciation_asset_period');
 
   list(accounting.journalEntries).forEach((row, index) => {
     if (!/test|demo|نمونه|آزمایش/i.test(`${row.description || ''} ${row.number || ''}`)) return;
@@ -117,4 +138,4 @@ function classifyLegacyFinance(db, { analyzeSale } = {}) {
   return { rows, summary, policy: { deletesPerformed: 0, postingsPerformed: 0, blindCurrencyConversions: 0, archiveMode: 'read_only' } };
 }
 
-module.exports = { classifyLegacyFinance, stableUuid };
+module.exports = { classifyLegacyFinance, depreciationDuplicateKey, expenseDuplicateKey, settlementDuplicateKey, stableUuid };

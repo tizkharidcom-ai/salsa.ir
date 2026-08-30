@@ -12,7 +12,7 @@
  * 6. GL Control Totals Verification
  */
 
-const { toIRR } = require('./money');
+const { toIRR, formatNumber } = require('./money');
 const auditEngine = require('./audit-engine');
 
 function ensureReconciliation(acc) {
@@ -48,11 +48,11 @@ function createExpenseEntry(acc, expenseInput, opts = {}) {
   const taxDeductibility = expenseInput.taxDeductibilityStatus || 'REVIEW_REQUIRED'; // CONFIRMED, REVIEW_REQUIRED, NON_DEDUCTIBLE
 
   // Resolve Debit Account (Expense Category)
-  let debitAccount = expenseInput.accountCode || '6900'; // Other Operating Expenses
+  let debitAccount = expenseInput.accountCode || '6990'; // Miscellaneous / Other Operating Expenses
   if (category.includes('اجاره')) debitAccount = '6200';
-  else if (category.includes('آب') || category.includes('برق') || category.includes('گاز') || category.includes('قبوض')) debitAccount = '6210';
-  else if (category.includes('تعمیر') || category.includes('نگهداری')) debitAccount = '6300';
-  else if (category.includes('نظافت') || category.includes('بهداشت')) debitAccount = '6310';
+  else if (category.includes('آب') || category.includes('برق') || category.includes('گاز') || category.includes('قبوض')) debitAccount = '6300';
+  else if (category.includes('تعمیر') || category.includes('نگهداری')) debitAccount = '6500';
+  else if (category.includes('نظافت') || category.includes('بهداشت')) debitAccount = '6600';
   else if (category.includes('تبلیغات') || category.includes('مارکتینگ')) debitAccount = '6400';
   else if (category.includes('اداری') || category.includes('ملزومات')) debitAccount = '6700';
 
@@ -116,7 +116,7 @@ function createExpenseEntry(acc, expenseInput, opts = {}) {
     entityType: 'Expense',
     entityId: record.id,
     userId: expenseInput.createdById || 'admin',
-    message: `هزینه «${title}» به مبلغ ${amount.toLocaleString('fa-IR')} ریال ثبت شد. وضعیت مالیاتی: ${taxDeductibility}`,
+    message: `هزینه «${title}» به مبلغ ${formatNumber(amount)} ریال ثبت شد. وضعیت مالیاتی: ${taxDeductibility}`,
   });
 
   return { ok: true, expense: record, journalEntry };
@@ -186,7 +186,7 @@ function replenishPettyCash(acc, replenishInput, opts = {}) {
     entityType: 'PettyCash',
     entityId: record.id,
     userId: replenishInput.createdById || 'admin',
-    message: `شارژ تنخواه گردان به مبلغ ${amount.toLocaleString('fa-IR')} ریال ثبت گردید.`,
+    message: `شارژ تنخواه گردان به مبلغ ${formatNumber(amount)} ریال ثبت گردید.`,
   });
 
   return { ok: true, pettyCash: record, journalEntry };
@@ -204,6 +204,7 @@ function recordSettlement(acc, settlementInput, opts = {}) {
   const netAmount = grossAmount - feeAmount;
 
   if (grossAmount <= 0) throw new Error('مبلغ ناخالص تسویه نامعتبر است.');
+  if (feeAmount < 0 || feeAmount > grossAmount) throw new Error('کارمزد تسویه باید بین صفر و مبلغ ناخالص باشد.');
 
   const provider = settlementInput.provider || 'کارتخوان شاپرک (POS)';
   const batchNumber = settlementInput.batchNumber || `BATCH-${Date.now().toString().slice(-6)}`;
@@ -225,7 +226,7 @@ function recordSettlement(acc, settlementInput, opts = {}) {
       branchId,
     },
     ...(feeAmount > 0 ? [{
-      accountCode: '6500', // Bank & PSP Commission Fees
+      accountCode: '6710', // Bank & PSP Commission Fees
       debit: feeAmount,
       credit: 0,
       memo: `کارمزد بانکی تسویه ${provider} (بچ ${batchNumber})`,
@@ -273,7 +274,7 @@ function recordSettlement(acc, settlementInput, opts = {}) {
     entityType: 'Settlement',
     entityId: record.id,
     userId: settlementInput.createdById || 'admin',
-    message: `تسویه ${provider} به مبلغ ناخالص ${grossAmount.toLocaleString('fa-IR')} ریال ثبت شد.`,
+    message: `تسویه ${provider} به مبلغ ناخالص ${formatNumber(grossAmount)} ریال ثبت شد.`,
   });
 
   return { ok: true, settlement: record, journalEntry };
@@ -313,7 +314,7 @@ function closeCashDrawer(acc, sessionId, closeInput, opts = {}) {
     const journalLines = isShortage
       ? [
           {
-            accountCode: '6800', // Cash Shortage Expense (کسری صندوق)
+            accountCode: '5500', // Cash Shortage Expense (کسری صندوق)
             debit: diffAbs,
             credit: 0,
             memo: `ثبت کسری صندوق شیفت ${session.drawerName} (${session.cashierName})`,
@@ -336,7 +337,7 @@ function closeCashDrawer(acc, sessionId, closeInput, opts = {}) {
             branchId: session.branchId || 1,
           },
           {
-            accountCode: '7100', // Other Operating Income (مازاد صندوق)
+            accountCode: '4500', // Other Operating Income (مازاد صندوق)
             debit: 0,
             credit: diffAbs,
             memo: `ثبت مازاد صندوق شیفت ${session.drawerName} (${session.cashierName})`,
@@ -362,7 +363,7 @@ function closeCashDrawer(acc, sessionId, closeInput, opts = {}) {
     entityType: 'CashDrawer',
     entityId: session.id,
     userId: closeInput.closedBy || 'admin',
-    message: `شیفت صندوق «${session.drawerName}» بسته شد. موجودی شمارش‌شده: ${closingCash.toLocaleString('fa-IR')} ریال (اختلاف: ${discrepancy.toLocaleString('fa-IR')} ریال)`,
+    message: `شیفت صندوق «${session.drawerName}» بسته شد. موجودی شمارش‌شده: ${formatNumber(closingCash)} ریال (اختلاف: ${formatNumber(discrepancy)} ریال)`,
   });
 
   return { ok: true, session, discrepancyJournal };
@@ -403,14 +404,20 @@ function autoMatchBankFeed(acc) {
   ensureReconciliation(acc);
   const unmatchedTxns = acc.bankTransactions.filter((t) => t.status === 'unmatched');
   const journalEntries = (acc.journalEntries || []).filter((j) => j.status === 'posted');
+  const matchedJournalIds = new Set(
+    acc.bankTransactions
+      .filter((t) => (t.status === 'matched' || t.status === 'reconciled') && t.matchedJournalId)
+      .map((t) => t.matchedJournalId)
+  );
   let matchedCount = 0;
 
   for (const txn of unmatchedTxns) {
     const netBank = txn.debit > 0 ? txn.debit : -txn.credit;
 
-    // Matching criteria: close date (+/- 3 days) and matching net flow on bank/clearing account
+    // Matching criteria: close date (+/- 3 days), matching net flow on bank/clearing account, and not previously matched
     const txDate = new Date(txn.date).getTime();
     const candidate = journalEntries.find((j) => {
+      if (matchedJournalIds.has(j.id)) return false;
       const jDate = new Date(j.date).getTime();
       if (Math.abs(txDate - jDate) > 3 * 24 * 3600 * 1000) return false;
 
@@ -427,6 +434,7 @@ function autoMatchBankFeed(acc) {
       txn.status = 'matched';
       txn.matchedJournalId = candidate.id;
       txn.matchedJournalNumber = candidate.number;
+      matchedJournalIds.add(candidate.id);
       matchedCount++;
     }
   }
@@ -444,7 +452,7 @@ function reconcileTransaction(acc, txnId, journalId) {
   return { ok: true, txn };
 }
 
-function calculateControlTotals(acc) {
+function calculateControlTotals(acc, branchId = null) {
   const accounts = acc.accounts || [];
   const entries = (acc.journalEntries || []).filter((e) => e.status === 'posted');
 
@@ -456,6 +464,8 @@ function calculateControlTotals(acc) {
 
   entries.forEach((e) => {
     (e.lines || []).forEach((l) => {
+      const lineBranchId = l.branchId ?? e.branchId ?? null;
+      if (branchId != null && Number(lineBranchId) !== Number(branchId)) return;
       totalDebits += l.debit;
       totalCredits += l.credit;
       if (balances[l.accountCode]) {

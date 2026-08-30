@@ -5,6 +5,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
+const financeV2 = require('../server/finance-v2');
 
 const runHttpTests = process.env.RUN_HTTP_TESTS === 'true';
 
@@ -21,7 +22,7 @@ seed.users = [
   { phone: '09150000002', name: 'صندوق تست', email: '', role: 'cashier', points: 0, createdAt: new Date().toISOString(), blocked: false },
   { phone: '09150000003', name: 'گارسون تست', email: '', role: 'waiter', points: 0, createdAt: new Date().toISOString(), blocked: false },
   { phone: '09150000001', name: 'آشپز تست', email: '', role: 'kitchen', points: 0, createdAt: new Date().toISOString(), blocked: false },
-  { phone: '09150000004', name: 'حسابدار تست', email: '', role: 'accountant', points: 0, createdAt: new Date().toISOString(), blocked: false },
+  { phone: '09150000004', name: 'حسابدار تست', email: '', role: 'accountant', allowedBranchIds: [1], points: 0, createdAt: new Date().toISOString(), blocked: false },
 ];
 seed.accounting = {
   ...(seed.accounting || {}),
@@ -44,7 +45,7 @@ process.env.WESTO_SECRET_PATH = secretPath;
 process.env.PORT = '0';
 process.env.NODE_ENV = 'test';
 
-const { startServer } = require('../server/server');
+const { startServer, db: serverDb } = require('../server/server');
 
 async function json(base, url, { method = 'GET', body, cookie, headers = {} } = {}) {
   const response = await fetch(`${base}${url}`, {
@@ -82,10 +83,19 @@ test('command center enforces roles and the kitchen transition boundary', async 
   const kitchenCookie = await login(base, '09150000001');
   const accountantCookie = await login(base, '09150000004');
 
+  const branchDenied = await json(base, '/api/admin/v2/finance/migration/archive?branchId=2', { cookie: accountantCookie });
+  assert.equal(branchDenied.response.status, 403);
+  assert.equal(branchDenied.body.error, 'branch_access_denied', JSON.stringify(branchDenied.body));
+  const malformedJson = await fetch(`${base}/api/admin/v2/finance/fiscal-periods`, {
+    method: 'POST', headers: { Cookie: accountantCookie, 'Content-Type': 'application/json' }, body: '{',
+  });
+  assert.equal(malformedJson.status, 400);
+  assert.equal((await malformedJson.json()).error, 'invalid_json');
+
   const migrationClassify = await json(base, '/api/admin/v2/finance/migration/classify', {
     method: 'POST', cookie: accountantCookie, headers: { 'Idempotency-Key': 'http-legacy-classify-1' }, body: {},
   });
-  assert.equal(migrationClassify.response.status, 201);
+  assert.equal(migrationClassify.response.status, 201, JSON.stringify(migrationClassify.body));
   assert.equal(migrationClassify.body.data.policy.postingsPerformed, 0);
   assert.ok(migrationClassify.body.data.archive.total > 0);
   const migrationReplay = await json(base, '/api/admin/v2/finance/migration/classify', {
@@ -163,10 +173,16 @@ test('command center enforces roles and the kitchen transition boundary', async 
   assert.equal(kitchenWaste.body.data.event.status, 'posted');
   const kitchenWasteReplay = await json(base, '/api/kitchen/inventory/waste', {
     method: 'POST', cookie: kitchenCookie, headers: wasteHeaders,
-    body: { branchId: 1, itemId: 'test-milk', quantity: 1, unit: 'لیتر', reason: 'تکرار' },
+    body: { branchId: 1, itemId: 'test-milk', quantity: 1, unit: 'لیتر', reason: 'آزمون نقش آشپز', occurredAt: '2026-08-24T09:00:00.000Z' },
   });
   assert.equal(kitchenWasteReplay.response.status, 200);
   assert.equal(kitchenWasteReplay.body.data.idempotentReplay, true);
+  const kitchenWasteKeyReuse = await json(base, '/api/kitchen/inventory/waste', {
+    method: 'POST', cookie: kitchenCookie, headers: wasteHeaders,
+    body: { branchId: 1, itemId: 'test-milk', quantity: 2, unit: 'لیتر', reason: 'بدنه متفاوت', occurredAt: '2026-08-24T09:00:00.000Z' },
+  });
+  assert.equal(kitchenWasteKeyReuse.response.status, 409);
+  assert.equal(kitchenWasteKeyReuse.body.error.code, 'idempotency_key_payload_mismatch');
   assert.equal((await json(base, '/api/kitchen/inventory/waste', {
     method: 'POST', cookie: cashierCookie, headers: { 'Idempotency-Key': 'cashier-waste-denied' },
     body: { branchId: 1, itemId: 'test-milk', quantity: 1, unit: 'لیتر', reason: 'نباید مجاز باشد' },
@@ -181,10 +197,16 @@ test('command center enforces roles and the kitchen transition boundary', async 
   assert.equal(bankLine.body.data.statementLine.status, 'unmatched');
   const bankLineReplay = await json(base, '/api/admin/v2/finance/reconciliation/bank-statement-lines', {
     method: 'POST', cookie: ownerCookie, headers: bankLineHeaders,
-    body: { branchId: 1, bankReference: 'SHOULD-NOT-DUPLICATE', bankAccountCode: '1210', direction: 'inflow', amountIrr: 100000, occurredAt: '2026-08-24T09:31:00.000Z' },
+    body: { branchId: 1, bankReference: 'HTTP-BANK-1', bankAccountCode: '1210', direction: 'inflow', amountIrr: 100000, occurredAt: '2026-08-24T09:30:00.000Z', description: 'مدرک بانکی آزمون' },
   });
   assert.equal(bankLineReplay.response.status, 200);
   assert.equal(bankLineReplay.body.data.idempotentReplay, true);
+  const bankLineKeyReuse = await json(base, '/api/admin/v2/finance/reconciliation/bank-statement-lines', {
+    method: 'POST', cookie: ownerCookie, headers: bankLineHeaders,
+    body: { branchId: 1, bankReference: 'SHOULD-NOT-DUPLICATE', bankAccountCode: '1210', direction: 'inflow', amountIrr: 100000, occurredAt: '2026-08-24T09:31:00.000Z' },
+  });
+  assert.equal(bankLineKeyReuse.response.status, 409);
+  assert.equal(bankLineKeyReuse.body.error.code, 'idempotency_key_payload_mismatch');
   assert.equal((await json(base, '/api/admin/v2/finance/reconciliation/bank-statement-lines', {
     method: 'POST', cookie: cashierCookie, headers: { 'Idempotency-Key': 'cashier-bank-denied' },
     body: { branchId: 1, bankReference: 'DENIED', bankAccountCode: '1210', direction: 'inflow', amountIrr: 100000, occurredAt: '2026-08-24T09:32:00.000Z' },
@@ -195,6 +217,76 @@ test('command center enforces roles and the kitchen transition boundary', async 
     body: { name: 'دوره تست هزینه', startDate: '2026-08-01', endDate: '2026-08-31' },
   });
   assert.equal(v2Period.response.status, 201);
+  const purchaseOrder = await json(base, '/api/admin/v2/finance/purchase-orders', {
+    method: 'POST', cookie: accountantCookie, headers: { 'Idempotency-Key': 'http-po-receiving-1' },
+    body: { branchId: 1, vendorId: 'vendor-http', issueDate: '2026-08-24T08:00:00.000Z', lines: [{ itemId: 'test-milk', description: 'شیر تست', quantity: 4, unit: 'لیتر', unitPriceIrr: 100000 }] },
+  });
+  assert.equal(purchaseOrder.response.status, 201);
+  const poId = purchaseOrder.body.data.purchaseOrder.id;
+  const poLineId = purchaseOrder.body.data.purchaseOrder.lines[0].id;
+  const poSubmit = await json(base, `/api/admin/v2/finance/purchase-orders/${poId}/submit`, {
+    method: 'POST', cookie: accountantCookie, headers: { 'Idempotency-Key': 'http-po-receiving-submit-1' }, body: {},
+  });
+  assert.equal(poSubmit.response.status, 200);
+  const poApproval = await json(base, `/api/admin/v2/finance/approvals/${poSubmit.body.data.approval.id}/decision`, {
+    method: 'POST', cookie: ownerCookie, headers: { 'Idempotency-Key': 'http-po-receiving-approve-1' }, body: { decision: 'approved', comment: 'خرید موردنیاز تأیید شد' },
+  });
+  assert.equal(poApproval.response.status, 200);
+  const receivingQueue = await json(base, '/api/kitchen/inventory?branchId=1', { cookie: kitchenCookie });
+  assert.equal(receivingQueue.response.status, 200);
+  assert.equal(receivingQueue.body.data.receivablePurchaseOrders[0].lines[0].remainingQuantity, 4);
+  assert.doesNotMatch(JSON.stringify(receivingQueue.body.data.receivablePurchaseOrders), /unitPriceIrr|lineValueIrr|totalIrr|accountCode/);
+  const receiptHeaders = { 'Idempotency-Key': 'http-kitchen-grn-1' };
+  const kitchenReceipt = await json(base, '/api/kitchen/inventory/goods-receipts', {
+    method: 'POST', cookie: kitchenCookie, headers: receiptHeaders,
+    body: { branchId: 1, purchaseOrderId: poId, deliveryNoteNumber: 'DN-HTTP-1', receivedAt: '2026-08-24T12:00:00.000Z', lines: [{ purchaseOrderLineId: poLineId, receivedQuantity: 4 }] },
+  });
+  assert.equal(kitchenReceipt.response.status, 201);
+  assert.equal(kitchenReceipt.body.data.goodsReceipt.status, 'completed');
+  assert.equal(kitchenReceipt.body.data.policy.purchasePricesHiddenFromOperator, true);
+  assert.doesNotMatch(JSON.stringify(kitchenReceipt.body.data), /unitPriceIrr|lineValueIrr|totalValueIrr|accountCode|journalEntry/);
+  const kitchenReceiptReplay = await json(base, '/api/kitchen/inventory/goods-receipts', {
+    method: 'POST', cookie: kitchenCookie, headers: receiptHeaders,
+    body: { branchId: 1, purchaseOrderId: poId, deliveryNoteNumber: 'DN-HTTP-1', receivedAt: '2026-08-24T12:00:00.000Z', lines: [{ purchaseOrderLineId: poLineId, receivedQuantity: 4 }] },
+  });
+  assert.equal(kitchenReceiptReplay.response.status, 200);
+  assert.equal(kitchenReceiptReplay.body.data.idempotentReplay, true);
+  const kitchenReceiptKeyReuse = await json(base, '/api/kitchen/inventory/goods-receipts', {
+    method: 'POST', cookie: kitchenCookie, headers: receiptHeaders,
+    body: { branchId: 1, purchaseOrderId: poId, deliveryNoteNumber: 'DN-HTTP-CHANGED', receivedAt: '2026-08-24T12:00:00.000Z', lines: [{ purchaseOrderLineId: poLineId, receivedQuantity: 4 }] },
+  });
+  assert.equal(kitchenReceiptKeyReuse.response.status, 409);
+  assert.equal(kitchenReceiptKeyReuse.body.error.code, 'idempotency_key_payload_mismatch');
+  assert.equal((await json(base, '/api/admin/v2/finance/goods-receipts', {
+    method: 'POST', cookie: accountantCookie, headers: { 'Idempotency-Key': 'http-accountant-grn-denied' },
+    body: { branchId: 1, purchaseOrderId: poId, lines: [{ purchaseOrderLineId: poLineId, receivedQuantity: 1 }] },
+  })).response.status, 403);
+  const receiptId = kitchenReceipt.body.data.goodsReceipt.id;
+  const receiptLineId = kitchenReceipt.body.data.goodsReceipt.lines[0].id;
+  const varianceInvoice = await json(base, '/api/admin/v2/finance/vendor-invoices', {
+    method: 'POST', cookie: accountantCookie, headers: { 'Idempotency-Key': 'http-variance-invoice-1' },
+    body: { goodsReceiptId: receiptId, invoiceNumber: 'INV-VARIANCE-HTTP-1', invoiceDate: '2026-08-24T13:00:00.000Z', vatIrr: 0, lines: [{ goodsReceiptLineId: receiptLineId, invoicedQuantity: 4, unitPriceIrr: 110000 }] },
+  });
+  assert.equal(varianceInvoice.response.status, 201);
+  assert.equal(varianceInvoice.body.data.vendorInvoice.status, 'match_exception');
+  const varianceInvoiceId = varianceInvoice.body.data.vendorInvoice.id;
+  const matchReview = await json(base, `/api/admin/v2/finance/vendor-invoices/${varianceInvoiceId}/match-review`, {
+    method: 'POST', cookie: accountantCookie, headers: { 'Idempotency-Key': 'http-variance-review-1' },
+    body: { reason: 'قیمت جدید با پیش‌فاکتور تأمین‌کننده بررسی شود', evidenceReference: 'QUOTE-HTTP-1' },
+  });
+  assert.equal(matchReview.response.status, 201);
+  const missingDecisionReason = await json(base, `/api/admin/v2/finance/approvals/${matchReview.body.data.approval.id}/decision`, {
+    method: 'POST', cookie: ownerCookie, headers: { 'Idempotency-Key': 'http-variance-review-no-comment' }, body: { decision: 'approved', comment: '' },
+  });
+  assert.equal(missingDecisionReason.response.status, 400);
+  assert.equal(missingDecisionReason.body.error.code, 'three_way_match_decision_comment_required');
+  const matchAccepted = await json(base, `/api/admin/v2/finance/approvals/${matchReview.body.data.approval.id}/decision`, {
+    method: 'POST', cookie: ownerCookie, headers: { 'Idempotency-Key': 'http-variance-review-approved' },
+    body: { decision: 'approved', comment: 'پیش‌فاکتور جدید و علت افزایش قیمت بررسی و تأیید شد' },
+  });
+  assert.equal(matchAccepted.response.status, 200);
+  assert.equal(matchAccepted.body.data.vendorInvoiceMatch.matchStatus, 'accepted_variance');
+  assert.equal(matchAccepted.body.data.vendorInvoiceEntry.lines.find((line) => line.accountCode === '5150').debitIrr, 40000);
   const commitment = await json(base, '/api/admin/v2/finance/cost-commitments', {
     method: 'POST', cookie: accountantCookie, headers: { 'Idempotency-Key': 'http-cost-commitment-1' },
     body: { branchId: 1, name: 'اجاره تست HTTP', type: 'rent', monthlyAmountIrr: 2000000, startDate: '2026-08-01' },
@@ -252,6 +344,35 @@ test('command center enforces roles and the kitchen transition boundary', async 
   assert.equal(depreciationApproval.response.status, 200);
   assert.equal(depreciationApproval.body.data.depreciationRun.status, 'posted');
   assert.equal((await json(base, '/api/admin/finance/depreciation/run', { method: 'POST', cookie: ownerCookie, body: {} })).response.status, 410);
+  const legacyPosWrite = await json(base, '/api/pos/sales', {
+    method: 'POST', cookie: cashierCookie, body: { external_id: 'LEGACY-POS-BLOCKED', status: 'paid', total: 1000 },
+  });
+  assert.equal(legacyPosWrite.response.status, 410);
+  assert.equal(legacyPosWrite.body.error.code, 'finance_v1_pos_read_only');
+  const legacyPosRefundWrite = await json(base, '/api/pos/sales/LEGACY-POS-BLOCKED/refunds', {
+    method: 'POST', cookie: cashierCookie, body: { amount: 1000, reason: 'legacy route guard' },
+  });
+  assert.equal(legacyPosRefundWrite.response.status, 410);
+  assert.equal(legacyPosRefundWrite.body.error.code, 'finance_v1_pos_read_only');
+  const legacyExpenseWrite = await json(base, '/v1/expenses', {
+    method: 'POST', cookie: ownerCookie, body: { branchId: 1, amount: 1000, description: 'legacy route guard' },
+  });
+  assert.equal(legacyExpenseWrite.response.status, 410);
+  assert.equal(legacyExpenseWrite.body.error.code, 'finance_v1_read_only');
+  const legacyTaxWrite = await json(base, '/api/tax/einvoices', {
+    method: 'POST', cookie: ownerCookie, body: { invoiceId: 'LEGACY-TAX-BLOCKED' },
+  });
+  assert.equal(legacyTaxWrite.response.status, 410);
+  assert.equal(legacyTaxWrite.body.error.code, 'finance_v1_read_only');
+  for (const legacyWritePath of [
+    '/v1/pos/sales', '/v1/pos/sales/LEGACY-POS-BLOCKED/refunds', '/v1/settlements', '/v1/settlements/imports',
+    '/v1/expenses', '/v1/payroll/runs', '/v1/payroll/runs/LEGACY-PAYROLL/disburse',
+    '/v1/bank-transactions/imports', '/v1/reconciliations/bank', '/v1/inventory/waste',
+  ]) {
+    const legacyWrite = await json(base, legacyWritePath, { method: 'POST', cookie: ownerCookie, body: {} });
+    assert.equal(legacyWrite.response.status, 410, legacyWritePath);
+    assert.equal(legacyWrite.body.error.code, 'finance_v1_read_only', legacyWritePath);
+  }
   const payrollBody = {
     branchId: 1, postingDate: '2026-08-25', headcount: 3, sourceReference: 'HTTP-PAYROLL-1405-06',
     kitchenGrossIrr: 12000000, serviceGrossIrr: 8000000, employerInsuranceIrr: 2000000,
@@ -323,6 +444,23 @@ test('command center enforces roles and the kitchen transition boundary', async 
   });
   assert.equal(created.response.status, 201);
   const orderId = created.body.order.id;
+
+  const orderBeforeFinanceConflict = JSON.parse(JSON.stringify(serverDb.orders.find((entry) => Number(entry.id) === Number(orderId))));
+  const drawerBeforeFinanceConflict = JSON.parse(JSON.stringify(serverDb.cashSessions.find((entry) => entry.id === drawer.body.session.id)));
+  const financeState = financeV2.ensureFinanceV2(serverDb);
+  financeState.events.push({
+    id: 'cross-branch-order-paid-conflict', source: 'order.paid', sourceId: String(orderId), sourceVersion: 1,
+    idempotencyKey: `2:order.paid:${orderId}:v1`, branchId: 2, occurredAt: orderBeforeFinanceConflict.createdAt,
+    amountIrr: 1, payload: {}, status: 'posted', error: null, journalEntryId: null, createdAt: new Date().toISOString(), processedAt: null,
+  });
+  const blockedSettlement = await json(base, `/api/cashier/orders/${orderId}/settle`, {
+    method: 'POST', cookie: cashierCookie, body: { tender: 'cash' },
+  });
+  assert.equal(blockedSettlement.response.status, 503);
+  assert.equal(blockedSettlement.body.error, 'finance_event_source_branch_conflict');
+  assert.deepEqual(serverDb.orders.find((entry) => Number(entry.id) === Number(orderId)), orderBeforeFinanceConflict);
+  assert.deepEqual(serverDb.cashSessions.find((entry) => entry.id === drawer.body.session.id), drawerBeforeFinanceConflict);
+  serverDb.financeV2.events = serverDb.financeV2.events.filter((entry) => entry.id !== 'cross-branch-order-paid-conflict');
 
   const settled = await json(base, `/api/cashier/orders/${orderId}/settle`, {
     method: 'POST', cookie: cashierCookie, body: { tender: 'cash' },

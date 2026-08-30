@@ -374,9 +374,13 @@
     return l === 'en' ? 'en-US' : l === 'ar' ? 'ar' : 'fa-IR';
   }
 
+  function formatUiNumber(value, options = {}) {
+    return window.WestoPersianFormat?.number(value, { ...options, locale: localeTag() }) ?? Number(value || 0).toLocaleString(localeTag(), options);
+  }
+
   function formatPrice(n) {
     const unit = window.westoI18n?.t ? window.westoI18n.t('currency.toman') : 'تومان';
-    return `${Number(n || 0).toLocaleString(localeTag())} ${unit}`;
+    return `${formatUiNumber(n)} ${unit}`;
   }
 
   const ALLERGEN_META = {
@@ -530,6 +534,27 @@
     return cart.reduce((s, l) => s + l.price * l.qty, 0);
   }
 
+  function qrTableNumber() {
+    const raw = String(new URLSearchParams(location.search).get('table') || '').trim();
+    if (!raw) return '';
+    const normalized = normalizeDigits(raw);
+    return /^\d+$/.test(normalized)
+      ? Number(normalized).toLocaleString(localeTag())
+      : raw.slice(0, 40);
+  }
+
+  function paintOrderContext() {
+    const context = $('#cm-order-context');
+    if (!context) return;
+    const tableNo = qrTableNumber();
+    context.hidden = !tableNo;
+    if (!tableNo) return;
+    const title = $('#cm-order-context-title');
+    const note = $('#cm-order-context-note');
+    if (title) title.textContent = tr('cart.qrContext', { n: tableNo });
+    if (note) note.textContent = tr('cart.qrPrefilled');
+  }
+
   function updateBadge() {
     if (!badge) return;
     const n = cartCount();
@@ -543,10 +568,12 @@
     const navBtn = $('#nav-table-btn');
     if (navBtn) {
       const label = tr('cart.title');
+      const tableNo = qrTableNumber();
+      const contextLabel = tableNo ? `${label}، ${tr('cart.qrContext', { n: tableNo })}` : label;
       navBtn.classList.toggle('has-items', n > 0);
       navBtn.setAttribute(
         'aria-label',
-        n ? `${label}, ${shown}` : label,
+        n ? `${contextLabel}، ${shown} قلم` : contextLabel,
       );
       const labelEl =
         navBtn.querySelector('[data-i18n="cart.title"]') ||
@@ -1043,6 +1070,7 @@
     if (drawerTitle) drawerTitle.textContent = tr('cart.title');
     const drawerPanel = $('#table-drawer')?.querySelector('.table-drawer__panel');
     if (drawerPanel) drawerPanel.setAttribute('aria-label', tr('cart.title'));
+    paintOrderContext();
     updateBadge();
   }
 

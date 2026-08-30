@@ -503,7 +503,7 @@ async function bootScene() {
   let smaaPass = null;
   if (postFxCapable) {
     const { EffectComposer, RenderPass, SMAAPass, OutputPass } = await import(
-      './vendor/three/westo-postprocessing.bundle.mjs?v=release14uf1d23-landscape-shell'
+      './vendor/three/westo-postprocessing.bundle.mjs?v=release14uf1d28-webp-only'
     );
     const finalRenderTarget = new THREE.WebGLRenderTarget(
       window.innerWidth * pixelRatio,

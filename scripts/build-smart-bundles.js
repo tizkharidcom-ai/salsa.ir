@@ -37,6 +37,7 @@ const bundles = {
     'css/westo-landscape-recovery.css',
   ],
   'js/westo-foundation.smart.js': [
+    'js/persian-format.js',
     'js/i18n.js',
     'js/category-theme.js',
     'js/menu-store.js',
@@ -70,6 +71,7 @@ const bundles = {
   // request removes two high-latency request/execute barriers on mobile links
   // while preserving the smaller source bundles for debugging and validation.
   'js/westo-app.smart.js': [
+    'js/persian-format.js',
     'js/i18n.js',
     'js/category-theme.js',
     'js/menu-store.js',

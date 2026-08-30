@@ -3,7 +3,7 @@
 
 // Keep this in lockstep with the critical entrypoint cache key. A new release
 // creates a fresh shell cache and activation removes every older WESTO cache.
-const RELEASE = 'release14uf1d23-landscape-shell';
+const RELEASE = 'release14uf1d28-webp-only';
 const CACHE = `westo-pwa-${RELEASE}`;
 const CORE = [
   '/',
@@ -50,6 +50,20 @@ async function networkFirstNavigation(request) {
   }
 }
 
+async function privateNavigation(request) {
+  try {
+    // Never reuse an HTTP-cache entry for authenticated pages. This keeps the
+    // HTML fingerprint in lockstep with the current admin assets and prevents
+    // an old panel shell from surviving a release.
+    return await fetch(request, { cache: 'no-store' });
+  } catch (_) {
+    return new Response(`<!doctype html><html lang="fa" dir="rtl"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>مرکز فرمان وستو</title><body><main><h1>اتصال به مرکز فرمان برقرار نیست</h1><p>برای حفظ امنیت و تازگی اطلاعات، نسخهٔ قدیمی پنل نمایش داده نمی‌شود.</p><button type="button" onclick="location.reload()">تلاش دوباره</button></main></body></html>`, {
+      status: 503,
+      headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' },
+    });
+  }
+}
+
 async function staleWhileRevalidate(request) {
   const cache = await caches.open(CACHE);
   const cached = await cache.match(request);
@@ -68,7 +82,11 @@ self.addEventListener('fetch', (event) => {
   if (url.origin !== self.location.origin || url.pathname.startsWith('/api/')) return;
 
   if (request.mode === 'navigate') {
-    event.respondWith(networkFirstNavigation(request));
+    const privatePage = url.pathname === '/login'
+      || url.pathname === '/admin'
+      || url.pathname === '/admin.html'
+      || url.pathname.startsWith('/admin/');
+    event.respondWith(privatePage ? privateNavigation(request) : networkFirstNavigation(request));
     return;
   }
 

@@ -22,9 +22,9 @@
       ar: 'مقهى ومطعم لراحتك',
     },
     'eg.subtitleEn': {
-      fa: 'Cafe & Restaurant',
+      fa: 'کافه و رستوران',
       en: 'Cafe & Restaurant',
-      ar: 'Cafe & Restaurant',
+      ar: 'مقهى ومطعم',
     },
     'eg.enter': { fa: 'ورود به منو', en: 'Enter the menu', ar: 'الدخول إلى القائمة' },
     'eg.enterWesto': { fa: 'ورود به منو', en: 'Enter the menu', ar: 'الدخول إلى القائمة' },
@@ -153,9 +153,9 @@
       ar: 'تصفح الفئات',
     },
     'nav.aboutHint': {
-      fa: 'About Us',
+      fa: 'درباره ما',
       en: 'About Us',
-      ar: 'About Us',
+      ar: 'من نحن',
     },
     'nav.loginHint': {
       fa: 'حساب کاربری',
@@ -190,7 +190,7 @@
     'pwa.updating': { fa: 'در حال بروزرسانی…', en: 'Updating…', ar: 'جارٍ التحديث…' },
     'pwa.clearing': { fa: 'در حال پاک‌سازی…', en: 'Clearing…', ar: 'جارٍ المسح…' },
     'currency.toman': { fa: 'تومان', en: 'Toman', ar: 'تومان' },
-    'site.documentTitle': { fa: 'Westo — منوی کافه و رستوران', en: 'WESTO — Café & Restaurant Menu', ar: 'WESTO — قائمة المقهى والمطعم' },
+    'site.documentTitle': { fa: 'وستو — منوی کافه و رستوران', en: 'WESTO — Café & Restaurant Menu', ar: 'WESTO — قائمة المقهى والمطعم' },
     'about.documentTitle': { fa: 'درباره ما — وستو', en: 'About Us — WESTO', ar: 'من نحن — WESTO' },
     'legacy.section1': { fa: 'بخش محصول ۱', en: 'Product section 1', ar: 'قسم المنتج 1' },
     'legacy.section2': { fa: 'بخش محصول ۲', en: 'Product section 2', ar: 'قسم المنتج 2' },
@@ -203,9 +203,9 @@
     },
 
     // Table / cart
-    'cart.title': { fa: 'تیبل', en: 'Table', ar: 'الطاولة' },
+    'cart.title': { fa: 'سبد', en: 'Cart', ar: 'السلة' },
     'cart.empty': {
-      fa: 'تیبل خالی است\nاز منو غذا اضافه کنید',
+      fa: 'سبد سفارش خالی است\nاز منو غذا اضافه کنید',
       en: 'Your table is empty\nAdd dishes from the menu',
       ar: 'الطاولة فارغة\nأضف أطباقًا من القائمة',
     },
@@ -237,7 +237,7 @@
     'cart.ph.phone': { fa: '0912…', en: '09…', ar: '09…' },
     'cart.dec': { fa: 'کم کردن', en: 'Decrease', ar: 'إنقاص' },
     'cart.inc': { fa: 'زیاد کردن', en: 'Increase', ar: 'زيادة' },
-    'cart.remove': { fa: 'حذف از تیبل', en: 'Remove from table', ar: 'إزالة من الطاولة' },
+    'cart.remove': { fa: 'حذف از سبد', en: 'Remove from cart', ar: 'إزالة من السلة' },
     'cart.itemsCount': {
       fa: '{n} قلم',
       en: '{n} items',
@@ -256,6 +256,8 @@
     'cart.counterDone': { fa: 'پرداخت در صندوق — هنگام دریافت تسویه کنید.', en: 'Pay at the counter when you collect your order.', ar: 'ادفع عند الصندوق عند استلام طلبك.' },
     'cart.doneKicker': { fa: 'سفارش ثبت شد', en: 'Order placed', ar: 'تم تسجيل الطلب' },
     'cart.tableLabel': { fa: 'میز', en: 'Table', ar: 'الطاولة' },
+    'cart.qrContext': { fa: 'سفارش برای میز {n}', en: 'Order for table {n}', ar: 'طلب للطاولة {n}' },
+    'cart.qrPrefilled': { fa: 'شماره میز از رمزینه وارد شده است', en: 'Table number was added from the QR code', ar: 'تم إدخال رقم الطاولة من رمز الاستجابة' },
     'cart.feedback': { fa: 'ثبت نظر / NPS', en: 'Leave feedback / NPS', ar: 'أرسل رأيك / NPS' },
 
 
@@ -347,7 +349,7 @@
     'auth.otpDigit': { fa: 'رقم {n} کد تأیید', en: 'Verification code digit {n}', ar: 'الرقم {n} من رمز التحقق' },
 
     // Profile
-    'profile.documentTitle': { fa: 'پروفایل — Westo', en: 'Profile — WESTO', ar: 'الملف الشخصي — WESTO' },
+    'profile.documentTitle': { fa: 'پروفایل — وستو', en: 'Profile — WESTO', ar: 'الملف الشخصي — WESTO' },
     'profile.title': { fa: 'پروفایل من', en: 'My profile', ar: 'ملفي الشخصي' },
     'profile.points': { fa: 'امتیاز باشگاه مشتریان', en: 'Loyalty points', ar: 'نقاط الولاء' },
     'profile.phone': { fa: 'شماره موبایل', en: 'Mobile number', ar: 'رقم الجوال' },
@@ -403,7 +405,7 @@
     'feedback.documentTitle': { fa: 'بازخورد — وستو', en: 'Feedback — WESTO', ar: 'التقييم — WESTO' },
     'feedback.title': { fa: 'نظر شما', en: 'Your feedback', ar: 'رأيك' },
     'feedback.branch': { fa: 'شعبه', en: 'Branch', ar: 'الفرع' },
-    'feedback.nps': { fa: 'امتیاز NPS (۰–۱۰)', en: 'NPS score (0–10)', ar: 'تقييم NPS (0–10)' },
+    'feedback.nps': { fa: 'احتمال پیشنهاد به دوستان (۰ تا ۱۰)', en: 'NPS score (0–10)', ar: 'تقييم NPS (0–10)' },
     'feedback.low': { fa: '۰ — بعید', en: '0 — Unlikely', ar: '0 — غير محتمل' },
     'feedback.high': { fa: '۱۰ — حتماً', en: '10 — Definitely', ar: '10 — بالتأكيد' },
     'feedback.comment': { fa: 'نظر (اختیاری)', en: 'Comment (optional)', ar: 'تعليق (اختياري)' },
@@ -442,9 +444,9 @@
       en: 'Main menu',
       ar: 'القائمة الرئيسية',
     },
-    'cm.add': { fa: 'افزودن به تیبل', en: 'Add to table', ar: 'أضف إلى الطاولة' },
+    'cm.add': { fa: 'افزودن به سبد', en: 'Add to cart', ar: 'أضف إلى السلة' },
     'cm.added': {
-      fa: 'به تیبل اضافه شد',
+      fa: 'به سبد اضافه شد',
       en: 'added to table',
       ar: 'أضيف إلى الطاولة',
     },

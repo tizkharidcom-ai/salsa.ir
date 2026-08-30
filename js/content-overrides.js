@@ -97,10 +97,12 @@
   // --- 2) title / meta ---------------------------------------------------
   var siteTitle = (data.settings && data.settings.siteTitle) || '';
   var siteDescription = (data.settings && data.settings.metaDescription) || '';
-  if (!siteTitle || /ciao\s*energy/i.test(siteTitle)) siteTitle = 'Westo — منوی کافه و رستوران';
+  if (!siteTitle || /ciao\s*energy/i.test(siteTitle)) siteTitle = 'وستو — منوی کافه و رستوران';
+  if ((document.documentElement.lang || 'fa') === 'fa') siteTitle = siteTitle.replace(/^Westo\b/i, 'وستو');
   if (!siteDescription || /ciao\s*energy/i.test(siteDescription)) {
-    siteDescription = 'منوی آنلاین وستو؛ دسته‌ها، جزئیات غذاها و ثبت سفارش روی تیبل.';
+    siteDescription = 'منوی آنلاین وستو؛ دسته‌ها، جزئیات غذاها و ثبت سفارش از سبد.';
   }
+  if ((document.documentElement.lang || 'fa') === 'fa') siteDescription = siteDescription.replace(/تیبل/g, 'سبد سفارش');
   document.title = siteTitle;
   var meta = document.querySelector('meta[name="description"]');
   if (meta) meta.setAttribute('content', siteDescription);
@@ -179,6 +181,8 @@
     document.querySelectorAll('#westo-entrance [data-admin-content]').forEach(function (el) {
       var key = el.getAttribute('data-admin-content');
       var value = content[key];
+      var lang = (window.westoI18n && window.westoI18n.lang) || document.documentElement.lang || 'fa';
+      if (key === 'entrance.subtitle' && lang === 'fa' && /^cafe\s*&\s*restaurant$/i.test(String(value || '').trim())) value = 'کافه و رستوران';
       if (typeof value === 'string' && value.trim()) el.textContent = value;
     });
   }
@@ -344,8 +348,8 @@
         if (i >= faq.length) { item.remove(); return; }
         var q = item.querySelector('.faq_question .heading-style-h5');
         var a = item.querySelector('.faq_answer p');
-        if (q) q.textContent = faq[i].q;
-        if (a) a.textContent = faq[i].a;
+        if (q) q.textContent = String(faq[i].q || '').replace(/تیبل/g, 'سبد سفارش');
+        if (a) a.textContent = String(faq[i].a || '').replace(/تیبل/g, 'سبد سفارش');
       });
     }
   }

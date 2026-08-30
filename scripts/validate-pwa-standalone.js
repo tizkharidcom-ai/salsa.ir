@@ -47,6 +47,7 @@ check('mobile dish page owns horizontal category swipe', table.includes('horizon
 check('PWA CSS is final source', build.indexOf("'css/westo-pwa.css'") > build.indexOf("'css/westo-ultra-fine-v1.2.css'"));
 check('PWA CSS reached critical bundle', critical.includes('WESTO installed web app geometry'));
 check('worker navigation network-first', sw.includes('networkFirstNavigation') && sw.includes("request.mode === 'navigate'"));
+check('authenticated pages are network-only and bypass stale HTTP cache', sw.includes('privateNavigation') && sw.includes("fetch(request, { cache: 'no-store' })") && sw.includes("url.pathname.startsWith('/admin/')"));
 check('worker keeps one canonical offline shell', sw.includes("cache.put('/index.html'") && sw.includes("cache.match('/index.html')"));
 check('worker bypasses API', sw.includes("url.pathname.startsWith('/api/')"));
 check('worker cache release matches active loader', (() => {

@@ -42,10 +42,18 @@ class FinanceSchemaPool extends FakePool {
     if (/to_regclass/.test(sql)) {
       this.queries.push({ sql, values });
       return { rows: [{
-        finance_events: 'finance_events', journal_entries: 'journal_entries_v2', outbox: 'finance_outbox',
+        finance_events: 'finance_events', finance_payments: 'finance_payments', finance_refunds: 'finance_refunds', inventory_movements: 'finance_inventory_movements',
+        purchase_orders: 'finance_purchase_orders', goods_receipts: 'finance_goods_receipts', cost_accruals: 'finance_cost_accruals', cost_payments: 'finance_cost_payments',
+        depreciation_runs: 'finance_depreciation_runs', depreciation_lines: 'finance_asset_depreciation_lines', journal_entries: 'journal_entries_v2', journal_lines: 'journal_lines_v2',
+        approvals: 'finance_approvals', reconciliation_items: 'reconciliation_items', outbox: 'finance_outbox',
         cost_snapshots: 'finance_order_item_cost_snapshots', movement_valuations: 'finance_inventory_movement_valuations',
-        production_batches: 'finance_production_batches', cost_commitments: 'finance_cost_commitments',
-        fixed_assets: 'finance_fixed_assets', payroll_runs: 'finance_payroll_runs', opening_balances: 'finance_opening_balance_batches', legacy_archive: 'finance_legacy_archive', legacy_backfill: true,
+        production_batches: 'finance_production_batches', inventory_items: 'finance_inventory_items_v2',
+        recipe_versions: 'finance_recipe_versions', recipe_ingredients: 'finance_recipe_ingredients', recipe_workflow: true,
+        cost_commitments: 'finance_cost_commitments',
+        fixed_assets: 'finance_fixed_assets', payroll_runs: 'finance_payroll_runs', opening_balances: 'finance_opening_balance_batches', branch_rollouts: 'finance_branch_rollouts', migration_baselines: 'finance_migration_baselines',
+        schema_migrations: 'finance_schema_migrations',
+        idempotency_requests: 'finance_idempotency_requests', legacy_archive: 'finance_legacy_archive', vendor_invoices: 'finance_vendor_invoices', vendor_payments: 'finance_vendor_payments',
+        vendor_invoice_reversals: true, vendor_payment_reversals: true, legacy_backfill: true,
       }] };
     }
     return super.query(sql, values);

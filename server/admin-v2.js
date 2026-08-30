@@ -14,6 +14,7 @@ const KITCHEN_STATUSES = new Set(['sent_to_kitchen', 'paid', 'preparing', 'ready
 const TABLE_SERVICE_MINUTES = 45;
 const TABLE_SERVICE_MS = TABLE_SERVICE_MINUTES * 60 * 1000;
 const accountingEngine = require('./accounting-engine');
+const { createDesktopReleaseService } = require('./desktop-releases');
 
 function asArray(value) { return Array.isArray(value) ? value : []; }
 function asNumber(value) { return Number.isFinite(Number(value)) ? Number(value) : 0; }
@@ -137,6 +138,9 @@ function catalog(db, branchId) {
   return { inventory: { items, low: items.filter((item) => item.low || item.empty).length }, cost: { sales, estimatedCogs, estimatedProfit, grossMarginPct: sales ? Math.round((estimatedProfit / sales) * 100) : 0 } };
 }
 
+const loyaltyEngine = require('./finance/loyalty-engine');
+const walletEngine = require('./finance/wallet-engine');
+
 function crm(db, branchId) {
   const profiles = new Map();
   for (const order of branchFilter(asArray(db.orders), branchId)) {
@@ -149,6 +153,14 @@ function crm(db, branchId) {
     if (!profile.lastOrderAt || new Date(order.createdAt || 0) > new Date(profile.lastOrderAt || 0)) profile.lastOrderAt = order.createdAt;
     profiles.set(phone, profile);
   }
+  for (const user of asArray(db.users)) {
+    const phone = String(user.phone || '').trim();
+    if (!phone) continue;
+    const profile = profiles.get(phone) || { phone, name: user.name || '', orders: 0, total: 0, points: 0, lastOrderAt: null };
+    profile.name = profile.name || user.name || '';
+    profile.points = Math.max(profile.points, asNumber(user.points));
+    profiles.set(phone, profile);
+  }
   for (const entry of asArray(db.loyaltyLedger)) {
     const phone = String(entry.phone || '').trim();
     if (!phone) continue;
@@ -156,10 +168,42 @@ function crm(db, branchId) {
     profile.points = asNumber(entry.balance);
     profiles.set(phone, profile);
   }
-  const customers = [...profiles.values()].sort((a, b) => b.total - a.total || b.points - a.points);
+  const rawCustomers = [...profiles.values()].sort((a, b) => b.total - a.total || b.points - a.points);
+  const tiers = loyaltyEngine.summarizeTiersMembership(db, rawCustomers);
+  const walletSummary = walletEngine.summarizeWallet(db);
+  const customers = rawCustomers.map((c) => {
+    const tierInfo = loyaltyEngine.resolveCustomerTier(db, c);
+    return {
+      ...c,
+      walletBalanceToman: walletEngine.getWalletBalance(db, c.phone),
+      tier: tierInfo.tier,
+      nextTier: tierInfo.nextTier,
+      progressPct: tierInfo.progressPct,
+      pointsToNext: tierInfo.pointsToNext,
+      spendToNext: tierInfo.spendToNext,
+      multiplier: tierInfo.multiplier,
+      discountPct: tierInfo.discountPct,
+      badge: tierInfo.badge,
+    };
+  });
   const feedback = branchFilter(asArray(db.feedback), branchId).sort(byNewest);
   const newsletter = asArray(db.newsletter);
-  return { customers, feedback, newsletter, summary: { customers: customers.length, points: customers.reduce((sum, customer) => sum + customer.points, 0), newFeedback: feedback.filter((item) => item.status === 'new').length, newsletter: newsletter.length } };
+  return {
+    customers,
+    tiers,
+    walletSummary,
+    loyaltySettings: db.loyalty || {},
+    feedback,
+    newsletter,
+    summary: {
+      customers: customers.length,
+      points: customers.reduce((sum, customer) => sum + customer.points, 0),
+      walletTotalToman: walletSummary.totalLiabilityToman || 0,
+      activeWallets: walletSummary.activeWalletsCount || 0,
+      newFeedback: feedback.filter((item) => item.status === 'new').length,
+      newsletter: newsletter.length,
+    },
+  };
 }
 
 function finance(db, branchId) {
@@ -196,7 +240,7 @@ function finance(db, branchId) {
 }
 
 const SETTINGS_CATEGORIES = [
-  ['restaurant', 'رستوران', 'نام، تماس و اطلاعات عمومی مجموعه'], ['branches', 'شعب', 'مشخصات و وضعیت شعب فعال'], ['users', 'کاربران', 'کاربران و شماره‌های مدیر'], ['permissions', 'مجوزها', 'نقش‌ها و سطوح دسترسی'], ['orders', 'سفارش‌ها', 'رفتار سفارش و تحویل'], ['tables', 'میزها', 'سالن، ظرفیت و QR'], ['kitchen', 'آشپزخانه', 'KDS و زمان آماده‌سازی'], ['menu', 'منو', 'نمایش و دسترس‌پذیری منو'], ['payments', 'پرداخت‌ها', 'روش‌های پرداخت مجموعه'], ['taxes', 'مالیات', 'قواعد مالیاتی داخلی'], ['printing', 'چاپ', 'قالب و مقصد چاپ'], ['notifications', 'اعلان‌ها', 'اعلان‌های عملیاتی'], ['integrations', 'اتصال‌ها', 'WhatsApp و وب‌هوک‌ها'], ['appearance', 'ظاهر', 'تم و برندینگ'], ['security', 'امنیت', 'نشست و دسترسی'], ['logs', 'لاگ‌ها', 'رخدادها و ممیزی'],
+  ['restaurant', 'رستوران', 'نام، تماس و اطلاعات عمومی مجموعه'], ['branches', 'شعب', 'مشخصات و وضعیت شعب فعال'], ['users', 'کاربران', 'کاربران و شماره‌های مدیر'], ['permissions', 'مجوزها', 'نقش‌ها و سطوح دسترسی'], ['orders', 'سفارش‌ها', 'رفتار سفارش و تحویل'], ['tables', 'میزها', 'سالن، ظرفیت و رمزینه سفارش'], ['kitchen', 'آشپزخانه', 'نمایشگر آشپزخانه و زمان آماده‌سازی'], ['menu', 'منو', 'نمایش و دسترس‌پذیری منو'], ['payments', 'پرداخت‌ها', 'روش‌های پرداخت مجموعه'], ['taxes', 'مالیات', 'قواعد مالیاتی داخلی'], ['printing', 'چاپ', 'قالب و مقصد چاپ'], ['notifications', 'اعلان‌ها', 'اعلان‌های عملیاتی'], ['integrations', 'اتصال‌ها', 'پیام‌رسان و ارتباط با سامانه‌های دیگر'], ['appearance', 'ظاهر', 'تم و برندینگ'], ['security', 'امنیت', 'نشست و دسترسی'], ['logs', 'لاگ‌ها', 'رخدادها و ممیزی'], ['desktop', 'اپ دسکتاپ', 'دانلود و نصب اپ مدیریت وستو روی مک و ویندوز'],
 ];
 
 function settings(db) {
@@ -209,10 +253,10 @@ function settings(db) {
     users: [{ key: 'adminPhones', label: 'شماره مدیران (با کاما)', value: asArray(db.settings?.adminPhones).join(', '), dir: 'ltr' }],
     appearance: [{ key: 'accent', label: 'رنگ اصلی', value: db.theme?.accent || '#7357ce', dir: 'ltr' }],
   };
-  return { categories: SETTINGS_CATEGORIES.map(([id, label, description]) => ({ id, label, description, fields: known[id] || [{ key: 'note', label: 'یادداشت عملیاتی', value: v2[id]?.note || '' }] })) };
+  return { categories: SETTINGS_CATEGORIES.map(([id, label, description]) => ({ id, label, description, fields: Object.prototype.hasOwnProperty.call(known, id) ? known[id] : id === 'desktop' ? [] : [{ key: 'note', label: 'یادداشت عملیاتی', value: v2[id]?.note || '' }] })) };
 }
 
-function registerAdminV2Routes({ app, getDb, save, requireCapability, requireAdmin, parseBranchId, normalizeDigits, phoneRe }) {
+function registerAdminV2Routes({ app, getDb, save, requireCapability, requireAdmin, parseBranchId, normalizeDigits, phoneRe, desktopReleaseService = createDesktopReleaseService() }) {
   app.get('/api/admin/v2/overview', requireCapability('command.view'), (req, res) => res.json(overview(getDb(), parseBranchId(req))));
   app.get('/api/admin/v2/orders', requireCapability('orders.view'), (req, res) => {
     const orders = branchFilter(asArray(getDb().orders), parseBranchId(req)).slice().sort(byNewest).map((order) => ({ ...order, allowed: orderAllowed(order.status) }));
@@ -224,6 +268,14 @@ function registerAdminV2Routes({ app, getDb, save, requireCapability, requireAdm
   app.get('/api/admin/v2/crm', requireAdmin, (req, res) => res.json(crm(getDb(), parseBranchId(req))));
   app.get('/api/admin/v2/finance', requireAdmin, (req, res) => res.json(finance(getDb(), parseBranchId(req))));
   app.get('/api/admin/v2/settings', requireAdmin, (req, res) => res.json(settings(getDb())));
+  app.get('/api/admin/v2/desktop/releases', requireAdmin, (req, res) => res.json(desktopReleaseService.list()));
+  app.get('/api/admin/v2/desktop/releases/:platform/:arch/:format/download', requireAdmin, (req, res) => {
+    const artifact = desktopReleaseService.resolve(req.params.platform, req.params.arch, req.params.format);
+    if (!artifact) return res.status(404).json({ error: 'desktop_release_not_found', message: 'فایل نصب‌کنندهٔ این سیستم‌عامل هنوز منتشر نشده است.' });
+    return res.download(artifact.absolutePath, artifact.fileName, { dotfiles: 'deny', maxAge: 0 }, (error) => {
+      if (error && !res.headersSent) res.status(error.statusCode || 500).json({ error: 'desktop_release_download_failed' });
+    });
+  });
   app.patch('/api/admin/v2/settings', requireAdmin, (req, res) => {
     const db = getDb(); const category = String(req.body?.category || ''); const values = req.body?.values || {};
     if (!SETTINGS_CATEGORIES.some(([id]) => id === category)) return res.status(400).json({ error: 'settings_category_invalid' });
@@ -236,6 +288,8 @@ function registerAdminV2Routes({ app, getDb, save, requireCapability, requireAdm
       if (phones.length) db.settings.adminPhones = [...new Set(phones)];
     } else if (category === 'appearance') {
       db.theme = { ...(db.theme || {}), accent: String(values.accent || '').slice(0, 32) };
+    } else if (category === 'desktop') {
+      return res.status(400).json({ error: 'desktop_settings_read_only', message: 'نسخه‌های اپ از مسیر انتشار مدیریت می‌شوند.' });
     } else {
       db.adminV2Settings = { ...(db.adminV2Settings || {}), [category]: { note: String(values.note || '').slice(0, 500), updatedAt: new Date().toISOString() } };
     }
@@ -243,4 +297,4 @@ function registerAdminV2Routes({ app, getDb, save, requireCapability, requireAdm
   });
 }
 
-module.exports = { registerAdminV2Routes, __test: { overview, floor, kitchen, catalog, crm, finance, settings } };
+module.exports = { registerAdminV2Routes, __test: { overview, floor, kitchen, catalog, crm, finance, settings, SETTINGS_CATEGORIES } };

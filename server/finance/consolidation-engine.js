@@ -7,11 +7,17 @@ const { toInt } = require('./money');
 
 function getBranchComparison(db, filter = {}) {
   const branches = db.branches || [{ id: 1, name: 'شعبه مرکزی', code: 'main' }];
+  const branchIds = Array.isArray(filter.branchIds)
+    ? new Set(filter.branchIds.map(Number).filter((value) => Number.isSafeInteger(value) && value > 0))
+    : null;
+  const visibleBranches = branchIds == null
+    ? branches
+    : branches.filter((branch) => branchIds.has(Number(branch.id)));
   const orders = db.orders || [];
   const acc = db.accounting || {};
   const entries = (acc.journalEntries || []).filter(e => e.status === 'posted');
 
-  const branchMetrics = branches.map(branch => {
+  const branchMetrics = visibleBranches.map(branch => {
     const branchOrders = orders.filter(o => Number(o.branchId) === Number(branch.id) && (o.paymentStatus === 'paid' || ['paid', 'delivered', 'done'].includes(o.status)));
     const revenue = branchOrders.reduce((s, o) => s + toInt(o.total || 0), 0);
     const orderCount = branchOrders.length;

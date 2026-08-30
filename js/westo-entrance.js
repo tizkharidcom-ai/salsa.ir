@@ -62,9 +62,8 @@
       apply(src);
       return;
     }
-    // Decoration is non-blocking, but receives the same AVIF-first/WebP-safe
-    // policy as menu media. If the selected image cannot load, the scheduler
-    // resolves the original WebP path before this CSS variable is written.
+    // Decoration is non-blocking and follows the same WebP-only policy as
+    // menu media. The CSS variable is written only after the image resolves.
     scheduler.requestImage(src, {
       priority: scheduler.priorities?.NEAR,
       group: 'entrance-pattern',

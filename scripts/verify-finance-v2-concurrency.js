@@ -16,6 +16,25 @@ if (!connectionString) {
   const tag = `f2c-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
   const attempts = 8;
   const created = { eventSources: [], settlementPsp: `verify-${tag}`, periodName: `VERIFY ${tag}`, archivePrefix: `VERIFY-${tag}` };
+  let originalStateRow = null;
+  let stateTablePresent = false;
+  let stateTableTouched = false;
+
+  async function cleanup() {
+    await pool.query('DELETE FROM finance_legacy_archive WHERE source_id LIKE $1', [`${created.archivePrefix}%`]);
+    await pool.query('DELETE FROM finance_approvals WHERE id = $1', [created.backfillApprovalId]);
+    await pool.query('DELETE FROM journal_entries_v2 WHERE id = $1', [created.backfillJournalId]);
+    await pool.query('DELETE FROM reconciliation_items WHERE psp = $1', [created.settlementPsp]);
+    await pool.query('DELETE FROM finance_events WHERE source = ANY($1::text[])', [created.eventSources]);
+    await pool.query('DELETE FROM fiscal_periods_v2 WHERE name LIKE $1', [`${created.periodName}%`]);
+    if (stateTablePresent && originalStateRow) {
+      await pool.query(`UPDATE westo_state SET data=$1::jsonb, summary=$2::jsonb, version=$3, updated_at=$4 WHERE id=1`, [
+        originalStateRow.data, originalStateRow.summary, originalStateRow.version, originalStateRow.updated_at,
+      ]);
+    } else if (stateTableTouched) {
+      await pool.query('DELETE FROM westo_state WHERE id = 1');
+    }
+  }
 
   async function race(label, query, acceptedConflictCodes) {
     const results = await Promise.all(Array.from({ length: attempts }, async (_, index) => {
@@ -38,6 +57,12 @@ if (!connectionString) {
   }
 
   (async () => {
+    const stateRelation = await pool.query("SELECT to_regclass('public.westo_state') AS westo_state");
+    stateTablePresent = Boolean(stateRelation.rows?.[0]?.westo_state);
+    if (stateTablePresent) {
+      const originalState = await pool.query('SELECT data,summary,version,updated_at FROM westo_state WHERE id=1');
+      originalStateRow = originalState.rows[0] || null;
+    }
     const branch = await pool.query('SELECT id FROM unified_branches WHERE id = 1');
     if (!branch.rowCount) throw Object.assign(new Error('Disposable database must contain unified_branches.id=1.'), { code: 'verification_branch_missing' });
 
@@ -73,6 +98,8 @@ if (!connectionString) {
 
     const backfillJournalId = crypto.randomUUID();
     const backfillApprovalId = crypto.randomUUID();
+    created.backfillJournalId = backfillJournalId;
+    created.backfillApprovalId = backfillApprovalId;
     await pool.query(
       `INSERT INTO journal_entries_v2(id,number,source,source_id,entry_at,description,status,debit_irr,credit_irr,branch_id,created_by)
        VALUES($1,$2,'legacy_backfill.order_paid',$3,now(),'Concurrency verification','pending_approval',100,100,1,'accountant-verification')`,
@@ -98,6 +125,7 @@ if (!connectionString) {
     const secondStateStore = createPostgresStateStore({ connectionString, required: true, logger: stateLogger });
     const baseState = { menuItems: [], orders: [], reservations: [], users: [], financeV2: {} };
     await firstStateStore.hydrate(baseState);
+    stateTableTouched = true;
     await secondStateStore.hydrate(baseState);
     await firstStateStore.write({ ...baseState, orders: [{ id: 1, orderNo: `VERIFY-${tag}` }] });
     let stateConflict = null;
@@ -120,17 +148,16 @@ if (!connectionString) {
 
     process.stdout.write(`${JSON.stringify({ ok: true, tag, attempts, idempotency, sourceVersion, settlementBatch, fiscalOverlap, legacyBackfillRequest, stateCompareAndSwap }, null, 2)}\n`);
 
-    await pool.query('DELETE FROM finance_legacy_archive WHERE source_id LIKE $1', [`${created.archivePrefix}%`]);
-    await pool.query('DELETE FROM finance_approvals WHERE id = $1', [backfillApprovalId]);
-    await pool.query('DELETE FROM journal_entries_v2 WHERE id = $1', [backfillJournalId]);
-    await pool.query('DELETE FROM reconciliation_items WHERE psp = $1', [created.settlementPsp]);
-    await pool.query('DELETE FROM finance_events WHERE source = ANY($1::text[])', [created.eventSources]);
-    await pool.query('DELETE FROM fiscal_periods_v2 WHERE name LIKE $1', [`${created.periodName}%`]);
-    await pool.query('DELETE FROM westo_state WHERE id = 1');
   })().catch((error) => {
     process.stderr.write(`${error.stack || error.message}\n`);
     process.exitCode = 1;
   }).finally(async () => {
+    try {
+      await cleanup();
+    } catch (error) {
+      process.stderr.write(`Cleanup failed: ${error.stack || error.message}\n`);
+      process.exitCode = 1;
+    }
     await pool.end();
   });
 }

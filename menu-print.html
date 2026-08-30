@@ -146,6 +146,7 @@
   <link rel="stylesheet" href="css/design-logic-v13.css?v=logic13r1" />
   <script src="js/theme.js?v=stable1" defer></script>
   <script src="js/design-logic-v13.js?v=logic13r1" defer></script>
+  <script src="js/persian-format.js?v=persianNumbers1"></script>
 </head>
 <body class="print-body">
   <div class="print-toolbar">
@@ -167,7 +168,7 @@
 
       const $ = (selector) => document.querySelector(selector);
       const fmt = (value) =>
-        Number(value || 0).toLocaleString('fa-IR') + ' تومان';
+        `${window.WestoPersianFormat?.number(value, { locale: 'fa-IR' }) ?? Number(value || 0).toLocaleString('fa-IR')} تومان`;
       const esc = (value) =>
         String(value ?? '').replace(
           /[&<>"']/g,

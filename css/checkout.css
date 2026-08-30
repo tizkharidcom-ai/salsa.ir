@@ -4,6 +4,7 @@
 .checkout-back { color: var(--p-text-dim); font-size: .82rem; text-decoration: none; }
 .checkout-back:hover { color: var(--p-accent); }
 .checkout-layout { width: min(1240px, 100%); display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(20rem, .65fr); gap: 1.25rem; margin: 0 auto; padding: 1.45rem clamp(1rem, 4vw, 3.5rem) 3rem; align-items: start; }
+.checkout-menu, .checkout-side { min-width: 0; }
 .checkout-heading { margin-bottom: 1rem; }
 .checkout-heading h1 { margin: .2rem 0 .35rem; font-size: clamp(1.5rem, 3vw, 2.25rem); }
 .checkout-heading > p:not(.eyebrow) { margin: 0; color: var(--p-text-dim); font-size: .88rem; }
@@ -123,4 +124,149 @@ html[data-perf-tier='economy'] .checkout-header {
   color: var(--p-accent);
   font-size: .7rem;
   line-height: 1.55;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   ADDRESS MODAL & GLASS POPUPS — ZERO-SCROLL MOBILE COMPACT & HIGH CONTRAST
+   ═══════════════════════════════════════════════════════════════════════════════ */
+.address-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.78);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  z-index: 99999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.5rem;
+}
+html[data-theme='light'] .address-modal-overlay {
+  background: rgba(15, 23, 42, 0.6);
+}
+
+.address-modal-box {
+  background: #141820;
+  border: 1.5px solid rgba(255, 255, 255, 0.18);
+  border-radius: 1.15rem;
+  width: 100%;
+  max-width: 460px;
+  padding: 0.85rem 1rem;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.8);
+  direction: rtl;
+  text-align: right;
+  box-sizing: border-box;
+}
+
+html[data-theme='light'] .address-modal-box {
+  background: #ffffff;
+  border: 1.5px solid #cbd5e1;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.16);
+  color: #0f172a;
+}
+
+.address-modal-box h3 {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 800;
+  color: #ffffff;
+}
+html[data-theme='light'] .address-modal-box h3 {
+  color: #0f172a !important;
+}
+
+.address-modal-box .field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  margin-bottom: 0.4rem;
+}
+
+.address-modal-box .field label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #cbd5e1;
+  margin: 0;
+}
+html[data-theme='light'] .address-modal-box .field label {
+  color: #1e293b !important;
+}
+
+.address-modal-box input,
+.address-modal-box select,
+.address-modal-box textarea {
+  width: 100%;
+  height: 36px;
+  padding: 0.35rem 0.6rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  font-family: inherit;
+  border-radius: 0.55rem;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  color: #ffffff;
+  box-sizing: border-box;
+  transition: all 0.15s ease;
+}
+
+html[data-theme='light'] .address-modal-box input,
+html[data-theme='light'] .address-modal-box select,
+html[data-theme='light'] .address-modal-box textarea {
+  background: #f8fafc;
+  border: 1.5px solid #94a3b8;
+  color: #0f172a;
+}
+
+.address-modal-box input:focus,
+.address-modal-box select:focus,
+.address-modal-box textarea:focus {
+  outline: none;
+  border-color: #10b981;
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.25);
+  background: rgba(255, 255, 255, 0.1);
+}
+html[data-theme='light'] .address-modal-box input:focus,
+html[data-theme='light'] .address-modal-box select:focus,
+html[data-theme='light'] .address-modal-box textarea:focus {
+  background: #ffffff;
+  border-color: #0d9488;
+  box-shadow: 0 0 0 3px rgba(13, 148, 136, 0.2);
+}
+
+.address-modal-box input::placeholder,
+.address-modal-box textarea::placeholder {
+  color: #94a3b8;
+  font-size: 0.75rem;
+}
+html[data-theme='light'] .address-modal-box input::placeholder,
+html[data-theme='light'] .address-modal-box textarea::placeholder {
+  color: #64748b;
+}
+
+.addr-title-pill {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  color: #cbd5e1;
+  border-radius: 0.45rem;
+  padding: 0.25rem 0.55rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.15s ease;
+}
+html[data-theme='light'] .addr-title-pill {
+  background: #f1f5f9;
+  border-color: #cbd5e1;
+  color: #334155;
+}
+.addr-title-pill.is-active {
+  background: rgba(16, 185, 129, 0.18);
+  border-color: #10b981;
+  color: #10b981;
+}
+html[data-theme='light'] .addr-title-pill.is-active {
+  background: #ccfbf1;
+  border-color: #0d9488;
+  color: #047857;
 }

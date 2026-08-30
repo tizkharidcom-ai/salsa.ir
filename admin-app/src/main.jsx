@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
+import LineChart9 from '@/components/ui/demo';
 import './styles.css';
 
 const NAVIGATION = [
@@ -52,6 +53,9 @@ function Dashboard() {
   if (data.error) return <ErrorState />;
   return <><section className="hero"><div><small>وضعیت لحظه‌ای مجموعه</small><h2>عملیات امروز در یک نگاه</h2><p>داده‌ها از سفارش‌ها، پرداخت‌ها، میزها و آشپزخانه WESTO خوانده می‌شوند.</p></div><span className="live">● زنده</span></section>
     <section className="stats"><Stat label="فروش امروز" value={money(data.metrics.salesToday)} tone="accent" /><Stat label="سفارش‌های فعال" value={number(data.metrics.activeOrders)} /><Stat label="میزهای درگیر" value={`${number(data.metrics.busyTables)} / ${number(data.metrics.totalTables)}`} /><Stat label="فراخوان باز" value={number(data.metrics.openWaiterCalls)} tone={data.metrics.openWaiterCalls ? 'warn' : ''} /></section>
+    <section style={{ marginBottom: '1.5rem' }}>
+      <LineChart9 />
+    </section>
     <section className="grid two"><Panel title="صف آشپزخانه"><OrderList orders={data.kitchenTickets} compact /></Panel><Panel title="کارهای فوری">{data.alerts.length ? data.alerts.map((item) => <div className="alert" key={item.id}><b>{item.title}</b><span>{item.detail}</span></div>) : <Empty text="کار فوری ثبت نشده است" />}</Panel></section>
   </>;
 }

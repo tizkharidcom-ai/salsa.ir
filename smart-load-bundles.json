@@ -1,12 +1,12 @@
 {
   "schema": "westo-smart-load-bundles-v1",
-  "generatedAt": "2026-08-22T12:01:07.262Z",
+  "generatedAt": "2026-08-30T18:11:51.648Z",
   "bundles": [
     {
       "file": "css/westo-critical.smart.css",
-      "bytes": 620563,
+      "bytes": 620354,
       "gzipEstimate": null,
-      "sha256": "7620a58b83562f0467ea68a536fb5ab5f5c3faccc30fa87b5cfff46f7e0279e2",
+      "sha256": "3c5e48cf2c6e9f4cb2a7d06519293582c80024ab340218487da84acefdf80729",
       "sources": [
         "css/mobile-forms.css",
         "css/westo.webflow.shared.min.css",
@@ -31,10 +31,11 @@
     },
     {
       "file": "js/westo-foundation.smart.js",
-      "bytes": 166185,
+      "bytes": 169422,
       "gzipEstimate": null,
-      "sha256": "0234ea18516b586960114a607bc1c8b7b6f9d910fec53747860d95526db8dac7",
+      "sha256": "4d2d4e61efe1ea9ad14fd2dc8b0378ab8187a126aa0098938496f3d9ef8dfae2",
       "sources": [
+        "js/persian-format.js",
         "js/i18n.js",
         "js/category-theme.js",
         "js/menu-store.js",
@@ -61,9 +62,9 @@
     },
     {
       "file": "js/westo-hero.smart.js",
-      "bytes": 102933,
+      "bytes": 103257,
       "gzipEstimate": null,
-      "sha256": "e0359e4d8cdb9581a7fe02a7b005878acbb854df91e1e51995d3e05f6af70c5a",
+      "sha256": "60c4c6e244d70ded3d001080bc9f4b4e04bd168076bb0bb0865d58ec651574f6",
       "sources": [
         "js/animations.js",
         "js/sounds.js"
@@ -71,9 +72,9 @@
     },
     {
       "file": "js/westo-menu.smart.js",
-      "bytes": 231860,
+      "bytes": 232958,
       "gzipEstimate": null,
-      "sha256": "0ea3ecee84399245f924f343fcceaa01c9744e3e8528809d98f7fb76d1ba07b4",
+      "sha256": "003d519c0904ce379d2f2386c066c524f7883f9a5ed5496446f7f7447bc03762",
       "sources": [
         "js/buttons.js",
         "js/table-cart.js"
@@ -91,10 +92,11 @@
     },
     {
       "file": "js/westo-app.smart.js",
-      "bytes": 655074,
+      "bytes": 659733,
       "gzipEstimate": null,
-      "sha256": "82e9df1f69671eeabd95adcf588d09a82207697d0358b1d41dae27944657a9d4",
+      "sha256": "8a9af661676e0bcd2e851f578cd74a213e35a625d184cb51b0acdcf8938d1f3e",
       "sources": [
+        "js/persian-format.js",
         "js/i18n.js",
         "js/category-theme.js",
         "js/menu-store.js",

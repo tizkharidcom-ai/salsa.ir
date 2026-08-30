@@ -4,6 +4,7 @@ const DEFAULT_WEBHOOK_TIMEOUT_MS = 2500;
 const MIN_WEBHOOK_TIMEOUT_MS = 500;
 const MAX_WEBHOOK_TIMEOUT_MS = 10000;
 const MAX_LOG_ENTRIES = 200;
+const { formatNumber } = require('./finance/money');
 
 function toWaDigits(phone) {
   let d = String(phone || '').replace(/\D/g, '');
@@ -21,7 +22,7 @@ function waMeUrl(phone, text) {
 }
 
 function formatMoney(n) {
-  return `${Number(n || 0).toLocaleString('fa-IR')} تومان`;
+  return `${formatNumber(n)} تومان`;
 }
 
 function buildOrderMessage(order, ctx = {}) {

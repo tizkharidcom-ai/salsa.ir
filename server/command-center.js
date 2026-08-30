@@ -9,6 +9,7 @@
 'use strict';
 
 const crypto = require('crypto');
+const { formatNumber } = require('./finance/money');
 
 const ROLE_CAPABILITIES = Object.freeze({
   owner: ['*'],
@@ -33,6 +34,7 @@ const ROLE_CAPABILITIES = Object.freeze({
     'inventory.view',
     'inventory.manage',
     'inventory.operations',
+    'inventory.receiving',
     'reports.view',
     'analytics.view',
     'delivery.view',
@@ -86,7 +88,7 @@ const ROLE_CAPABILITIES = Object.freeze({
     'service.manage',
     'reservations.view',
   ],
-  kitchen: ['ops.view', 'kitchen.view', 'kitchen.manage', 'inventory.view', 'inventory.operations'],
+  kitchen: ['ops.view', 'kitchen.view', 'kitchen.manage', 'inventory.view', 'inventory.operations', 'inventory.receiving'],
   guest: [],
 });
 
@@ -116,6 +118,20 @@ function normalizeRole(role, adminPhones = [], phone = '') {
 function capabilitiesFor(user, settings = {}) {
   const role = normalizeRole(user?.role, settings.adminPhones || [], user?.phone || '');
   return ROLE_CAPABILITIES[role] || [];
+}
+
+function branchScopeForUser(user, { adminPhones = [], role = null } = {}) {
+  const effective = role || normalizeRole(user?.role, adminPhones, user?.phone || '');
+  if (effective === 'owner') return null;
+  const hasExplicitList = Array.isArray(user?.allowedBranchIds) || Array.isArray(user?.branchIds);
+  const raw = Array.isArray(user?.allowedBranchIds)
+    ? user.allowedBranchIds
+    : Array.isArray(user?.branchIds)
+      ? user.branchIds
+      : user?.branchId == null || user.branchId === '' ? null : [user.branchId];
+  if (raw === null) return null;
+  const branchIds = [...new Set(raw.map(Number).filter((value) => Number.isSafeInteger(value) && value > 0))];
+  return hasExplicitList || branchIds.length ? branchIds : [];
 }
 
 function can(user, capability, settings = {}) {
@@ -218,7 +234,7 @@ function quoteFulfillment({ fulfillment, subtotal, zone, branchId } = {}) {
     return {
       ok: false,
       code: 'delivery_minimum_not_met',
-      message: `حداقل سفارش برای این محدوده ${minimum.toLocaleString('fa-IR')} تومان است`,
+      message: `حداقل سفارش برای این محدوده ${formatNumber(minimum)} تومان است`,
       minimum,
     };
   }
@@ -377,6 +393,7 @@ module.exports = {
   PAYMENT_STATUSES,
   normalizeRole,
   capabilitiesFor,
+  branchScopeForUser,
   can,
   roleLabel,
   fulfillmentLabel,

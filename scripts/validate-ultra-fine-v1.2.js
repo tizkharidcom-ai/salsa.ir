@@ -26,7 +26,7 @@ const release=(loader.match(/const VERSION = '([^']+)'/)||[])[1]||'';
 let pass=0,fail=0;const failures=[];
 const check=(n,ok)=>{if(ok)pass++;else{fail++;failures.push(n)}};
 
-check('release includes full session prewarm',release==='release14uf1d23-landscape-shell');
+check('release includes WebP-only media delivery',release==='release14uf1d28-webp-only');
 check('inline Persian-default migration guard exists',index.includes('data-westo-inline="persian-default"')&&index.includes("westo_menu_lang_explicit_v1")&&index.includes("localStorage.setItem('westo_menu_lang', 'fa')"));
 check('index release coherence',index.includes(`westo-critical.smart.css?v=${release}`)&&index.includes(`westo-smart-loader.js?v=${release}`)&&index.includes(`westo-app.smart.js?v=${release}`));
 check('server Early Hints coherence',server.includes(`westo-critical.smart.css?v=${release}`)&&server.includes(`westo-smart-loader.js?v=${release}`)&&server.includes(`westo-app.smart.js?v=${release}`));
@@ -73,7 +73,7 @@ check('carousel/state APIs untouched',three.includes('carousel.previous()')&&thr
 
 check('entrance pattern resolves against document base URL',entrance.includes('new URL(src, document.baseURI).href'));
 check('entrance pattern CSS variable remains same owner',entrance.includes("root.style.setProperty('--eg-pattern-image'"));
-check('resource scheduler preserves AVIF-first image delivery',loader.includes('Central resource scheduler / browser download manager.')&&loader.includes('async function requestImage')&&loader.includes('supportsAvif')&&loader.includes('requestImage,'));
+check('resource scheduler preserves WebP-only image delivery',loader.includes('Central resource scheduler / browser download manager.')&&loader.includes('async function requestImage')&&loader.includes('function webpImageUrl')&&!loader.includes('supportsAvif')&&loader.includes('requestImage,'));
 check('category header lite preserved',read('js/table-cart.js').includes('westo-dish-catbar'));
 check('promo deck behavior preserved',promoDeck.includes('throwCard')&&promoDeck.includes('snapBack'));
 check('promo deck uses reference-like tactile stack',promoDeck.includes('const stackAt=')&&promoDeck.includes('{x:8,y:-16')&&promoDeck.includes('{x:6,y:-10')&&promoDeckCss.includes('cubic-bezier(.34,1.45,.5,1)'));

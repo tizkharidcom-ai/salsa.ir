@@ -36,7 +36,6 @@ function createRuntime({ saveData = false } = {}) {
   };
   const window = {
     __WESTO_SMART_TEST_NO_BOOT__: true,
-    __WESTO_TEST_AVIF_SUPPORT__: false,
     matchMedia: () => ({ matches: false }), addEventListener() {}, dispatchEvent() {},
     requestIdleCallback(callback) { setTimeout(() => callback({ didTimeout: false, timeRemaining: () => 50 }), 0); },
   };

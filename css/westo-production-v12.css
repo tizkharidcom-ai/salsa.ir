@@ -21,7 +21,7 @@
   --prod-glass-strong:rgba(5,16,19,.92);
   --prod-shadow:0 30px 90px rgba(0,0,0,.34);
   --prod-pattern-micro:url('../assets/images/entrance/westo-micro-pattern-v8.png');
-  --prod-cta-pattern:image-set(url('../assets/images/entrance/westo-cta-pattern-v8.avif') type('image/avif'),url('../assets/images/entrance/westo-cta-pattern-v8.webp') type('image/webp'));
+  --prod-cta-pattern:url('../assets/images/entrance/westo-cta-pattern-v8.webp');
   --cat-wash:#eef3e8;
   --cat-surface:#f6f9f2;
   --cat-accent:#5a7a3e;

@@ -38,6 +38,8 @@ const reconciliationEngine = require('./finance/reconciliation-engine');
 const predictiveEngine = require('./finance/predictive-engine');
 const consolidationEngine = require('./finance/consolidation-engine');
 const auditEngine = require('./finance/audit-engine');
+
+const ACCOUNT_TYPES = new Set(['asset', 'liability', 'equity', 'revenue', 'contra_revenue', 'cogs', 'expense']);
 const aiEngine = require('./finance/ai-engine');
 const salesPosEngine = require('./finance/sales-pos-engine');
 const taxpayerAdapter = require('./finance/taxpayer-adapter');
@@ -54,7 +56,7 @@ const DEFAULT_COA = [
   { code: '1125', name: 'Cash in Drawer - Secondary', nameFa: 'صندوق نقدی شعبه دو', type: 'asset', subtype: 'cash', isPostingAccount: true, parentCode: '1100' },
   { code: '1130', name: 'Petty Cash Fund', nameFa: 'صندوق تنخواه گردان', type: 'asset', subtype: 'cash', isPostingAccount: true, parentCode: '1100' },
   { code: '1200', name: 'Bank Accounts', nameFa: 'حساب‌های بانکی', type: 'asset', isPostingAccount: false, parentCode: '1100' },
-  { code: '1210', name: 'Bank - Operating Account', nameFa: 'بانک جاری اصلی (متصل به POS)', type: 'asset', subtype: 'bank', isPostingAccount: true, parentCode: '1200' },
+  { code: '1210', name: 'Bank - Operating Account', nameFa: 'بانک جاری اصلی (متصل به صندوق فروش)', type: 'asset', subtype: 'bank', isPostingAccount: true, parentCode: '1200' },
   { code: '1220', name: 'Bank - Reserve Account', nameFa: 'حساب بانکی پس‌انداز و ذخیره', type: 'asset', subtype: 'bank', isPostingAccount: true, parentCode: '1200' },
   { code: '1300', name: 'Payment Gateway Receivables', nameFa: 'مطالبات از درگاه پرداخت و کارتخوان', type: 'asset', isPostingAccount: false, parentCode: '1100' },
   { code: '1310', name: 'Online Gateway Receivable (Zarinpal/PSP)', nameFa: 'مطالبات درگاه پرداخت آنلاین', type: 'asset', subtype: 'receivable', isPostingAccount: true, parentCode: '1300' },
@@ -65,30 +67,37 @@ const DEFAULT_COA = [
   { code: '1450', name: 'Recoverable Input VAT', nameFa: 'اعتبار مالیات بر ارزش افزوده خرید', type: 'asset', subtype: 'receivable', isPostingAccount: true, parentCode: '1100' },
   { code: '1500', name: 'Accounts Receivable (Customers)', nameFa: 'حساب‌های دریافتنی تجاری (مشتریان)', type: 'asset', isPostingAccount: false, parentCode: '1100' },
   { code: '1510', name: 'Customer Credit Accounts', nameFa: 'حساب‌های اعتباری و شرکتی مشتریان', type: 'asset', subtype: 'receivable', isPostingAccount: true, parentCode: '1500' },
+  { code: '1590', name: 'Allowance for Doubtful Accounts', nameFa: 'ذخیره مطالبات مشکوک‌الوصول', type: 'asset', subtype: 'contra_asset', isPostingAccount: true, parentCode: '1500' },
   { code: '1600', name: 'Inventory', nameFa: 'موجودی مواد اولیه و کالا', type: 'asset', isPostingAccount: false, parentCode: '1100' },
   { code: '1610', name: 'Raw Food & Beverage Inventory', nameFa: 'موجودی مواد غذایی و نوشیدنی', type: 'asset', subtype: 'inventory', isPostingAccount: true, parentCode: '1600' },
   { code: '1620', name: 'Packaging & Consumables Inventory', nameFa: 'موجودی ظروف و اقلام مصرفی', type: 'asset', subtype: 'inventory', isPostingAccount: true, parentCode: '1600' },
+  { code: '1630', name: 'Work in Progress & Prep Inventory', nameFa: 'موجودی مواد نیمه‌آماده و آماده‌سازی', type: 'asset', subtype: 'inventory', isPostingAccount: true, parentCode: '1600' },
   { code: '1700', name: 'Prepaid Expenses', nameFa: 'پیش‌پرداخت‌ها', type: 'asset', subtype: 'prepaid', isPostingAccount: true, parentCode: '1100' },
   { code: '1800', name: 'Fixed Assets (Property & Equipment)', nameFa: 'دارایی‌های ثابت مشهود', type: 'asset', isPostingAccount: false, parentCode: '1000' },
   { code: '1810', name: 'Kitchen & Bar Equipment', nameFa: 'تجهیزات آشپزخانه و بار', type: 'asset', subtype: 'fixed_asset', isPostingAccount: true, parentCode: '1800' },
   { code: '1820', name: 'Furniture & Decor', nameFa: 'مبلمان، دکوراسیون و سالن', type: 'asset', subtype: 'fixed_asset', isPostingAccount: true, parentCode: '1800' },
-  { code: '1830', name: 'POS & IT Hardware', nameFa: 'سخت‌افزار، صندوق و سیستم‌های IT', type: 'asset', subtype: 'fixed_asset', isPostingAccount: true, parentCode: '1800' },
+  { code: '1830', name: 'POS & IT Hardware', nameFa: 'سخت‌افزار صندوق و سامانه‌های دیجیتال', type: 'asset', subtype: 'fixed_asset', isPostingAccount: true, parentCode: '1800' },
+  { code: '1880', name: 'Assets Under Construction / Fit-out', nameFa: 'دارایی‌های ثابت در جریان ساخت و نوسازی', type: 'asset', subtype: 'fixed_asset', isPostingAccount: true, parentCode: '1800' },
   { code: '1890', name: 'Accumulated Depreciation', nameFa: 'استهلاک انباشته دارایی‌های ثابت', type: 'asset', subtype: 'contra_asset', isPostingAccount: true, parentCode: '1800' },
+  { code: '1910', name: 'Commercial Lease Security Deposits', nameFa: 'ودیعه رهن اماکن تجاری (غیرجاری)', type: 'asset', subtype: 'other_asset', isPostingAccount: true, parentCode: '1000' },
 
   // ── 2. Liabilities (بدهی‌ها)
   { code: '2000', name: 'Liabilities', nameFa: 'بدهی‌ها', type: 'liability', isPostingAccount: false },
   { code: '2100', name: 'Accounts Payable (Vendors)', nameFa: 'حساب‌های پرداختنی تجاری (تأمین‌کنندگان)', type: 'liability', isPostingAccount: false, parentCode: '2000' },
   { code: '2110', name: 'Trade Vendors Payable', nameFa: 'بستانکاران تجاری و تأمین‌کنندگان مواد', type: 'liability', subtype: 'payable', isPostingAccount: true, parentCode: '2100' },
-  { code: '2120', name: 'Goods Received Not Invoiced', nameFa: 'کالای دریافت‌شده، فاکتورنشده (GRNI)', type: 'liability', subtype: 'payable', isPostingAccount: true, parentCode: '2100' },
+  { code: '2120', name: 'Goods Received Not Invoiced', nameFa: 'کالای دریافت‌شده و فاکتورنشده', type: 'liability', subtype: 'payable', isPostingAccount: true, parentCode: '2100' },
+  { code: '2150', name: 'Notes Payable (Issued Cheques)', nameFa: 'اسناد پرداختنی تجاری (چک‌های سررسیدنشده)', type: 'liability', subtype: 'payable', isPostingAccount: true, parentCode: '2100' },
   { code: '2200', name: 'Taxes & Levies Payable', nameFa: 'مالیات و عوارض پرداختنی', type: 'liability', isPostingAccount: false, parentCode: '2000' },
   { code: '2210', name: 'VAT & Sales Tax Payable', nameFa: 'مالیات بر ارزش افزوده پرداختنی (۱۰٪)', type: 'liability', subtype: 'payable', isPostingAccount: true, parentCode: '2200' },
   { code: '2220', name: 'Payroll Tax Payable', nameFa: 'مالیات تکلیفی حقوق پرداختنی', type: 'liability', subtype: 'payable', isPostingAccount: true, parentCode: '2200' },
   { code: '2230', name: 'Social Security Insurance Payable', nameFa: 'بیمه پرداختنی به تأمین اجتماعی (۳۰٪)', type: 'liability', subtype: 'payable', isPostingAccount: true, parentCode: '2200' },
+  { code: '2250', name: 'Corporate Income Tax Provision', nameFa: 'ذخیره مالیات بر عملکرد سالانه', type: 'liability', subtype: 'payable', isPostingAccount: true, parentCode: '2200' },
   { code: '2300', name: 'Staff Tips Payable', nameFa: 'انعام کارکنان پرداختنی', type: 'liability', subtype: 'payable', isPostingAccount: true, parentCode: '2000' },
   { code: '2400', name: 'Gift Card & Voucher Liability', nameFa: 'تعهد کارت‌های هدیه و بن خرید', type: 'liability', subtype: 'payable', isPostingAccount: true, parentCode: '2000' },
-  { code: '2500', name: 'Customer Deposits (Reservations)', nameFa: 'پیش‌دریافت و بیعانه رزرو میز', type: 'liability', subtype: 'payable', isPostingAccount: true, parentCode: '2000' },
+  { code: '2500', name: 'Customer Deposits & Wallet Liabilities', nameFa: 'پیش‌دریافت، سپرده و تعهدات کیف پول مشتریان', type: 'liability', subtype: 'payable', isPostingAccount: true, parentCode: '2000' },
   { code: '2600', name: 'Payroll & Salaries Payable', nameFa: 'حقوق و دستمزد پرداختنی پرسنل', type: 'liability', subtype: 'payable', isPostingAccount: true, parentCode: '2000' },
   { code: '2700', name: 'Accrued Expenses', nameFa: 'سایر هزینه‌های پرداختنی و تعهدی', type: 'liability', subtype: 'payable', isPostingAccount: true, parentCode: '2000' },
+  { code: '2750', name: 'Staff Gratuity Provision', nameFa: 'ذخیره مزایای پایان خدمت پرسنل (سنوات)', type: 'liability', subtype: 'payable', isPostingAccount: true, parentCode: '2000' },
 
   // ── 3. Equity (حقوق صاحبان سهام)
   { code: '3000', name: 'Equity', nameFa: 'حقوق صاحبان سهام و سرمایه', type: 'equity', isPostingAccount: false },
@@ -109,6 +118,9 @@ const DEFAULT_COA = [
   { code: '4300', name: 'Dessert & Bakery Sales', nameFa: 'فروش دسر، کیک و شیرینی', type: 'revenue', isPostingAccount: true, parentCode: '4000' },
   { code: '4400', name: 'Delivery & Service Charges', nameFa: 'درآمد حق سرویس و ارسال پیک', type: 'revenue', isPostingAccount: true, parentCode: '4000' },
   { code: '4500', name: 'Other Operating Income', nameFa: 'سایر درآمدهای عملیاتی و جانبی', type: 'revenue', isPostingAccount: true, parentCode: '4000' },
+  { code: '4520', name: 'Inventory Count Surplus', nameFa: 'مازاد شمارش موجودی', type: 'revenue', isPostingAccount: true, parentCode: '4000' },
+  { code: '4700', name: 'Interest & Non-Operating Income', nameFa: 'درآمدهای غیرعملیاتی و سود بانکی', type: 'revenue', isPostingAccount: true, parentCode: '4000' },
+  { code: '4800', name: 'Foreign Exchange Gain', nameFa: 'سود تسعیر ارز', type: 'revenue', isPostingAccount: true, parentCode: '4000' },
 
   // ── 5. Contra Revenue (کاهنده‌های درآمد / تخفیف‌ها)
   { code: '4900', name: 'Sales Discounts & Allowances', nameFa: 'تخفیف‌ها و کاهنده‌های فروش', type: 'contra_revenue', isPostingAccount: false, parentCode: '4000' },
@@ -116,10 +128,15 @@ const DEFAULT_COA = [
   { code: '4920', name: 'Staff & VIP Discounts', nameFa: 'تخفیف پرسنلی و مهمانان ویژه', type: 'contra_revenue', isPostingAccount: true, parentCode: '4900' },
   { code: '4930', name: 'Complimentary Meals (Comps)', nameFa: 'سفارش‌های رایگان و تعارف', type: 'contra_revenue', isPostingAccount: true, parentCode: '4900' },
   { code: '4940', name: 'Customer Refunds', nameFa: 'مرجوعی و بازپرداخت به مشتری', type: 'contra_revenue', isPostingAccount: true, parentCode: '4900' },
+  { code: '4950', name: 'Loyalty Club Tier Discounts', nameFa: 'تخفیفات سطح وفاداری و باشگاه مشتریان', type: 'contra_revenue', isPostingAccount: true, parentCode: '4900' },
 
   // ── 6. COGS (بهای تمام‌شده کالای فروش‌رفته)
   { code: '5000', name: 'Cost of Goods Sold (COGS)', nameFa: 'بهای تمام‌شده کالای فروش‌رفته', type: 'cogs', isPostingAccount: false },
   { code: '5100', name: 'Food Ingredients COGS', nameFa: 'بهای تمام‌شده مواد اولیه غذا', type: 'cogs', isPostingAccount: true, parentCode: '5000' },
+  { code: '5110', name: 'Raw Material Waste', nameFa: 'ضایعات مواد اولیه', type: 'cogs', isPostingAccount: true, parentCode: '5000' },
+  { code: '5120', name: 'Inventory Count Shortage', nameFa: 'کسری شمارش موجودی', type: 'cogs', isPostingAccount: true, parentCode: '5000' },
+  { code: '5130', name: 'Production Yield Loss', nameFa: 'افت تولید بچ', type: 'cogs', isPostingAccount: true, parentCode: '5000' },
+  { code: '5150', name: 'Purchase Price Variance', nameFa: 'اختلاف قیمت خرید', type: 'cogs', isPostingAccount: true, parentCode: '5000' },
   { code: '5200', name: 'Beverage Ingredients COGS', nameFa: 'بهای تمام‌شده مواد اولیه نوشیدنی و قهوه', type: 'cogs', isPostingAccount: true, parentCode: '5000' },
   { code: '5300', name: 'Packaging & Takeaway Supplies', nameFa: 'بهای ظروف و ملزومات بیرون‌بر', type: 'cogs', isPostingAccount: true, parentCode: '5000' },
   { code: '5400', name: 'Kitchen Waste & Spoilage', nameFa: 'ضایعات و ضایع‌شدگی مواد آشپزخانه', type: 'cogs', isPostingAccount: true, parentCode: '5000' },
@@ -138,12 +155,16 @@ const DEFAULT_COA = [
   { code: '6500', name: 'Maintenance & Repairs', nameFa: 'تعمیرات و نگهداری دستگاه‌ها و فضا', type: 'expense', isPostingAccount: true, parentCode: '6000' },
   { code: '6600', name: 'Cleaning & Hygiene Supplies', nameFa: 'مواد شوینده، نظافت و بهداشت', type: 'expense', isPostingAccount: true, parentCode: '6000' },
   { code: '6700', name: 'Office Supplies & Stationery', nameFa: 'لوازم‌التحریر و ملزومات دفتری', type: 'expense', isPostingAccount: true, parentCode: '6000' },
+  { code: '6710', name: 'Bank & PSP Settlement Fees', nameFa: 'کارمزد تسویه بانکی و درگاه', type: 'expense', isPostingAccount: true, parentCode: '6000' },
+  { code: '6720', name: 'Bank Loan Interest Expense', nameFa: 'هزینه بهره و کارمزد تسهیلات بانکی', type: 'expense', isPostingAccount: true, parentCode: '6000' },
   { code: '6800', name: 'Business Insurance', nameFa: 'بیمه آتش‌سوزی و مسئولیت مدنی', type: 'expense', isPostingAccount: true, parentCode: '6000' },
+  { code: '6850', name: 'Foreign Exchange Loss', nameFa: 'زیان تسعیر ارز', type: 'expense', isPostingAccount: true, parentCode: '6000' },
   { code: '6900', name: 'Licensing, Legal & Permits', nameFa: 'مجوزها، عوارض شهرداری و امور حقوقی', type: 'expense', isPostingAccount: true, parentCode: '6000' },
   { code: '6950', name: 'Bank & POS Terminal Fees', nameFa: 'کارمزد تراکنش‌های بانکی و کارتخوان', type: 'expense', isPostingAccount: true, parentCode: '6000' },
   { code: '6970', name: 'Marketplace Commissions', nameFa: 'کمیسیون پلتفرم‌های اسنپ‌فود/تپسی', type: 'expense', isPostingAccount: true, parentCode: '6000' },
   { code: '6980', name: 'Depreciation Expense', nameFa: 'هزینه استهلاک دارایی‌های ثابت', type: 'expense', isPostingAccount: true, parentCode: '6000' },
   { code: '6990', name: 'Miscellaneous Expenses', nameFa: 'سایر هزینه‌های جزئی و متفرقه', type: 'expense', isPostingAccount: true, parentCode: '6000' },
+  { code: '6995', name: 'Tax Penalties & Fines (Non-Deductible)', nameFa: 'جرایم و خسارات قانونی (غیرقابل قبول مالیاتی)', type: 'expense', isPostingAccount: true, parentCode: '6000' },
 ];
 
 function normalBalance(type) {
@@ -162,6 +183,54 @@ function normalBalance(type) {
   }
 }
 
+/**
+ * Validates the COA before it is used as a ledger lookup table. A duplicate or
+ * malformed code must fail closed; Map-based lookups otherwise silently pick
+ * one of the duplicate definitions and can reinterpret historical entries.
+ */
+function validateChartOfAccounts(accounts) {
+  if (!Array.isArray(accounts) || accounts.length === 0) {
+    throw new Error('طرح حساب‌ها (COA) خالی یا نامعتبر است.');
+  }
+
+  const byCode = new Map();
+  accounts.forEach((account, index) => {
+    if (!account || typeof account !== 'object' || Array.isArray(account)) {
+      throw new Error(`ردیف ${index + 1} طرح حساب‌ها معتبر نیست.`);
+    }
+    const code = String(account.code ?? '').trim();
+    if (!code) throw new Error(`کد حساب در ردیف ${index + 1} خالی است.`);
+    if (byCode.has(code)) throw new Error(`کد حساب «${code}» در طرح حساب‌ها تکراری است.`);
+    const type = String(account.type ?? '').trim();
+    if (!ACCOUNT_TYPES.has(type)) throw new Error(`نوع حساب «${type || 'نامشخص'}» برای کد ${code} معتبر نیست.`);
+    if (typeof account.isPostingAccount !== 'boolean') {
+      throw new Error(`فیلد قابل ثبت مستقیم برای حساب ${code} باید بولی باشد.`);
+    }
+    byCode.set(code, account);
+  });
+
+  accounts.forEach((account) => {
+    const code = String(account.code).trim();
+    const parentCode = String(account.parentCode ?? '').trim();
+    if (!parentCode) return;
+    const parent = byCode.get(parentCode);
+    if (!parent) throw new Error(`حساب والد ${parentCode} برای ${code} در COA یافت نشد.`);
+    if (parentCode === code) throw new Error(`حساب ${code} نمی‌تواند والد خودش باشد.`);
+    if (parent.isPostingAccount !== false) throw new Error(`حساب ${parentCode} باید حساب والد و غیرقابل ثبت مستقیم باشد.`);
+
+    const visited = new Set([code]);
+    let cursor = parent;
+    while (cursor) {
+      const cursorCode = String(cursor.code).trim();
+      if (visited.has(cursorCode)) throw new Error(`چرخه در سلسله‌مراتب COA برای حساب ${code} شناسایی شد.`);
+      visited.add(cursorCode);
+      const nextCode = String(cursor.parentCode ?? '').trim();
+      cursor = nextCode ? byCode.get(nextCode) : null;
+    }
+  });
+  return true;
+}
+
 // ── State Initialization & Schema Migration ──────────────────────────────────
 function ensureAccountingData(db, options = {}) {
   if (!db.accounting || typeof db.accounting !== 'object') {
@@ -172,7 +241,13 @@ function ensureAccountingData(db, options = {}) {
   if (!Array.isArray(acc.accounts) || acc.accounts.length === 0) {
     acc.accounts = JSON.parse(JSON.stringify(DEFAULT_COA));
   } else {
-    const existingCodes = new Set(acc.accounts.map((a) => a.code));
+    acc.accounts.forEach((account) => {
+      if (account && typeof account === 'object') {
+        if (account.code !== null && account.code !== undefined) account.code = String(account.code).trim();
+        if (account.parentCode !== null && account.parentCode !== undefined) account.parentCode = String(account.parentCode).trim();
+      }
+    });
+    const existingCodes = new Set(acc.accounts.map((a) => String(a?.code ?? '').trim()));
     DEFAULT_COA.forEach((def) => {
       if (!existingCodes.has(def.code)) {
         acc.accounts.push({ ...def });
@@ -194,6 +269,8 @@ function ensureAccountingData(db, options = {}) {
   if (!Array.isArray(acc.recurringExpenses)) acc.recurringExpenses = [];
   if (!Array.isArray(acc.reimbursements)) acc.reimbursements = [];
   if (!Array.isArray(acc.payrollRuns)) acc.payrollRuns = [];
+
+  validateChartOfAccounts(acc.accounts);
 
   // Ensure submodules structures
   periodService.ensurePeriods(acc);
@@ -238,7 +315,7 @@ function ensureAccountingData(db, options = {}) {
       { id: 'fa-1', assetCode: 'AST-101', name: 'دستگاه اسپرسوساز لامارزوکو ۳ گروپ', category: 'تجهیزات بار', purchaseDate: '2025-01-01', purchaseCost: 450000000, salvageValue: 50000000, usefulLifeMonths: 60, accumulatedDepreciation: 70000000, status: 'active' },
       { id: 'fa-2', assetCode: 'AST-102', name: 'فر پخت ترکیبی رشنال ۱۰ سینی', category: 'تجهیزات آشپزخانه', purchaseDate: '2025-01-15', purchaseCost: 620000000, salvageValue: 80000000, usefulLifeMonths: 84, accumulatedDepreciation: 75000000, status: 'active' },
       { id: 'fa-3', assetCode: 'AST-103', name: 'یخچال پرده هوا و سلف‌سرویس ۲ متری', category: 'تجهیزات برودتی', purchaseDate: '2025-02-01', purchaseCost: 180000000, salvageValue: 20000000, usefulLifeMonths: 60, accumulatedDepreciation: 26000000, status: 'active' },
-      { id: 'fa-4', assetCode: 'AST-104', name: 'مجموعه پوزهای لمسی و سیستم شبکه', category: 'تجهیزات IT', purchaseDate: '2025-03-01', purchaseCost: 85000000, salvageValue: 5000000, usefulLifeMonths: 36, accumulatedDepreciation: 22000000, status: 'active' },
+      { id: 'fa-4', assetCode: 'AST-104', name: 'مجموعه صندوق‌های لمسی و شبکه', category: 'تجهیزات دیجیتال', purchaseDate: '2025-03-01', purchaseCost: 85000000, salvageValue: 5000000, usefulLifeMonths: 36, accumulatedDepreciation: 22000000, status: 'active' },
     ];
   }
 
@@ -261,7 +338,35 @@ function nextJournalNumber(acc, prefix = 'JE') {
 }
 
 function roundMoney(val) {
-  return Math.round(Number(val) || 0);
+  return money.toIRR(val);
+}
+
+function integerJournalMoney(val) {
+  return money.toIntegerIRR(val);
+}
+
+function normalizeJournalBranchId(value, lineIndex) {
+  if (value === null || value === undefined || value === '') return null;
+  const branchId = Number(value);
+  if (!Number.isSafeInteger(branchId) || branchId <= 0) {
+    throw new Error(`شناسه شعبه در ردیف ${lineIndex + 1} معتبر نیست.`);
+  }
+  return branchId;
+}
+
+function cloneJournalEntry(entry, extra = {}) {
+  return { ...JSON.parse(JSON.stringify(entry)), ...extra };
+}
+
+function sameJournalPayload(left, right) {
+  return left.number === right.number
+    && left.date === right.date
+    && left.description === right.description
+    && left.source === right.source
+    && left.sourceId === right.sourceId
+    && left.status === right.status
+    && left.totalAmount === right.totalAmount
+    && JSON.stringify(left.lines || []) === JSON.stringify(right.lines || []);
 }
 
 /**
@@ -269,13 +374,24 @@ function roundMoney(val) {
  * Checks period-lock, enforces DR=CR balance, and applies SHA-256 integrity hash chaining.
  */
 function postJournalEntry(db, entryInput) {
+  if (!entryInput || typeof entryInput !== 'object' || Array.isArray(entryInput)) {
+    throw new TypeError('اطلاعات سند حسابداری معتبر نیست.');
+  }
   const acc = ensureAccountingData(db);
+  const requestedStatus = entryInput.status === undefined ? 'posted' : String(entryInput.status).toLowerCase();
+  if (!['draft', 'posted'].includes(requestedStatus)) {
+    throw new Error('وضعیت سند فقط می‌تواند draft یا posted باشد.');
+  }
 
-  // Period-lock check
   const dateStr = entryInput.date || new Date().toISOString();
-  const periodCheck = periodService.assertPostingAllowed(acc, dateStr);
-  if (!periodCheck.allowed) {
-    throw new Error(periodCheck.reason || 'ثبت سند در این تاریخ به دلیل بسته بودن دوره مالی مجاز نیست.');
+  if (Number.isNaN(new Date(dateStr).getTime())) {
+    throw new Error('تاریخ سند معتبر نیست.');
+  }
+  if (requestedStatus === 'posted') {
+    const periodCheck = periodService.assertPostingAllowed(acc, dateStr);
+    if (!periodCheck.allowed) {
+      throw new Error(periodCheck.reason || 'ثبت سند در این تاریخ به دلیل بسته بودن دوره مالی مجاز نیست.');
+    }
   }
 
   const lines = Array.isArray(entryInput.lines) ? entryInput.lines : [];
@@ -293,8 +409,11 @@ function postJournalEntry(db, entryInput) {
     if (!account) {
       throw new Error(`کد حساب ${code} در ردیف ${idx + 1} در طرح حساب‌ها (COA) تعریف نشده است.`);
     }
-    const debit = roundMoney(line.debit || 0);
-    const credit = roundMoney(line.credit || 0);
+    if (account.isPostingAccount === false) {
+      throw new Error(`حساب ${code} در ردیف ${idx + 1} حساب کل/والد است و قابل ثبت مستقیم نیست.`);
+    }
+    const debit = integerJournalMoney(line.debit);
+    const credit = integerJournalMoney(line.credit);
     if (debit < 0 || credit < 0) {
       throw new Error(`مبالغ ردیف ${idx + 1} نمی‌تواند منفی باشد.`);
     }
@@ -304,53 +423,90 @@ function postJournalEntry(db, entryInput) {
     if (debit > 0 && credit > 0) {
       throw new Error(`در ردیف ${idx + 1} یک ردیف نمی‌تواند همزمان بدهکار و بستانکار باشد.`);
     }
-    totalDebit += debit;
-    totalCredit += credit;
+    totalDebit = money.addMoney(totalDebit, debit);
+    totalCredit = money.addMoney(totalCredit, credit);
     return {
       accountCode: code,
       accountName: account.nameFa || account.name,
       debit,
       credit,
       memo: String(line.memo || '').slice(0, 300),
-      branchId: line.branchId ? Number(line.branchId) : null,
+      branchId: normalizeJournalBranchId(line.branchId, idx),
     };
   });
 
   if (totalDebit !== totalCredit) {
-    throw new Error(`سند تراز نیست! جمع بدهکار (${totalDebit.toLocaleString('fa-IR')}) با جمع بستانکار (${totalCredit.toLocaleString('fa-IR')}) برابر نیست. اختلاف: ${Math.abs(totalDebit - totalCredit).toLocaleString('fa-IR')}`);
+    throw new Error(`سند تراز نیست! جمع بدهکار (${money.formatNumber(totalDebit)}) با جمع بستانکار (${money.formatNumber(totalCredit)}) برابر نیست. اختلاف: ${money.formatNumber(Math.abs(totalDebit - totalCredit))}`);
   }
 
-  const id = entryInput.id || `je-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-  const number = entryInput.number || nextJournalNumber(acc);
+  const id = entryInput.id === undefined || entryInput.id === null || entryInput.id === ''
+    ? `je-${Date.now()}-${Math.random().toString(36).slice(2, 7)}` : String(entryInput.id);
+  const number = entryInput.number === undefined || entryInput.number === null || entryInput.number === ''
+    ? nextJournalNumber(acc) : String(entryInput.number);
+  const source = String(entryInput.source || 'manual').trim() || 'manual';
+  const sourceId = entryInput.sourceId === undefined || entryInput.sourceId === null || entryInput.sourceId === ''
+    ? null : String(entryInput.sourceId);
 
-  // Get previous entry hash for blockchain-style integrity
-  const lastEntry = acc.journalEntries[acc.journalEntries.length - 1];
-  const previousHash = lastEntry ? (lastEntry.hash || 'GENESIS-00000000000000000000000000000000') : 'GENESIS-00000000000000000000000000000000';
+  const existingIdx = acc.journalEntries.findIndex((e) => e.id === id
+    || (sourceId !== null && e.source === source && String(e.sourceId) === sourceId));
+  const existing = existingIdx >= 0 ? acc.journalEntries[existingIdx] : null;
+
+  const ledgerChain = acc.journalEntries.length > 0 ? auditEngine.verifyLedgerChain(acc) : null;
+  if (ledgerChain && !ledgerChain.isIntegrityValid) {
+    throw new Error('زنجیره دفترکل معتبر نیست؛ تا بررسی و اصلاح مغایرت، سند جدید ثبت نمی‌شود.');
+  }
+
+  const predecessorIndex = existingIdx >= 0 ? existingIdx - 1 : acc.journalEntries.length - 1;
+  const predecessorAudit = predecessorIndex >= 0 ? ledgerChain?.chainAudit?.[predecessorIndex] : null;
+  const previousHash = predecessorIndex < 0
+    ? auditEngine.GENESIS_HASH
+    : predecessorAudit?.hashPresent
+      ? acc.journalEntries[predecessorIndex].hash
+      : predecessorAudit?.calculatedHash;
+  if (!previousHash) {
+    throw new Error('hash قبلی سند حسابداری قابل بازیابی نیست؛ ثبت سند متوقف شد.');
+  }
 
   const entry = {
     id,
     number,
     date: dateStr,
     description: String(entryInput.description || 'ثبت سند حسابداری').slice(0, 250),
-    source: entryInput.source || 'manual',
-    sourceId: entryInput.sourceId ? String(entryInput.sourceId) : null,
-    status: entryInput.status === 'draft' ? 'draft' : 'posted',
+    source,
+    sourceId,
+    status: requestedStatus,
     totalAmount: totalDebit,
     lines: sanitizedLines,
     previousHash,
-    createdAt: new Date().toISOString(),
+    createdAt: existing?.createdAt || new Date().toISOString(),
     createdById: entryInput.createdById || 'admin',
   };
 
+  if (existing && existing.status === 'posted') {
+    if (sameJournalPayload(existing, entry)) {
+      return cloneJournalEntry(existing, { idempotentReplay: true });
+    }
+    throw new Error(`سند حسابداری شماره «${existing.number}» قطعی (POSTED) شده و طبق استانداردها غیرقابل ویرایش مستقیم است. برای اصلاح از ثبت سند معکوس (Reversal) استفاده کنید.`);
+  }
+  if (existing && existing.status !== 'draft') {
+    throw new Error('فقط سند draft قابل تکمیل یا اصلاح است.');
+  }
+  if (existing && existingIdx !== acc.journalEntries.length - 1 && !sameJournalPayload(existing, entry)) {
+    throw new Error('سند draft غیرانتهایی قابل تغییر نیست؛ برای حفظ استقلال زنجیره ابتدا آن را تعیین تکلیف کنید.');
+  }
+  if (existing && existingIdx !== acc.journalEntries.length - 1 && requestedStatus === 'posted') {
+    throw new Error('سند draft غیرانتهایی قابل قطعی‌سازی نیست؛ برای حفظ استقلال زنجیره ابتدا آن را تعیین تکلیف کنید.');
+  }
+  if (existing && existingIdx !== acc.journalEntries.length - 1 && sameJournalPayload(existing, entry)) {
+    return cloneJournalEntry(existing, { idempotentReplay: true });
+  }
+
+  const duplicateNumber = acc.journalEntries.find((candidate, index) => candidate.number === number && index !== existingIdx);
+  if (duplicateNumber) throw new Error(`شماره سند «${number}» قبلاً استفاده شده است.`);
+
   entry.hash = auditEngine.computeJournalHash(entry, previousHash);
 
-  // Check if an existing entry is already posted (Immutability Gate)
-  const existingIdx = acc.journalEntries.findIndex((e) => e.id === id || (entryInput.source && entryInput.sourceId && e.source === entryInput.source && e.sourceId === String(entryInput.sourceId)));
   if (existingIdx >= 0) {
-    const existing = acc.journalEntries[existingIdx];
-    if (existing.status === 'posted' && !entryInput.allowForceUpdate) {
-      throw new Error(`سند حسابداری شماره «${existing.number}» قطعی (POSTED) شده و طبق استانداردها غیرقابل ویرایش مستقیم است. برای اصلاح از ثبت سند معکوس (Reversal) استفاده کنید.`);
-    }
     acc.journalEntries[existingIdx] = entry;
   } else {
     acc.journalEntries.push(entry);
@@ -361,11 +517,11 @@ function postJournalEntry(db, entryInput) {
     entityType: 'JournalEntry',
     entityId: entry.id,
     userId: entry.createdById,
-    message: `سند حسابداری شماره ${entry.number} به مبلغ ${totalDebit.toLocaleString('fa-IR')} ثبت گردید.`,
+    message: `سند حسابداری شماره ${entry.number} به مبلغ ${money.formatNumber(totalDebit)} ثبت گردید.`,
     metadata: { number: entry.number, totalAmount: totalDebit, linesCount: sanitizedLines.length },
   });
 
-  return entry;
+  return cloneJournalEntry(entry);
 }
 
 /**
@@ -374,6 +530,10 @@ function postJournalEntry(db, entryInput) {
  */
 function reverseJournalEntry(db, journalId, opts = {}) {
   const acc = ensureAccountingData(db);
+  const ledgerChain = auditEngine.verifyLedgerChain(acc);
+  if (!ledgerChain.isIntegrityValid) {
+    throw new Error('زنجیره دفترکل معتبر نیست؛ معکوس‌سازی متوقف شد.');
+  }
   const { reason = 'اصلاح سند', userId = 'admin', reversalDate = new Date().toISOString() } = opts;
 
   const target = (acc.journalEntries || []).find((e) => e.id === journalId || e.number === journalId);
@@ -381,8 +541,31 @@ function reverseJournalEntry(db, journalId, opts = {}) {
     throw new Error('سند حسابداری جهت معکوس‌سازی یافت نشد.');
   }
 
+  const existingReversal = (acc.journalEntries || []).find((entry) => entry.source === 'reversal' && entry.sourceId === target.id);
+  if (existingReversal) {
+    if (target.status !== 'reversed') {
+      target.status = 'reversed';
+      target.reversedAt = existingReversal.createdAt;
+      target.reversedBy = existingReversal.createdById;
+      target.reversalReason = reason;
+      target.reversalJournalId = existingReversal.id;
+      target.reversalJournalNumber = existingReversal.number;
+    }
+    return {
+      ok: true,
+      idempotentReplay: true,
+      originalEntry: cloneJournalEntry(target),
+      reversalEntry: cloneJournalEntry(existingReversal),
+    };
+  }
   if (target.status === 'reversed') {
-    throw new Error(`این سند قبلاً توسط سند معکوس «${target.reversalJournalNumber || target.reversalJournalId}» خنثی و معکوس شده است.`);
+    throw new Error(`این سند قبلاً معکوس شده است، اما سند معکوس متناظر یافت نشد.`);
+  }
+  if (target.status !== 'posted') {
+    throw new Error('فقط سند posted قابل معکوس‌سازی است؛ draft ابتدا باید قطعی شود.');
+  }
+  if (target.source === 'reversal' || target.reversalOfId || target.reversalJournalId) {
+    throw new Error('سند معکوس قابل معکوس‌سازی مجدد نیست.');
   }
 
   // Generate inverted lines: Debits become Credits, Credits become Debits
@@ -420,7 +603,7 @@ function reverseJournalEntry(db, journalId, opts = {}) {
     message: `سند شماره ${target.number} توسط سند معکوس ${reversalEntry.number} باطل و خنثی گردید. علت: ${reason}`,
   });
 
-  return { ok: true, originalEntry: target, reversalEntry };
+  return { ok: true, idempotentReplay: false, originalEntry: cloneJournalEntry(target), reversalEntry: cloneJournalEntry(reversalEntry) };
 }
 
 // ── Automatic Sales Posting ──────────────────────────────────────────────────
@@ -451,12 +634,30 @@ function syncOrderSalesJournal(db, order) {
   const discountTotal = taxCalc.totalDiscounts || roundMoney(order.discount || 0);
   const grossSales = netSales + discountTotal;
 
-  // Determine debit account based on payment method
+  // Determine debit account based on payment method and channel
   let debitAccountCode = settings.defaultPosAccount || '1320';
-  if (order.paymentMethod === 'cash') {
+  let tenderMemo = 'کارتخوان';
+  const method = String(order.paymentMethod || '').toLowerCase();
+  const channel = String(order.fulfillment || order.channel || '').toLowerCase();
+
+  if (method === 'cash') {
     debitAccountCode = settings.defaultCashAccount || '1110';
-  } else if (order.paymentMethod === 'online' || order.paymentMethod === 'gateway') {
+    tenderMemo = 'نقدی';
+  } else if (method === 'online' || method === 'gateway' || method === 'zarinpal' || method === 'psp') {
     debitAccountCode = settings.defaultOnlineAccount || '1310';
+    tenderMemo = 'درگاه آنلاین';
+  } else if (method === 'wallet' || method === 'customer_wallet' || method === 'user_wallet') {
+    debitAccountCode = settings.defaultWalletAccount || '2500';
+    tenderMemo = 'کیف پول و پیش‌دریافت';
+  } else if (method === 'credit' || method === 'staff_credit' || method === 'customer_credit' || method === 'vip') {
+    debitAccountCode = settings.defaultCreditAccount || '1510';
+    tenderMemo = 'حساب اعتباری مشتری';
+  } else if (method === 'snappfood' || channel === 'snappfood') {
+    debitAccountCode = '1410';
+    tenderMemo = 'اسنپ‌فود';
+  } else if (method === 'tapsifood' || method === 'tapsi' || channel === 'tapsifood' || channel === 'tapsi') {
+    debitAccountCode = '1420';
+    tenderMemo = 'تپسی‌فود';
   }
 
   // Determine credit account based on fulfillment channel
@@ -470,7 +671,7 @@ function syncOrderSalesJournal(db, order) {
       accountCode: debitAccountCode,
       debit: orderTotal,
       credit: 0,
-      memo: `دریافت وجه سفارش ${orderNo} (${order.paymentMethod === 'cash' ? 'نقدی' : order.paymentMethod === 'online' ? 'درگاه آنلاین' : 'کارتخوان'})`,
+      memo: `دریافت وجه سفارش ${orderNo} (${tenderMemo})`,
       branchId: order.branchId,
     },
     ...(discountTotal > 0 ? [{
@@ -491,7 +692,7 @@ function syncOrderSalesJournal(db, order) {
       accountCode: settings.defaultVatAccount || '2210',
       debit: 0,
       credit: totalTax,
-      memo: `مالیات ارزش افزوده سفارش ${orderNo} (مأخذ: ${netSales.toLocaleString('fa-IR')})`,
+      memo: `مالیات ارزش افزوده سفارش ${orderNo} (مأخذ: ${money.formatNumber(netSales)})`,
       branchId: order.branchId,
     },
   ];
@@ -526,6 +727,10 @@ function rebuildLedgerFromOrders(db) {
 // ── Financial Reports & Calculations ─────────────────────────────────────────
 
 function getAccountBalanceMap(acc, filter = {}) {
+  const ledgerChain = auditEngine.verifyLedgerChain(acc);
+  if (!ledgerChain.isIntegrityValid) {
+    throw new Error('زنجیره دفترکل معتبر نیست؛ گزارش تراز متوقف شد.');
+  }
   const map = new Map();
   (acc.accounts || []).forEach((a) => {
     map.set(a.code, {
@@ -546,7 +751,8 @@ function getAccountBalanceMap(acc, filter = {}) {
 
   for (const entry of entries) {
     for (const line of entry.lines || []) {
-      if (filter.branchId && line.branchId && Number(line.branchId) !== Number(filter.branchId)) continue;
+      const lineBranchId = line.branchId ?? entry.branchId ?? null;
+      if (filter.branchId != null && Number(lineBranchId) !== Number(filter.branchId)) continue;
       const target = map.get(line.accountCode);
       if (target) {
         target.debitSum += line.debit;
@@ -581,6 +787,16 @@ function getAccountBalanceMap(acc, filter = {}) {
 function getOverview(db, filter = {}) {
   const acc = ensureAccountingData(db);
   const balanceMap = getAccountBalanceMap(acc, filter);
+  const branchId = filter.branchId == null ? null : Number(filter.branchId);
+  const belongsToBranch = (row) => {
+    if (branchId == null) return true;
+    const ownBranchId = row?.branchId ?? row?.locationId;
+    if (ownBranchId != null) return Number(ownBranchId) === branchId;
+    const lineBranches = (row?.lines || [])
+      .map((line) => line?.branchId ?? row?.branchId)
+      .filter((value) => value != null);
+    return lineBranches.length > 0 && lineBranches.every((value) => Number(value) === branchId);
+  };
 
   let totalRevenue = 0;
   let totalDiscounts = 0;
@@ -621,9 +837,9 @@ function getOverview(db, filter = {}) {
   const grossMarginPct = netSales > 0 ? Math.round((grossProfit / netSales) * 100) : 0;
   const netMarginPct = netSales > 0 ? Math.round((netIncome / netSales) * 100) : 0;
 
-  const activeCashDrawers = (acc.cashDrawers || []).filter((d) => d.status === 'open');
-  const recentEntries = (acc.journalEntries || []).slice().reverse().slice(0, 15);
-  const pendingBills = (acc.vendorBills || []).filter((b) => b.status === 'open' || b.status === 'partial');
+  const activeCashDrawers = (acc.cashDrawers || []).filter((d) => d.status === 'open' && belongsToBranch(d));
+  const recentEntries = (acc.journalEntries || []).filter(belongsToBranch).slice().reverse().slice(0, 15);
+  const pendingBills = (acc.vendorBills || []).filter((b) => belongsToBranch(b) && (b.status === 'open' || b.status === 'partial'));
 
   return {
     metrics: {
@@ -646,7 +862,7 @@ function getOverview(db, filter = {}) {
       totalEquity,
       activeDrawersCount: activeCashDrawers.length,
       pendingBillsCount: pendingBills.length,
-      totalJournalEntries: (acc.journalEntries || []).length,
+      totalJournalEntries: (acc.journalEntries || []).filter(belongsToBranch).length,
     },
     recentEntries,
     settings: acc.settings,
@@ -656,7 +872,15 @@ function getOverview(db, filter = {}) {
 
 function getSalesAnalysis(db, filter = {}) {
   const orders = Array.isArray(db.orders) ? db.orders : [];
-  const paidOrders = orders.filter((o) => o.paymentStatus === 'paid' || ['paid', 'preparing', 'ready', 'dispatched', 'picked_up', 'delivered', 'done'].includes(o.status));
+  const branchId = filter.branchId == null ? null : Number(filter.branchId);
+  const fromAt = filter.from ? new Date(filter.from).getTime() : null;
+  const toAt = filter.to ? new Date(filter.to).getTime() : null;
+  const paidOrders = orders.filter((o) => {
+    if (branchId != null && Number(o.branchId) !== branchId) return false;
+    if (Number.isFinite(fromAt) && new Date(o.paidAt || o.createdAt || o.date || 0).getTime() < fromAt) return false;
+    if (Number.isFinite(toAt) && new Date(o.paidAt || o.createdAt || o.date || 0).getTime() > toAt) return false;
+    return o.paymentStatus === 'paid' || ['paid', 'preparing', 'ready', 'dispatched', 'picked_up', 'delivered', 'done'].includes(o.status);
+  });
 
   let totalSales = 0;
   const byChannel = { dine_in: 0, pickup: 0, delivery: 0 };
@@ -680,10 +904,15 @@ function getSalesAnalysis(db, filter = {}) {
     }
   }
 
+  const acc = ensureAccountingData(db);
+  const vatRate = (acc.settings?.vatRatePct ?? 10) / 100;
+  const netSales = vatRate > 0 ? Math.round(totalSales / (1 + vatRate)) : totalSales;
+  const totalTax = totalSales - netSales;
+
   return {
     totalSales,
-    totalTax: Math.round(totalSales * 0.0909),
-    netSales: totalSales - Math.round(totalSales * 0.0909),
+    totalTax,
+    netSales,
     orderCount: paidOrders.length,
     averageOrderValue: paidOrders.length ? Math.round(totalSales / paidOrders.length) : 0,
     byChannel,
@@ -692,9 +921,9 @@ function getSalesAnalysis(db, filter = {}) {
   };
 }
 
-function getTrialBalanceReport(db, asOfDate = new Date().toISOString()) {
+function getTrialBalanceReport(db, asOfDate = new Date().toISOString(), filter = {}) {
   const acc = ensureAccountingData(db);
-  const balanceMap = getAccountBalanceMap(acc, { to: asOfDate });
+  const balanceMap = getAccountBalanceMap(acc, { ...filter, to: asOfDate });
 
   let totalDebit = 0;
   let totalCredit = 0;
@@ -744,24 +973,25 @@ function getTrialBalanceReport(db, asOfDate = new Date().toISOString()) {
   };
 }
 
-function getIncomeStatement(db, from, to) {
+function getIncomeStatement(db, from, to, filter = {}) {
   const acc = ensureAccountingData(db);
-  const balanceMap = getAccountBalanceMap(acc, { from, to });
+  const balanceMap = getAccountBalanceMap(acc, { ...filter, from, to });
 
   const getSectionAccounts = (filterFn) => {
     const list = [];
     let sum = 0;
     for (const [, item] of balanceMap.entries()) {
       if (filterFn(item.account) && item.net !== 0) {
+        const netAmount = item.net;
         list.push({
           code: item.account.code,
           nameFa: item.account.nameFa || item.account.name,
-          amount: Math.abs(item.net),
+          amount: Math.abs(netAmount),
         });
-        sum += Math.abs(item.net);
+        sum += netAmount;
       }
     }
-    return { accounts: list.sort((a, b) => b.amount - a.amount), total: sum };
+    return { accounts: list.sort((a, b) => b.amount - a.amount), total: Math.max(0, sum) };
   };
 
   const revenue = getSectionAccounts((a) => a.type === 'revenue');
@@ -796,9 +1026,9 @@ function getIncomeStatement(db, from, to) {
   };
 }
 
-function getBalanceSheet(db, asOfDate = new Date().toISOString()) {
+function getBalanceSheet(db, asOfDate = new Date().toISOString(), filter = {}) {
   const acc = ensureAccountingData(db);
-  const balanceMap = getAccountBalanceMap(acc, { to: asOfDate });
+  const balanceMap = getAccountBalanceMap(acc, { ...filter, to: asOfDate });
 
   const getAccountsByType = (type) => {
     const list = [];
@@ -847,16 +1077,21 @@ function getBalanceSheet(db, asOfDate = new Date().toISOString()) {
     totalAssets: assets.total,
     totalLiabilities: liabilities.total,
     totalLiabAndEquity,
-    isBalanced: Math.abs(assets.total - totalLiabAndEquity) < 100,
+    isBalanced: assets.total === totalLiabAndEquity,
   };
 }
 
-function getCashFlowStatement(db, from, to) {
+function getCashFlowStatement(db, from, to, filter = {}) {
   const acc = ensureAccountingData(db);
+  const branchId = filter.branchId == null ? null : Number(filter.branchId);
   const entries = (acc.journalEntries || []).filter(e => {
     if (e.status !== 'posted') return false;
     if (from && new Date(e.date) < new Date(from)) return false;
     if (to && new Date(e.date) > new Date(to)) return false;
+    if (branchId != null) {
+      const lines = (e.lines || []).map((line) => line?.branchId ?? e.branchId);
+      if (!lines.length || !lines.some((value) => Number(value) === branchId)) return false;
+    }
     return true;
   });
 
@@ -867,6 +1102,8 @@ function getCashFlowStatement(db, from, to) {
 
   entries.forEach(e => {
     (e.lines || []).forEach(l => {
+      const lineBranchId = l.branchId ?? e.branchId ?? null;
+      if (branchId != null && Number(lineBranchId) !== branchId) return;
       const accDef = (acc.accounts || []).find(a => a.code === l.accountCode);
       if (!accDef) return;
 
@@ -943,9 +1180,15 @@ function getGeneralLedger(db, accountCode, filter = {}) {
   };
 }
 
-function getAPAging(db, asOfDate = new Date().toISOString()) {
+function getAPAging(db, asOfDate = new Date().toISOString(), filter = {}) {
   const acc = ensureAccountingData(db);
-  const bills = (acc.vendorBills || []).filter((b) => b.status === 'open' || b.status === 'partial');
+  const branchId = filter.branchId == null ? null : Number(filter.branchId);
+  const bills = (acc.vendorBills || []).filter((b) => {
+    if (b.status !== 'open' && b.status !== 'partial') return false;
+    if (branchId == null) return true;
+    const ownBranchId = b.branchId ?? b.locationId;
+    return ownBranchId != null && Number(ownBranchId) === branchId;
+  });
   const now = new Date(asOfDate).getTime();
 
   const buckets = {
@@ -989,6 +1232,7 @@ function getAPAging(db, asOfDate = new Date().toISOString()) {
 
 module.exports = {
   DEFAULT_COA,
+  validateChartOfAccounts,
   ensureAccountingData,
   normalBalance,
   postJournalEntry,

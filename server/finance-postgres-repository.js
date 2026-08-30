@@ -4,13 +4,19 @@ const { stableUuid } = require('./finance/legacy-classifier');
 
 function list(value) { return Array.isArray(value) ? value : []; }
 function json(value) { return JSON.stringify(value == null ? {} : value); }
+function canonicalJson(value) {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
+  if (value && typeof value === 'object') return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`).join(',')}}`;
+  return JSON.stringify(value == null ? null : value);
+}
+function sameJson(left, right) { return canonicalJson(left) === canonicalJson(right); }
 function iso(value) { return value || new Date().toISOString(); }
 function uuidOrNull(value) { return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || '')) ? String(value) : null; }
 function procurementStatus(status) {
   return ({ pending_approval: 'draft', rejected: 'cancelled' })[status] || status;
 }
 function invoiceStatus(status) {
-  return ({ open: 'matched', match_exception: 'exception' })[status] || status;
+  return ({ open: 'matched', match_exception: 'exception', match_rejected: 'cancelled' })[status] || status;
 }
 function paymentStatus(status) {
   return ({ paid: 'succeeded', rejected: 'cancelled' })[status] || status;
@@ -18,24 +24,145 @@ function paymentStatus(status) {
 function movementType(value) {
   return ({ goods_receipt: 'receipt', sale_consumption: 'consume' })[value] || value;
 }
+function unitCode(value) {
+  const normalized = String(value || '').trim().toLowerCase().replace(/\s+/g, '_');
+  return ({
+    gram: 'g', grams: 'g', گرم: 'g', kilogram: 'kg', kilograms: 'kg', کیلوگرم: 'kg', کیلو: 'kg',
+    milliliter: 'ml', milliliters: 'ml', میلی_لیتر: 'ml', liter: 'l', liters: 'l', لیتر: 'l',
+    pcs: 'count', piece: 'count', pieces: 'count', عدد: 'count', each: 'count',
+  })[normalized] || normalized;
+}
 
 async function normalizedSchemaAvailable(client) {
   const result = await client.query(`SELECT
     to_regclass('public.finance_events') AS finance_events,
+    to_regclass('public.finance_payments') AS finance_payments,
+    to_regclass('public.finance_refunds') AS finance_refunds,
+    to_regclass('public.finance_inventory_movements') AS inventory_movements,
+    to_regclass('public.finance_purchase_orders') AS purchase_orders,
+    to_regclass('public.finance_goods_receipts') AS goods_receipts,
+    to_regclass('public.finance_cost_accruals') AS cost_accruals,
+    to_regclass('public.finance_cost_payments') AS cost_payments,
+    to_regclass('public.finance_depreciation_runs') AS depreciation_runs,
+    to_regclass('public.finance_asset_depreciation_lines') AS depreciation_lines,
     to_regclass('public.journal_entries_v2') AS journal_entries,
+    to_regclass('public.journal_lines_v2') AS journal_lines,
+    to_regclass('public.finance_approvals') AS approvals,
+    to_regclass('public.reconciliation_items') AS reconciliation_items,
     to_regclass('public.finance_outbox') AS outbox,
     to_regclass('public.finance_order_item_cost_snapshots') AS cost_snapshots,
     to_regclass('public.finance_inventory_movement_valuations') AS movement_valuations,
     to_regclass('public.finance_production_batches') AS production_batches,
+    to_regclass('public.finance_inventory_items_v2') AS inventory_items,
+    to_regclass('public.finance_recipe_versions') AS recipe_versions,
+    to_regclass('public.finance_recipe_ingredients') AS recipe_ingredients,
     to_regclass('public.finance_cost_commitments') AS cost_commitments,
     to_regclass('public.finance_fixed_assets') AS fixed_assets,
     to_regclass('public.finance_payroll_runs') AS payroll_runs,
     to_regclass('public.finance_opening_balance_batches') AS opening_balances,
+    to_regclass('public.finance_branch_rollouts') AS branch_rollouts,
+    to_regclass('public.finance_migration_baselines') AS migration_baselines,
+    to_regclass('public.finance_schema_migrations') AS schema_migrations,
+    to_regclass('public.finance_idempotency_requests') AS idempotency_requests,
     to_regclass('public.finance_legacy_archive') AS legacy_archive,
+    to_regclass('public.finance_vendor_invoices') AS vendor_invoices,
+    to_regclass('public.finance_vendor_payments') AS vendor_payments,
+    (SELECT COUNT(*) = 4 FROM information_schema.columns WHERE table_schema='public' AND table_name='finance_vendor_invoices'
+      AND column_name IN ('journal_entry_id','reversal_journal_entry_id','reversed_by','reversed_at')) AS vendor_invoice_reversals,
+    (SELECT COUNT(*) = 4 FROM information_schema.columns WHERE table_schema='public' AND table_name='finance_vendor_payments'
+      AND column_name IN ('journal_entry_id','reversal_journal_entry_id','reversed_by','reversed_at')) AS vendor_payment_reversals,
+    (SELECT COUNT(*) = 11 FROM information_schema.columns WHERE table_schema='public' AND table_name='finance_recipe_versions'
+      AND column_name IN ('menu_item_name','name','output_item_id','approval_id','approved_by','approved_at','rejected_by','rejected_at','retired_by','retired_at','history')) AS recipe_workflow,
     (SELECT COUNT(*) = 12 FROM information_schema.columns WHERE table_schema='public' AND table_name='finance_legacy_archive'
       AND column_name IN ('reviewed_tenders','backfill_status','backfill_journal_entry_id','backfill_approval_id','backfill_event_id','backfill_requested_by','backfill_requested_at','backfilled_by','backfilled_at','backfill_reversal_journal_entry_id','backfill_reversed_by','backfill_reversed_at')) AS legacy_backfill`);
   const row = result.rows?.[0] || {};
-  return Boolean(row.finance_events && row.journal_entries && row.outbox && row.cost_snapshots && row.movement_valuations && row.production_batches && row.cost_commitments && row.fixed_assets && row.payroll_runs && row.opening_balances && row.legacy_archive && row.legacy_backfill);
+  const requiredRelations = [
+    'finance_events', 'finance_payments', 'finance_refunds', 'inventory_movements', 'purchase_orders', 'goods_receipts',
+    'cost_accruals', 'cost_payments', 'depreciation_runs', 'depreciation_lines', 'journal_entries', 'journal_lines',
+    'approvals', 'reconciliation_items', 'outbox', 'cost_snapshots', 'movement_valuations', 'production_batches',
+    'inventory_items', 'recipe_versions', 'recipe_ingredients', 'cost_commitments', 'fixed_assets', 'payroll_runs',
+    'opening_balances', 'branch_rollouts', 'migration_baselines', 'schema_migrations', 'idempotency_requests',
+    'legacy_archive', 'vendor_invoices', 'vendor_payments',
+  ];
+  return requiredRelations.every((relation) => Boolean(row[relation]))
+    && Boolean(row.recipe_workflow && row.vendor_invoice_reversals && row.vendor_payment_reversals && row.legacy_backfill);
+}
+
+async function syncInventoryAndRecipes(client, state, operationalState) {
+  const inventoryItems = list(operationalState?.accounting?.inventoryItems);
+  for (const item of inventoryItems) {
+    const baseUnit = unitCode(item.unit || item.baseUnit);
+    if (!['g', 'kg', 'ml', 'l', 'count'].includes(baseUnit)) {
+      const error = new Error(`finance_inventory_unit_unsupported:${item.id}:${baseUnit || 'missing'}`);
+      error.code = 'finance_inventory_unit_unsupported';
+      throw error;
+    }
+    await client.query(`INSERT INTO finance_inventory_items_v2
+      (id,branch_id,sku,name,base_unit_code,costing_method,reorder_point_base,safety_stock_base,lead_time_days,active,created_at,updated_at)
+      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+      ON CONFLICT(id) DO UPDATE SET sku=EXCLUDED.sku,name=EXCLUDED.name,reorder_point_base=EXCLUDED.reorder_point_base,
+        safety_stock_base=EXCLUDED.safety_stock_base,lead_time_days=EXCLUDED.lead_time_days,active=EXCLUDED.active,updated_at=EXCLUDED.updated_at`, [
+      String(item.id), Number(item.branchId), String(item.sku || item.id), item.name || String(item.id), baseUnit,
+      item.costingMethod === 'fifo' ? 'fifo' : 'weighted_average', Number(item.minStock ?? item.reorderPoint ?? 0),
+      Number(item.safetyStock ?? item.safetyStockQuantity ?? 0), item.leadTimeDays == null ? null : Number(item.leadTimeDays),
+      item.active !== false, iso(item.createdAt), iso(item.updatedAt),
+    ]);
+  }
+
+  for (const recipe of list(state.recipeVersions)) {
+    const finalStatus = recipe.status || 'pending_approval';
+    await client.query(`INSERT INTO finance_recipe_versions
+      (id,recipe_id,menu_item_id,menu_item_name,name,version,branch_id,yield_quantity,effective_from,effective_to,ingredients,output_item_id,status,approval_id,created_by,created_at,approved_by,approved_at,rejected_by,rejected_at,retired_by,retired_at,history)
+      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,NULL,$10::jsonb,$11,'pending_approval',$12,$13,$14,NULL,NULL,NULL,NULL,NULL,NULL,$15::jsonb)
+      ON CONFLICT(id) DO NOTHING`, [
+      recipe.id, recipe.recipeId, String(recipe.menuItemId), recipe.menuItemName || null, recipe.name || null,
+      recipe.version, recipe.branchId, recipe.yieldQuantity, recipe.effectiveFrom, json(recipe.ingredients || []),
+      recipe.outputItemId || null, recipe.approvalId || null, recipe.createdBy, iso(recipe.createdAt), json(recipe.history || []),
+    ]);
+    for (const ingredient of list(recipe.ingredients)) {
+      await client.query(`INSERT INTO finance_recipe_ingredients
+        (id,recipe_version_id,line_no,item_id,quantity,unit_code,quantity_basis,yield_percent)
+        SELECT $1,$2,$3,$4,$5,$6,$7,$8
+        WHERE NOT EXISTS (SELECT 1 FROM finance_recipe_ingredients WHERE id=$1)
+        ON CONFLICT(id) DO NOTHING`, [
+        ingredient.id, recipe.id, ingredient.lineNo, String(ingredient.itemId), ingredient.quantity,
+        unitCode(ingredient.unit), ingredient.quantityBasis || 'raw', ingredient.yieldPercent ?? 100,
+      ]);
+    }
+    if (['approved', 'retired'].includes(finalStatus)) {
+      await client.query(`UPDATE finance_recipe_versions SET status='approved',approved_by=$2,approved_at=$3,history=$4::jsonb
+        WHERE id=$1 AND status IN ('draft','pending_approval')`, [recipe.id, recipe.approvedBy, recipe.approvedAt, json(recipe.history || [])]);
+    }
+    if (finalStatus === 'retired') {
+      await client.query(`UPDATE finance_recipe_versions SET status='retired',effective_to=$2,retired_by=$3,retired_at=$4,history=$5::jsonb
+        WHERE id=$1 AND status='approved'`, [recipe.id, recipe.effectiveTo, recipe.retiredBy, recipe.retiredAt, json(recipe.history || [])]);
+    } else if (finalStatus === 'rejected') {
+      await client.query(`UPDATE finance_recipe_versions SET status='rejected',rejected_by=$2,rejected_at=$3,history=$4::jsonb
+        WHERE id=$1 AND status IN ('draft','pending_approval')`, [recipe.id, recipe.rejectedBy, recipe.rejectedAt, json(recipe.history || [])]);
+    }
+  }
+}
+
+async function syncIdempotencyRequests(client, state) {
+  for (const [key, request] of Object.entries(state.idempotencyRequests || {})) {
+    const outcome = state.idempotency?.[key];
+    if (!outcome?.kind || outcome.id == null) continue;
+    const inserted = await client.query(`INSERT INTO finance_idempotency_requests
+      (idempotency_key,operation,request_sha256,outcome_kind,outcome_id,created_at)
+      VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(idempotency_key) DO NOTHING RETURNING idempotency_key`, [
+      key, request.kind, request.fingerprint, outcome.kind, String(outcome.id), request.at || outcome.at || new Date().toISOString(),
+    ]);
+    if (inserted.rowCount === 1) continue;
+    const existing = await client.query(`SELECT operation,request_sha256,outcome_kind,outcome_id
+      FROM finance_idempotency_requests WHERE idempotency_key=$1`, [key]);
+    const row = existing.rows?.[0];
+    if (!row || row.operation !== request.kind || row.request_sha256 !== request.fingerprint
+      || row.outcome_kind !== outcome.kind || row.outcome_id !== String(outcome.id)) {
+      const error = new Error('postgres_finance_idempotency_conflict');
+      error.code = 'postgres_finance_idempotency_conflict';
+      throw error;
+    }
+  }
 }
 
 async function syncPeriods(client, state) {
@@ -159,10 +286,61 @@ async function syncOpeningBalances(client, state) {
   }
 }
 
+async function syncBranchRollouts(client, state) {
+  for (const rollout of list(state.branchRollouts)) {
+    await client.query(`INSERT INTO finance_branch_rollouts
+      (id,branch_id,status,approval_id,requested_by,requested_at,decided_by,decided_at,activated_by,activated_at,readiness_snapshot,readiness_at_activation)
+      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12::jsonb)
+      ON CONFLICT(id) DO UPDATE SET status=EXCLUDED.status,decided_by=EXCLUDED.decided_by,
+        decided_at=EXCLUDED.decided_at,activated_by=EXCLUDED.activated_by,activated_at=EXCLUDED.activated_at,
+        readiness_at_activation=EXCLUDED.readiness_at_activation`, [
+      rollout.id, rollout.branchId, rollout.status, rollout.approvalId, rollout.requestedBy,
+      rollout.requestedAt, rollout.decidedBy || null, rollout.decidedAt || null,
+      rollout.activatedBy || null, rollout.activatedAt || null, json(rollout.readinessSnapshot || {}),
+      rollout.readinessAtActivation ? json(rollout.readinessAtActivation) : null,
+    ]);
+  }
+}
+
+async function syncMigrationBaselines(client, state) {
+  const rows = list(state.migrationBaselines).slice().sort((a, b) => {
+    if (a.status === b.status) return new Date(a.scannedAt) - new Date(b.scannedAt);
+    return a.status === 'superseded' ? -1 : 1;
+  });
+  for (const baseline of rows) {
+    const existing = await client.query(`SELECT branch_id,status,source_count,source_keys,source_fingerprints,source_sha256,trust_summary,scanned_by,scanned_at
+      FROM finance_migration_baselines WHERE id=$1`, [baseline.id]);
+    const previous = existing.rows?.[0];
+    if (previous && (
+      Number(previous.branch_id) !== Number(baseline.branchId)
+      || Number(previous.source_count) !== Number(baseline.sourceCount)
+      || !sameJson(previous.source_keys, baseline.sourceKeys || [])
+      || !sameJson(previous.source_fingerprints, baseline.sourceFingerprints || {})
+      || previous.source_sha256 !== baseline.sourceSha256
+      || !sameJson(previous.trust_summary, baseline.trustSummary || {})
+      || String(previous.scanned_by) !== String(baseline.scannedBy)
+      || new Date(previous.scanned_at).getTime() !== new Date(baseline.scannedAt).getTime()
+    )) {
+      const error = new Error(`finance_migration_baseline_immutable_conflict:${baseline.id}`);
+      error.code = 'postgres_migration_baseline_immutable_conflict';
+      throw error;
+    }
+    await client.query(`INSERT INTO finance_migration_baselines
+      (id,branch_id,status,source_count,source_keys,source_fingerprints,source_sha256,trust_summary,scanned_by,scanned_at,superseded_at)
+      VALUES($1,$2,$3,$4,$5::jsonb,$6::jsonb,$7,$8::jsonb,$9,$10,$11)
+      ON CONFLICT(id) DO UPDATE SET status=EXCLUDED.status,superseded_at=EXCLUDED.superseded_at
+      WHERE finance_migration_baselines.status='active' AND EXCLUDED.status='superseded'`, [
+      baseline.id, baseline.branchId, baseline.status, baseline.sourceCount, json(baseline.sourceKeys || []),
+      json(baseline.sourceFingerprints || {}), baseline.sourceSha256, json(baseline.trustSummary || {}),
+      baseline.scannedBy, baseline.scannedAt, baseline.supersededAt || null,
+    ]);
+  }
+}
+
 async function syncLegacyArchive(client, state) {
   for (const record of list(state.legacyArchive)) {
     const archiveId = uuidOrNull(record.id) || stableUuid(`finance-legacy-archive:${record.sourceTable}:${record.sourceId}`);
-    await client.query(`INSERT INTO finance_legacy_archive
+    const result = await client.query(`INSERT INTO finance_legacy_archive
       (id,source_table,source_id,trust_status,reason,source_payload,branch_id,amount_irr,occurred_at,classification_details,decision,decision_notes,evidence_reference,decision_history,decided_by,decided_at,archived_by,archived_at,
        reviewed_tenders,backfill_status,backfill_journal_entry_id,backfill_approval_id,backfill_event_id,backfill_requested_by,backfill_requested_at,backfilled_by,backfilled_at,backfill_reversal_journal_entry_id,backfill_reversed_by,backfill_reversed_at)
       VALUES($1,$2,$3,$4,$5,$6::jsonb,$7,$8,$9,$10::jsonb,$11,$12,$13,$14::jsonb,$15,$16,$17,$18,$19::jsonb,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30)
@@ -173,7 +351,15 @@ async function syncLegacyArchive(client, state) {
         backfill_journal_entry_id=EXCLUDED.backfill_journal_entry_id,backfill_approval_id=EXCLUDED.backfill_approval_id,
         backfill_event_id=EXCLUDED.backfill_event_id,backfill_requested_by=EXCLUDED.backfill_requested_by,
         backfill_requested_at=EXCLUDED.backfill_requested_at,backfilled_by=EXCLUDED.backfilled_by,backfilled_at=EXCLUDED.backfilled_at,
-        backfill_reversal_journal_entry_id=EXCLUDED.backfill_reversal_journal_entry_id,backfill_reversed_by=EXCLUDED.backfill_reversed_by,backfill_reversed_at=EXCLUDED.backfill_reversed_at`, [
+        backfill_reversal_journal_entry_id=EXCLUDED.backfill_reversal_journal_entry_id,backfill_reversed_by=EXCLUDED.backfill_reversed_by,backfill_reversed_at=EXCLUDED.backfill_reversed_at
+      WHERE finance_legacy_archive.trust_status=EXCLUDED.trust_status
+        AND finance_legacy_archive.reason=EXCLUDED.reason
+        AND finance_legacy_archive.source_payload IS NOT DISTINCT FROM EXCLUDED.source_payload
+        AND finance_legacy_archive.branch_id IS NOT DISTINCT FROM EXCLUDED.branch_id
+        AND finance_legacy_archive.amount_irr IS NOT DISTINCT FROM EXCLUDED.amount_irr
+        AND finance_legacy_archive.occurred_at IS NOT DISTINCT FROM EXCLUDED.occurred_at
+        AND finance_legacy_archive.classification_details IS NOT DISTINCT FROM EXCLUDED.classification_details
+      RETURNING id`, [
       archiveId, record.sourceTable, String(record.sourceId), record.trustStatus, record.reason,
       json(record.sourcePayload), record.branchId == null ? null : Number(record.branchId), record.amountIrr == null ? null : Number(record.amountIrr),
       record.occurredAt || null, json(record.classificationDetails), record.decision || (record.trustStatus === 'quarantined' ? 'keep_quarantined' : 'pending'),
@@ -184,6 +370,11 @@ async function syncLegacyArchive(client, state) {
       record.backfillRequestedAt || null, record.backfilledBy || null, record.backfilledAt || null,
       record.backfillReversalJournalEntryId || null, record.backfillReversedBy || null, record.backfillReversedAt || null,
     ]);
+    if (result.rowCount === 0) {
+      const error = new Error(`finance_legacy_archive_immutable_conflict:${record.sourceTable}:${record.sourceId}`);
+      error.code = 'postgres_legacy_archive_immutable_conflict';
+      throw error;
+    }
   }
 }
 
@@ -202,20 +393,26 @@ async function syncProcurement(client, state) {
     ]);
   }
   for (const invoice of list(state.vendorInvoices)) {
-    await client.query(`INSERT INTO finance_vendor_invoices(id,number,vendor_id,branch_id,purchase_order_id,total_irr,status,match_result,invoice_date,due_date)
-      VALUES($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9,$10)
-      ON CONFLICT(id) DO UPDATE SET status=EXCLUDED.status,match_result=EXCLUDED.match_result,total_irr=EXCLUDED.total_irr`, [
+    await client.query(`INSERT INTO finance_vendor_invoices(id,number,vendor_id,branch_id,purchase_order_id,total_irr,status,match_result,invoice_date,due_date,journal_entry_id,reversal_journal_entry_id,reversed_by,reversed_at)
+      VALUES($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9,$10,$11,$12,$13,$14)
+      ON CONFLICT(id) DO UPDATE SET status=EXCLUDED.status,match_result=EXCLUDED.match_result,total_irr=EXCLUDED.total_irr,
+        journal_entry_id=EXCLUDED.journal_entry_id,reversal_journal_entry_id=EXCLUDED.reversal_journal_entry_id,
+        reversed_by=EXCLUDED.reversed_by,reversed_at=EXCLUDED.reversed_at`, [
       invoice.id, invoice.invoiceNumber, invoice.vendorId, invoice.branchId, invoice.purchaseOrderId, invoice.totalIrr,
-      invoiceStatus(invoice.status), json({ matchStatus: invoice.matchStatus, quantityVariance: invoice.quantityVariance, priceVarianceIrr: invoice.priceVarianceIrr, lines: invoice.lines }),
+      invoiceStatus(invoice.status), json({ matchStatus: invoice.matchStatus, quantityVariance: invoice.quantityVariance, priceVarianceIrr: invoice.priceVarianceIrr, matchReview: invoice.matchReview || null, lines: invoice.lines }),
       String(invoice.invoiceDate).slice(0, 10), invoice.dueDate ? String(invoice.dueDate).slice(0, 10) : null,
+      invoice.journalEntryId || null, invoice.reversalJournalEntryId || null, invoice.reversedBy || null, invoice.reversedAt || null,
     ]);
   }
   for (const payment of list(state.supplierPayments)) {
-    await client.query(`INSERT INTO finance_vendor_payments(id,invoice_id,amount_irr,status,idempotency_key,created_by,approved_by,created_at,approved_at)
-      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)
-      ON CONFLICT(id) DO UPDATE SET status=EXCLUDED.status,approved_by=EXCLUDED.approved_by,approved_at=EXCLUDED.approved_at`, [
+    await client.query(`INSERT INTO finance_vendor_payments(id,invoice_id,amount_irr,status,idempotency_key,created_by,approved_by,created_at,approved_at,journal_entry_id,reversal_journal_entry_id,reversed_by,reversed_at)
+      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+      ON CONFLICT(id) DO UPDATE SET status=EXCLUDED.status,approved_by=EXCLUDED.approved_by,approved_at=EXCLUDED.approved_at,
+        journal_entry_id=EXCLUDED.journal_entry_id,reversal_journal_entry_id=EXCLUDED.reversal_journal_entry_id,
+        reversed_by=EXCLUDED.reversed_by,reversed_at=EXCLUDED.reversed_at`, [
       payment.id, payment.vendorInvoiceId, payment.amountIrr, paymentStatus(payment.status), `supplier-payment:${payment.id}`,
       payment.createdBy, payment.approvedBy || null, payment.createdAt, payment.approvedAt || null,
+      payment.journalEntryId || null, payment.reversalJournalEntryId || null, payment.reversedBy || null, payment.reversedAt || null,
     ]);
   }
 }
@@ -374,15 +571,19 @@ async function syncReconciliation(client, state) {
   }
 }
 
-async function syncFinanceState(client, financeState, { checkSchema = true } = {}) {
+async function syncFinanceState(client, financeState, { checkSchema = true, operationalState = null } = {}) {
   const state = financeState || {};
   if (checkSchema && !(await normalizedSchemaAvailable(client))) return { available: false, reason: 'finance_schema_missing' };
+  await syncIdempotencyRequests(client, state);
   await syncPeriods(client, state);
   await syncPaymentsAndRefunds(client, state);
   await syncEvents(client, state);
   await syncJournals(client, state);
   await syncApprovals(client, state);
+  await syncInventoryAndRecipes(client, state, operationalState);
   await syncOpeningBalances(client, state);
+  await syncBranchRollouts(client, state);
+  await syncMigrationBaselines(client, state);
   await syncLegacyArchive(client, state);
   await syncProcurement(client, state);
   await syncRecurringCosts(client, state);
@@ -398,11 +599,15 @@ async function syncFinanceState(client, financeState, { checkSchema = true } = {
       purchaseOrders: list(state.purchaseOrders).length, inventoryMovements: list(state.inventoryMovements).length,
       movementValuations: list(state.inventoryMovementValuations).length,
       productionBatches: list(state.productionBatches).length, costSnapshots: list(state.orderItemCostSnapshots).length,
+      recipeVersions: list(state.recipeVersions).length,
       costCommitments: list(state.costCommitments).length, costAccruals: list(state.costAccruals).length,
       fixedAssets: list(state.fixedAssets).length, depreciationRuns: list(state.depreciationRuns).length,
       payrollRuns: list(state.payrollRuns).length, payrollPayments: list(state.payrollPayments).length,
       openingBalanceBatches: list(state.openingBalanceBatches).length,
+      branchRollouts: list(state.branchRollouts).length,
+      migrationBaselines: list(state.migrationBaselines).length,
       legacyArchive: list(state.legacyArchive).length,
+      idempotencyRequests: Object.keys(state.idempotencyRequests || {}).length,
     },
   };
 }

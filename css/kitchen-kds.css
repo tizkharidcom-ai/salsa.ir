@@ -49,6 +49,7 @@ body.is-kitchen-workspace {
 .is-kitchen-workspace .role-nav button { min-height: 34px; height: 34px; padding: 0 24px; border: 0; border-radius: 8px; background: transparent; color: #aebbbc; font-size: 12px; }
 .is-kitchen-workspace .role-nav button.active { background: #f3f6f6; color: #111718; }
 .is-kitchen-workspace .role-main { min-height: 0; height: 100%; overflow: hidden; }
+.is-kitchen-workspace .role-main :is(.role-metric, .inventory-action, .role-section) { color: var(--rp-ink); }
 
 .kds-shell {
   height: 100%;
@@ -78,12 +79,12 @@ body.is-kitchen-workspace {
 .kds-live.is-online { color: #8ee0bc; }
 .kds-live.is-online i { background: #36c98a; box-shadow: 0 0 0 3px rgba(54,201,138,.16); }
 
-.kds-stations { min-width: 0; display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 5px; }
-.kds-stations button { min-width: 0; height: 48px; padding: 4px 7px; display: flex; align-items: center; justify-content: space-between; gap: 4px; border: 1px solid var(--kds-line); border-radius: 9px; background: var(--kds-panel-2); color: #c8d0d1; cursor: pointer; }
-.kds-stations button span { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 11px; font-weight: 800; }
-.kds-stations button b { min-width: 24px; height: 24px; display: grid; place-items: center; border-radius: 7px; background: #273234; font-size: 10px; }
-.kds-stations button.active { border-color: var(--kds-cyan); background: #103136; color: #e4fdff; box-shadow: inset 0 -2px var(--kds-cyan); }
-.kds-stations button.active b { background: var(--kds-cyan); color: #052b30; }
+.kds-unified-station { min-width: 0; height: 48px; padding: 4px 9px; display: flex; align-items: center; gap: 8px; border: 1px solid var(--kds-cyan); border-radius: 9px; background: linear-gradient(135deg,#103136,#162629); color: #e4fdff; box-shadow: inset 0 -2px var(--kds-cyan); }
+.kds-unified-station__icon { width: 27px; height: 27px; display: grid; place-items: center; flex: 0 0 auto; border-radius: 7px; background: var(--kds-cyan); color: #052b30; font-size: 16px; font-weight: 950; }
+.kds-unified-station > span:nth-child(2) { min-width: 0; display: grid; gap: 1px; }
+.kds-unified-station b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; }
+.kds-unified-station small { color: #9ed8dd; font-size: 8px; }
+.kds-unified-station strong { margin-inline-start: auto; flex: 0 0 auto; padding: 5px 7px; border-radius: 6px; background: #273234; color: #f4ffff; font-size: 10px; }
 
 .kds-command__actions { min-width: 0; display: grid; grid-template-columns: minmax(120px,1fr) repeat(3,auto); gap: 5px; direction: rtl; }
 .kds-command__actions label { min-width: 0; height: 40px; padding: 0 8px; display: flex; align-items: center; gap: 6px; border: 1px solid var(--kds-line); border-radius: 9px; background: #0b1011; }
@@ -135,6 +136,8 @@ body.is-kitchen-workspace {
 .kds-ticket--delivery { --ticket-accent: var(--kds-orange); }
 .kds-ticket.is-priority { border-color: var(--kds-yellow); box-shadow: 0 0 0 2px rgba(241,182,56,.2),0 5px 16px rgba(0,0,0,.3); }
 .kds-ticket.needs-attention { box-shadow: 0 0 0 2px rgba(228,88,95,.28),0 5px 16px rgba(0,0,0,.3); }
+.kds-ticket.is-selected { border-color: var(--kds-cyan); box-shadow: 0 0 0 3px rgba(35,184,199,.55),0 7px 18px rgba(0,0,0,.36); }
+.kds-ticket.is-selected .kds-ticket__head::after { content: 'انتخاب‌شده'; margin-inline-start: auto; padding: 2px 4px; border-radius: 4px; background: rgba(8,16,18,.22); font-size: 7px; font-weight: 950; }
 .kds-ticket.is-warn { --ticket-accent: var(--kds-yellow); }
 .kds-ticket.is-late { --ticket-accent: var(--kds-red); animation: kdsLatePulse 1.8s ease-in-out infinite; }
 @keyframes kdsLatePulse { 50% { box-shadow: 0 0 0 3px rgba(228,88,95,.22),0 5px 16px rgba(0,0,0,.34); } }
@@ -189,15 +192,44 @@ body.is-kitchen-workspace {
 .kds-empty { grid-column: 1 / -1; grid-row: 1 / -1; display: grid; place-content: center; justify-items: center; gap: 7px; border: 1px dashed #344143; border-radius: 12px; color: #899698; }
 .kds-empty b { color: #e9eeee; font-size: 20px; }
 .kds-empty span { font-size: 11px; }
-.kds-shortcuts { display: flex; align-items: center; justify-content: center; gap: 18px; color: #718082; font-size: 8px; }
+.kds-shortcuts { min-width: 0; display: flex; align-items: center; justify-content: center; gap: 10px; overflow: hidden; color: #718082; font-size: 8px; }
 .kds-shortcuts span { display: inline-flex; align-items: center; gap: 4px; }
 .kds-shortcuts kbd { min-width: 20px; padding: 2px 5px; border: 1px solid #374345; border-radius: 4px; background: #131a1b; color: #c8d1d2; font: inherit; }
+.kds-order-entry { flex: 0 0 auto; padding: 3px 6px; border: 1px solid var(--kds-cyan); border-radius: 5px; background: rgba(37, 176, 191, .12); color: #b9f5f8; font-weight: 750; }
+.kds-shortcuts button { flex: 0 0 auto; height: 21px; padding: 0 7px; border: 1px solid #405457; border-radius: 5px; background: #182527; color: #c5e9ec; cursor: pointer; font: inherit; }
 
 .kds-undo { position: fixed; z-index: 60; inset: auto 50% 34px auto; width: min(420px,calc(100vw - 24px)); min-height: 52px; transform: translateX(50%); padding: 9px 10px 6px; display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 8px; border: 1px solid #4e5d5f; border-radius: 11px; overflow: hidden; background: #20292b; color: #fff; box-shadow: 0 15px 45px rgba(0,0,0,.45); }
 .kds-undo span { font-size: 11px; font-weight: 800; }
 .kds-undo button { height: 32px; padding: 0 13px; border: 0; border-radius: 7px; background: var(--kds-cyan); color: #062d32; cursor: pointer; font-weight: 900; }
 .kds-undo i { position: absolute; inset: auto 0 0; height: 3px; background: var(--kds-cyan); animation: kdsUndo var(--undo-duration) linear forwards; transform-origin: right; }
 @keyframes kdsUndo { to { transform: scaleX(0); } }
+
+.kds-all-day-drawer__scrim { position: fixed; z-index: 70; inset: 0; background: rgba(0,0,0,.58); animation: kdsDrawerScrim .18s ease-out; }
+.kds-all-day-drawer { position: fixed; z-index: 71; inset: 0 0 0 auto; width: min(430px,calc(100vw - 18px)); min-width: 0; display: grid; grid-template-rows: auto minmax(0,1fr); direction: rtl; background: #101617; color: #f4f7f7; border-inline-start: 1px solid #354345; box-shadow: -18px 0 48px rgba(0,0,0,.42); animation: kdsDrawerIn .2s ease-out; }
+@keyframes kdsDrawerIn { from { transform: translateX(100%); opacity: .7; } to { transform: translateX(0); opacity: 1; } }
+@keyframes kdsDrawerScrim { from { opacity: 0; } to { opacity: 1; } }
+.kds-all-day-drawer__head { min-width: 0; padding: 12px 16px 10px; display: flex; align-items: center; justify-content: space-between; gap: 12px; border-bottom: 1px solid #273638; background: #151d1f; }
+.kds-all-day-drawer__head > div { min-width: 0; display: flex; align-items: center; gap: 10px; }
+.kds-all-day-drawer__icon { width: 35px; height: 35px; display: grid; place-items: center; flex: 0 0 auto; border-radius: 9px; background: #22545a; color: #a9f0f4; font-size: 21px; }
+.kds-all-day-drawer__head > div > span:last-child { min-width: 0; display: grid; gap: 2px; }
+.kds-all-day-drawer__head b { font-size: 16px; }
+.kds-all-day-drawer__head small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #8ea1a3; font-size: 10px; }
+.kds-all-day-drawer__head > button { width: 32px; height: 32px; flex: 0 0 auto; border: 1px solid #435356; border-radius: 8px; background: #202b2d; color: #dbe8e8; cursor: pointer; font-size: 23px; line-height: 1; }
+.kds-all-day-drawer__section { min-height: 0; display: grid; grid-template-rows: auto minmax(0,1fr); }
+.kds-all-day-drawer__section-head { padding: 9px 14px 6px; display: grid; }
+.kds-all-day-drawer__section-head b { font-size: 12px; }
+.kds-all-day-list { min-height: 0; padding: 0 10px 8px; display: grid; align-content: start; gap: 4px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: #405356 transparent; }
+.kds-all-day-row { min-width: 0; padding: 6px 8px; display: grid; grid-template-columns: 11px minmax(0,1fr) auto; align-items: start; gap: 7px; border: 1px solid #263638; border-radius: 8px; background: #151e20; color: #e9f0f0; text-align: right; cursor: pointer; }
+.kds-all-day-row:hover,.kds-all-day-row:focus-visible { border-color: var(--kds-cyan); background: #1a2a2c; outline: none; }
+.kds-all-day-row__mark { width: 11px; height: 11px; margin-top: 3px; border-radius: 3px; background: #21a94f; box-shadow: 0 0 0 2px rgba(33,169,79,.14); }
+.kds-all-day-row:nth-child(3n) .kds-all-day-row__mark { background: #d64c55; box-shadow: 0 0 0 2px rgba(214,76,85,.14); }
+.kds-all-day-row:nth-child(3n+2) .kds-all-day-row__mark { background: #899396; box-shadow: 0 0 0 2px rgba(137,147,150,.14); }
+.kds-all-day-row__body { min-width: 0; display: grid; gap: 1px; }
+.kds-all-day-row__body b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; }
+.kds-all-day-row__body b small { color: #a8b9ba; font-size: 8px; font-weight: 650; }
+.kds-all-day-row__body small { color: #a8b9ba; font-size: 8px; }
+.kds-all-day-row__body em { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #718486; font-size: 8px; font-style: normal; line-height: 1.45; }
+.kds-all-day-row > strong { min-width: 28px; padding: 3px 4px; border-radius: 5px; background: #222e30; color: #f2ffff; font-size: 14px; text-align: center; }
 
 .kds-all-day { display: grid; gap: 5px; }
 .kds-all-day__head,.kds-all-day button { min-height: 48px; padding: 8px 11px; display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 12px; border-radius: 10px; }
@@ -221,12 +253,17 @@ body.is-kitchen-workspace {
 .kds-settings-grid :is(input,select) { min-width: 0; width: 100%; min-height: 45px; padding: 7px 10px; border: 1px solid var(--rp-line); border-radius: 10px; background: var(--rp-surface-2); }
 .kds-settings-grid .kds-setting-toggle { grid-template-columns: 1fr auto; align-items: center; padding: 8px 10px; border: 1px solid var(--rp-line); border-radius: 10px; }
 .kds-settings-grid .kds-setting-toggle input { width: 22px; min-height: 22px; }
+.kds-keyboard-intro { margin: 0 0 12px; color: var(--rp-muted); line-height: 1.8; }
+.kds-keyboard-help { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 6px; max-height: 62vh; overflow-y: auto; }
+.kds-keyboard-help > div { min-width: 0; min-height: 38px; padding: 6px 8px; display: flex; align-items: center; gap: 8px; border: 1px solid var(--rp-line); border-radius: 8px; background: var(--rp-surface-2); color: var(--rp-ink); }
+.kds-keyboard-help kbd { min-width: 76px; padding: 4px 5px; border: 1px solid var(--rp-line); border-radius: 5px; background: var(--rp-surface); color: var(--rp-ink); font-size: 10px; text-align: center; }
+.kds-keyboard-help span { min-width: 0; font-size: 10px; }
 
 @media (max-width: 980px) {
   .kds-command { grid-template-columns: minmax(150px,.55fr) minmax(320px,1.1fr) minmax(250px,.8fr); }
   .kds-command__actions { grid-template-columns: 1fr repeat(3,38px); }
   .kds-command__actions > button { padding: 0 3px; overflow: hidden; font-size: 10px; }
-  .kds-stations button span { font-size: 9px; }
+  .kds-unified-station b { font-size: 9px; }
   .kds-shortcuts { display: none; }
   .kds-shell { grid-template-rows: 68px 36px minmax(0,1fr); }
 }
@@ -245,8 +282,10 @@ body.is-kitchen-workspace {
   .kds-command__summary { grid-template-columns: auto 1fr auto; }
   .kds-command__summary small { grid-column: 3; grid-row: 1; }
   .kds-live { grid-row: 1; }
-  .kds-stations { grid-row: 2; }
-  .kds-stations button { height: 36px; }
+  .kds-unified-station { grid-row: 2; height: 36px; }
+  .kds-unified-station__icon { width: 23px; height: 23px; }
+  .kds-unified-station b { font-size: 9px; }
+  .kds-unified-station small { font-size: 7px; }
   .kds-command__actions { grid-row: 3; grid-template-columns: 1fr repeat(3,34px); }
   .kds-command__actions label,.kds-command__actions > button { height: 34px; min-height: 34px; }
   .kds-subbar { grid-template-columns: 1fr auto; }
@@ -262,6 +301,35 @@ body.is-kitchen-workspace {
   .kds-availability-list,.kds-settings-grid { grid-template-columns: 1fr; }
 }
 
+@media (max-width: 560px) {
+  .kds-all-day-drawer { width: calc(100vw - 8px); }
+  .kds-all-day-drawer__head { padding-inline: 12px; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .kds-ticket.is-late,.kds-undo i { animation: none; }
+}
+
+/* Inventory is a document-like workflow; unlike the live KDS board it must
+   retain the page scroll so long forms and stock history remain reachable. */
+body.is-kitchen-workspace.is-kitchen-inventory {
+  height: auto;
+  min-height: 100dvh;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: auto;
+}
+.is-kitchen-workspace.is-kitchen-inventory .role-app {
+  height: auto;
+  min-height: 100dvh;
+  display: block;
+  overflow: visible;
+}
+.is-kitchen-workspace.is-kitchen-inventory .role-preview-banner,
+.is-kitchen-workspace.is-kitchen-inventory .role-nav,
+.is-kitchen-workspace.is-kitchen-inventory .role-main { margin-top: 7px; }
+.is-kitchen-workspace.is-kitchen-inventory .role-main {
+  height: auto;
+  overflow: visible;
+  padding-bottom: 24px;
 }

@@ -11,12 +11,14 @@
  * 5. Tax Compliance Status & Smart Financial Directives
  */
 
-const { toFaDigits, toIRR } = require('./money');
+const { toFaDigits, toIRR, formatNumber } = require('./money');
 
-function generateCFOBrief(db) {
+function generateCFOBrief(db, filter = {}) {
   const acc = db.accounting || {};
-  const orders = db.orders || [];
-  const entries = (acc.journalEntries || []).filter((e) => e.status === 'posted');
+  const branchId = filter.branchId == null ? null : Number(filter.branchId);
+  const orders = (db.orders || []).filter((order) => branchId == null || Number(order.branchId) === branchId);
+  const entries = (acc.journalEntries || []).filter((entry) => entry.status === 'posted' && (branchId == null
+    || (entry.lines || []).some((line) => Number(line.branchId ?? entry.branchId) === branchId)));
 
   const todayStr = new Date().toISOString().slice(0, 10);
   const todaysOrders = orders.filter(
@@ -38,6 +40,7 @@ function generateCFOBrief(db) {
 
   entries.forEach((e) => {
     (e.lines || []).forEach((l) => {
+      if (branchId != null && Number(l.branchId ?? e.branchId) !== branchId) return;
       const code = String(l.accountCode);
       const debit = Number(l.debit || 0);
       const credit = Number(l.credit || 0);
@@ -73,8 +76,9 @@ function generateCFOBrief(db) {
   const laborCostPct = netSales > 0 ? Number(((totalLabor / netSales) * 100).toFixed(1)) : 0;
 
   // Active Drawers & Pending AP
-  const activeDrawers = (db.cashSessions || []).filter((session) => !session.closedAt);
-  const pendingBills = (acc.vendorBills || []).filter((b) => b.status === 'open' || b.status === 'partial');
+  const activeDrawers = (db.cashSessions || []).filter((session) => (branchId == null || Number(session.branchId) === branchId) && !session.closedAt);
+  const pendingBills = (acc.vendorBills || []).filter((bill) => (branchId == null || Number(bill.branchId) === branchId)
+    && (bill.status === 'open' || bill.status === 'partial'));
   const pendingBillsTotal = pendingBills.reduce((s, b) => s + (b.balance || b.total || 0), 0);
 
   // Daily Cash Burn & Runway Estimation
@@ -83,11 +87,11 @@ function generateCFOBrief(db) {
   const cashRunwayDays = dailyOpexEstimate > 0 ? Math.round(totalLiquidCash / dailyOpexEstimate) : null;
 
   // Diagnostic Rules & Smart Highlights
-  const highlights = [`فروش ثبت‌شده امروز مبلغ ${todayRevenue.toLocaleString('fa-IR')} ریال در قالب ${toFaDigits(todayOrderCount)} سفارش بوده است.`];
+  const highlights = [`فروش ثبت‌شده امروز مبلغ ${formatNumber(todayRevenue)} ریال در قالب ${toFaDigits(todayOrderCount)} سفارش بوده است.`];
   if (netSales > 0 && totalCogs + totalLabor > 0) highlights.push(`شاخص بهای اولیه بر دادهٔ دفتر برابر ${toFaDigits(primeCostPct)}٪ است.`);
   if (cashRunwayDays != null) highlights.push(`تاب‌آوری نقدینگی محاسبه‌شده بر تاریخچهٔ موجود ${toFaDigits(cashRunwayDays)} روز است.`);
   else highlights.push('برای محاسبهٔ تاب‌آوری نقدینگی، تاریخچهٔ هزینهٔ معتبر کافی نیست.');
-  highlights.push(`تعداد ${toFaDigits(pendingBills.length)} فاکتور خرید باز به ارزش ${pendingBillsTotal.toLocaleString('fa-IR')} ریال ثبت شده است.`);
+  highlights.push(`تعداد ${toFaDigits(pendingBills.length)} فاکتور خرید باز به ارزش ${formatNumber(pendingBillsTotal)} ریال ثبت شده است.`);
 
   const recommendations = [];
   if (primeCostPct > 65) {

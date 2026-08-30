@@ -5,7 +5,7 @@
   --eg-accent-soft:rgba(24,200,209,.12);--eg-accent-glow:rgba(24,200,209,.30);
   --eg-ink:#f4f4f1;--eg-muted:rgba(235,237,235,.64);--eg-bg:#05090c;
   --eg-chrome-bg:rgba(5,11,15,.74);--eg-chrome-border:rgba(174,231,233,.17);
-  --eg-pattern-image:image-set(url('../assets/images/entrance/westo-pattern.avif') type('image/avif'),url('../assets/images/entrance/westo-pattern.webp') type('image/webp'));--eg-blur:20px;
+  --eg-pattern-image:url('../assets/images/entrance/westo-pattern.webp');--eg-blur:20px;
   background:#05090c!important
 }
 #westo-entrance .eg-ambient__base{background:radial-gradient(72rem 54rem at 50% 46%,rgba(12,42,46,.14),transparent 62%),linear-gradient(180deg,#071016,#03070a)}

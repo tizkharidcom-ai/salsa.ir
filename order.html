@@ -1,8 +1,8 @@
 <!DOCTYPE html>
 <html lang="fa" dir="rtl">
 <head>
-  <link rel="manifest" href="/manifest.webmanifest?v=release14uf1d8-mobile-category-swipe" />
-  <script src="/js/pwa-bootstrap.js?v=release14uf1d8-mobile-category-swipe" defer></script>
+  <link rel="manifest" href="/manifest.webmanifest?v=release14uf1d28-webp-only" />
+  <script src="/js/pwa-bootstrap.js?v=release14uf1d28-webp-only" defer></script>
 
   <meta charset="utf-8" />
   <title data-i18n="checkout.documentTitle">سفارش آنلاین — وستو</title>
@@ -20,10 +20,11 @@
   <link rel="icon" type="image/png" sizes="32x32" href="assets/images/6a1d9bb2854e5557fe84e7d1_westo-fav-dark.png" />
   <link rel="stylesheet" href="css/westo-glass.css?v=glassAction1" />
   <link rel="stylesheet" href="css/panel.css?v=logic9" />
-  <link rel="stylesheet" href="css/checkout.css?v=logic9" />
+  <link rel="stylesheet" href="css/checkout.css?v=logic10" />
   <script src="js/theme.js?v=stable1" defer></script>
-  <script src="js/i18n.js?v=logic9-fa-default1" defer></script>
-  <script src="js/checkout.js?v=logic9" defer></script>
+  <script src="js/i18n.js?v=logic10-persian2" defer></script>
+  <script src="js/persian-format.js?v=persianNumbers1"></script>
+  <script src="js/checkout.js?v=logic10-persianNumbers" defer></script>
   <link rel="stylesheet" href="css/vazir-system.css?v=font1" />
   <link rel="stylesheet" href="css/westo-production-v11.css?v=prod11" />
   <link rel="stylesheet" href="css/westo-production-v12.css?v=prod13r9" />
@@ -66,7 +67,14 @@
           <label><span data-i18n="checkout.branch">شعبه</span><select id="checkout-branch" required></select></label>
           <label id="checkout-table-wrap"><span data-i18n="cart.tableNo">شماره میز</span><input id="checkout-table" inputmode="numeric" autocomplete="off" data-i18n-placeholder="checkout.ph.table" placeholder="مثلاً ۸" /></label>
           <label id="checkout-zone-wrap" hidden><span data-i18n="checkout.deliveryZone">محدوده ارسال</span><select id="checkout-zone"></select></label>
-          <label id="checkout-address-wrap" hidden><span data-i18n="checkout.address">آدرس تحویل</span><textarea id="checkout-address" rows="2" data-i18n-placeholder="checkout.ph.address" placeholder="خیابان، پلاک، طبقه…"></textarea></label>
+          <div id="checkout-saved-addresses-wrap" hidden style="background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:0.75rem; padding:0.65rem 0.75rem; margin-bottom:0.6rem;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.45rem;">
+              <span style="font-size:0.78rem; font-weight:700; color:#fff;">📍 ارسال به کدام آدرس انجام شود؟</span>
+              <button type="button" class="btn btn-sm btn-ghost" id="checkout-add-addr-btn" style="font-size:0.72rem; color:#10b981; padding:0.15rem 0.45rem;">+ افزودن آدرس جدید</button>
+            </div>
+            <div id="checkout-addresses-list" style="display:flex; flex-direction:column; gap:0.4rem;"></div>
+          </div>
+          <label id="checkout-address-wrap" hidden><span data-i18n="checkout.address">آدرس دقیق تحویل</span><textarea id="checkout-address" rows="2" data-i18n-placeholder="checkout.ph.address" placeholder="خیابان، پلاک، طبقه…"></textarea></label>
           <label id="checkout-instructions-wrap" hidden><span data-i18n="checkout.instructions">توضیح برای پیک (اختیاری)</span><input id="checkout-instructions" autocomplete="off" data-i18n-placeholder="checkout.ph.instructions" placeholder="مثلاً تماس قبل از رسیدن" /></label>
           <label><span data-i18n="cart.name">نام</span><input id="checkout-name" autocomplete="name" required /></label>
           <label><span data-i18n="cart.phone">موبایل</span><input id="checkout-phone" dir="ltr" inputmode="numeric" autocomplete="tel" maxlength="11" placeholder="09xxxxxxxxx" required /></label>
@@ -78,14 +86,106 @@
         <p class="msg" id="checkout-message" role="status"></p>
       </form>
 
-      <section class="checkout-card checkout-success" id="checkout-success" hidden>
-        <p class="eyebrow" data-i18n="checkout.successKicker">سفارش ثبت شد</p>
-        <h2 id="checkout-success-title" data-i18n="checkout.pendingPayment">در انتظار پرداخت</h2>
-        <p id="checkout-success-body"></p>
-        <button class="btn" type="button" id="sandbox-confirm" hidden data-i18n="checkout.sandboxConfirm">تکمیل پرداخت آزمایشی</button>
-        <a class="btn btn-sm btn-ghost" href="/menu" data-i18n="checkout.backMenu">بازگشت به منو</a>
+      <section class="checkout-card checkout-success" id="checkout-success" hidden style="text-align:center; padding:1.5rem 1rem;">
+        <div style="font-size:2.5rem; margin-bottom:0.4rem;">🎉</div>
+        <p class="eyebrow" data-i18n="checkout.successKicker" style="color:#10b981; font-weight:700;">سفارش شما با موفقیت ثبت شد</p>
+        <h2 id="checkout-success-title" data-i18n="checkout.pendingPayment" style="font-size:1.15rem; margin:0.35rem 0 0.5rem 0;">ثبت سفارش نهایی شد</h2>
+        <div id="checkout-order-badge" style="display:inline-block; font-size:1.1rem; font-weight:900; background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.15); border-radius:0.5rem; padding:0.35rem 1rem; margin-bottom:0.75rem; letter-spacing:1px; color:#fff;" class="ltr"></div>
+        <p id="checkout-success-body" style="font-size:0.85rem; color:var(--text-muted); line-height:1.5; margin-bottom:1rem;"></p>
+        
+        <div style="display:flex; flex-direction:column; gap:0.5rem; max-width:320px; margin:0 auto;">
+          <button class="btn" type="button" id="sandbox-confirm" hidden data-i18n="checkout.sandboxConfirm" style="background:#10b981; border-color:#10b981; font-weight:700;">✓ تأیید پرداخت آنلاین</button>
+          <a class="btn btn-sm btn-accent" id="checkout-view-history-btn" href="/profile#orders" style="text-decoration:none; padding:0.6rem 1rem; font-weight:700;">📦 مشاهده در تاریخچه سفارش‌های من</a>
+          <a class="btn btn-sm btn-ghost" href="/order" data-i18n="checkout.backMenu" style="text-decoration:none; padding:0.5rem 1rem;">🍽️ ثبت سفارش جدید از منو</a>
+        </div>
       </section>
     </aside>
   </main>
+
+  <!-- Address Modal (پاپ‌آپ تک‌صفحه‌ای فشرده، بدون نیاز به اسکرول حتی در موبایل با پیش‌فرض مشهد) -->
+  <div id="address-modal" class="address-modal-overlay" style="display:none;">
+    <div class="address-modal-box">
+      
+      <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid rgba(255,255,255,0.12); padding-bottom:0.4rem; margin-bottom:0.45rem;">
+        <h3 id="address-modal-title">📍 افزودن نشانی جدید</h3>
+        <button type="button" class="btn btn-sm btn-ghost" id="close-address-modal-btn" style="padding:0.15rem 0.5rem; font-size:0.75rem; border-color:rgba(255,255,255,0.2);">✕ بستن</button>
+      </div>
+
+      <input type="hidden" id="modal-addr-id" value="" />
+
+      <!-- Row 1: Title chips + custom title inline -->
+      <div style="display:flex; gap:0.35rem; align-items:center; margin-bottom:0.35rem;">
+        <div style="display:flex; gap:0.25rem; flex-shrink:0;">
+          <button type="button" class="addr-title-pill is-active" data-title="🏠 منزل">🏠 منزل</button>
+          <button type="button" class="addr-title-pill" data-title="🏢 محل کار">🏢 کار</button>
+          <button type="button" class="addr-title-pill" data-title="📍 سایر">📍 سایر</button>
+        </div>
+        <input id="modal-addr-title" placeholder="عنوان نشانی" value="🏠 منزل" style="flex:1; height:32px; font-size:0.75rem;" />
+      </div>
+
+      <!-- Row 2: City (Default Mashhad) & District -->
+      <div style="display:grid; grid-template-columns:1fr 1.3fr; gap:0.4rem; margin-bottom:0.35rem;">
+        <div class="field">
+          <label for="modal-addr-city">شهر</label>
+          <input id="modal-addr-city" placeholder="مشهد" value="مشهد" />
+        </div>
+        <div class="field">
+          <label for="modal-addr-district">محله / منطقه</label>
+          <input id="modal-addr-district" placeholder="مثلاً: سجاد، احمدآباد، وکیل‌آباد…" />
+        </div>
+      </div>
+
+      <!-- Row 3: Detailed Street Address -->
+      <div class="field" style="margin-bottom:0.35rem;">
+        <label for="modal-addr-street">نشانی دقیق (خیابان اصلی، فرعی، کوچه)</label>
+        <input id="modal-addr-street" placeholder="خیابان، کوچه، بن‌بست…" />
+      </div>
+
+      <!-- Row 4: Plaque, Floor, Unit, Receiver Name -->
+      <div style="display:grid; grid-template-columns:0.8fr 0.8fr 0.8fr 1.6fr; gap:0.35rem; margin-bottom:0.35rem;">
+        <div class="field">
+          <label for="modal-addr-plaque">پلاک</label>
+          <input id="modal-addr-plaque" placeholder="۱۲" />
+        </div>
+        <div class="field">
+          <label for="modal-addr-floor">طبقه</label>
+          <input id="modal-addr-floor" placeholder="۲" />
+        </div>
+        <div class="field">
+          <label for="modal-addr-unit">واحد</label>
+          <input id="modal-addr-unit" placeholder="۴" />
+        </div>
+        <div class="field">
+          <label for="modal-addr-receiver-name">تحویل‌گیرنده</label>
+          <input id="modal-addr-receiver-name" placeholder="نام و نام خانوادگی" />
+        </div>
+      </div>
+
+      <!-- Row 5: Receiver Phone & Delivery Note -->
+      <div style="display:grid; grid-template-columns:1fr 1.2fr; gap:0.4rem; margin-bottom:0.35rem;">
+        <div class="field">
+          <label for="modal-addr-receiver-phone">شماره تحویل‌گیرنده</label>
+          <input id="modal-addr-receiver-phone" class="ltr" placeholder="0915..." />
+        </div>
+        <div class="field">
+          <label for="modal-addr-note">توضیحات پیک</label>
+          <input id="modal-addr-note" placeholder="مثلاً: زنگ دوم…" />
+        </div>
+      </div>
+
+      <!-- Row 6: Default Checkbox & Save Button -->
+      <div style="display:flex; justify-content:space-between; align-items:center; gap:0.5rem; margin-top:0.4rem;">
+        <label style="display:flex; align-items:center; gap:0.35rem; font-size:0.75rem; cursor:pointer; margin:0;">
+          <input type="checkbox" id="modal-addr-default" style="width:16px; height:16px; margin:0; cursor:pointer;" checked />
+          <span>⭐️ نشانی پیش‌فرض تحویل غذا</span>
+        </label>
+        <button type="button" class="btn" id="save-address-modal-btn" style="padding:0.45rem 1.25rem; font-size:0.82rem; font-weight:700; background:#10b981; border-color:#10b981; color:#fff; flex-shrink:0;">
+          💾 ذخیره نشانی
+        </button>
+      </div>
+
+      <div id="modal-addr-msg" class="msg" style="margin-top:0.25rem; font-size:0.75rem;"></div>
+    </div>
+  </div>
 </body>
 </html>

@@ -1,6 +1,66 @@
 /* WESTO Smart Load generated bundle: js/westo-app.smart.js
-   Sources: js/i18n.js, js/category-theme.js, js/menu-store.js, js/content-overrides.js, js/theme.js, js/westo-entrance.js, js/entrance-promo-deck.js, js/subcategory-kill-switch.js, js/brand-lockup.js, js/language-switch-rescue.js, js/design-logic-v13.js, js/vendor/gsap.min.js, js/vendor/ScrollTrigger.min.js, js/vendor/SplitText.min.js, js/buttons.js, js/table-cart.js, js/animations.js, js/sounds.js, js/westo-production-v12.js, js/westo-v14.3-ultra-fine.js
+   Sources: js/persian-format.js, js/i18n.js, js/category-theme.js, js/menu-store.js, js/content-overrides.js, js/theme.js, js/westo-entrance.js, js/entrance-promo-deck.js, js/subcategory-kill-switch.js, js/brand-lockup.js, js/language-switch-rescue.js, js/design-logic-v13.js, js/vendor/gsap.min.js, js/vendor/ScrollTrigger.min.js, js/vendor/SplitText.min.js, js/buttons.js, js/table-cart.js, js/animations.js, js/sounds.js, js/westo-production-v12.js, js/westo-v14.3-ultra-fine.js
 */
+
+/* ===== BEGIN js/persian-format.js ===== */
+/* WESTO Persian number formatting — one presentation rule for all amounts. */
+(function (global) {
+  'use strict';
+
+  const FA_DIGITS = '۰۱۲۳۴۵۶۷۸۹';
+  const GROUP_SEPARATOR = '٫';
+
+  function toFaDigits(value) {
+    return String(value ?? '').replace(/[0-9]/g, (digit) => FA_DIGITS[Number(digit)]);
+  }
+
+  function toNumber(value) {
+    if (typeof value === 'number') return value;
+    let normalized = String(value ?? '')
+      .replace(/[۰-۹]/g, (digit) => String(FA_DIGITS.indexOf(digit)))
+      .replace(/[٠-٩]/g, (digit) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(digit)))
+      .replace(/[٬,]/g, '')
+      .trim();
+    if (/^-?\d{1,3}(?:٫\d{3})+$/.test(normalized)) normalized = normalized.replace(/٫/g, '');
+    else normalized = normalized.replace('٫', '.');
+    return Number(normalized);
+  }
+
+  function isPersianLocale(locale) {
+    return /^(fa|fa[-_])/i.test(String(locale || 'fa-IR'));
+  }
+
+  function formatNumber(value, options = {}) {
+    const numeric = toNumber(value);
+    if (!Number.isFinite(numeric)) return options.invalid ?? '—';
+
+    const {
+      locale = 'fa-IR',
+      invalid: _invalid,
+      ...intlOptions
+    } = options;
+    const formatted = new Intl.NumberFormat(
+      isPersianLocale(locale) ? 'en-US' : locale,
+      intlOptions,
+    ).format(numeric);
+    if (!isPersianLocale(locale)) return formatted;
+    return toFaDigits(formatted).replace(/,/g, GROUP_SEPARATOR).replace(/\./g, GROUP_SEPARATOR);
+  }
+
+  function formatAmount(value, { locale = 'fa-IR', unit = 'تومان', ...options } = {}) {
+    const formatted = formatNumber(value, { locale, maximumFractionDigits: 0, ...options });
+    return unit ? `${formatted} ${unit}` : formatted;
+  }
+
+  global.WestoPersianFormat = Object.freeze({
+    number: formatNumber,
+    amount: formatAmount,
+    toFaDigits,
+    groupSeparator: GROUP_SEPARATOR,
+  });
+}(typeof window !== 'undefined' ? window : typeof global !== 'undefined' ? global : {}));
+
+;/* ===== END js/persian-format.js ===== */
 
 /* ===== BEGIN js/i18n.js ===== */
 /* Westo guest i18n — fa | en | ar */
@@ -27,9 +87,9 @@
       ar: 'مقهى ومطعم لراحتك',
     },
     'eg.subtitleEn': {
-      fa: 'Cafe & Restaurant',
+      fa: 'کافه و رستوران',
       en: 'Cafe & Restaurant',
-      ar: 'Cafe & Restaurant',
+      ar: 'مقهى ومطعم',
     },
     'eg.enter': { fa: 'ورود به منو', en: 'Enter the menu', ar: 'الدخول إلى القائمة' },
     'eg.enterWesto': { fa: 'ورود به منو', en: 'Enter the menu', ar: 'الدخول إلى القائمة' },
@@ -158,9 +218,9 @@
       ar: 'تصفح الفئات',
     },
     'nav.aboutHint': {
-      fa: 'About Us',
+      fa: 'درباره ما',
       en: 'About Us',
-      ar: 'About Us',
+      ar: 'من نحن',
     },
     'nav.loginHint': {
       fa: 'حساب کاربری',
@@ -195,7 +255,7 @@
     'pwa.updating': { fa: 'در حال بروزرسانی…', en: 'Updating…', ar: 'جارٍ التحديث…' },
     'pwa.clearing': { fa: 'در حال پاک‌سازی…', en: 'Clearing…', ar: 'جارٍ المسح…' },
     'currency.toman': { fa: 'تومان', en: 'Toman', ar: 'تومان' },
-    'site.documentTitle': { fa: 'Westo — منوی کافه و رستوران', en: 'WESTO — Café & Restaurant Menu', ar: 'WESTO — قائمة المقهى والمطعم' },
+    'site.documentTitle': { fa: 'وستو — منوی کافه و رستوران', en: 'WESTO — Café & Restaurant Menu', ar: 'WESTO — قائمة المقهى والمطعم' },
     'about.documentTitle': { fa: 'درباره ما — وستو', en: 'About Us — WESTO', ar: 'من نحن — WESTO' },
     'legacy.section1': { fa: 'بخش محصول ۱', en: 'Product section 1', ar: 'قسم المنتج 1' },
     'legacy.section2': { fa: 'بخش محصول ۲', en: 'Product section 2', ar: 'قسم المنتج 2' },
@@ -208,9 +268,9 @@
     },
 
     // Table / cart
-    'cart.title': { fa: 'تیبل', en: 'Table', ar: 'الطاولة' },
+    'cart.title': { fa: 'سبد', en: 'Cart', ar: 'السلة' },
     'cart.empty': {
-      fa: 'تیبل خالی است\nاز منو غذا اضافه کنید',
+      fa: 'سبد سفارش خالی است\nاز منو غذا اضافه کنید',
       en: 'Your table is empty\nAdd dishes from the menu',
       ar: 'الطاولة فارغة\nأضف أطباقًا من القائمة',
     },
@@ -242,7 +302,7 @@
     'cart.ph.phone': { fa: '0912…', en: '09…', ar: '09…' },
     'cart.dec': { fa: 'کم کردن', en: 'Decrease', ar: 'إنقاص' },
     'cart.inc': { fa: 'زیاد کردن', en: 'Increase', ar: 'زيادة' },
-    'cart.remove': { fa: 'حذف از تیبل', en: 'Remove from table', ar: 'إزالة من الطاولة' },
+    'cart.remove': { fa: 'حذف از سبد', en: 'Remove from cart', ar: 'إزالة من السلة' },
     'cart.itemsCount': {
       fa: '{n} قلم',
       en: '{n} items',
@@ -261,6 +321,8 @@
     'cart.counterDone': { fa: 'پرداخت در صندوق — هنگام دریافت تسویه کنید.', en: 'Pay at the counter when you collect your order.', ar: 'ادفع عند الصندوق عند استلام طلبك.' },
     'cart.doneKicker': { fa: 'سفارش ثبت شد', en: 'Order placed', ar: 'تم تسجيل الطلب' },
     'cart.tableLabel': { fa: 'میز', en: 'Table', ar: 'الطاولة' },
+    'cart.qrContext': { fa: 'سفارش برای میز {n}', en: 'Order for table {n}', ar: 'طلب للطاولة {n}' },
+    'cart.qrPrefilled': { fa: 'شماره میز از رمزینه وارد شده است', en: 'Table number was added from the QR code', ar: 'تم إدخال رقم الطاولة من رمز الاستجابة' },
     'cart.feedback': { fa: 'ثبت نظر / NPS', en: 'Leave feedback / NPS', ar: 'أرسل رأيك / NPS' },
 
 
@@ -352,7 +414,7 @@
     'auth.otpDigit': { fa: 'رقم {n} کد تأیید', en: 'Verification code digit {n}', ar: 'الرقم {n} من رمز التحقق' },
 
     // Profile
-    'profile.documentTitle': { fa: 'پروفایل — Westo', en: 'Profile — WESTO', ar: 'الملف الشخصي — WESTO' },
+    'profile.documentTitle': { fa: 'پروفایل — وستو', en: 'Profile — WESTO', ar: 'الملف الشخصي — WESTO' },
     'profile.title': { fa: 'پروفایل من', en: 'My profile', ar: 'ملفي الشخصي' },
     'profile.points': { fa: 'امتیاز باشگاه مشتریان', en: 'Loyalty points', ar: 'نقاط الولاء' },
     'profile.phone': { fa: 'شماره موبایل', en: 'Mobile number', ar: 'رقم الجوال' },
@@ -408,7 +470,7 @@
     'feedback.documentTitle': { fa: 'بازخورد — وستو', en: 'Feedback — WESTO', ar: 'التقييم — WESTO' },
     'feedback.title': { fa: 'نظر شما', en: 'Your feedback', ar: 'رأيك' },
     'feedback.branch': { fa: 'شعبه', en: 'Branch', ar: 'الفرع' },
-    'feedback.nps': { fa: 'امتیاز NPS (۰–۱۰)', en: 'NPS score (0–10)', ar: 'تقييم NPS (0–10)' },
+    'feedback.nps': { fa: 'احتمال پیشنهاد به دوستان (۰ تا ۱۰)', en: 'NPS score (0–10)', ar: 'تقييم NPS (0–10)' },
     'feedback.low': { fa: '۰ — بعید', en: '0 — Unlikely', ar: '0 — غير محتمل' },
     'feedback.high': { fa: '۱۰ — حتماً', en: '10 — Definitely', ar: '10 — بالتأكيد' },
     'feedback.comment': { fa: 'نظر (اختیاری)', en: 'Comment (optional)', ar: 'تعليق (اختياري)' },
@@ -447,9 +509,9 @@
       en: 'Main menu',
       ar: 'القائمة الرئيسية',
     },
-    'cm.add': { fa: 'افزودن به تیبل', en: 'Add to table', ar: 'أضف إلى الطاولة' },
+    'cm.add': { fa: 'افزودن به سبد', en: 'Add to cart', ar: 'أضف إلى السلة' },
     'cm.added': {
-      fa: 'به تیبل اضافه شد',
+      fa: 'به سبد اضافه شد',
       en: 'added to table',
       ar: 'أضيف إلى الطاولة',
     },
@@ -1747,10 +1809,12 @@
   // --- 2) title / meta ---------------------------------------------------
   var siteTitle = (data.settings && data.settings.siteTitle) || '';
   var siteDescription = (data.settings && data.settings.metaDescription) || '';
-  if (!siteTitle || /ciao\s*energy/i.test(siteTitle)) siteTitle = 'Westo — منوی کافه و رستوران';
+  if (!siteTitle || /ciao\s*energy/i.test(siteTitle)) siteTitle = 'وستو — منوی کافه و رستوران';
+  if ((document.documentElement.lang || 'fa') === 'fa') siteTitle = siteTitle.replace(/^Westo\b/i, 'وستو');
   if (!siteDescription || /ciao\s*energy/i.test(siteDescription)) {
-    siteDescription = 'منوی آنلاین وستو؛ دسته‌ها، جزئیات غذاها و ثبت سفارش روی تیبل.';
+    siteDescription = 'منوی آنلاین وستو؛ دسته‌ها، جزئیات غذاها و ثبت سفارش از سبد.';
   }
+  if ((document.documentElement.lang || 'fa') === 'fa') siteDescription = siteDescription.replace(/تیبل/g, 'سبد سفارش');
   document.title = siteTitle;
   var meta = document.querySelector('meta[name="description"]');
   if (meta) meta.setAttribute('content', siteDescription);
@@ -1829,6 +1893,8 @@
     document.querySelectorAll('#westo-entrance [data-admin-content]').forEach(function (el) {
       var key = el.getAttribute('data-admin-content');
       var value = content[key];
+      var lang = (window.westoI18n && window.westoI18n.lang) || document.documentElement.lang || 'fa';
+      if (key === 'entrance.subtitle' && lang === 'fa' && /^cafe\s*&\s*restaurant$/i.test(String(value || '').trim())) value = 'کافه و رستوران';
       if (typeof value === 'string' && value.trim()) el.textContent = value;
     });
   }
@@ -1994,8 +2060,8 @@
         if (i >= faq.length) { item.remove(); return; }
         var q = item.querySelector('.faq_question .heading-style-h5');
         var a = item.querySelector('.faq_answer p');
-        if (q) q.textContent = faq[i].q;
-        if (a) a.textContent = faq[i].a;
+        if (q) q.textContent = String(faq[i].q || '').replace(/تیبل/g, 'سبد سفارش');
+        if (a) a.textContent = String(faq[i].a || '').replace(/تیبل/g, 'سبد سفارش');
       });
     }
   }
@@ -2101,11 +2167,13 @@
 (function () {
   'use strict';
 
-  const KEY = 'westo_theme';
+  const IS_ADMIN = /^\/admin\/?$/.test(window.location.pathname);
+  const KEY = IS_ADMIN ? 'westo_admin_theme' : 'westo_theme';
+  const DEFAULT_PREF = IS_ADMIN ? 'light' : 'system';
   const PREFS = new Set(['dark', 'light', 'system']);
   const THEME_COLOR = Object.freeze({
     dark: '#121416',
-    light: '#e8e0d4',
+    light: IS_ADMIN ? '#f4f5f7' : '#e8e0d4',
   });
 
   const root = document.documentElement;
@@ -2140,10 +2208,10 @@
   function readStored() {
     try {
       const raw = localStorage.getItem(KEY);
-      if (raw == null || raw === '') return 'system';
-      return normalizePref(raw);
+      if (raw == null || raw === '') return DEFAULT_PREF;
+      return PREFS.has(String(raw).toLowerCase()) ? normalizePref(raw) : DEFAULT_PREF;
     } catch (_) {
-      return 'system';
+      return DEFAULT_PREF;
     }
   }
 
@@ -2418,9 +2486,8 @@
       apply(src);
       return;
     }
-    // Decoration is non-blocking, but receives the same AVIF-first/WebP-safe
-    // policy as menu media. If the selected image cannot load, the scheduler
-    // resolves the original WebP path before this CSS variable is written.
+    // Decoration is non-blocking and follows the same WebP-only policy as
+    // menu media. The CSS variable is written only after the image resolves.
     scheduler.requestImage(src, {
       priority: scheduler.priorities?.NEAR,
       group: 'entrance-pattern',
@@ -4509,9 +4576,13 @@
     return l === 'en' ? 'en-US' : l === 'ar' ? 'ar' : 'fa-IR';
   }
 
+  function formatUiNumber(value, options = {}) {
+    return window.WestoPersianFormat?.number(value, { ...options, locale: localeTag() }) ?? Number(value || 0).toLocaleString(localeTag(), options);
+  }
+
   function formatPrice(n) {
     const unit = window.westoI18n?.t ? window.westoI18n.t('currency.toman') : 'تومان';
-    return `${Number(n || 0).toLocaleString(localeTag())} ${unit}`;
+    return `${formatUiNumber(n)} ${unit}`;
   }
 
   const ALLERGEN_META = {
@@ -4665,6 +4736,27 @@
     return cart.reduce((s, l) => s + l.price * l.qty, 0);
   }
 
+  function qrTableNumber() {
+    const raw = String(new URLSearchParams(location.search).get('table') || '').trim();
+    if (!raw) return '';
+    const normalized = normalizeDigits(raw);
+    return /^\d+$/.test(normalized)
+      ? Number(normalized).toLocaleString(localeTag())
+      : raw.slice(0, 40);
+  }
+
+  function paintOrderContext() {
+    const context = $('#cm-order-context');
+    if (!context) return;
+    const tableNo = qrTableNumber();
+    context.hidden = !tableNo;
+    if (!tableNo) return;
+    const title = $('#cm-order-context-title');
+    const note = $('#cm-order-context-note');
+    if (title) title.textContent = tr('cart.qrContext', { n: tableNo });
+    if (note) note.textContent = tr('cart.qrPrefilled');
+  }
+
   function updateBadge() {
     if (!badge) return;
     const n = cartCount();
@@ -4678,10 +4770,12 @@
     const navBtn = $('#nav-table-btn');
     if (navBtn) {
       const label = tr('cart.title');
+      const tableNo = qrTableNumber();
+      const contextLabel = tableNo ? `${label}، ${tr('cart.qrContext', { n: tableNo })}` : label;
       navBtn.classList.toggle('has-items', n > 0);
       navBtn.setAttribute(
         'aria-label',
-        n ? `${label}, ${shown}` : label,
+        n ? `${contextLabel}، ${shown} قلم` : contextLabel,
       );
       const labelEl =
         navBtn.querySelector('[data-i18n="cart.title"]') ||
@@ -5178,6 +5272,7 @@
     if (drawerTitle) drawerTitle.textContent = tr('cart.title');
     const drawerPanel = $('#table-drawer')?.querySelector('.table-drawer__panel');
     if (drawerPanel) drawerPanel.setAttribute('aria-label', tr('cart.title'));
+    paintOrderContext();
     updateBadge();
   }
 
@@ -10619,16 +10714,23 @@
 
       const i18n = () => window.westoI18n;
       const tr = (key, vars) => (i18n()?.t ? i18n().t(key, vars) : key);
+      const localizedAdminCopy = (key, value) => {
+        const clean = typeof value === 'string' ? value.trim() : '';
+        if (key === 'entrance.subtitle' && i18n()?.lang === 'fa' && /^cafe\s*&\s*restaurant$/i.test(clean)) return tr('eg.subtitleEn');
+        return clean;
+      };
       const entranceAdminCopy = (key, fallback) => {
         const value = window.__WESTO_CONTENT__?.content?.[key];
-        return typeof value === 'string' && value.trim() ? value.trim() : fallback;
+        const localized = localizedAdminCopy(key, value);
+        return localized || fallback;
       };
       const applyGateAdminCopy = () => {
         if (!loaderWrapper) return;
         $$('[data-admin-content]', loaderWrapper).forEach((el) => {
           const key = el.getAttribute('data-admin-content');
           const value = key ? window.__WESTO_CONTENT__?.content?.[key] : '';
-          if (typeof value === 'string' && value.trim()) el.textContent = value.trim();
+          const localized = localizedAdminCopy(key, value);
+          if (localized) el.textContent = localized;
         });
       };
       const entranceCtaCopy = () => entranceAdminCopy('entrance.cta', tr('eg.enterWesto'));

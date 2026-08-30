@@ -70,6 +70,28 @@ body.classic-menu .cm-header__bar {
 body.classic-menu .cm-header__start { justify-self: start; }
 body.classic-menu .cm-header__actions { justify-self: end; }
 
+body.classic-menu .cm-order-context {
+  width: fit-content;
+  max-width: var(--cm-shell);
+  min-height: 2.35rem;
+  margin: 0.55rem auto 0;
+  padding: 0.42rem 0.7rem;
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  gap: 0.42rem;
+  align-items: center;
+  color: #11393d;
+  border: 1px solid rgba(10, 82, 88, 0.15);
+  border-radius: 999px;
+  background: rgba(239, 253, 253, 0.82);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.82);
+  font-size: 0.68rem;
+}
+body.classic-menu .cm-order-context[hidden] { display: none; }
+body.classic-menu .cm-order-context > span { width: 1.25rem; height: 1.25rem; display: grid; place-items: center; border-radius: 50%; color: #fff; background: var(--cm-brand-ink); font-weight: 900; }
+body.classic-menu .cm-order-context > strong { font-size: 0.72rem; }
+body.classic-menu .cm-order-context > small { color: #477277; font-size: 0.62rem; }
+
 body.classic-menu .cm-logo {
   position: relative;
   width: 7.8rem;
@@ -674,6 +696,8 @@ body.classic-menu .cm-drawer__link { color: #69645c; border-color: rgba(34,28,18
   body.classic-menu .cm-icon-btn,
   body.classic-menu .cm-lang-btn { width: 2.25rem; min-width: 2.25rem; height: 2.25rem; }
   body.classic-menu .cm-table-btn { width: 2.25rem; height: 2.25rem; padding: 0; justify-content: center; }
+  body.classic-menu .cm-order-context { width: calc(100% - 0.6rem); grid-template-columns: auto minmax(0,1fr); border-radius: 0.9rem; }
+  body.classic-menu .cm-order-context > small { grid-column: 2; }
   body.classic-menu .cm-cats-wrap { padding-inline: 0; }
   body.classic-menu .cm-cats { min-height: 3.8rem; border-radius: 1.4rem; padding: 0.42rem 0.5rem; }
   body.classic-menu .cm-cat { min-height: 2.85rem; padding: 0.3rem 0.58rem; gap: 0.42rem; }

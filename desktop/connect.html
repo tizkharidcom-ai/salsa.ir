@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>اتصال به وستو</title>
+  <style>
+    :root { color-scheme: dark; font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #081116; color: #f3f7fa; }
+    * { box-sizing: border-box; }
+    body { min-height: 100vh; margin: 0; display: grid; place-items: center; padding: 24px; background: radial-gradient(circle at 20% 10%, #164653 0, transparent 42%), #081116; }
+    main { width: min(620px, 100%); padding: 36px; border: 1px solid #375462; border-radius: 24px; background: rgba(14, 28, 35, .94); box-shadow: 0 28px 80px rgba(0, 0, 0, .35); }
+    h1 { margin: 0 0 12px; font-size: clamp(1.5rem, 3vw, 2.2rem); }
+    p { color: #b8cbd2; line-height: 1.9; }
+    label { display: block; margin: 24px 0 8px; color: #d9e9ee; font-weight: 700; }
+    input { width: 100%; padding: 14px 16px; border: 1px solid #55717c; border-radius: 12px; background: #0b1b22; color: #fff; font: inherit; direction: ltr; }
+    input:focus { outline: 3px solid rgba(45, 195, 223, .25); border-color: #2dc3df; }
+    button { margin-top: 18px; padding: 13px 22px; border: 0; border-radius: 12px; background: #2dc3df; color: #06202a; font: inherit; font-weight: 800; cursor: pointer; }
+    button:disabled { opacity: .6; cursor: wait; }
+    #status { min-height: 1.8em; color: #f2c879; }
+    .hint { margin-bottom: 0; font-size: .9rem; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>اتصال اپ مدیریت وستو</h1>
+    <p>آدرس پنل مدیریت را وارد کنید. پس از ذخیره، اپ در اجراهای بعدی همین آدرس را باز می‌کند و ورود شما در نشست امن اپ نگهداری می‌شود.</p>
+    <form id="connection-form">
+      <label for="app-url">آدرس پنل مدیریت</label>
+      <input id="app-url" type="url" inputmode="url" required placeholder="https://panel.example.com/admin" autocomplete="url" />
+      <button id="submit" type="submit">اتصال و ادامه</button>
+      <p id="status" role="status" aria-live="polite"></p>
+    </form>
+    <p class="hint">برای اجرای محلی می‌توانید از http://127.0.0.1:4180/admin استفاده کنید.</p>
+  </main>
+  <script>
+    (() => {
+      const bridge = window.westoDesktop;
+      const form = document.getElementById('connection-form');
+      const input = document.getElementById('app-url');
+      const button = document.getElementById('submit');
+      const status = document.getElementById('status');
+      if (!bridge) { status.textContent = 'رابط Electron در دسترس نیست.'; return; }
+      bridge.getConnectionUrl().then((data) => { input.value = data.url || data.defaultUrl || ''; });
+      form.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        button.disabled = true;
+        status.textContent = 'در حال اتصال…';
+        const result = await bridge.saveConnectionUrl(input.value);
+        if (!result.ok) { status.textContent = result.error; button.disabled = false; }
+      });
+    })();
+  </script>
+</body>
+</html>

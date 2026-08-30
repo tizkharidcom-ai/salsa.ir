@@ -5,6 +5,7 @@ const {
   canonicalUnit,
   effectiveRecipeForSale,
   ingredientRequirement,
+  recipeCatalog,
 } = require('./restaurant-intelligence');
 
 function list(value) { return Array.isArray(value) ? value : []; }
@@ -27,8 +28,10 @@ function unitCostIrr(item, ingredient, settings = {}) {
     ['recipe_unit_cost_irr', ingredient?.unitCostIrr],
   ];
   for (const [source, value] of explicit) {
+    if (value === undefined || value === null || String(value).trim() === '') continue;
     const amount = safeIrr(value);
-    if (amount != null) return { ok: true, amountIrr: amount, source };
+    if (amount == null) return { ok: false, code: 'inventory_cost_unsafe' };
+    return { ok: true, amountIrr: amount, source };
   }
 
   const policy = String(settings.legacyInventoryCostUnit || '').toUpperCase();
@@ -43,25 +46,46 @@ function unitCostIrr(item, ingredient, settings = {}) {
 }
 
 function movementBalance(state, itemId, branchId) {
-  return list(state?.inventoryMovements)
-    .filter((row) => String(row.itemId) === String(itemId) && sameBranch(row, branchId))
-    .reduce((sum, row) => sum + (number(row.quantityBase) || 0), 0);
+  let balance = 0;
+  for (const row of list(state?.inventoryMovements)) {
+    if (String(row.itemId) !== String(itemId) || !sameBranch(row, branchId)) continue;
+    const quantity = number(row.quantityBase);
+    if (quantity == null) return { ok: false, code: 'inventory_movement_quantity_invalid' };
+    balance += quantity;
+    if (!Number.isFinite(balance)) return { ok: false, code: 'inventory_movement_quantity_unsafe' };
+  }
+  return { ok: true, value: balance };
 }
 
 function physicalAvailable(item, state, branchId) {
   const onHand = number(item?.qtyOnHand ?? item?.onHand ?? item?.quantity);
   if (onHand == null) return { ok: false, code: 'on_hand_missing' };
-  const reserved = number(item?.reservedQty ?? item?.qtyReserved) || 0;
-  const quarantined = number(item?.quarantinedQty ?? item?.qtyQuarantined) || 0;
-  const expired = number(item?.expiredQty ?? item?.qtyExpired) || 0;
-  const shadowMovement = movementBalance(state, item.id, branchId);
+  if (onHand < 0) return { ok: false, code: 'negative_on_hand' };
+  const controls = [
+    ['reservedQty', 'qtyReserved', 'reserved_quantity_invalid'],
+    ['quarantinedQty', 'qtyQuarantined', 'quarantined_quantity_invalid'],
+    ['expiredQty', 'qtyExpired', 'expired_quantity_invalid'],
+  ];
+  const values = {};
+  for (const [primary, fallback, code] of controls) {
+    const raw = item?.[primary] ?? item?.[fallback];
+    const value = raw === undefined || raw === null || raw === '' ? 0 : number(raw);
+    if (value == null || value < 0) return { ok: false, code };
+    values[primary] = value;
+  }
+  const shadow = movementBalance(state, item.id, branchId);
+  if (!shadow.ok) return shadow;
+  const { reservedQty: reserved, quarantinedQty: quarantined, expiredQty: expired } = values;
+  const shadowMovement = shadow.value;
   return { ok: true, value: onHand - reserved - quarantined - expired + shadowMovement, openingOnHand: onHand, shadowMovement };
 }
 
 function orderLineSalesIrr(line) {
   for (const value of [line?.netSalesIrr, line?.lineTotalIrr]) {
+    if (value === undefined || value === null || String(value).trim() === '') continue;
     const amount = safeIrr(value);
     if (amount != null) return amount;
+    return null;
   }
   return legacyOrderAmountToIrr(line?.lineTotal ?? ((number(line?.unitTotal ?? line?.price) || 0) * (number(line?.qty ?? line?.quantity) || 0)));
 }
@@ -76,21 +100,26 @@ function buildOrderCosting(db, order) {
   if (!Number.isFinite(new Date(occurredAt).getTime())) issues.push({ code: 'sale_date_invalid', message: 'زمان قطعی فروش معتبر نیست.' });
 
   const items = list(accounting.inventoryItems).filter((row) => sameBranch(row, branchId));
-  const itemMap = new Map(items.map((row) => [String(row.id), row]));
-  const recipes = list(accounting.recipes).filter((row) => sameBranch(row, branchId));
+  const itemMap = new Map();
+  items.forEach((row) => {
+    itemMap.set(String(row.id), row);
+    if (row.sku != null && String(row.sku).trim()) itemMap.set(`sku:${String(row.sku).trim()}`, row);
+  });
+  const recipes = recipeCatalog(db, branchId);
   const snapshots = [];
   const usage = new Map();
 
   for (const [index, line] of list(order?.items).entries()) {
     const orderLineKey = String(line.id ?? line.orderLineId ?? `${index + 1}`);
     const quantity = number(line.qty ?? line.quantity);
+    const menuItemId = line.menuItemId ?? line.itemId ?? line.productId ?? line.id;
     if (quantity == null || quantity <= 0) {
-      issues.push({ code: 'order_line_quantity_invalid', orderLineKey, menuItemId: line.menuItemId ?? null });
+      issues.push({ code: 'order_line_quantity_invalid', orderLineKey, menuItemId: menuItemId ?? null });
       continue;
     }
-    const recipe = effectiveRecipeForSale(recipes, line.menuItemId, occurredAt);
+    const recipe = effectiveRecipeForSale(recipes, menuItemId, occurredAt);
     if (!recipe) {
-      issues.push({ code: 'effective_recipe_missing', orderLineKey, menuItemId: line.menuItemId ?? null });
+      issues.push({ code: 'effective_recipe_missing', orderLineKey, menuItemId: menuItemId ?? null });
       continue;
     }
     if (!list(recipe.ingredients).length) {
@@ -102,13 +131,17 @@ function buildOrderCosting(db, order) {
     let lineCogsIrr = 0;
     let lineComplete = true;
     for (const ingredient of list(recipe.ingredients)) {
-      const item = itemMap.get(String(ingredient.itemId));
+      const ingredientKey = String(ingredient.itemId ?? '').trim();
+      const item = itemMap.get(ingredientKey) || itemMap.get(`sku:${ingredientKey}`);
       if (!item) {
         issues.push({ code: 'ingredient_item_missing', orderLineKey, itemId: ingredient.itemId ?? null, recipeVersionId: recipe.id ?? null });
         lineComplete = false;
         continue;
       }
-      const required = ingredientRequirement(ingredient, recipe, item);
+      const required = ingredientRequirement({
+        ...ingredient,
+        quantityBasis: ingredient.quantityBasis ?? ingredient.quantity_basis ?? 'raw',
+      }, recipe, item);
       if (!required.ok) {
         issues.push({ code: required.code, orderLineKey, itemId: item.id, recipeVersionId: recipe.id ?? null });
         lineComplete = false;

@@ -251,7 +251,7 @@
       (q > 1 ? `${q.toLocaleString(localeTag())}× ` : '') +
         itemName(item) +
         ' — ' +
-        (i18n()?.t ? i18n().t('cm.added') : t3('به تیبل اضافه شد', 'added to table', 'أضيف إلى الطاولة')),
+        (i18n()?.t ? i18n().t('cm.added') : t3('به سبد اضافه شد', 'added to cart', 'أضيف إلى السلة')),
     );
   }
 
@@ -277,10 +277,12 @@
     if (i18n()?.applyDocumentLang) i18n().applyDocumentLang(lang());
     else {
       document.documentElement.lang = lang();
-      document.documentElement.dir = 'ltr';
     }
-    // Text islands follow guest lang; page chrome stays LTR (matches main site)
     const textDir = lang() === 'en' ? 'ltr' : 'rtl';
+    // The classic menu is a text-first page: Persian and Arabic use a genuine
+    // RTL document direction while English remains LTR.
+    document.documentElement.dir = textDir;
+    document.body.dir = textDir;
     els.root.lang = lang();
     if (els.grid) els.grid.dir = textDir;
     if (els.tabs) els.tabs.dir = textDir;
@@ -305,7 +307,7 @@
     if (els.experienceLink) {
       els.experienceLink.textContent = i18n()?.t ? i18n().t('cm.experience') : t3('منوی اصلی', 'Main menu', 'القائمة الرئيسية');
     }
-    if (els.detailAdd) els.detailAdd.textContent = i18n()?.t ? i18n().t('cm.add') : t3('افزودن به تیبل', 'Add to table', 'أضف إلى الطاولة');
+    if (els.detailAdd) els.detailAdd.textContent = i18n()?.t ? i18n().t('cm.add') : t3('افزودن به سبد', 'Add to cart', 'أضف إلى السلة');
     const code = $('#cm-lang-code');
     if (code) code.textContent = (lang() || 'fa').toUpperCase();
     langButtons.forEach((b) => {
@@ -376,6 +378,10 @@
     return lang() === 'en' ? 'en-US' : lang() === 'ar' ? 'ar' : 'fa-IR';
   }
 
+  function formatUiNumber(value, options = {}) {
+    return window.WestoPersianFormat?.number(value, { ...options, locale: localeTag() }) ?? Number(value || 0).toLocaleString(localeTag(), options);
+  }
+
   function renderMeta(list) {
     const selected = activeCat === 'all' ? null : categoryById.get(Number(activeCat));
     if (els.sectionKicker) {
@@ -400,16 +406,10 @@
 
   function cardPriceMarkup(price) {
     const amount = Math.max(0, Number(price || 0));
-    if (lang() === 'fa' && amount >= 1000) {
-      const thousands = amount / 1000;
-      const value = Number.isInteger(thousands)
-        ? thousands.toLocaleString('fa-IR')
-        : thousands.toLocaleString('fa-IR', { maximumFractionDigits: 1 });
-      return `<strong>${esc(value)}</strong><span>هـــزار <small>IRT</small></span>`;
-    }
-    const value = amount.toLocaleString(localeTag());
+    const value = formatUiNumber(amount);
     const unit = i18n()?.t ? i18n().t('currency.toman') : t3('تومان', 'Toman', 'تومان');
-    return `<strong>${esc(value)}</strong><span>${esc(unit)} <small>IRT</small></span>`;
+    const unitMarkup = unit === 'تومان' ? '<small>تومان</small>' : `<small>${esc(unit)}</small>`;
+    return `<strong>${esc(value)}</strong>${unitMarkup}`;
   }
 
   function renderGrid() {
@@ -442,7 +442,7 @@
         const summary = itemDesc(m);
         const featured = !featuredUsed && m.featured && !out;
         if (featured) featuredUsed = true;
-        const spokenPrice = `${Number(m.price || 0).toLocaleString(localeTag())} ${i18n()?.t ? i18n().t('currency.toman') : t3('تومان', 'Toman', 'تومان')}`;
+        const spokenPrice = `${formatUiNumber(m.price)} ${i18n()?.t ? i18n().t('currency.toman') : t3('تومان', 'Toman', 'تومان')}`;
         return `<article class="cm-item${featured ? ' is-featured' : ''}${out || off ? ' is-unavailable' : ''}" data-id="${m.id}" role="button" tabindex="0" aria-label="${esc(`${name}، ${spokenPrice}`)}">
           <div class="cm-item__media">${m.img ? `<img src="${esc(m.img)}" alt="${esc(name)}" loading="lazy" />` : ''}</div>
           <div class="cm-item__body">
@@ -496,7 +496,7 @@
     if (els.detailSub) els.detailSub.textContent = itemSub(item);
     if (els.detailDesc) els.detailDesc.textContent = itemDesc(item);
     if (els.detailPrice) {
-      els.detailPrice.textContent = `${Number(item.price || 0).toLocaleString(localeTag())} ${i18n()?.t ? i18n().t('currency.toman') : t3('تومان', 'Toman', 'تومان')}`;
+      els.detailPrice.textContent = `${formatUiNumber(item.price)} ${i18n()?.t ? i18n().t('currency.toman') : t3('تومان', 'Toman', 'تومان')}`;
     }
     if (els.detailMedia) {
       els.detailMedia.innerHTML = `${item.img ? `<img src="${esc(item.img)}" alt="${esc(itemName(item))}" />` : ''}<button type="button" class="cm-detail__media-expand" id="cm-detail-media-expand" aria-label="${esc(t3('نمایش جزئیات بیشتر', 'Show more details', 'عرض تفاصيل أكثر'))}" aria-expanded="false">↗</button>`;

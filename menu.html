@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<html lang="fa" dir="ltr" class="is-lang-fa">
+<html lang="fa" dir="rtl" class="is-lang-fa">
 <head>
-  <link rel="manifest" href="/manifest.webmanifest?v=release14uf1d8-mobile-category-swipe" />
-  <script src="/js/pwa-bootstrap.js?v=release14uf1d8-mobile-category-swipe" defer></script>
+  <link rel="manifest" href="/manifest.webmanifest?v=release14uf1d28-webp-only" />
+  <script src="/js/pwa-bootstrap.js?v=release14uf1d28-webp-only" defer></script>
 
   <meta charset="utf-8" />
   <title data-i18n="cm.title">منوی کلاسیک — وستو</title>
@@ -52,10 +52,10 @@
   <link rel="stylesheet" href="css/vazir-system.css?v=font1" />
   <link rel="stylesheet" href="css/westo-production-v11.css?v=prod11" />
   <link rel="stylesheet" href="css/westo-production-v12.css?v=prod13r9h1" />
-  <link rel="stylesheet" href="css/classic-menu-catalogue-v2.css?v=menuBrand6" />
+  <link rel="stylesheet" href="css/classic-menu-catalogue-v2.css?v=menuBrand7" />
   <script src="js/design-logic-v13.js?v=logic13r1" defer></script>
 </head>
-<body class="classic-menu" lang="fa" dir="ltr">
+<body class="classic-menu" lang="fa" dir="rtl">
   <header class="cm-header">
     <div class="cm-header__bar">
       <div class="cm-header__start">
@@ -67,8 +67,8 @@
         <img src="assets/images/brand/westo-fa-wordmark-dark.png?v=menuCatalogue3" alt="وستو" width="768" height="224" />
       </a>
       <div class="cm-header__actions">
-        <button type="button" class="cm-table-btn" id="nav-table-btn" data-i18n-aria="cart.title" aria-label="تیبل">
-          <span class="cm-table-btn__label" data-i18n="cart.title">تیبل</span>
+        <button type="button" class="cm-table-btn" id="nav-table-btn" data-i18n-aria="cart.title" aria-label="سبد">
+          <span class="cm-table-btn__label" data-i18n="cart.title">سبد</span>
           <span class="table-badge" id="table-badge" hidden>0</span>
           <svg class="cm-table-btn__icon" width="18" height="16" viewBox="0 0 20 18" fill="none" aria-hidden="true">
             <path d="M1 1h2.2l1.4 8.2a2 2 0 0 0 2 1.7h7.6a2 2 0 0 0 2-1.6L17.5 5H5.2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
@@ -87,6 +87,11 @@
           </svg>
         </button>
       </div>
+    </div>
+    <div class="cm-order-context" id="cm-order-context" role="status" hidden>
+      <span aria-hidden="true">✓</span>
+      <strong id="cm-order-context-title"></strong>
+      <small id="cm-order-context-note"></small>
     </div>
     <div class="cm-cats-wrap">
       <nav class="cm-cats" id="cm-tabs" aria-label="Categories"></nav>
@@ -148,7 +153,7 @@
               <span id="cm-detail-qty">1</span>
               <button type="button" id="cm-detail-inc" data-i18n-aria="cart.inc" aria-label="زیاد کردن">+</button>
             </div>
-            <button type="button" class="cm-detail-add" id="cm-detail-add" data-i18n="cm.add">افزودن به تیبل</button>
+            <button type="button" class="cm-detail-add" id="cm-detail-add" data-i18n="cm.add">افزودن به سبد</button>
           </div>
         </div>
       </div>
@@ -179,17 +184,17 @@
 
   <div id="table-drawer" class="table-drawer" hidden>
     <div class="table-drawer__backdrop" data-table-close></div>
-    <aside class="table-drawer__panel" role="dialog" aria-modal="true" aria-label="تیبل سفارش">
+    <aside class="table-drawer__panel" role="dialog" aria-modal="true" aria-label="سبد سفارش">
       <header class="table-drawer__head">
         <div class="table-drawer__head-text">
-          <h2 data-i18n="cart.title">تیبل</h2>
+          <h2 data-i18n="cart.title">سبد</h2>
           <p id="table-cart-count" class="table-drawer__count" hidden></p>
         </div>
         <button type="button" class="table-drawer__close" data-table-close data-i18n-aria="cart.close" aria-label="بستن">×</button>
       </header>
       <div id="table-view-cart" class="table-drawer__body table-drawer__body--cart">
         <div id="table-lines" class="table-lines"></div>
-        <p id="table-empty" class="table-empty">تیبل خالی است<br/><span class="table-empty__hint">از منو غذا اضافه کنید</span></p>
+        <p id="table-empty" class="table-empty">سبد سفارش خالی است<br/><span class="table-empty__hint">از منو غذا اضافه کنید</span></p>
         <div class="table-cart-foot">
           <div class="table-total-row"><span data-i18n="cart.total">جمع</span><strong id="table-total">۰ تومان</strong></div>
           <button type="button" id="table-checkout-btn" class="btn" data-i18n="cart.continue" disabled>ادامه</button>
@@ -218,10 +223,11 @@
     </aside>
   </div>
 
-  <script src="js/i18n.js?v=logic9-fa-default1" defer></script>
+  <script src="js/persian-format.js?v=persianNumbers1"></script>
+  <script src="js/i18n.js?v=logic10-persian2" defer></script>
   <script src="js/category-theme.js?v=stable1" defer></script>
-  <script src="js/table-cart.js?v=logic13r5" defer></script>
-  <script src="js/classic-menu.js?v=menuCatalogue3" defer></script>
+  <script src="js/table-cart.js?v=logic13r7-persianNumbers" defer></script>
+  <script src="js/classic-menu.js?v=menuCatalogue6-persianNumbers" defer></script>
   <script src="js/theme.js?v=stable1" defer></script>
   
   <script src="js/westo-production-v11.js?v=prod11" defer></script>

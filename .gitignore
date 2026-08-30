@@ -11,6 +11,7 @@ server/data/db.json
 tmp/
 .cache/
 dist/
+dist-desktop/
 backups/
 artifacts/
 docs/

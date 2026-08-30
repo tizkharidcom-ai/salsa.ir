@@ -23,13 +23,64 @@
 
 const engine = require('./accounting-engine');
 
+function branchScopedUser(req) {
+  const user = req.user || {};
+  return Array.isArray(user.allowedBranchIds) || Array.isArray(user.branchIds) || user.branchId != null;
+}
+
+function branchScopedRows(req, rows, branchId, { allowGlobal = false } = {}) {
+  const list = Array.isArray(rows) ? rows : [];
+  if (!branchScopedUser(req)) return list;
+  return list.filter((row) => {
+    const ownBranchId = row?.branchId ?? row?.locationId;
+    if (ownBranchId != null) return Number(ownBranchId) === Number(branchId);
+    const lines = Array.isArray(row?.lines) ? row.lines.filter((line) => line?.branchId != null) : [];
+    if (lines.length) return lines.every((line) => Number(line.branchId) === Number(branchId));
+    return allowGlobal;
+  });
+}
+
+function hasExplicitBranchRequest(req) {
+  return [req?.query?.branchId, req?.query?.branch, req?.body?.branchId, req?.body?.branch]
+    .some((value) => value !== undefined && value !== null && String(value).trim() !== '');
+}
+
+// Owners inspect consolidated data by default; scoped staff always receive
+// their resolved branch context, including the default allowed branch.
+function reportBranchId(req, parseBranchId) {
+  if (!parseBranchId) return null;
+  if (!branchScopedUser(req) && !hasExplicitBranchRequest(req)) return null;
+  return parseBranchId(req);
+}
+
+function reportBranchIds(req, parseBranchId) {
+  const selected = hasExplicitBranchRequest(req) ? reportBranchId(req, parseBranchId) : null;
+  if (selected != null) return [selected];
+  if (!branchScopedUser(req)) return null;
+  const user = req.user || {};
+  const raw = Array.isArray(user.allowedBranchIds)
+    ? user.allowedBranchIds
+    : Array.isArray(user.branchIds)
+      ? user.branchIds
+      : user.branchId == null ? [] : [user.branchId];
+  return [...new Set(raw.map(Number).filter((value) => Number.isSafeInteger(value) && value > 0))];
+}
+
+function financeV1PosReadOnly(req, res) {
+  return res.status(410).json({
+    data: null,
+    meta: { generatedAt: new Date().toISOString(), replacement: '/api/staff/orders' },
+    error: { code: 'finance_v1_pos_read_only', message: 'ثبت جدید POS فقط از مسیرهای عملیاتی متصل به Finance V2 مجاز است.' },
+  });
+}
+
 function registerAccountingRoutes({ app, getDb, save, requireAdmin, requireCapability, parseBranchId }) {
 
   // ── 1. Overview & Executive Insights ──────────────────────────────────────
   app.get('/api/admin/finance/overview', requireCapability('admin.access'), (req, res) => {
     try {
       const db = getDb();
-      const branchId = parseBranchId ? parseBranchId(req) : null;
+      const branchId = reportBranchId(req, parseBranchId);
       const data = engine.getOverview(db, { branchId, from: req.query.from, to: req.query.to });
       res.json(data);
     } catch (err) {
@@ -40,7 +91,7 @@ function registerAccountingRoutes({ app, getDb, save, requireAdmin, requireCapab
   app.get('/api/admin/finance/ai-cfo-brief', requireCapability('admin.access'), (req, res) => {
     try {
       const db = getDb();
-      const brief = engine.aiEngine.generateCFOBrief(db);
+      const brief = engine.aiEngine.generateCFOBrief(db, { branchId: reportBranchId(req, parseBranchId) });
       res.json(brief);
     } catch (err) {
       res.status(500).json({ error: err.message });
@@ -50,7 +101,7 @@ function registerAccountingRoutes({ app, getDb, save, requireAdmin, requireCapab
   app.get('/api/admin/finance/predictive', requireCapability('admin.access'), (req, res) => {
     try {
       const db = getDb();
-      const branchId = parseBranchId ? parseBranchId(req) : null;
+      const branchId = reportBranchId(req, parseBranchId);
       const analytics = engine.predictiveEngine.getPredictiveAnalytics(db, { branchId });
       res.json(analytics);
     } catch (err) {
@@ -62,7 +113,7 @@ function registerAccountingRoutes({ app, getDb, save, requireAdmin, requireCapab
   app.get('/api/admin/finance/sales', requireCapability('admin.access'), (req, res) => {
     try {
       const db = getDb();
-      const branchId = parseBranchId ? parseBranchId(req) : null;
+      const branchId = reportBranchId(req, parseBranchId);
       const data = engine.getSalesAnalysis(db, { branchId, from: req.query.from, to: req.query.to });
       res.json(data);
     } catch (err) {
@@ -134,57 +185,18 @@ function registerAccountingRoutes({ app, getDb, save, requireAdmin, requireCapab
   });
 
   // ── 3.5. POS Sales Ingestion, Tips, Splits & Refunds (v1 & api) ───────────
-  const handlePOSSaleIngestion = (req, res) => {
-    try {
-      const db = getDb();
-      const idempotencyKey = req.headers['idempotency-key'] || req.body?.external_id;
-      const saleInput = {
-        ...req.body,
-        external_id: idempotencyKey || req.body?.external_id,
-        createdById: req.user?.phone || req.user?.id || 'pos_terminal',
-      };
+  app.post('/v1/pos/sales', requireCapability('orders.create'), financeV1PosReadOnly);
+  app.post('/api/pos/sales', requireCapability('orders.create'), financeV1PosReadOnly);
 
-      const result = engine.salesPosEngine.ingestPOSSale(db, saleInput, {
-        postJournalFn: (jeInput) => engine.postJournalEntry(db, jeInput),
-        ensureAccountingDataFn: engine.ensureAccountingData,
-      });
-
-      save();
-      res.status(result.idempotentReplay ? 200 : 201).json(result);
-    } catch (err) {
-      res.status(400).json({ error: err.message });
-    }
-  };
-
-  app.post('/v1/pos/sales', requireCapability('orders.create'), handlePOSSaleIngestion);
-  app.post('/api/pos/sales', requireCapability('orders.create'), handlePOSSaleIngestion);
-
-  const handlePOSSaleRefund = (req, res) => {
-    try {
-      const db = getDb();
-      const result = engine.salesPosEngine.refundPOSSale(db, req.params.id, {
-        ...req.body,
-        createdById: req.user?.phone || req.user?.id || 'admin',
-      }, {
-        postJournalFn: (jeInput) => engine.postJournalEntry(db, jeInput),
-        ensureAccountingDataFn: engine.ensureAccountingData,
-      });
-
-      save();
-      res.json(result);
-    } catch (err) {
-      res.status(400).json({ error: err.message });
-    }
-  };
-
-  app.post('/v1/pos/sales/:id/refunds', requireCapability('orders.manage'), handlePOSSaleRefund);
-  app.post('/api/pos/sales/:id/refunds', requireCapability('orders.manage'), handlePOSSaleRefund);
+  app.post('/v1/pos/sales/:id/refunds', requireCapability('orders.manage'), financeV1PosReadOnly);
+  app.post('/api/pos/sales/:id/refunds', requireCapability('orders.manage'), financeV1PosReadOnly);
 
   app.get(['/v1/pos/sales/:id', '/api/pos/sales/:id'], requireCapability('orders.view'), (req, res) => {
     try {
       const db = getDb();
       const { posSales } = engine.salesPosEngine.ensureSalesPOS(db);
-      const sale = posSales.find((s) => s.external_id === req.params.id || s.id === req.params.id);
+      const sale = branchScopedRows(req, posSales, reportBranchId(req, parseBranchId))
+        .find((s) => s.external_id === req.params.id || s.id === req.params.id);
       if (!sale) return res.status(404).json({ error: 'فروش POS یافت نشد.' });
       res.json({ ok: true, sale });
     } catch (err) {
@@ -221,7 +233,7 @@ function registerAccountingRoutes({ app, getDb, save, requireAdmin, requireCapab
     try {
       const db = getDb();
       const { taxInvoices, settings } = engine.taxpayerAdapter.ensureTaxpayerData(db);
-      let invoices = taxInvoices.slice();
+      let invoices = branchScopedRows(req, taxInvoices, reportBranchId(req, parseBranchId), { allowGlobal: true }).slice();
 
       if (req.query.status) invoices = invoices.filter((i) => i.status === req.query.status);
       if (req.query.search) {
@@ -288,7 +300,8 @@ function registerAccountingRoutes({ app, getDb, save, requireAdmin, requireCapab
     try {
       const db = getDb();
       const acc = engine.ensureAccountingData(db);
-      let entries = (acc.journalEntries || []).slice();
+      const branchId = parseBranchId ? parseBranchId(req) : null;
+      let entries = branchScopedRows(req, acc.journalEntries, branchId).slice();
 
       if (req.query.search) {
         const q = String(req.query.search).toLowerCase();
@@ -331,7 +344,8 @@ function registerAccountingRoutes({ app, getDb, save, requireAdmin, requireCapab
     try {
       const db = getDb();
       const acc = engine.ensureAccountingData(db);
-      const entry = (acc.journalEntries || []).find((e) => e.id === req.params.id || e.number === req.params.id);
+      const entry = branchScopedRows(req, acc.journalEntries, parseBranchId ? parseBranchId(req) : null)
+        .find((e) => e.id === req.params.id || e.number === req.params.id);
       if (!entry) return res.status(404).json({ error: 'سند حسابداری یافت نشد.' });
       res.json({ entry });
     } catch (err) {
@@ -380,7 +394,10 @@ function registerAccountingRoutes({ app, getDb, save, requireAdmin, requireCapab
     try {
       const db = getDb();
       const acc = engine.ensureAccountingData(db);
-      const data = engine.auditEngine.generateOfficialGeneralJournal(acc, req.query);
+      const data = engine.auditEngine.generateOfficialGeneralJournal(acc, {
+        ...req.query,
+        branchId: reportBranchId(req, parseBranchId),
+      });
       res.json(data);
     } catch (err) {
       res.status(500).json({ error: err.message });
@@ -391,7 +408,9 @@ function registerAccountingRoutes({ app, getDb, save, requireAdmin, requireCapab
     try {
       const db = getDb();
       const acc = engine.ensureAccountingData(db);
-      const data = engine.auditEngine.generateOfficialTrialBalance(acc, req.query.asOf);
+      const data = engine.auditEngine.generateOfficialTrialBalance(acc, req.query.asOf, {
+        branchId: reportBranchId(req, parseBranchId),
+      });
       res.json(data);
     } catch (err) {
       res.status(500).json({ error: err.message });
@@ -419,7 +438,7 @@ function registerAccountingRoutes({ app, getDb, save, requireAdmin, requireCapab
       const data = engine.getGeneralLedger(db, accountCode, {
         from: req.query.from,
         to: req.query.to,
-        branchId: parseBranchId ? parseBranchId(req) : null,
+        branchId: reportBranchId(req, parseBranchId),
       });
       res.json(data);
     } catch (err) {
@@ -430,7 +449,9 @@ function registerAccountingRoutes({ app, getDb, save, requireAdmin, requireCapab
   app.get(['/v1/reports/trial-balance', '/api/admin/finance/trial-balance'], requireCapability('admin.access'), (req, res) => {
     try {
       const db = getDb();
-      const data = engine.getTrialBalanceReport(db, req.query.asOf || new Date().toISOString());
+      const data = engine.getTrialBalanceReport(db, req.query.asOf || new Date().toISOString(), {
+        branchId: reportBranchId(req, parseBranchId),
+      });
       res.json(data);
     } catch (err) {
       res.status(500).json({ error: err.message });
@@ -440,7 +461,9 @@ function registerAccountingRoutes({ app, getDb, save, requireAdmin, requireCapab
   app.get(['/v1/reports/income-statement', '/v1/reports/pnl', '/api/admin/finance/pnl', '/api/admin/finance/income-statement'], requireCapability('admin.access'), (req, res) => {
     try {
       const db = getDb();
-      const data = engine.getIncomeStatement(db, req.query.from, req.query.to);
+      const data = engine.getIncomeStatement(db, req.query.from, req.query.to, {
+        branchId: reportBranchId(req, parseBranchId),
+      });
       res.json(data);
     } catch (err) {
       res.status(500).json({ error: err.message });
@@ -450,7 +473,9 @@ function registerAccountingRoutes({ app, getDb, save, requireAdmin, requireCapab
   app.get(['/v1/reports/balance-sheet', '/api/admin/finance/balance-sheet'], requireCapability('admin.access'), (req, res) => {
     try {
       const db = getDb();
-      const data = engine.getBalanceSheet(db, req.query.asOf || new Date().toISOString());
+      const data = engine.getBalanceSheet(db, req.query.asOf || new Date().toISOString(), {
+        branchId: reportBranchId(req, parseBranchId),
+      });
       res.json(data);
     } catch (err) {
       res.status(500).json({ error: err.message });
@@ -460,7 +485,9 @@ function registerAccountingRoutes({ app, getDb, save, requireAdmin, requireCapab
   app.get(['/v1/reports/cash-flow', '/api/admin/finance/cash-flow'], requireCapability('admin.access'), (req, res) => {
     try {
       const db = getDb();
-      const data = engine.getCashFlowStatement(db, req.query.from, req.query.to);
+      const data = engine.getCashFlowStatement(db, req.query.from, req.query.to, {
+        branchId: reportBranchId(req, parseBranchId),
+      });
       res.json(data);
     } catch (err) {
       res.status(500).json({ error: err.message });
@@ -471,7 +498,7 @@ function registerAccountingRoutes({ app, getDb, save, requireAdmin, requireCapab
   app.get(['/v1/cfo/brief', '/api/admin/finance/cfo/brief', '/api/admin/finance/ai-cfo'], requireCapability('admin.access'), (req, res) => {
     try {
       const db = getDb();
-      const brief = engine.aiEngine.generateCFOBrief(db);
+      const brief = engine.aiEngine.generateCFOBrief(db, { branchId: reportBranchId(req, parseBranchId) });
       res.json(brief);
     } catch (err) {
       res.status(500).json({ error: err.message });
@@ -483,7 +510,7 @@ function registerAccountingRoutes({ app, getDb, save, requireAdmin, requireCapab
     try {
       const db = getDb();
       const acc = engine.ensureAccountingData(db);
-      res.json({ sessions: acc.cashDrawers || [] });
+      res.json({ sessions: branchScopedRows(req, acc.cashDrawers, parseBranchId ? parseBranchId(req) : null) });
     } catch (err) {
       res.status(500).json({ error: err.message });
     }
@@ -540,7 +567,7 @@ function registerAccountingRoutes({ app, getDb, save, requireAdmin, requireCapab
     try {
       const db = getDb();
       const acc = engine.ensureAccountingData(db);
-      res.json({ settlements: acc.settlements || [] });
+      res.json({ settlements: branchScopedRows(req, acc.settlements, parseBranchId ? parseBranchId(req) : null) });
     } catch (err) {
       res.status(500).json({ error: err.message });
     }
@@ -569,7 +596,7 @@ function registerAccountingRoutes({ app, getDb, save, requireAdmin, requireCapab
     try {
       const db = getDb();
       const acc = engine.ensureAccountingData(db);
-      let expenses = (acc.expenses || []).slice();
+      let expenses = branchScopedRows(req, acc.expenses, parseBranchId ? parseBranchId(req) : null).slice();
       if (req.query.category) expenses = expenses.filter((e) => e.category === req.query.category);
       if (req.query.taxDeductibilityStatus) expenses = expenses.filter((e) => e.taxDeductibilityStatus === req.query.taxDeductibilityStatus);
       res.json({ expenses, total: expenses.length });
@@ -600,7 +627,7 @@ function registerAccountingRoutes({ app, getDb, save, requireAdmin, requireCapab
     try {
       const db = getDb();
       const acc = engine.ensureAccountingData(db);
-      res.json({ funds: acc.pettyCash || [] });
+      res.json({ funds: branchScopedRows(req, acc.pettyCash, parseBranchId ? parseBranchId(req) : null) });
     } catch (err) {
       res.status(500).json({ error: err.message });
     }
@@ -629,7 +656,7 @@ function registerAccountingRoutes({ app, getDb, save, requireAdmin, requireCapab
     try {
       const db = getDb();
       const acc = engine.ensureAccountingData(db);
-      res.json({ purchaseOrders: acc.purchaseOrders || [] });
+      res.json({ purchaseOrders: branchScopedRows(req, acc.purchaseOrders, parseBranchId ? parseBranchId(req) : null) });
     } catch (err) {
       res.status(500).json({ error: err.message });
     }
@@ -651,7 +678,7 @@ function registerAccountingRoutes({ app, getDb, save, requireAdmin, requireCapab
     try {
       const db = getDb();
       const acc = engine.ensureAccountingData(db);
-      const result = engine.procurementEngine.approvePurchaseOrder(acc, req.params.id, req.body.userId);
+      const result = engine.procurementEngine.approvePurchaseOrder(acc, req.params.id, req.user?.phone || req.user?.id || 'admin');
       save();
       res.json(result);
     } catch (err) {
@@ -663,7 +690,7 @@ function registerAccountingRoutes({ app, getDb, save, requireAdmin, requireCapab
     try {
       const db = getDb();
       const acc = engine.ensureAccountingData(db);
-      res.json({ goodsReceipts: acc.goodsReceipts || [] });
+      res.json({ goodsReceipts: branchScopedRows(req, acc.goodsReceipts, parseBranchId ? parseBranchId(req) : null) });
     } catch (err) {
       res.status(500).json({ error: err.message });
     }
@@ -698,7 +725,7 @@ function registerAccountingRoutes({ app, getDb, save, requireAdmin, requireCapab
     try {
       const db = getDb();
       const acc = engine.ensureAccountingData(db);
-      res.json({ vendors: acc.vendors || [] });
+      res.json({ vendors: branchScopedRows(req, acc.vendors, parseBranchId ? parseBranchId(req) : null, { allowGlobal: true }) });
     } catch (err) {
       res.status(500).json({ error: err.message });
     }
@@ -725,9 +752,14 @@ function registerAccountingRoutes({ app, getDb, save, requireAdmin, requireCapab
         createdAt: new Date().toISOString(),
       };
 
+      const before = acc.vendors.slice();
       acc.vendors.push(vendor);
-      save();
-      res.json({ ok: true, vendor });
+      Promise.resolve(save({ requireDurable: true })).then(() => {
+        res.json({ ok: true, vendor });
+      }).catch((error) => {
+        acc.vendors.splice(0, acc.vendors.length, ...before);
+        res.status(503).json({ error: 'persistence_failed', message: error.message });
+      });
     } catch (err) {
       res.status(500).json({ error: err.message });
     }
@@ -737,7 +769,7 @@ function registerAccountingRoutes({ app, getDb, save, requireAdmin, requireCapab
     try {
       const db = getDb();
       const acc = engine.ensureAccountingData(db);
-      res.json({ bills: acc.vendorBills || [] });
+      res.json({ bills: branchScopedRows(req, acc.vendorBills, parseBranchId ? parseBranchId(req) : null) });
     } catch (err) {
       res.status(500).json({ error: err.message });
     }
@@ -782,109 +814,10 @@ function registerAccountingRoutes({ app, getDb, save, requireAdmin, requireCapab
   app.get('/api/admin/finance/ap-aging', requireCapability('admin.access'), (req, res) => {
     try {
       const db = getDb();
-      const data = engine.getAPAging(db, req.query.asOf || new Date().toISOString());
+      const data = engine.getAPAging(db, req.query.asOf || new Date().toISOString(), {
+        branchId: reportBranchId(req, parseBranchId),
+      });
       res.json(data);
-    } catch (err) {
-      res.status(500).json({ error: err.message });
-    }
-  });
-
-  // ── 10. Expenses & Petty Cash ─────────────────────────────────────────────
-  app.get('/api/admin/finance/expenses', requireCapability('admin.access'), (req, res) => {
-    try {
-      const db = getDb();
-      const acc = engine.ensureAccountingData(db);
-      res.json({ expenses: acc.expenses || [] });
-    } catch (err) {
-      res.status(500).json({ error: err.message });
-    }
-  });
-
-  app.post('/api/admin/finance/expenses', requireCapability('admin.access'), (req, res) => {
-    try {
-      const db = getDb();
-      const acc = engine.ensureAccountingData(db);
-      const { title, category, amount, paymentMethod, accountCode, date, note } = req.body || {};
-
-      if (!title || !amount) {
-        return res.status(400).json({ error: 'عنوان و مبلغ هزینه الزامی است.' });
-      }
-
-      const amt = Number(amount) || 0;
-      const expense = {
-        id: `exp-${Date.now()}`,
-        title: String(title).trim(),
-        category: category || 'عمومی',
-        amount: amt,
-        paymentMethod: paymentMethod || 'cash',
-        date: date || new Date().toISOString().slice(0, 10),
-        note: note || '',
-        createdAt: new Date().toISOString(),
-      };
-
-      const debitAcc = accountCode || '6990';
-      const creditAcc = paymentMethod === 'petty_cash' ? '1130' : paymentMethod === 'cash' ? '1110' : '1210';
-
-      const je = engine.postJournalEntry(db, {
-        source: 'expense',
-        sourceId: expense.id,
-        date: expense.date,
-        description: `ثبت هزینه: ${expense.title} (${expense.category})`,
-        lines: [
-          { accountCode: debitAcc, debit: amt, credit: 0, memo: `هزینه ${expense.title}` },
-          { accountCode: creditAcc, debit: 0, credit: amt, memo: `پرداخت هزینه از طریق ${paymentMethod}` },
-        ],
-      });
-
-      acc.expenses.unshift(expense);
-      save();
-      res.json({ ok: true, expense, journalEntry: je });
-    } catch (err) {
-      res.status(500).json({ error: err.message });
-    }
-  });
-
-  app.get('/api/admin/finance/petty-cash', requireCapability('admin.access'), (req, res) => {
-    try {
-      const db = getDb();
-      const acc = engine.ensureAccountingData(db);
-      res.json({ funds: acc.pettyCash || [] });
-    } catch (err) {
-      res.status(500).json({ error: err.message });
-    }
-  });
-
-  app.post('/api/admin/finance/petty-cash/topup', requireCapability('admin.access'), (req, res) => {
-    try {
-      const db = getDb();
-      const acc = engine.ensureAccountingData(db);
-      const { amount, sourceAccountCode, note } = req.body || {};
-      const amt = Number(amount) || 0;
-
-      if (amt <= 0) return res.status(400).json({ error: 'مبلغ شارژ تنخواه نامعتبر است.' });
-
-      const topup = {
-        id: `pc-${Date.now()}`,
-        amount: amt,
-        date: new Date().toISOString(),
-        note: note || 'شارژ صندوق تنخواه گردان',
-      };
-
-      const creditAcc = sourceAccountCode || '1210';
-      const je = engine.postJournalEntry(db, {
-        source: 'petty_cash_topup',
-        sourceId: topup.id,
-        date: topup.date,
-        description: `شارژ صندوق تنخواه گردان`,
-        lines: [
-          { accountCode: '1130', debit: amt, credit: 0, memo: 'افزایش موجودی تنخواه' },
-          { accountCode: creditAcc, debit: 0, credit: amt, memo: 'برداشت از حساب بانکی بابت تنخواه' },
-        ],
-      });
-
-      acc.pettyCash.unshift(topup);
-      save();
-      res.json({ ok: true, topup, journalEntry: je });
     } catch (err) {
       res.status(500).json({ error: err.message });
     }
@@ -905,7 +838,7 @@ function registerAccountingRoutes({ app, getDb, save, requireAdmin, requireCapab
     try {
       const db = getDb();
       const acc = engine.ensureAccountingData(db);
-      res.json({ runs: acc.payrollRuns || [] });
+      res.json({ runs: branchScopedRows(req, acc.payrollRuns, parseBranchId ? parseBranchId(req) : null) });
     } catch (err) {
       res.status(500).json({ error: err.message });
     }
@@ -952,7 +885,7 @@ function registerAccountingRoutes({ app, getDb, save, requireAdmin, requireCapab
     try {
       const db = getDb();
       const acc = engine.ensureAccountingData(db);
-      const assets = engine.assetEngine.getAssetRegister(acc, parseBranchId ? parseBranchId(req) : null);
+      const assets = engine.assetEngine.getAssetRegister(acc, reportBranchId(req, parseBranchId));
       res.json({ assets });
     } catch (err) {
       res.status(500).json({ error: err.message });
@@ -1022,7 +955,8 @@ function registerAccountingRoutes({ app, getDb, save, requireAdmin, requireCapab
     try {
       const db = getDb();
       const acc = engine.ensureAccountingData(db);
-      res.json({ periods: engine.periodService.listPeriods(acc) });
+      const branchId = parseBranchId ? parseBranchId(req) : null;
+      res.json({ periods: branchScopedRows(req, engine.periodService.listPeriods(acc), branchId) });
     } catch (err) {
       res.status(500).json({ error: err.message });
     }
@@ -1044,7 +978,7 @@ function registerAccountingRoutes({ app, getDb, save, requireAdmin, requireCapab
     try {
       const db = getDb();
       const acc = engine.ensureAccountingData(db);
-      const result = engine.periodService.lockPeriod(acc, req.params.id, req.body.userId || 'admin', req.body.reason);
+      const result = engine.periodService.lockPeriod(acc, req.params.id, req.user?.phone || req.user?.id || 'admin', req.body.reason);
       save();
       res.json(result);
     } catch (err) {
@@ -1056,7 +990,7 @@ function registerAccountingRoutes({ app, getDb, save, requireAdmin, requireCapab
     try {
       const db = getDb();
       const acc = engine.ensureAccountingData(db);
-      const result = engine.periodService.reopenPeriod(acc, req.params.id, req.body.userId || 'admin', req.body.reason);
+      const result = engine.periodService.reopenPeriod(acc, req.params.id, req.user?.phone || req.user?.id || 'admin', req.body.reason);
       save();
       res.json(result);
     } catch (err) {
@@ -1069,7 +1003,7 @@ function registerAccountingRoutes({ app, getDb, save, requireAdmin, requireCapab
     try {
       const db = getDb();
       const acc = engine.ensureAccountingData(db);
-      res.json({ transactions: acc.bankTransactions || [] });
+      res.json({ transactions: branchScopedRows(req, acc.bankTransactions, parseBranchId ? parseBranchId(req) : null) });
     } catch (err) {
       res.status(500).json({ error: err.message });
     }
@@ -1103,7 +1037,7 @@ function registerAccountingRoutes({ app, getDb, save, requireAdmin, requireCapab
     try {
       const db = getDb();
       const acc = engine.ensureAccountingData(db);
-      const totals = engine.reconciliationEngine.calculateControlTotals(acc);
+      const totals = engine.reconciliationEngine.calculateControlTotals(acc, reportBranchId(req, parseBranchId));
       res.json(totals);
     } catch (err) {
       res.status(500).json({ error: err.message });
@@ -1115,7 +1049,7 @@ function registerAccountingRoutes({ app, getDb, save, requireAdmin, requireCapab
     try {
       const db = getDb();
       const acc = engine.ensureAccountingData(db);
-      const result = engine.inventoryEngine.getInventoryValuation(acc, parseBranchId ? parseBranchId(req) : null);
+      const result = engine.inventoryEngine.getInventoryValuation(acc, reportBranchId(req, parseBranchId));
       res.json(result);
     } catch (err) {
       res.status(500).json({ error: err.message });
@@ -1126,7 +1060,10 @@ function registerAccountingRoutes({ app, getDb, save, requireAdmin, requireCapab
     try {
       const db = getDb();
       const acc = engine.ensureAccountingData(db);
-      const result = engine.inventoryEngine.getCOGSVarianceAnalysis(acc, db);
+      const result = engine.inventoryEngine.getCOGSVarianceAnalysis(acc, db, reportBranchId(req, parseBranchId), {
+        from: req.query.from,
+        to: req.query.to,
+      });
       res.json(result);
     } catch (err) {
       res.status(500).json({ error: err.message });
@@ -1155,7 +1092,19 @@ function registerAccountingRoutes({ app, getDb, save, requireAdmin, requireCapab
     try {
       const db = getDb();
       const acc = engine.ensureAccountingData(db);
-      res.json({ recipes: acc.recipes || [] });
+      res.json({ recipes: branchScopedRows(req, acc.recipes, parseBranchId ? parseBranchId(req) : null) });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get('/api/admin/finance/recipes/:id', requireCapability('admin.access'), (req, res) => {
+    try {
+      const db = getDb();
+      const acc = engine.ensureAccountingData(db);
+      const recipe = acc.recipes.find((r) => String(r.id) === String(req.params.id) || String(r.menuItemId) === String(req.params.id));
+      if (!recipe) return res.status(404).json({ error: 'رسپی یافت نشد.' });
+      res.json({ ok: true, recipe });
     } catch (err) {
       res.status(500).json({ error: err.message });
     }
@@ -1173,11 +1122,26 @@ function registerAccountingRoutes({ app, getDb, save, requireAdmin, requireCapab
     }
   });
 
+  app.put('/api/admin/finance/recipes/:id', requireCapability('admin.access'), (req, res) => {
+    try {
+      const db = getDb();
+      const acc = engine.ensureAccountingData(db);
+      const recipe = engine.inventoryEngine.saveRecipe(acc, { ...req.body, id: req.params.id });
+      save();
+      res.json({ ok: true, recipe });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   app.get('/api/admin/finance/menu-engineering', requireCapability('admin.access'), (req, res) => {
     try {
       const db = getDb();
       const acc = engine.ensureAccountingData(db);
-      const matrix = engine.inventoryEngine.getMenuEngineeringMatrix(acc, db);
+      const matrix = engine.inventoryEngine.getMenuEngineeringMatrix(acc, db, reportBranchId(req, parseBranchId), {
+        from: req.query.from,
+        to: req.query.to,
+      });
       res.json(matrix);
     } catch (err) {
       res.status(500).json({ error: err.message });
@@ -1188,7 +1152,9 @@ function registerAccountingRoutes({ app, getDb, save, requireAdmin, requireCapab
   app.get('/api/admin/finance/branch-comparison', requireCapability('admin.access'), (req, res) => {
     try {
       const db = getDb();
-      const comparison = engine.consolidationEngine.getBranchComparison(db);
+      const comparison = engine.consolidationEngine.getBranchComparison(db, {
+        branchIds: reportBranchIds(req, parseBranchId),
+      });
       res.json(comparison);
     } catch (err) {
       res.status(500).json({ error: err.message });
@@ -1216,7 +1182,8 @@ function registerAccountingRoutes({ app, getDb, save, requireAdmin, requireCapab
     try {
       const db = getDb();
       const acc = engine.ensureAccountingData(db);
-      res.json({ accruals: acc.accruals || [], prepaids: acc.prepaids || [] });
+      const branchId = parseBranchId ? parseBranchId(req) : null;
+      res.json({ accruals: branchScopedRows(req, acc.accruals, branchId), prepaids: branchScopedRows(req, acc.prepaids, branchId) });
     } catch (err) {
       res.status(500).json({ error: err.message });
     }
@@ -1238,7 +1205,7 @@ function registerAccountingRoutes({ app, getDb, save, requireAdmin, requireCapab
     try {
       const db = getDb();
       const acc = engine.ensureAccountingData(db);
-      const result = engine.accrualEngine.reverseAccrual(acc, req.params.id, req.body.userId);
+      const result = engine.accrualEngine.reverseAccrual(acc, req.params.id, req.user?.phone || req.user?.id || 'admin');
       save();
       res.json(result);
     } catch (err) {
@@ -1353,7 +1320,7 @@ function registerAccountingRoutes({ app, getDb, save, requireAdmin, requireCapab
   app.get('/api/admin/finance/restaurant-kpis', requireCapability('admin.access'), (req, res) => {
     try {
       const db = getDb();
-      const branchId = parseBranchId ? parseBranchId(req) : null;
+      const branchId = reportBranchId(req, parseBranchId);
       const kpis = engine.salesPosEngine.calculateRestaurantKPIs(db, { branchId });
       res.json(kpis);
     } catch (err) {
@@ -1365,7 +1332,7 @@ function registerAccountingRoutes({ app, getDb, save, requireAdmin, requireCapab
     try {
       const db = getDb();
       const acc = engine.ensureAccountingData(db);
-      res.json({ zReports: acc.zReports || [] });
+      res.json({ zReports: branchScopedRows(req, acc.zReports, parseBranchId ? parseBranchId(req) : null) });
     } catch (err) {
       res.status(500).json({ error: err.message });
     }
@@ -1394,7 +1361,7 @@ function registerAccountingRoutes({ app, getDb, save, requireAdmin, requireCapab
     try {
       const db = getDb();
       const acc = engine.ensureAccountingData(db);
-      const cards = engine.inventoryEngine.getRecipeCostCards(acc);
+      const cards = branchScopedRows(req, engine.inventoryEngine.getRecipeCostCards(acc), reportBranchId(req, parseBranchId));
       res.json({ recipeCards: cards });
     } catch (err) {
       res.status(500).json({ error: err.message });
@@ -1473,14 +1440,21 @@ function registerAccountingRoutes({ app, getDb, save, requireAdmin, requireCapab
     try {
       const db = getDb();
       const acc = engine.ensureAccountingData(db);
-      const distributions = acc.tipDistributions || [];
+      const branchId = reportBranchId(req, parseBranchId);
+      const distributions = branchScopedRows(req, acc.tipDistributions, branchId);
       const totalDistributed = distributions.reduce((s, d) => s + (Number(d.totalTips || 0)), 0);
-      const estimatedPool = Math.max(0, 1850000);
+      const paidOrders = (db.orders || []).filter((order) => (branchId == null || Number(order.branchId) === Number(branchId))
+        && (order.paymentStatus === 'paid' || ['paid', 'preparing', 'ready', 'done', 'delivered', 'picked_up'].includes(String(order.status || ''))));
+      const coveredOrders = paidOrders.filter((order) => order.tip != null || order.tipAmount != null);
+      const capturedTips = coveredOrders.reduce((sum, order) => sum + Number(order.tip ?? order.tipAmount ?? 0), 0);
+      const poolAmount = coveredOrders.length === paidOrders.length ? Math.max(0, capturedTips - totalDistributed) : null;
 
       res.json({
-        poolAmount: estimatedPool,
+        poolAmount,
         totalDistributed,
         recentDistributions: distributions.slice(0, 10),
+        status: coveredOrders.length === paidOrders.length ? 'available' : 'insufficient_data',
+        coverage: { paidOrders: paidOrders.length, ordersWithTipSnapshot: coveredOrders.length },
       });
     } catch (err) {
       res.status(500).json({ error: err.message });
@@ -1492,37 +1466,8 @@ function registerAccountingRoutes({ app, getDb, save, requireAdmin, requireCapab
     try {
       const db = getDb();
       const acc = engine.ensureAccountingData(db);
-      if (!Array.isArray(acc.subRecipes) || acc.subRecipes.length === 0) {
-        acc.subRecipes = [
-          {
-            id: 'sub-sauce-burger',
-            sku: 'PREP-SAUCE-01',
-            prepItemId: 'inv-prep-sauce',
-            name: 'سس برگر دست‌ساز وستو (بچ ۱۰ لیتری)',
-            yieldUnit: 'لیتر',
-            batchYieldUnits: 10,
-            estimatedUnitCost: 65000,
-            ingredients: [
-              { itemId: 'inv-9', name: 'خامه و مایونز آشپزی', qty: 4, unit: 'پاکت', unitCost: 110000 },
-              { itemId: 'inv-5', name: 'سیروپ و ادویه طعم‌دهنده', qty: 0.5, unit: 'بطری', unitCost: 420000 },
-            ],
-          },
-          {
-            id: 'sub-patty-prep',
-            sku: 'PREP-PATTY-01',
-            prepItemId: 'inv-prep-patty',
-            name: 'گوشت همبرگر فرم‌گرفته ۱۸۰ گرمی (بچ ۵۰ عددی)',
-            yieldUnit: 'عدد',
-            batchYieldUnits: 50,
-            estimatedUnitCost: 145000,
-            ingredients: [
-              { itemId: 'inv-1', name: 'راسته گوساله بیات‌شده', qty: 10, unit: 'کیلوگرم', unitCost: 720000 },
-            ],
-          },
-        ];
-        save();
-      }
-      res.json({ subRecipes: acc.subRecipes || [] });
+      const subRecipes = branchScopedRows(req, acc.subRecipes, reportBranchId(req, parseBranchId));
+      res.json({ subRecipes, status: subRecipes.length ? 'available' : 'insufficient_data', source: 'accounting.subRecipes (legacy read-only)' });
     } catch (err) {
       res.status(500).json({ error: err.message });
     }
@@ -1545,7 +1490,7 @@ function registerAccountingRoutes({ app, getDb, save, requireAdmin, requireCapab
         date: new Date().toISOString(),
         description: `تولید بچ آماده‌سازی: ${log.subRecipeName} (${log.totalYieldUnits} ${log.yieldUnit})`,
         lines: [
-          { accountCode: '1620', debit: log.totalBatchCost, credit: 0, memo: `انتقال به انبار نیمه‌آماده: ${log.subRecipeName}` },
+          { accountCode: '1630', debit: log.totalBatchCost, credit: 0, memo: `انتقال به انبار نیمه‌آماده: ${log.subRecipeName}` },
           { accountCode: '1610', debit: 0, credit: log.totalBatchCost, memo: 'مصرف مواد اولیه در آماده‌سازی' },
         ],
         createdById: req.user?.phone || req.user?.id || 'admin',

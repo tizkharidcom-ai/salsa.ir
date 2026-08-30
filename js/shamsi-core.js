@@ -236,6 +236,10 @@
     return formatShamsi(dateInput, 'YYYY/MM/DD', opts);
   }
 
+  function formatShamsiDateShort(dateInput, opts = {}) {
+    return formatShamsi(dateInput, 'D MMMM', opts);
+  }
+
   function formatShamsiDateLong(dateInput, opts = {}) {
     return formatShamsi(dateInput, 'D MMMM YYYY', opts);
   }
@@ -286,6 +290,7 @@
     toShamsiParts,
     formatShamsi,
     formatShamsiDate,
+    formatShamsiDateShort,
     formatShamsiDateLong,
     formatShamsiDateFull,
     formatShamsiDateTime,

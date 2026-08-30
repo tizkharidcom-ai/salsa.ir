@@ -141,6 +141,19 @@ function effectiveRecipeForSale(recipes, menuItemId, soldAt) {
   return latestRecipes(candidates)[0] || null;
 }
 
+function recipeCatalog(db, branchId = null, { includePending = false } = {}) {
+  const legacy = list(db?.accounting?.recipes).filter((row) => sharedOrBranch(row, branchId));
+  const allowedStatuses = includePending
+    ? new Set(['draft', 'pending_approval', 'approved', 'retired', 'rejected'])
+    : new Set(['approved', 'retired']);
+  const v2 = list(db?.financeV2?.recipeVersions)
+    .filter((row) => sharedOrBranch(row, branchId) && allowedStatuses.has(String(row.status || 'draft')));
+  const byId = new Map();
+  legacy.forEach((row) => byId.set(String(row.id), row));
+  v2.forEach((row) => byId.set(String(row.id), row));
+  return [...byId.values()];
+}
+
 function historyWindow(orders, from, to) {
   const start = from ? new Date(from) : null;
   const end = to ? new Date(to) : null;
@@ -151,7 +164,69 @@ function historyWindow(orders, from, to) {
   return { days: Math.max(1, Math.floor((actualEnd - actualStart) / 86400000) + 1), from: actualStart, to: actualEnd };
 }
 
-function calculateStockoutForecast({ items = [], recipes = [], orders = [], branchId = null, from = null, to = null, minHistoryDays = 14 } = {}) {
+const TEHRAN_DATE_FORMATTER = new Intl.DateTimeFormat('en-US', {
+  timeZone: 'Asia/Tehran', year: 'numeric', month: '2-digit', day: '2-digit',
+});
+
+function calendarDateKey(value) {
+  if (value == null || value === '') return null;
+  const date = value instanceof Date ? value : new Date(value);
+  if (!Number.isFinite(date.getTime())) return null;
+  const parts = Object.fromEntries(TEHRAN_DATE_FORMATTER.formatToParts(date)
+    .filter((part) => part.type !== 'literal').map((part) => [part.type, part.value]));
+  return `${parts.year}-${parts.month}-${parts.day}`;
+}
+
+function addCalendarDays(dateKey, days) {
+  const date = new Date(`${dateKey}T00:00:00.000Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+function calendarKeys(fromDate, toDate) {
+  const fromKey = calendarDateKey(fromDate);
+  const toKey = calendarDateKey(toDate);
+  if (!fromKey || !toKey || fromKey > toKey) return [];
+  const keys = [];
+  for (let key = fromKey; key <= toKey; key = addCalendarDays(key, 1)) keys.push(key);
+  return keys;
+}
+
+function weekdayIndex(dateKey) { return new Date(`${dateKey}T00:00:00.000Z`).getUTCDay(); }
+
+function weekdayProfile(dailyUsage, keys) {
+  const totals = Array(7).fill(0);
+  const counts = Array(7).fill(0);
+  keys.forEach((key) => {
+    const weekday = weekdayIndex(key);
+    totals[weekday] += dailyUsage.get(key) || 0;
+    counts[weekday] += 1;
+  });
+  return totals.map((total, weekday) => counts[weekday] ? total / counts[weekday] : 0);
+}
+
+function weekdayBacktestWape(dailyUsage, keys) {
+  if (keys.length < 28) return null;
+  const splitAt = Math.max(14, Math.floor(keys.length * 0.7));
+  const training = keys.slice(0, splitAt);
+  const validation = keys.slice(splitAt);
+  if (validation.length < 7) return null;
+  const profile = weekdayProfile(dailyUsage, training);
+  let absoluteError = 0;
+  let actualTotal = 0;
+  validation.forEach((key) => {
+    const actual = dailyUsage.get(key) || 0;
+    const predicted = profile[weekdayIndex(key)] || 0;
+    absoluteError += Math.abs(actual - predicted);
+    actualTotal += actual;
+  });
+  return actualTotal > 0 ? Math.round(absoluteError / actualTotal * 10000) / 100 : null;
+}
+
+function calculateStockoutForecast({
+  items = [], recipes = [], orders = [], purchaseOrders = [], branchId = null,
+  from = null, to = null, minHistoryDays = 14, forecastHorizonDays = 365,
+} = {}) {
   const fromAt = from ? new Date(from).getTime() : null;
   const toAt = to ? new Date(to).getTime() : null;
   const paidOrders = list(orders).filter((order) => {
@@ -169,44 +244,114 @@ function calculateStockoutForecast({ items = [], recipes = [], orders = [], bran
   const scopedRecipes = list(recipes).filter((row) => sharedOrBranch(row, branchId));
   const itemMap = new Map(list(items).filter((row) => sameBranch(row, branchId)).map((item) => [String(item.id), item]));
   const usage = new Map();
+  const usageByDateMap = new Map();
   let soldLines = 0;
   let coveredLines = 0;
+  const coverageIssues = [];
   for (const order of paidOrders) {
     for (const line of list(order.items)) {
       soldLines += 1;
       const recipe = effectiveRecipeForSale(scopedRecipes, line.menuItemId, orderDate(order));
-      if (!recipe) continue;
-      coveredLines += 1;
+      if (!recipe) { coverageIssues.push({ code: 'recipe_missing', menuItemId: line.menuItemId || null, orderId: order.id || null }); continue; }
       const soldQty = number(line.qty ?? line.quantity) || 0;
+      if (soldQty <= 0 || !list(recipe.ingredients).length) { coverageIssues.push({ code: 'recipe_line_invalid', menuItemId: line.menuItemId || null, orderId: order.id || null }); continue; }
+      const contributions = [];
+      let covered = true;
       for (const ingredient of list(recipe.ingredients)) {
         const item = itemMap.get(String(ingredient.itemId));
-        if (!item) continue;
+        if (!item) { coverageIssues.push({ code: 'ingredient_item_missing', itemId: ingredient.itemId || null, menuItemId: line.menuItemId || null, orderId: order.id || null }); covered = false; break; }
         const required = ingredientRequirement(ingredient, recipe, item);
-        if (!required.ok) continue;
-        usage.set(String(item.id), (usage.get(String(item.id)) || 0) + required.value * soldQty);
+        if (!required.ok) { coverageIssues.push({ code: required.code, itemId: item.id, menuItemId: line.menuItemId || null, orderId: order.id || null }); covered = false; break; }
+        contributions.push({ itemId: String(item.id), quantity: required.value * soldQty });
       }
+      if (!covered) continue;
+      coveredLines += 1;
+      const saleDateKey = calendarDateKey(orderDate(order));
+      contributions.forEach((row) => {
+        usage.set(row.itemId, (usage.get(row.itemId) || 0) + row.quantity);
+        if (!usageByDateMap.has(row.itemId)) usageByDateMap.set(row.itemId, new Map());
+        const byDate = usageByDateMap.get(row.itemId);
+        if (saleDateKey) byDate.set(saleDateKey, (byDate.get(saleDateKey) || 0) + row.quantity);
+      });
     }
   }
+  const historyKeys = calendarKeys(window.from, window.to);
+  const anchorDate = calendarDateKey(window.to);
+  const inboundIssues = [];
+  const inboundByItem = new Map();
+  list(purchaseOrders).filter((po) => sameBranch(po, branchId) && ['approved', 'partially_received'].includes(po.status)).forEach((po) => {
+    const expectedDate = calendarDateKey(po.expectedDate);
+    for (const line of list(po.lines)) {
+      const remainingQuantity = Math.max(0, (number(line.quantity) || 0) - (number(line.receivedQuantity) || 0));
+      if (!remainingQuantity) continue;
+      if (!expectedDate) {
+        inboundIssues.push({ code: 'approved_po_expected_date_missing', purchaseOrderId: po.id || null, itemId: line.itemId || null });
+        continue;
+      }
+      if (expectedDate <= anchorDate) {
+        inboundIssues.push({ code: 'approved_po_overdue_not_assumed_received', purchaseOrderId: po.id || null, itemId: line.itemId || null, expectedDate, quantity: remainingQuantity });
+        continue;
+      }
+      const itemId = String(line.itemId);
+      if (!inboundByItem.has(itemId)) inboundByItem.set(itemId, []);
+      inboundByItem.get(itemId).push({ purchaseOrderId: po.id || null, purchaseOrderNumber: po.number || null, expectedDate, quantity: remainingQuantity });
+    }
+  });
   const rows = [];
   for (const [itemId, totalUsage] of usage) {
     const item = itemMap.get(itemId);
     const available = availableQuantity(item);
-    const dailyUsage = totalUsage / window.days;
-    if (!available.ok || dailyUsage <= 0) continue;
-    const daysRemaining = available.value / dailyUsage;
-    const forecastDate = new Date((window.to || new Date()).getTime() + Math.ceil(daysRemaining) * 86400000).toISOString().slice(0, 10);
+    const averageDailyUsage = totalUsage / window.days;
+    if (!available.ok || averageDailyUsage <= 0 || !anchorDate) continue;
+    const itemDailyUsage = usageByDateMap.get(itemId);
+    const byDate = itemDailyUsage instanceof Map ? itemDailyUsage : new Map();
+    const usageByWeekday = weekdayProfile(byDate, historyKeys);
+    const backtestWapePercent = weekdayBacktestWape(byDate, historyKeys);
+    const inboundSchedule = list(inboundByItem.get(itemId)).sort((a, b) => a.expectedDate.localeCompare(b.expectedDate));
+    const inboundByDate = new Map();
+    inboundSchedule.forEach((row) => inboundByDate.set(row.expectedDate, (inboundByDate.get(row.expectedDate) || 0) + row.quantity));
+    let projectedQuantity = available.value;
+    let forecastDate = null;
+    let daysRemaining = null;
+    for (let day = 1; day <= forecastHorizonDays; day += 1) {
+      const dateKey = addCalendarDays(anchorDate, day);
+      projectedQuantity += inboundByDate.get(dateKey) || 0;
+      projectedQuantity -= usageByWeekday[weekdayIndex(dateKey)] || 0;
+      if (projectedQuantity <= 1e-9) { forecastDate = dateKey; daysRemaining = day; break; }
+    }
+    const leadTimeDays = number(item.leadTimeDays ?? item.supplierLeadTimeDays);
+    const safetyDays = number(item.safetyDays ?? item.safetyLeadDays);
+    const reorderByDate = forecastDate && leadTimeDays != null && leadTimeDays >= 0
+      ? addCalendarDays(forecastDate, -Math.ceil(leadTimeDays + Math.max(0, safetyDays || 0))) : null;
+    const reorderPoint = number(item.minStock ?? item.reorderPoint);
+    const projectedInboundQuantity = inboundSchedule.reduce((sum, row) => sum + row.quantity, 0);
+    const confidence = coveredLines !== soldLines || backtestWapePercent == null ? 'low'
+      : window.days >= 56 && backtestWapePercent <= 25 ? 'high'
+        : window.days >= 28 && backtestWapePercent <= 50 ? 'medium' : 'low';
+    const daysUntilReorder = reorderByDate ? Math.floor((new Date(`${reorderByDate}T00:00:00.000Z`) - new Date(`${anchorDate}T00:00:00.000Z`)) / 86400000) : null;
     rows.push({
       itemId: item.id, name: item.name || item.id, unit: canonicalUnit(item.unit) || item.unit,
-      availableQuantity: available.value, averageDailyUsage: dailyUsage, daysRemaining, forecastDate,
-      reorderPoint: number(item.minStock ?? item.reorderPoint),
-      urgency: daysRemaining <= 3 ? 'critical' : daysRemaining <= 7 ? 'warning' : 'normal',
+      availableQuantity: available.value, averageDailyUsage, weekdayAverageUsage: usageByWeekday,
+      daysRemaining, forecastDate, forecastStatus: forecastDate ? 'stockout_projected' : 'beyond_horizon',
+      forecastHorizonDays, leadTimeDays: leadTimeDays != null && leadTimeDays >= 0 ? leadTimeDays : null,
+      safetyDays: safetyDays != null && safetyDays >= 0 ? safetyDays : null,
+      reorderPoint, reorderByDate, projectedInboundQuantity, inboundSchedule,
+      backtestWapePercent, confidence,
+      urgency: daysUntilReorder != null && daysUntilReorder <= 0 ? 'critical' : daysUntilReorder != null && daysUntilReorder <= 3 ? 'warning' : 'normal',
     });
   }
-  rows.sort((a, b) => a.daysRemaining - b.daysRemaining);
+  rows.sort((a, b) => (a.daysRemaining ?? Infinity) - (b.daysRemaining ?? Infinity));
   return {
     status: rows.length ? (coveredLines === soldLines ? 'available' : 'partial_coverage') : 'insufficient_data',
     historyDays: window.days, minimumHistoryDays: minHistoryDays, items: rows,
+    asOfDate: anchorDate, forecastMethod: 'weekday_consumption_with_approved_po', forecastHorizonDays,
     recipeCoveragePercent: soldLines ? Math.round(coveredLines / soldLines * 10000) / 100 : null,
+    coverageIssues, inboundIssues,
+    policy: {
+      paidOrdersOnly: true, effectiveRecipeVersionRequired: true, completeLineCoverageRequired: true,
+      approvedFuturePurchaseOrdersIncluded: true, overduePurchaseOrdersNotAssumedReceived: true,
+      safetyStockQuantityDeductedFromAvailable: true, safetyDaysRequireExplicitItemValue: true,
+    },
   };
 }
 
@@ -265,11 +410,11 @@ function deriveRestaurantIntelligence(db, query = {}) {
     ...row,
     qtyOnHand: (number(row.qtyOnHand ?? row.onHand ?? row.quantity) || 0) + (shadowMovementByItem.get(String(row.id)) || 0),
   }));
-  const allRecipes = list(accounting.recipes).filter((row) => sharedOrBranch(row, branchId));
+  const allRecipes = recipeCatalog(db, branchId);
   const recipes = latestRecipes(allRecipes);
   const orders = list(db.orders).filter((row) => sameBranch(row, branchId));
   const capacity = calculateRecipeCapacity({ items, recipes, branchId });
-  const stockout = calculateStockoutForecast({ items, recipes: allRecipes, orders, branchId, from: query.from, to: query.to });
+  const stockout = calculateStockoutForecast({ items, recipes: allRecipes, orders, purchaseOrders: db.financeV2?.purchaseOrders, branchId, from: query.from, to: query.to });
   const explicitFixedCosts = accounting.restaurantPlanning?.fixedCostsIrr;
   const explicitSalesMix = accounting.restaurantPlanning?.salesMix;
   const breakEven = calculateBreakEven({ fixedCostsIrr: explicitFixedCosts, sales: explicitSalesMix });
@@ -297,5 +442,6 @@ module.exports = {
   deriveRestaurantIntelligence,
   latestRecipes,
   effectiveRecipeForSale,
+  recipeCatalog,
   ingredientRequirement,
 };

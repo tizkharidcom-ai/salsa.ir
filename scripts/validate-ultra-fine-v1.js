@@ -45,7 +45,7 @@ check('active chip paint containment relaxation retained',css.includes('contain:
 check('legacy full-bar indicator remains disabled',css.includes('#westo-dish-catbar::before { display:none !important;content:none !important; }'));
 check('classic lower underline reference unchanged',/\.westo-prod-hero-cat\.is-active::after,[\s\S]*?\.westo-dish-catbar__chip\.is-active::after \{[\s\S]*?inset-inline:28%;[\s\S]*?bottom:3px;[\s\S]*?height:2px;/.test(v12));
 
-check('Resource Scheduler source still present',fs.existsSync(path.join(ROOT,'js/westo-smart-loader.js'))&&loader.includes('Central resource scheduler / browser download manager.')&&loader.includes('async function requestImage')&&loader.includes('supportsAvif'));
+check('Resource Scheduler source still present',fs.existsSync(path.join(ROOT,'js/westo-smart-loader.js'))&&loader.includes('Central resource scheduler / browser download manager.')&&loader.includes('async function requestImage')&&loader.includes('function webpImageUrl')&&!loader.includes('supportsAvif'));
 check('v14.3 thermal governor preserved',read('js/westo-v14.3-ultra-fine.js').includes('dataset.thermalIdle'));
 check('promo state machine source preserved',read('js/entrance-promo-deck.js').includes('throwCard')&&read('js/entrance-promo-deck.js').includes('snapBack'));
 check('category header lite source preserved',read('js/table-cart.js').includes('westo-dish-catbar'));

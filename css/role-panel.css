@@ -139,7 +139,7 @@ button, a { -webkit-tap-highlight-color: transparent; }
 .cart-total { display: flex; justify-content: space-between; margin: 16px 0; font-size: 18px; }
 
 /* Kitchen inventory operations — physical facts first; account codes stay out of this workspace. */
-.inventory-actions { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 12px; margin-bottom: 16px; }
+.inventory-actions { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px,1fr)); gap: 12px; margin-bottom: 16px; }
 .inventory-action { overflow: hidden; border: 1px solid var(--rp-line); border-radius: var(--rp-radius); background: var(--rp-surface); box-shadow: 0 8px 24px rgba(30,46,49,.04); }
 .inventory-action summary { min-height: 78px; padding: 15px 17px; display: grid; align-content: center; gap: 4px; cursor: pointer; list-style: none; }
 .inventory-action summary::-webkit-details-marker { display: none; }
@@ -150,6 +150,16 @@ button, a { -webkit-tap-highlight-color: transparent; }
 .inventory-action form, .inventory-action__empty { padding: 0 15px 15px; }
 .inventory-action[data-disabled="true"] summary { cursor: default; }
 .inventory-action[data-disabled="true"] summary::after { content: '—'; color: var(--rp-muted); }
+.inventory-action--wide { grid-column: 1 / -1; }
+.recipe-builder { padding: 12px; border: 1px solid var(--rp-line); border-radius: 15px; background: var(--rp-surface-2); }
+.recipe-builder__head { margin-bottom: 10px; display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.recipe-builder__head > div { display: grid; gap: 3px; }
+.recipe-builder__head span, .inventory-action__notice { color: var(--rp-muted); font-size: 11px; }
+.recipe-builder__lines { display: grid; gap: 8px; }
+.recipe-builder__line { padding: 10px; display: grid; grid-template-columns: minmax(190px,1.5fr) repeat(3,minmax(120px,.8fr)) auto auto; align-items: end; gap: 8px; border: 1px solid var(--rp-line); border-radius: 13px; background: var(--rp-surface); }
+.recipe-builder__unit { min-height: 46px; padding: 0 10px; display: flex; align-items: center; gap: 5px; border-radius: 12px; background: #eef5f5; color: var(--rp-muted); font-size: 11px; white-space: nowrap; }
+.recipe-builder__remove { width: 42px; min-height: 42px; border: 1px solid #efc7ca; border-radius: 12px; background: #fff0f1; color: var(--rp-danger); cursor: pointer; font-size: 20px; }
+.inventory-action__notice { padding: 11px 13px; border-radius: 12px; background: #edf8f8; line-height: 1.9; }
 .inventory-table { overflow-x: auto; }
 .inventory-row { min-width: 660px; padding: 11px 8px; display: grid; grid-template-columns: minmax(190px,1.6fr) repeat(3,minmax(105px,.75fr)); align-items: center; gap: 10px; border-bottom: 1px solid var(--rp-line); }
 .inventory-row:last-child { border-bottom: 0; }
@@ -340,8 +350,12 @@ button, a { -webkit-tap-highlight-color: transparent; }
 .pos-edit-lock-note { margin: 0; padding: 10px; border-radius: 10px; background: #fff5e5; color: #8a5b08; font-size: 12px; }
 .pos-transaction-list { display: grid; gap: 7px; }
 .pos-transaction-list article { min-height: 65px; padding: 10px 13px; display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: 20px; border-bottom: 1px solid var(--rp-line); }
+.pos-transaction-list article.is-warning { border: 1px solid #efc5a2; border-radius: 14px; background: #fff8ef; }
 .pos-transaction-list article > div { display: grid; }
 .pos-transaction-list span { color: var(--rp-muted); font-size: 12px; }
+.role-inline-warning { display: grid; gap: 4px; margin: 0 0 14px; padding: 12px 14px; border: 1px solid #efc5a2; border-radius: 14px; background: #fff8ef; color: #6f421d; }
+.role-inline-warning b { font-size: 13px; }
+.role-inline-warning span { font-size: 12px; line-height: 1.8; }
 .role-dialog { width: min(1040px, calc(100vw - 24px)); max-height: calc(100vh - 24px); padding: 0; border: 0; border-radius: 24px; background: transparent; }
 .role-dialog::backdrop { background: rgba(9,14,15,.54); backdrop-filter: blur(8px); }
 .role-dialog__sheet { max-height: calc(100vh - 24px); overflow: hidden; background: #fff; border-radius: 24px; display: flex; flex-direction: column; }
@@ -375,6 +389,8 @@ button, a { -webkit-tap-highlight-color: transparent; }
   .role-section--8, .role-section--4 { grid-column: span 12; }
   .composer { grid-template-columns: 1fr; }
   .composer-items { max-height: 34vh; }
+  .recipe-builder__line { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .recipe-builder__unit { white-space: normal; }
   .pos-shell { grid-template-columns: minmax(0,1.25fr) minmax(300px,.75fr); }
   .pos-grid { grid-template-columns: repeat(3, minmax(118px, 1fr)); }
   .pos-toolbar { grid-template-columns: 1fr auto; }
@@ -407,6 +423,9 @@ button, a { -webkit-tap-highlight-color: transparent; }
   .kds-board { grid-template-columns: repeat(3, 84vw); margin-inline: -10px; padding-inline: 10px; }
   .drawer-breakdown { grid-template-columns: repeat(2,1fr); }
   .field-grid, .composer-items { grid-template-columns: 1fr; }
+  .recipe-builder__head { align-items: stretch; flex-direction: column; }
+  .recipe-builder__line { grid-template-columns: 1fr; }
+  .recipe-builder__remove { width: 100%; }
   .role-dialog { width: 100vw; max-height: 100dvh; margin: 0; border-radius: 0; }
   .role-dialog__sheet { min-height: 100dvh; max-height: 100dvh; border-radius: 0; }
   .role-dialog:has(.shift-end-sheet) { width: calc(100vw - 20px); max-width: calc(100vw - 20px); max-height: calc(100dvh - 20px); margin: auto; border-radius: 20px; }
@@ -1010,3 +1029,44 @@ body.is-pos-station { height: 100dvh; overflow: hidden; overscroll-behavior: non
 }
 
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; animation: none !important; transition: none !important; } }
+
+/* Direct LAN printer controls for the cashier station. */
+.pos-toolbar__actions { display: flex; align-items: center; justify-content: end; gap: 7px; min-width: 0; }
+.pos-toolbar__actions button { min-height: 44px; padding: 0 13px; border-radius: 13px; cursor: pointer; font-weight: 900; }
+.pos-toolbar__actions .pos-ghost { border: 1px solid var(--rp-line); background: var(--rp-surface-2); color: var(--rp-ink); }
+.is-pos-station .pos-toolbar__actions { display: flex; }
+.is-pos-station .pos-toolbar__actions button { min-height: 40px; }
+.printer-settings { max-width: 720px; margin: 0 auto; display: grid; gap: 14px; }
+.printer-settings__intro { display: grid; gap: 4px; padding: 13px 15px; border-radius: 15px; background: #edf9fa; border: 1px solid #c9ecef; }
+.printer-settings__intro strong { color: #075f68; font-size: 16px; }
+.printer-settings__intro span, .printer-settings__hint { color: var(--rp-muted); font-size: 12px; line-height: 1.8; }
+.printer-settings__status { padding: 10px 13px; border-radius: 12px; background: #e9f7ef; color: #14724f; font-size: 12px; font-weight: 850; }
+.printer-settings__transport { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
+.printer-settings__transport label { position: relative; min-height: 68px; cursor: pointer; }
+.printer-settings__transport input { position: absolute; opacity: 0; pointer-events: none; }
+.printer-settings__transport span { height: 100%; display: grid; align-content: center; gap: 3px; padding: 10px 14px; border: 1px solid var(--rp-line); border-radius: 14px; background: var(--rp-surface-2); transition: border-color .18s ease, background .18s ease, box-shadow .18s ease; }
+.printer-settings__transport b { color: var(--rp-ink); font-size: 14px; }
+.printer-settings__transport small { color: var(--rp-muted); font-size: 11px; }
+.printer-settings__transport input:checked + span { border-color: #53b7c1; background: #eaf8fa; box-shadow: inset 0 0 0 1px #53b7c1; }
+.printer-settings__transport input:focus-visible + span { outline: 3px solid rgb(83 183 193 / 25%); outline-offset: 2px; }
+.printer-settings__transport .is-disabled { opacity: .48; cursor: not-allowed; }
+.printer-settings__panel { display: grid; grid-template-columns: 1.6fr .8fr; gap: 9px; padding: 12px; border: 1px solid var(--rp-line); border-radius: 15px; background: #fafcfd; }
+.printer-settings__system { display: grid; grid-template-columns: 1fr auto; align-items: end; gap: 9px; padding: 12px; border: 1px solid var(--rp-line); border-radius: 15px; background: #fafcfd; }
+.printer-settings__system > button { min-height: 46px; white-space: nowrap; }
+.printer-settings__system > small { grid-column: 1 / -1; color: var(--rp-muted); line-height: 1.7; }
+.printer-settings [hidden] { display: none !important; }
+.printer-settings__actions { display: flex; justify-content: end; gap: 8px; padding-top: 2px; }
+
+@media (max-width: 620px) {
+  .pos-toolbar__actions { gap: 4px; }
+  .is-pos-station .pos-toolbar__actions { grid-column: 2; grid-row: 1; }
+  .is-pos-station .pos-toolbar__actions button { min-height: 38px; padding: 0 8px; font-size: 10px; }
+  .printer-settings { gap: 10px; }
+  .printer-settings .field-grid { grid-template-columns: 1fr; gap: 8px; }
+  .printer-settings .field--full { grid-column: auto; }
+  .printer-settings__transport, .printer-settings__panel { grid-template-columns: 1fr; }
+  .printer-settings__system { grid-template-columns: 1fr; }
+  .printer-settings__system > small { grid-column: auto; }
+  .printer-settings__actions { display: grid; grid-template-columns: 1fr 1.2fr; }
+  .printer-settings__actions button { min-height: 42px; padding-inline: 8px; font-size: 11px; }
+}

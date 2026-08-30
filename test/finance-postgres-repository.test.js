@@ -9,12 +9,45 @@ class RecordingClient {
   async query(sql, values = []) {
     this.queries.push({ sql: String(sql), values });
     if (/to_regclass/.test(sql)) return { rows: [this.available ? {
-      finance_events: 'finance_events', journal_entries: 'journal_entries_v2', outbox: 'finance_outbox',
+      finance_events: 'finance_events', finance_payments: 'finance_payments', finance_refunds: 'finance_refunds', inventory_movements: 'finance_inventory_movements',
+      purchase_orders: 'finance_purchase_orders', goods_receipts: 'finance_goods_receipts', cost_accruals: 'finance_cost_accruals', cost_payments: 'finance_cost_payments',
+      depreciation_runs: 'finance_depreciation_runs', depreciation_lines: 'finance_asset_depreciation_lines', journal_entries: 'journal_entries_v2', journal_lines: 'journal_lines_v2',
+      approvals: 'finance_approvals', reconciliation_items: 'reconciliation_items', outbox: 'finance_outbox',
       cost_snapshots: 'finance_order_item_cost_snapshots', movement_valuations: 'finance_inventory_movement_valuations',
-      production_batches: 'finance_production_batches', cost_commitments: 'finance_cost_commitments', fixed_assets: 'finance_fixed_assets', payroll_runs: 'finance_payroll_runs',
-      opening_balances: 'finance_opening_balance_batches', legacy_archive: 'finance_legacy_archive', legacy_backfill: true,
+      production_batches: 'finance_production_batches', inventory_items: 'finance_inventory_items_v2', recipe_versions: 'finance_recipe_versions', recipe_ingredients: 'finance_recipe_ingredients', recipe_workflow: true,
+      cost_commitments: 'finance_cost_commitments', fixed_assets: 'finance_fixed_assets', payroll_runs: 'finance_payroll_runs',
+      opening_balances: 'finance_opening_balance_batches', branch_rollouts: 'finance_branch_rollouts', migration_baselines: 'finance_migration_baselines', idempotency_requests: 'finance_idempotency_requests', legacy_archive: 'finance_legacy_archive',
+      schema_migrations: 'finance_schema_migrations', vendor_invoices: 'finance_vendor_invoices', vendor_payments: 'finance_vendor_payments',
+      vendor_invoice_reversals: true, vendor_payment_reversals: true, legacy_backfill: true,
     } : {}] };
     return { rows: [], rowCount: 1 };
+  }
+}
+
+class ArchiveConflictClient extends RecordingClient {
+  async query(sql, values = []) {
+    if (/INSERT INTO finance_legacy_archive/.test(sql)) return { rows: [], rowCount: 0 };
+    return super.query(sql, values);
+  }
+}
+
+class PartialSchemaClient extends RecordingClient {
+  async query(sql, values = []) {
+    const result = await super.query(sql, values);
+    if (/to_regclass/.test(sql) && result.rows?.[0]) result.rows[0].finance_payments = null;
+    return result;
+  }
+}
+
+class BaselineConflictClient extends RecordingClient {
+  async query(sql, values = []) {
+    if (/SELECT branch_id,status,source_count,source_keys/.test(sql)) {
+      return { rows: [{
+        branch_id: 1, status: 'active', source_count: 99, source_keys: [], source_fingerprints: {},
+        source_sha256: 'b'.repeat(64), trust_summary: {}, scanned_by: 'old-auditor', scanned_at: '2026-08-01T00:00:00.000Z',
+      }], rowCount: 1 };
+    }
+    return super.query(sql, values);
   }
 }
 
@@ -45,7 +78,7 @@ function financeState() {
       id: '90000000-0000-4000-8000-000000000001', movementId: '70000000-0000-4000-8000-000000000001',
       unitCostIrr: 100, totalCostIrr: 100, source: 'inventory_avg_cost_irr', createdBy: 'accountant', createdAt: '2026-08-24T12:30:00.000Z',
     }],
-    productionBatches: [], orderItemCostSnapshots: [],
+    productionBatches: [], recipeVersions: [], orderItemCostSnapshots: [],
     payments: [{
       id: '50000000-0000-4000-8000-000000000001', orderId: 1, branchId: 1, tender: 'card', amountIrr: 1000,
       status: 'succeeded', idempotencyKey: 'order:1:payment:1', paidAt: '2026-08-24T10:00:00.000Z', createdAt: '2026-08-24T10:00:00.000Z', payload: {},
@@ -54,7 +87,9 @@ function financeState() {
       id: '60000000-0000-4000-8000-000000000001', paymentId: '50000000-0000-4000-8000-000000000001', amountIrr: 100,
       reason: 'test refund', status: 'succeeded', idempotencyKey: 'refund:1', approvedBy: 'owner', approvedAt: '2026-08-24T11:00:00.000Z', createdBy: 'accountant', createdAt: '2026-08-24T10:30:00.000Z',
     }],
-    reconciliationItems: [], costCommitments: [], costAccruals: [], costPayments: [], fixedAssets: [], depreciationRuns: [], payrollRuns: [], payrollPayments: [], openingBalanceBatches: [], legacyArchive: [],
+    reconciliationItems: [], costCommitments: [], costAccruals: [], costPayments: [], fixedAssets: [], depreciationRuns: [], payrollRuns: [], payrollPayments: [], openingBalanceBatches: [], branchRollouts: [], migrationBaselines: [], legacyArchive: [],
+    idempotencyRequests: { 'route-key-123': { kind: 'POST:/api/admin/v2/finance/purchase-orders', fingerprint: 'a'.repeat(64), at: '2026-08-24T09:00:00.000Z' } },
+    idempotency: { 'route-key-123': { kind: 'purchase_order', id: 'route-po-1', at: '2026-08-24T09:00:00.000Z' } },
   };
 }
 
@@ -63,6 +98,13 @@ test('normalized repository reports missing migrations instead of pretending Pos
   assert.equal(await normalizedSchemaAvailable(client), false);
   const result = await syncFinanceState(client, financeState());
   assert.deepEqual(result, { available: false, reason: 'finance_schema_missing' });
+  assert.equal(client.queries.length, 2);
+});
+
+test('normalized repository rejects a partial finance schema before sync can fail mid-flight', async () => {
+  const client = new PartialSchemaClient();
+  assert.equal(await normalizedSchemaAvailable(client), false);
+  assert.deepEqual(await syncFinanceState(client, financeState()), { available: false, reason: 'finance_schema_missing' });
   assert.equal(client.queries.length, 2);
 });
 
@@ -138,7 +180,32 @@ test('normalized repository inserts posted journal as draft, then lines, then pr
     createdBy: 'accountant', createdAt: '2026-08-01T00:00:00.000Z', decidedBy: 'owner', decidedAt: '2026-08-01T01:00:00.000Z',
     postedBy: 'owner', postedAt: '2026-08-01T01:00:00.000Z',
   });
-  const result = await syncFinanceState(client, state);
+  state.branchRollouts.push({
+    id: 'f0000000-0000-4000-8000-000000000001', branchId: 1, status: 'active',
+    approvalId: 'f0000000-0000-4000-8000-000000000002', requestedBy: 'manager', requestedAt: '2026-08-25T10:00:00.000Z',
+    decidedBy: 'owner', decidedAt: '2026-08-25T11:00:00.000Z', activatedBy: 'owner', activatedAt: '2026-08-25T11:00:00.000Z',
+    readinessSnapshot: { status: 'READY_FOR_CUTOVER_REVIEW' }, readinessAtActivation: { status: 'READY_FOR_CUTOVER_REVIEW' },
+  });
+  state.migrationBaselines.push({
+    id: 'fa000000-0000-4000-8000-000000000001', branchId: 1, status: 'active', sourceCount: 1,
+    sourceKeys: ['orders:legacy-1'], sourceFingerprints: { 'orders:legacy-1': 'a'.repeat(64) }, sourceSha256: 'b'.repeat(64),
+    trustSummary: { verified: 0, inferred_needs_approval: 1, quarantined: 0 }, scannedBy: 'accountant',
+    scannedAt: '2026-08-25T09:00:00.000Z', supersededAt: null,
+  });
+  state.approvals.push({
+    id: 'ab000000-0000-4000-8000-000000000001', operation: 'approve_recipe_version', entityType: 'recipe_version',
+    entityId: 'ab000000-0000-4000-8000-000000000002', amountIrr: 0, status: 'approved', createdBy: 'kitchen-1',
+    createdAt: '2026-08-20T10:00:00.000Z', decidedBy: 'owner-1', decidedAt: '2026-08-20T11:00:00.000Z', history: [],
+  });
+  state.recipeVersions.push({
+    id: 'ab000000-0000-4000-8000-000000000002', recipeId: 'menu:501:branch:1', menuItemId: '501', menuItemName: 'برگر',
+    name: 'برگر نسخه ۱', version: 1, branchId: 1, yieldQuantity: 1, effectiveFrom: '2026-08-20T00:00:00.000Z',
+    effectiveTo: null, outputItemId: null, status: 'approved', approvalId: 'ab000000-0000-4000-8000-000000000001',
+    createdBy: 'kitchen-1', createdAt: '2026-08-20T10:00:00.000Z', approvedBy: 'owner-1', approvedAt: '2026-08-20T11:00:00.000Z', history: [],
+    ingredients: [{ id: 'ab000000-0000-4000-8000-000000000003', lineNo: 1, itemId: 'beef', quantity: 0.2, unit: 'kg', quantityBasis: 'raw', yieldPercent: 100 }],
+  });
+  const operationalState = { accounting: { inventoryItems: [{ id: 'beef', branchId: 1, sku: 'BEEF', name: 'گوشت', unit: 'kg', minStock: 1, safetyStock: 0.5, leadTimeDays: 2 }] } };
+  const result = await syncFinanceState(client, state, { operationalState });
   assert.equal(result.available, true);
   const entryInsert = client.queries.findIndex((row) => /INSERT INTO journal_entries_v2/.test(row.sql));
   const lineInsert = client.queries.findIndex((row) => /INSERT INTO journal_lines_v2/.test(row.sql));
@@ -160,7 +227,16 @@ test('normalized repository inserts posted journal as draft, then lines, then pr
   assert.ok(client.queries.some((row) => /INSERT INTO finance_payroll_runs/.test(row.sql)));
   assert.ok(client.queries.some((row) => /INSERT INTO finance_payroll_payments/.test(row.sql)));
   assert.ok(client.queries.some((row) => /INSERT INTO finance_opening_balance_batches/.test(row.sql)));
+  assert.ok(client.queries.some((row) => /INSERT INTO finance_branch_rollouts/.test(row.sql)));
+  assert.ok(client.queries.some((row) => /INSERT INTO finance_migration_baselines/.test(row.sql)));
   assert.ok(client.queries.some((row) => /INSERT INTO finance_legacy_archive/.test(row.sql)));
+  assert.ok(client.queries.some((row) => /INSERT INTO finance_idempotency_requests/.test(row.sql)));
+  const approvalInsert = client.queries.findIndex((row) => /INSERT INTO finance_approvals/.test(row.sql) && row.values[0] === 'ab000000-0000-4000-8000-000000000001');
+  const inventoryInsert = client.queries.findIndex((row) => /INSERT INTO finance_inventory_items_v2/.test(row.sql));
+  const recipeInsert = client.queries.findIndex((row) => /INSERT INTO finance_recipe_versions/.test(row.sql));
+  const ingredientInsert = client.queries.findIndex((row) => /INSERT INTO finance_recipe_ingredients/.test(row.sql));
+  const recipePromote = client.queries.findIndex((row) => /UPDATE finance_recipe_versions SET status='approved'/.test(row.sql));
+  assert.ok(approvalInsert > -1 && inventoryInsert > approvalInsert && recipeInsert > inventoryInsert && ingredientInsert > recipeInsert && recipePromote > ingredientInsert);
   assert.ok(client.queries.some((row) => /backfill_reversal_journal_entry_id/.test(row.sql)));
   assert.equal(result.counts.costCommitments, 1);
   assert.equal(result.counts.costAccruals, 1);
@@ -169,5 +245,32 @@ test('normalized repository inserts posted journal as draft, then lines, then pr
   assert.equal(result.counts.payrollRuns, 1);
   assert.equal(result.counts.payrollPayments, 1);
   assert.equal(result.counts.openingBalanceBatches, 1);
+  assert.equal(result.counts.branchRollouts, 1);
+  assert.equal(result.counts.migrationBaselines, 1);
   assert.equal(result.counts.legacyArchive, 1);
+  assert.equal(result.counts.idempotencyRequests, 1);
+  assert.equal(result.counts.recipeVersions, 1);
+});
+
+test('normalized repository rejects an immutable legacy archive source conflict', async () => {
+  const client = new ArchiveConflictClient();
+  await assert.rejects(() => syncFinanceState(client, {
+    legacyArchive: [{
+      id: '30000000-0000-4000-8000-000000000001', sourceTable: 'orders', sourceId: '1', trustStatus: 'verified',
+      reason: 'verified_tender', sourcePayload: { id: 1 }, branchId: 1, amountIrr: 100, occurredAt: '2026-08-01T00:00:00.000Z',
+      classificationDetails: {}, decision: 'pending', decisionHistory: [], reviewedTenders: [], archivedBy: 'auditor',
+      archivedAt: '2026-08-01T00:00:00.000Z',
+    }],
+  }), (error) => error.code === 'postgres_legacy_archive_immutable_conflict');
+});
+
+test('normalized repository rejects an immutable migration baseline conflict', async () => {
+  const client = new BaselineConflictClient();
+  await assert.rejects(() => syncFinanceState(client, {
+    migrationBaselines: [{
+      id: '40000000-0000-4000-8000-000000000001', branchId: 1, status: 'active', sourceCount: 1,
+      sourceKeys: ['orders:1'], sourceFingerprints: { 'orders:1': 'a'.repeat(64) }, sourceSha256: 'a'.repeat(64),
+      trustSummary: {}, scannedBy: 'new-auditor', scannedAt: '2026-08-02T00:00:00.000Z',
+    }],
+  }), (error) => error.code === 'postgres_migration_baseline_immutable_conflict');
 });

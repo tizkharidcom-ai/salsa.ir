@@ -11,8 +11,112 @@
  * 5. Periodic Stocktake & Inventory Count Reconciliation
  */
 
-const { toIRR, addMoney, subMoney } = require('./money');
+const { toIRR, addMoney, subMoney, formatNumber } = require('./money');
 const auditEngine = require('./audit-engine');
+const {
+  canonicalUnit,
+  convertQuantity,
+  effectiveRecipeForSale,
+  ingredientRequirement,
+  recipeCatalog,
+} = require('./restaurant-intelligence');
+
+function normalizedBranchId(branchId) {
+  const value = Number(branchId);
+  return Number.isSafeInteger(value) && value > 0 ? value : 1;
+}
+
+function sameBranch(row, branchId) {
+  return row?.branchId == null || Number(row.branchId) === Number(branchId);
+}
+
+function findInventoryItem(acc, itemId, branchId) {
+  const key = String(itemId ?? '').trim();
+  const items = acc.inventoryItems || [];
+  const scoped = items.filter((item) => sameBranch(item, branchId));
+  return scoped.find((item) => String(item.id) === key)
+    || scoped.find((item) => String(item.sku || '').trim() === key)
+    || null;
+}
+
+function findInventoryItemAnyBranch(acc, itemId) {
+  const key = String(itemId ?? '').trim();
+  return (acc.inventoryItems || []).find((item) => String(item.id) === key || String(item.sku || '').trim() === key) || null;
+}
+
+function positiveQuantity(value, label) {
+  const quantity = Number(value);
+  if (!Number.isFinite(quantity) || quantity <= 0) throw new Error(`${label} باید عددی بزرگتر از صفر باشد.`);
+  return quantity;
+}
+
+function nonNegativeNumber(value, label) {
+  const quantity = Number(value);
+  if (!Number.isFinite(quantity) || quantity < 0) throw new Error(`${label} معتبر نیست.`);
+  return quantity;
+}
+
+function availableInventoryQuantity(item) {
+  const onHand = nonNegativeNumber(item?.qtyOnHand ?? item?.onHand ?? item?.quantity, 'موجودی فعلی');
+  const controls = [
+    ['reservedQty', 'qtyReserved'],
+    ['quarantinedQty', 'qtyQuarantined'],
+    ['expiredQty', 'qtyExpired'],
+  ];
+  const unavailable = controls.reduce((sum, [primary, fallback]) => {
+    const raw = item?.[primary] ?? item?.[fallback] ?? 0;
+    return sum + nonNegativeNumber(raw === '' ? 0 : raw, 'موجودی غیرقابل مصرف');
+  }, 0);
+  return Math.max(0, onHand - unavailable);
+}
+
+function setInventoryOnHand(item, value) {
+  if (item?.qtyOnHand !== undefined) item.qtyOnHand = value;
+  else if (item?.onHand !== undefined) item.onHand = value;
+  else item.quantity = value;
+}
+
+function inventoryUnitCost(item, ingredient = {}) {
+  const value = item?.avgCostIrr ?? item?.avgCost ?? item?.unitCostIrr ?? item?.unitCost
+    ?? ingredient.unitCostIrr ?? ingredient.unitCost;
+  const cost = Number(value);
+  if (!Number.isFinite(cost) || cost < 0 || !Number.isSafeInteger(Math.round(cost))) return null;
+  return Math.round(cost);
+}
+
+function resolveRecipeItem(acc, itemRef, branchId) {
+  const key = String(itemRef ?? '').trim();
+  if (!key) return null;
+  const candidates = (acc.inventoryItems || []).filter((item) => {
+    if (branchId != null && !sameBranch(item, branchId)) return false;
+    return String(item.id) === key || String(item.sku || '').trim() === key;
+  });
+  if (candidates.length > 1) throw new Error(`مادهٔ اولیهٔ «${key}» در محدودهٔ انتخاب‌شده مبهم است؛ شعبهٔ رسپی را مشخص کنید.`);
+  return candidates[0] || null;
+}
+
+function recipeIngredientCost(acc, recipe, ingredient, branchId) {
+  const item = resolveRecipeItem(acc, ingredient.itemId, branchId);
+  if (!item) return { ok: false, code: 'recipe_inventory_item_missing', item: null };
+  const normalizedIngredient = {
+    ...ingredient,
+    quantityBasis: ingredient.quantityBasis ?? ingredient.quantity_basis ?? 'raw',
+  };
+  const required = ingredientRequirement(normalizedIngredient, recipe, item);
+  if (!required.ok) return { ok: false, code: required.code, item };
+  const unitCost = inventoryUnitCost(item, ingredient);
+  if (unitCost == null) return { ok: false, code: 'recipe_inventory_cost_invalid', item };
+  const lineCost = Math.round(required.value * unitCost);
+  if (!Number.isSafeInteger(lineCost)) return { ok: false, code: 'recipe_cost_unsafe', item };
+  return {
+    ok: true,
+    item,
+    quantityBase: required.value,
+    unitCost,
+    lineCost,
+    baseUnit: canonicalUnit(item.unit) || item.unit || null,
+  };
+}
 
 function ensureInventory(acc) {
   if (!Array.isArray(acc.inventoryItems)) acc.inventoryItems = [];
@@ -119,9 +223,15 @@ function ensureInventory(acc) {
  */
 function receiveStock(acc, { itemId, itemName, qty, unitCost, vendorId, date, branchId }) {
   ensureInventory(acc);
-  let item = acc.inventoryItems.find((i) => i.id === itemId || i.sku === itemId);
-  const receivedQty = Number(qty || 0);
-  const costPerUnit = toIRR(unitCost || 0);
+  const targetBranchId = normalizedBranchId(branchId);
+  const receivedQty = positiveQuantity(qty, 'مقدار دریافت');
+  const rawUnitCost = unitCost == null || unitCost === '' ? 0 : Number(unitCost);
+  const costPerUnit = toIRR(rawUnitCost);
+  if (!Number.isFinite(rawUnitCost) || rawUnitCost < 0 || !Number.isSafeInteger(costPerUnit)) throw new Error('بهای واحد دریافت معتبر نیست.');
+
+  let item = findInventoryItem(acc, itemId, targetBranchId);
+  const itemInOtherBranch = item ? null : findInventoryItemAnyBranch(acc, itemId);
+  if (!item && itemInOtherBranch) throw new Error('قلم موجودی به شعبهٔ دیگری تعلق دارد.');
 
   if (!item) {
     item = {
@@ -131,15 +241,20 @@ function receiveStock(acc, { itemId, itemName, qty, unitCost, vendorId, date, br
       unit: 'کیلوگرم',
       qtyOnHand: 0,
       avgCost: 0,
-      branchId: branchId || 1,
+      branchId: targetBranchId,
     };
     acc.inventoryItems.push(item);
   }
 
-  const oldTotal = item.qtyOnHand * item.avgCost;
+  const oldQty = nonNegativeNumber(item.qtyOnHand ?? 0, 'موجودی قبلی');
+  const oldCost = nonNegativeNumber(item.avgCostIrr ?? item.avgCost ?? 0, 'بهای میانگین قبلی');
+  const oldTotal = oldQty * oldCost;
   const newTotal = receivedQty * costPerUnit;
-  item.qtyOnHand += receivedQty;
-  item.avgCost = item.qtyOnHand > 0 ? Math.round((oldTotal + newTotal) / item.qtyOnHand) : costPerUnit;
+  const newQty = oldQty + receivedQty;
+  if (!Number.isSafeInteger(Math.round(newTotal)) || !Number.isSafeInteger(Math.round(oldTotal + newTotal))) throw new Error('ارزش موجودی از محدودهٔ امن خارج است.');
+  item.qtyOnHand = newQty;
+  item.avgCost = newQty > 0 ? Math.round((oldTotal + newTotal) / newQty) : costPerUnit;
+  if (item.avgCostIrr !== undefined) item.avgCostIrr = item.avgCost;
 
   const txn = {
     id: `itx-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
@@ -148,10 +263,10 @@ function receiveStock(acc, { itemId, itemName, qty, unitCost, vendorId, date, br
     type: 'PURCHASE',
     qty: receivedQty,
     unitCost: costPerUnit,
-    totalCost: receivedQty * costPerUnit,
+    totalCost: Math.round(receivedQty * costPerUnit),
     vendorId,
     date: date || new Date().toISOString(),
-    branchId: branchId || 1,
+    branchId: targetBranchId,
     createdAt: new Date().toISOString(),
   };
 
@@ -164,12 +279,26 @@ function receiveStock(acc, { itemId, itemName, qty, unitCost, vendorId, date, br
  */
 function consumeStock(acc, { itemId, qty, reason, orderId, date, branchId }) {
   ensureInventory(acc);
-  const item = acc.inventoryItems.find((i) => i.id === itemId || i.sku === itemId);
+  const targetBranchId = normalizedBranchId(branchId);
+  const item = findInventoryItem(acc, itemId, targetBranchId);
+  if (!item && findInventoryItemAnyBranch(acc, itemId)) return { error: 'قلم موجودی به شعبهٔ دیگری تعلق دارد.' };
   if (!item) return { error: `آیتم موجودی با شناسه «${itemId}» یافت نشد.` };
 
-  const consumeQty = Number(qty || 0);
-  const cogsAmount = Math.round(consumeQty * item.avgCost);
-  item.qtyOnHand = Math.max(0, item.qtyOnHand - consumeQty);
+  const consumeQty = Number(qty);
+  if (!Number.isFinite(consumeQty) || consumeQty <= 0) return { error: 'مقدار مصرف باید عددی بزرگتر از صفر باشد.' };
+  let available;
+  try {
+    available = availableInventoryQuantity(item);
+  } catch (error) {
+    return { error: error.message };
+  }
+  if (consumeQty > available + 1e-9) return { error: 'موجودی کافی برای مصرف وجود ندارد.' };
+  const unitCost = inventoryUnitCost(item);
+  if (unitCost == null) return { error: 'بهای میانگین موجودی معتبر نیست.' };
+  const cogsAmount = Math.round(consumeQty * unitCost);
+  if (!Number.isSafeInteger(cogsAmount)) return { error: 'ارزش مصرف از محدودهٔ امن خارج است.' };
+  const onHand = Number(item.qtyOnHand ?? item.onHand ?? item.quantity);
+  setInventoryOnHand(item, onHand - consumeQty);
 
   const txn = {
     id: `itx-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
@@ -177,12 +306,12 @@ function consumeStock(acc, { itemId, qty, reason, orderId, date, branchId }) {
     itemName: item.name,
     type: 'USAGE_ACTUAL',
     qty: consumeQty,
-    unitCost: item.avgCost,
+    unitCost,
     totalCost: cogsAmount,
     reason: reason || 'sales_consumption',
     orderId,
     date: date || new Date().toISOString(),
-    branchId: branchId || 1,
+    branchId: targetBranchId,
     createdAt: new Date().toISOString(),
   };
 
@@ -197,36 +326,50 @@ function recordWaste(acc, { itemId, qty, reason, date, branchId, createdById }, 
   ensureInventory(acc);
   const { postJournalFn } = opts;
 
-  const item = acc.inventoryItems.find((i) => i.id === itemId || i.sku === itemId);
+  const targetBranchId = normalizedBranchId(branchId);
+  const item = findInventoryItem(acc, itemId, targetBranchId);
+  if (!item && findInventoryItemAnyBranch(acc, itemId)) throw new Error('قلم موجودی به شعبهٔ دیگری تعلق دارد.');
   if (!item) throw new Error(`آیتم موجودی «${itemId}» یافت نشد.`);
 
-  const wasteQty = Number(qty || 0);
-  if (wasteQty <= 0) throw new Error('مقدار ضایعات باید بزرگتر از صفر باشد.');
+  const wasteQty = positiveQuantity(qty, 'مقدار ضایعات');
+  const onHand = nonNegativeNumber(item.qtyOnHand ?? item.onHand ?? item.quantity, 'موجودی فعلی');
+  if (wasteQty > availableInventoryQuantity(item) + 1e-9) throw new Error('موجودی کافی برای ثبت ضایعات وجود ندارد.');
 
-  const wasteAmount = Math.round(wasteQty * item.avgCost);
-  item.qtyOnHand = Math.max(0, item.qtyOnHand - wasteQty);
+  const unitCost = inventoryUnitCost(item);
+  if (unitCost == null) throw new Error('بهای میانگین موجودی معتبر نیست.');
+  const wasteAmount = Math.round(wasteQty * unitCost);
 
   const wasteId = `wst-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
   const wasteReason = reason || 'ضایعات فرآوری / تاریخ گذشته';
   const wasteDate = date || new Date().toISOString();
 
+  // Determine credit account based on item classification:
+  // 1610: Raw Food & Bev, 1620: Packaging, 1630: WIP / Prep
+  let creditAccount = opts.creditAccountCode || item.inventoryAccountCode || '1610';
+  const itemCategory = String(item.category || item.type || item.subtype || '').toLowerCase();
+  if (itemCategory === 'packaging' || item.accountCode === '1620') {
+    creditAccount = '1620';
+  } else if (itemCategory === 'prep' || itemCategory === 'wip' || item.accountCode === '1630' || item.isSubRecipeOutput) {
+    creditAccount = '1630';
+  }
+
   // Balanced Double Entry for Kitchen Waste:
   // DR 5400 (Kitchen Waste & Spoilage / ضایعات و ضایع‌شدگی مواد آشپزخانه)
-  // CR 1610 (Raw Food & Beverage Inventory / موجودی مواد اولیه)
+  // CR 1610 / 1620 / 1630 (Inventory Account)
   const journalLines = [
     {
       accountCode: '5400', // Kitchen Waste & Spoilage
       debit: wasteAmount,
       credit: 0,
       memo: `ثبت ضایعات آشپزخانه: ${item.name} (${wasteQty} ${item.unit}) - ${wasteReason}`,
-      branchId: branchId || 1,
+      branchId: targetBranchId,
     },
     {
-      accountCode: '1610', // Raw Food & Beverage Inventory
+      accountCode: creditAccount,
       debit: 0,
       credit: wasteAmount,
       memo: `کاهش موجودی بابت ضایعات ${item.name}`,
-      branchId: branchId || 1,
+      branchId: targetBranchId,
     },
   ];
 
@@ -236,11 +379,15 @@ function recordWaste(acc, { itemId, qty, reason, date, branchId, createdById }, 
       source: 'kitchen_waste',
       sourceId: wasteId,
       date: wasteDate,
-      description: `ثبت حسابداری ضایعات: ${item.name} به ارزش ${wasteAmount.toLocaleString('fa-IR')} ریال`,
+      description: `ثبت حسابداری ضایعات: ${item.name} به ارزش ${formatNumber(wasteAmount)} ریال`,
       lines: journalLines,
       createdById: createdById || 'admin',
     });
   }
+
+  // The journal must succeed before changing physical stock. This keeps the
+  // inventory and the accounting entry atomic when the journal adapter fails.
+  setInventoryOnHand(item, onHand - wasteQty);
 
   const wasteRecord = {
     id: wasteId,
@@ -248,11 +395,11 @@ function recordWaste(acc, { itemId, qty, reason, date, branchId, createdById }, 
     itemName: item.name,
     qty: wasteQty,
     unit: item.unit,
-    unitCost: item.avgCost,
+    unitCost,
     totalCost: wasteAmount,
     reason: wasteReason,
     date: wasteDate,
-    branchId: branchId || 1,
+    branchId: targetBranchId,
     journalEntryId: journalEntry ? journalEntry.id : null,
     journalNumber: journalEntry ? journalEntry.number : null,
     createdAt: new Date().toISOString(),
@@ -267,11 +414,11 @@ function recordWaste(acc, { itemId, qty, reason, date, branchId, createdById }, 
     itemName: item.name,
     type: 'WASTE',
     qty: wasteQty,
-    unitCost: item.avgCost,
+    unitCost,
     totalCost: wasteAmount,
     reason: wasteReason,
     date: wasteDate,
-    branchId: branchId || 1,
+    branchId: targetBranchId,
     createdAt: new Date().toISOString(),
   });
 
@@ -280,7 +427,7 @@ function recordWaste(acc, { itemId, qty, reason, date, branchId, createdById }, 
     entityType: 'WasteLog',
     entityId: wasteRecord.id,
     userId: createdById || 'admin',
-    message: `ضایعات «${item.name}» به مقدار ${wasteQty} ${item.unit} (ارزش: ${wasteAmount.toLocaleString('fa-IR')} ریال) ثبت شد.`,
+    message: `ضایعات «${item.name}» به مقدار ${wasteQty} ${item.unit} (ارزش: ${formatNumber(wasteAmount)} ریال) ثبت شد.`,
   });
 
   return { ok: true, item, waste: wasteRecord, wasteAmount, journalEntry };
@@ -292,84 +439,216 @@ function recordWaste(acc, { itemId, qty, reason, date, branchId, createdById }, 
 function getInventoryValuation(acc, branchId) {
   ensureInventory(acc);
   let totalValue = 0;
+  const targetBranchId = branchId == null || branchId === '' ? null : normalizedBranchId(branchId);
+  const unvaluedItems = [];
   const items = (acc.inventoryItems || [])
-    .filter((i) => !branchId || i.branchId == branchId)
+    .filter((i) => targetBranchId == null || sameBranch(i, targetBranchId))
     .map((i) => {
-      const val = Math.round(i.qtyOnHand * i.avgCost);
+      const quantity = Number(i.qtyOnHand ?? i.onHand ?? i.quantity);
+      const unitCost = inventoryUnitCost(i);
+      if (!Number.isFinite(quantity) || quantity < 0 || unitCost == null) {
+        unvaluedItems.push({ itemId: i.id, reason: !Number.isFinite(quantity) || quantity < 0 ? 'quantity_invalid' : 'cost_invalid' });
+        return { ...i, totalValue: null, valuationStatus: 'unvalued' };
+      }
+      const val = Math.round(quantity * unitCost);
+      if (!Number.isSafeInteger(val)) {
+        unvaluedItems.push({ itemId: i.id, reason: 'value_unsafe' });
+        return { ...i, totalValue: null, valuationStatus: 'unvalued' };
+      }
       totalValue += val;
-      return { ...i, totalValue: val };
+      return { ...i, totalValue: val, valuationStatus: 'valued' };
     });
-  return { items, totalValue, totalItems: items.length };
+  return { items, totalValue, totalItems: items.length, unvaluedItems, complete: unvaluedItems.length === 0 };
 }
 
 /**
  * Calculates Theoretical vs Actual COGS Variance Analysis.
  */
-function getCOGSVarianceAnalysis(acc, db) {
+function getCOGSVarianceAnalysis(acc, db, branchId = null, options = {}) {
   ensureInventory(acc);
-  const orders = (db.orders || []).filter((o) => ['paid', 'preparing', 'ready', 'dispatched', 'delivered', 'done'].includes(o.status));
-
-  // 1. Calculate Theoretical Usage from POS Order Items & Active Recipes
-  const theoreticalUsage = {};
+  const targetBranchId = branchId == null || branchId === '' ? null : normalizedBranchId(branchId);
+  const parseBoundary = (value, endOfDay = false) => {
+    if (!value) return null;
+    const text = String(value).trim();
+    const dateOnly = /^\d{4}-\d{2}-\d{2}$/.test(text);
+    const source = dateOnly ? `${text}T${endOfDay ? '23:59:59.999' : '00:00:00.000'}Z` : value;
+    const at = new Date(source).getTime();
+    return Number.isFinite(at) ? at : null;
+  };
+  const fromAt = parseBoundary(options.from, false);
+  const toAt = parseBoundary(options.to, true);
+  const hasFrom = Number.isFinite(fromAt);
+  const hasTo = Number.isFinite(toAt);
+  const inRange = (value) => {
+    const at = new Date(value || 0).getTime();
+    if ((hasFrom || hasTo) && !Number.isFinite(at)) return false;
+    return (!hasFrom || at >= fromAt) && (!hasTo || at <= toAt);
+  };
+  const inBranch = (row) => targetBranchId == null || sameBranch(row, targetBranchId);
+  const paidStatuses = new Set(['paid', 'preparing', 'ready', 'dispatched', 'picked_up', 'delivered', 'done']);
+  const orders = (db?.orders || []).filter((order) => (
+    paidStatuses.has(String(order.status || ''))
+    && inBranch(order)
+    && inRange(order.paidAt || order.createdAt || order.date)
+  ));
+  const recipes = recipeCatalog({ accounting: acc, financeV2: db?.financeV2 }, targetBranchId);
+  const theoreticalUsage = new Map();
+  const coverageIssues = [];
   let totalTheoreticalCOGS = 0;
 
-  orders.forEach((ord) => {
-    (ord.items || []).forEach((item) => {
-      const recipe = (acc.recipes || []).find((r) => r.menuItemId === item.id || r.name === item.name);
-      const soldQty = Number(item.quantity || item.qty || 1);
-
-      if (recipe) {
-        (recipe.ingredients || []).forEach((ing) => {
-          if (!theoreticalUsage[ing.itemId]) {
-            theoreticalUsage[ing.itemId] = { itemId: ing.itemId, name: ing.name, qty: 0, cost: 0 };
-          }
-          const componentQty = ing.qty * soldQty;
-          const invItem = acc.inventoryItems.find((i) => i.id === ing.itemId);
-          const unitCost = invItem ? invItem.avgCost : ing.unitCost;
-          const lineCost = Math.round(componentQty * unitCost);
-
-          theoreticalUsage[ing.itemId].qty += componentQty;
-          theoreticalUsage[ing.itemId].cost += lineCost;
-          totalTheoreticalCOGS += lineCost;
-        });
+  // Theoretical COGS is based on the recipe version effective at sale time.
+  for (const order of orders) {
+    const soldAt = order.paidAt || order.createdAt || order.date;
+    for (const line of order.items || []) {
+      const menuItemId = line.menuItemId ?? line.id;
+      const recipe = effectiveRecipeForSale(recipes, menuItemId, soldAt)
+        || recipes.find((candidate) => candidate.name && candidate.name === line.name);
+      const soldQty = Number(line.quantity ?? line.qty ?? 1);
+      if (!recipe) {
+        coverageIssues.push({ code: 'recipe_missing', orderId: order.id || null, menuItemId: menuItemId || null });
+        continue;
       }
-    });
-  });
+      if (!Number.isFinite(soldQty) || soldQty <= 0 || !Array.isArray(recipe.ingredients) || recipe.ingredients.length === 0) {
+        coverageIssues.push({ code: 'recipe_line_invalid', orderId: order.id || null, menuItemId: menuItemId || null, recipeId: recipe.id || null });
+        continue;
+      }
+      let lineComplete = true;
+      const lineComponents = [];
+      for (const ingredient of recipe.ingredients) {
+        let component;
+        try {
+          component = recipeIngredientCost(acc, recipe, ingredient, targetBranchId);
+        } catch (error) {
+          component = { ok: false, code: 'recipe_inventory_item_ambiguous', item: null, message: error.message };
+        }
+        if (!component.ok) {
+          lineComplete = false;
+          coverageIssues.push({ code: component.code, orderId: order.id || null, menuItemId: menuItemId || null, itemId: ingredient.itemId || null, message: component.message });
+          continue;
+        }
+        const quantity = component.quantityBase * soldQty;
+        const lineCost = Math.round(quantity * component.unitCost);
+        if (!Number.isFinite(quantity) || quantity <= 0 || !Number.isSafeInteger(lineCost)) {
+          lineComplete = false;
+          coverageIssues.push({ code: 'recipe_cost_unsafe', orderId: order.id || null, itemId: component.item.id });
+          continue;
+        }
+        lineComponents.push({ component, quantity, lineCost, ingredient });
+      }
+      if (!lineComplete) coverageIssues.push({ code: 'recipe_line_coverage_incomplete', orderId: order.id || null, menuItemId: menuItemId || null });
+      else lineComponents.forEach(({ component, quantity, lineCost, ingredient }) => {
+        const key = String(component.item.id);
+        const existing = theoreticalUsage.get(key) || {
+          itemId: component.item.id, name: component.item.name || ingredient.name, unit: component.baseUnit,
+          qty: 0, cost: 0,
+        };
+        existing.qty += quantity;
+        existing.cost += lineCost;
+        theoreticalUsage.set(key, existing);
+        totalTheoreticalCOGS += lineCost;
+      });
+    }
+  }
 
-  // 2. Calculate Actual COGS from transactions
-  const actualUsage = {};
+  const actualUsage = new Map();
+  const wasteUsage = new Map();
+  const transactionIssues = [];
   let totalActualCOGS = 0;
+  let totalWasteCost = 0;
+  const v2SaleSources = new Set((db?.financeV2?.inventoryMovements || [])
+    .filter((movement) => (
+      movement.movementType === 'sale_consumption'
+      && inBranch(movement)
+      && inRange(movement.occurredAt || movement.createdAt)
+    ))
+    .map((movement) => movement.sourceId ?? movement.orderId)
+    .filter((sourceId) => sourceId != null)
+    .map((sourceId) => String(sourceId)));
+  for (const transaction of acc.inventoryTransactions || []) {
+    if (!inBranch(transaction) || !inRange(transaction.date || transaction.createdAt)) continue;
+    const isUsage = transaction.type === 'USAGE_ACTUAL' || transaction.type === 'consume';
+    const isWaste = transaction.type === 'WASTE';
+    if (!isUsage && !isWaste) continue;
+    if (isUsage && transaction.orderId != null && v2SaleSources.has(String(transaction.orderId))) continue;
+    const quantity = Number(transaction.qty);
+    const cost = Number(transaction.totalCost);
+    if (!Number.isFinite(quantity) || quantity <= 0 || !Number.isFinite(cost) || cost < 0 || !Number.isSafeInteger(Math.round(cost))) {
+      transactionIssues.push({ code: 'inventory_transaction_invalid', transactionId: transaction.id || null, itemId: transaction.itemId || null });
+      continue;
+    }
+    const target = isWaste ? wasteUsage : actualUsage;
+    const key = String(transaction.itemId);
+    const existing = target.get(key) || { itemId: transaction.itemId, name: transaction.itemName, qty: 0, cost: 0 };
+    existing.qty += quantity;
+    existing.cost += Math.round(cost);
+    target.set(key, existing);
+    if (isWaste) totalWasteCost += Math.round(cost);
+    else totalActualCOGS += Math.round(cost);
+  }
 
-  (acc.inventoryTransactions || []).filter((t) => t.type === 'USAGE_ACTUAL' || t.type === 'consume' || t.type === 'WASTE').forEach((t) => {
-    if (!actualUsage[t.itemId]) actualUsage[t.itemId] = { itemId: t.itemId, name: t.itemName, qty: 0, cost: 0 };
-    actualUsage[t.itemId].qty += t.qty;
-    actualUsage[t.itemId].cost += t.totalCost;
-    totalActualCOGS += t.totalCost;
-  });
+  // Finance V2 keeps shadow sale/waste consumption in immutable movements
+  // instead of the legacy transaction list. Include it here so the legacy
+  // report endpoint does not silently understate actual COGS during cutover.
+  for (const movement of db?.financeV2?.inventoryMovements || []) {
+    if (!inBranch(movement) || !inRange(movement.occurredAt || movement.createdAt)) continue;
+    const isSaleConsumption = movement.movementType === 'sale_consumption';
+    const isWaste = movement.movementType === 'waste';
+    if (!isSaleConsumption && !isWaste) continue;
+    const quantityBase = Number(movement.quantityBase);
+    const cost = Number(movement.totalCostIrr);
+    if (!Number.isFinite(quantityBase) || quantityBase >= 0 || !Number.isFinite(cost) || cost < 0 || !Number.isSafeInteger(Math.round(cost))) {
+      transactionIssues.push({ code: 'inventory_movement_invalid', movementId: movement.id || null, itemId: movement.itemId || null });
+      continue;
+    }
+    const target = isWaste ? wasteUsage : actualUsage;
+    const key = String(movement.itemId);
+    const existing = target.get(key) || { itemId: movement.itemId, name: movement.itemName, qty: 0, cost: 0 };
+    existing.qty += Math.abs(quantityBase);
+    existing.cost += Math.round(cost);
+    target.set(key, existing);
+    if (isWaste) totalWasteCost += Math.round(cost);
+    else totalActualCOGS += Math.round(cost);
+  }
 
   const varianceIrr = totalActualCOGS - totalTheoreticalCOGS;
   const variancePct = totalTheoreticalCOGS > 0 ? (varianceIrr / totalTheoreticalCOGS) * 100 : 0;
-
+  const sufficientHistory = totalTheoreticalCOGS > 0 && actualUsage.size > 0 && coverageIssues.length === 0 && transactionIssues.length === 0;
   return {
+    branchId: targetBranchId,
+    from: options.from || null,
+    to: options.to || null,
     totalTheoreticalCOGS,
     totalActualCOGS,
+    totalWasteCost,
     varianceIrr,
     variancePct: Number(variancePct.toFixed(2)),
-    status: totalTheoreticalCOGS <= 0 || Object.keys(actualUsage).length === 0
+    status: !sufficientHistory
       ? 'INSUFFICIENT_DATA'
       : variancePct > 8 ? 'WARNING_HIGH_VARIANCE' : variancePct > 3 ? 'ACCEPTABLE' : 'OPTIMAL',
-    sufficientHistory: totalTheoreticalCOGS > 0 && Object.keys(actualUsage).length > 0,
-    theoreticalBreakdown: Object.values(theoreticalUsage),
-    actualBreakdown: Object.values(actualUsage),
+    sufficientHistory,
+    coverageIssues,
+    transactionIssues,
+    theoreticalBreakdown: [...theoreticalUsage.values()],
+    actualBreakdown: [...actualUsage.values()],
+    wasteBreakdown: [...wasteUsage.values()],
   };
 }
 
 /**
  * Computes BCG Menu Engineering Matrix (Stars, Plowhorses, Puzzles, Dogs).
  */
-function getMenuEngineeringMatrix(acc, db) {
+function getMenuEngineeringMatrix(acc, db, branchId = null, options = {}) {
   ensureInventory(acc);
-  const orders = (db.orders || []).filter((o) => ['paid', 'preparing', 'ready', 'dispatched', 'delivered', 'done'].includes(o.status));
+  const targetBranchId = branchId == null || branchId === '' ? null : normalizedBranchId(branchId);
+  const fromAt = options.from ? new Date(options.from).getTime() : null;
+  const toAt = options.to ? new Date(options.to).getTime() : null;
+  const orders = (db.orders || []).filter((o) => {
+    if (targetBranchId != null && Number(o.branchId) !== targetBranchId) return false;
+    const occurredAt = new Date(o.paidAt || o.createdAt || o.date || 0).getTime();
+    if (Number.isFinite(fromAt) && occurredAt < fromAt) return false;
+    if (Number.isFinite(toAt) && occurredAt > toAt) return false;
+    return ['paid', 'preparing', 'ready', 'dispatched', 'delivered', 'done'].includes(o.status);
+  });
 
   const salesMap = new Map();
   orders.forEach((ord) => {
@@ -387,9 +666,10 @@ function getMenuEngineeringMatrix(acc, db) {
     return { items: [], benchmarks: null, sufficientHistory: false, excludedWithoutRecipe: 0 };
   }
 
-  const eligibleMenuItems = menuItems.filter((sale) => (acc.recipes || []).some((recipe) => recipe.menuItemId === sale.menuItemId || recipe.name === sale.name));
+  const recipes = recipeCatalog({ accounting: acc, financeV2: db.financeV2 }, targetBranchId);
+  const eligibleMenuItems = menuItems.filter((sale) => recipes.some((recipe) => recipe.menuItemId === sale.menuItemId || recipe.name === sale.name));
   const items = eligibleMenuItems.map((s) => {
-    const recipe = (acc.recipes || []).find((r) => r.menuItemId === s.menuItemId || r.name === s.name);
+    const recipe = recipes.find((r) => r.menuItemId === s.menuItemId || r.name === s.name);
     const unitFoodCost = recipe.totalCost;
     const totalFoodCost = unitFoodCost * s.qty;
     const marginPerUnit = s.price - unitFoodCost;
@@ -459,21 +739,49 @@ function getMenuEngineeringMatrix(acc, db) {
  */
 function saveRecipe(acc, recipe) {
   ensureInventory(acc);
-  const id = recipe.id || `rcp-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-  const existing = acc.recipes.findIndex((r) => r.id === id);
-
-  const totalCost = (recipe.ingredients || []).reduce((sum, ing) => {
-    const item = acc.inventoryItems.find((i) => i.id === ing.itemId || i.sku === ing.itemId);
-    const cost = item ? item.avgCost : toIRR(ing.unitCost || 0);
-    return sum + Math.round(cost * Number(ing.qty || 0));
-  }, 0);
-
-  const sellingPrice = toIRR(recipe.sellingPrice || 0);
+  const input = recipe || {};
+  const ingredients = Array.isArray(input.ingredients) ? input.ingredients : [];
+  if (ingredients.length === 0) throw new Error('رسپی باید حداقل یک مادهٔ اولیه داشته باشد.');
+  const branchId = input.branchId == null || input.branchId === '' ? null : normalizedBranchId(input.branchId);
+  const existingById = (input.id || input.recipeId)
+    ? acc.recipes.findIndex((r) => r.id === (input.id || input.recipeId))
+    : -1;
+  const existingByMenuItem = input.menuItemId
+    ? acc.recipes.findIndex((r) => String(r.menuItemId) === String(input.menuItemId))
+    : -1;
+  const existing = existingById >= 0 ? existingById : existingByMenuItem;
+  const id = existing >= 0
+    ? acc.recipes[existing].id
+    : (input.id || input.recipeId || (input.menuItemId ? `recipe-item-${input.menuItemId}` : `rcp-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`));
+  const lineCosts = ingredients.map((ingredient) => {
+    let result;
+    try {
+      result = recipeIngredientCost(acc, { ...input, ingredients }, ingredient, branchId);
+    } catch (error) {
+      throw new Error(`مادهٔ اولیهٔ رسپی معتبر نیست: ${error.message}`);
+    }
+    if (!result.ok) throw new Error(`مادهٔ اولیهٔ رسپی قابل محاسبه نیست (${result.code}).`);
+    return result.lineCost;
+  });
+  const totalCost = lineCosts.reduce((sum, value) => sum + value, 0);
+  if (!Number.isSafeInteger(totalCost)) throw new Error('بهای رسپی از محدودهٔ امن خارج است.');
+  const rawSellingPrice = input.sellingPrice == null || input.sellingPrice === '' ? 0 : Number(input.sellingPrice);
+  if (!Number.isFinite(rawSellingPrice) || rawSellingPrice < 0) throw new Error('قیمت فروش رسپی معتبر نیست.');
+  const sellingPrice = toIRR(rawSellingPrice);
+  const rawYield = input.yieldPercent == null || input.yieldPercent === '' ? 95 : Number(input.yieldPercent);
+  if (!Number.isFinite(rawYield) || rawYield <= 0 || rawYield > 100) throw new Error('بازده رسپی باید بین صفر و صد باشد.');
+  for (const field of ['yieldQuantity', 'portions', 'servings']) {
+    if (input[field] != null && (!Number.isFinite(Number(input[field])) || Number(input[field]) <= 0)) {
+      throw new Error(`مقدار ${field} رسپی معتبر نیست.`);
+    }
+  }
   const foodCostPercent = sellingPrice > 0 ? Number(((totalCost / sellingPrice) * 100).toFixed(1)) : 0;
 
   const rec = {
-    ...recipe,
+    ...input,
     id,
+    branchId,
+    yieldPercent: rawYield,
     totalCost,
     sellingPrice,
     foodCostPercent,
@@ -492,39 +800,60 @@ function saveRecipe(acc, recipe) {
 function getRecipeCostCards(acc) {
   ensureInventory(acc);
   return (acc.recipes || []).map((recipe) => {
+    const branchId = recipe.branchId == null || recipe.branchId === '' ? null : normalizedBranchId(recipe.branchId);
+    const issues = [];
     const ingredients = (recipe.ingredients || []).map((ing) => {
-      const invItem = acc.inventoryItems.find((i) => i.id === ing.itemId || i.sku === ing.itemId);
-      const unitCost = invItem ? invItem.avgCost : Number(ing.unitCost || 0);
-      const lineCost = Math.round(unitCost * Number(ing.qty || 0));
+      let result;
+      try {
+        result = recipeIngredientCost(acc, recipe, ing, branchId);
+      } catch (error) {
+        result = { ok: false, code: 'recipe_inventory_item_ambiguous', item: null, message: error.message };
+      }
+      if (!result.ok) {
+        issues.push({ code: result.code, itemId: ing.itemId || null, message: result.message });
+        return {
+          ...ing,
+          currentStock: null,
+          unit: ing.unit || 'عدد',
+          unitCost: null,
+          lineCost: null,
+          costStatus: 'invalid',
+        };
+      }
       return {
         ...ing,
-        currentStock: invItem ? invItem.qtyOnHand : 0,
-        unit: ing.unit || invItem?.unit || 'عدد',
-        unitCost,
-        lineCost,
+        currentStock: Number(result.item.qtyOnHand ?? result.item.onHand ?? result.item.quantity),
+        unit: result.baseUnit || ing.unit || 'عدد',
+        unitCost: result.unitCost,
+        quantityBase: result.quantityBase,
+        lineCost: result.lineCost,
+        costStatus: 'valued',
       };
     });
 
-    const totalCost = ingredients.reduce((sum, i) => sum + i.lineCost, 0);
-    const sellingPrice = Number(recipe.sellingPrice || 0);
-    const grossMargin = Math.max(0, sellingPrice - totalCost);
-    const foodCostPercent = sellingPrice > 0 ? Number(((totalCost / sellingPrice) * 100).toFixed(1)) : 0;
+    const totalCost = issues.length > 0 ? null : ingredients.reduce((sum, i) => sum + i.lineCost, 0);
+    const sellingPrice = Number(recipe.sellingPrice ?? 0);
+    if (!Number.isFinite(sellingPrice) || sellingPrice < 0) issues.push({ code: 'recipe_selling_price_invalid' });
+    const grossMargin = totalCost == null || !Number.isFinite(sellingPrice) ? null : sellingPrice - totalCost;
+    const foodCostPercent = totalCost != null && sellingPrice > 0 ? Number(((totalCost / sellingPrice) * 100).toFixed(1)) : null;
 
-    let healthStatus = 'STANDARD';
-    if (foodCostPercent < 28) healthStatus = 'OPTIMAL';
-    else if (foodCostPercent > 35) healthStatus = 'HIGH';
+    let healthStatus = issues.length > 0 ? 'INVALID' : 'STANDARD';
+    if (healthStatus !== 'INVALID' && foodCostPercent < 28) healthStatus = 'OPTIMAL';
+    else if (healthStatus !== 'INVALID' && foodCostPercent > 35) healthStatus = 'HIGH';
 
     return {
       id: recipe.id,
       name: recipe.name,
       category: recipe.category || 'عمومی',
       version: recipe.version || '1.0',
-      yieldPercent: Number(recipe.yieldPercent || 95),
+      branchId,
+      yieldPercent: Number(recipe.yieldPercent ?? 95),
       sellingPrice,
       totalCost,
       grossMargin,
       foodCostPercent,
       healthStatus,
+      issues,
       ingredients,
       updatedAt: recipe.updatedAt || new Date().toISOString(),
     };

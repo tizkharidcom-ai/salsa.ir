@@ -172,7 +172,7 @@ function createPostgresStateStore({
     const client = typeof pool.connect === 'function' ? await pool.connect() : pool;
     try {
       await client.query('BEGIN');
-      normalizedFinance = await syncFinanceState(client, state.financeV2, { checkSchema: true });
+      normalizedFinance = await syncFinanceState(client, state.financeV2, { checkSchema: true, operationalState: state });
       if (required && normalizedFinance.available !== true) {
         const error = new Error('Finance PostgreSQL schema is required before persistent writes.');
         error.code = normalizedFinance.reason || 'finance_schema_required';

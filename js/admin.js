@@ -18,16 +18,17 @@
     printmenu: 'منوی چاپی',
     translate: 'ترجمه منو',
     menu: 'منوی غذا',
-    inventory: 'موجودی انبار',
-    costControl: 'کنترل هزینه',
+    inventory: 'انبار و مواد اولیه',
+    costControl: 'بهای تمام‌شده',
+    expenses: 'هزینه‌ها',
     complements: 'مکمل‌ها و مهندسی منو',
     prices: 'مدیریت قیمت',
-    products: 'دسته‌های کاروسل',
-    promotions: 'تخفیف و پرومو',
+    products: 'دسته‌ها و ترتیب نمایش',
+    promotions: 'تخفیف‌ها و پیشنهادها',
     promoSlides: 'اسلایدر تبلیغاتی',
     restaurant: 'اطلاعات مجموعه',
     branches: 'شعبه‌ها',
-    theme: 'تم و برندینگ',
+    theme: 'ظاهر و هویت برند',
     hours: 'ساعت کاری',
     tables: 'میزها',
     content: 'محتوای سایت',
@@ -36,7 +37,7 @@
     users: 'کاربران',
     loyalty: 'باشگاه مشتریان',
     club: 'باشگاه مشتریان',
-    feedback: 'بازخورد و NPS',
+    feedback: 'بازخورد و رضایت مهمان',
     newsletter: 'خبرنامه',
     settings: 'تنظیمات',
     delivery: 'تحویل، پیک و پرداخت',
@@ -47,16 +48,16 @@
   const TAB_DESCRIPTIONS = {
     dashboard: 'وضعیت امروز، هشدارها و کارهای فوری', kitchen: 'صف آماده‌سازی و وضعیت آشپزخانه', orders: 'پیگیری و تغییر وضعیت سفارش‌ها', reservations: 'رزروهای میز و ظرفیت زمانی',
     analytics: 'رفتار بازدیدکنندگان و مسیرهای پرتردد', reports: 'فروش، درآمد و آیتم‌های پرفروش', printmenu: 'پیش‌نمایش و چاپ منوی فعلی', translate: 'ترجمه نام و توضیح آیتم‌های منو',
-    menu: 'ویرایش غذاها، قیمت، تصویر و دسترس‌پذیری', inventory: 'موجودی و هشدار کمبود آیتم‌ها', costControl: 'بهای تمام‌شده، حاشیه سود و اقلام کم‌موجود', complements: 'مدیریت مکمل‌های فروش‌محور و اتصال هوشمند آن‌ها به محصول یا دسته', prices: 'ویرایش سریع و گروهی قیمت‌ها', products: 'دسته‌بندی‌ها و ترتیب نمایش منو',
+    menu: 'ویرایش غذاها، قیمت، تصویر و دسترس‌پذیری', inventory: 'مواد اولیه، موجودی واقعی و گردش انبار', costControl: 'بهای تمام‌شده، رسپی و اثر مواد بر فروش', expenses: 'ثبت، پیگیری و اثر هزینه‌ها در دفتر مالی', complements: 'مدیریت مکمل‌های فروش‌محور و اتصال هوشمند آن‌ها به محصول یا دسته', prices: 'ویرایش سریع و گروهی قیمت‌ها', products: 'دسته‌بندی‌ها و ترتیب نمایش منو',
     promotions: 'مدیریت تخفیف‌های موجود', promoSlides: 'مدیریت اسلایدهای تبلیغاتی موجود', restaurant: 'اطلاعات عمومی و مشخصات مجموعه', branches: 'مشخصات و وضعیت شعبه‌ها',
-    theme: 'رنگ‌ها و ظاهر برند', hours: 'ساعت فعالیت هر روز', tables: 'میزها، ظرفیت و QR', content: 'متن‌های فعلی سایت', media: 'لوگو و فایل‌های رسانه‌ای', faq: 'پرسش‌های متداول سایت',
-    users: 'نقش و سطح دسترسی کاربران', loyalty: 'تنظیم و مانده باشگاه مشتریان', club: 'مشتریان، وفاداری، بازاریابی، بازخورد و خبرنامه', feedback: 'بازخوردها و NPS', newsletter: 'عضویت‌های خبرنامه', settings: 'تنظیمات شفاف و بخش‌بندی‌شده مجموعه', delivery: 'محدوده ارسال، پیک و وضعیت پرداخت', finance: 'مسیر قدیمی مالی؛ به فضای یکپارچه هدایت می‌شود',
+    theme: 'رنگ‌ها و ظاهر برند', hours: 'ساعت فعالیت هر روز', tables: 'میزها، ظرفیت و رمزینه سفارش', content: 'متن‌های فعلی سایت', media: 'لوگو و فایل‌های رسانه‌ای', faq: 'پرسش‌های متداول سایت',
+    users: 'نقش و سطح دسترسی کاربران', loyalty: 'تنظیم و مانده باشگاه مشتریان', club: 'مشتریان، وفاداری، بازاریابی، بازخورد و خبرنامه', feedback: 'بازخوردها و رضایت مهمان', newsletter: 'عضویت‌های خبرنامه', settings: 'تنظیمات شفاف و بخش‌بندی‌شده مجموعه', delivery: 'محدوده ارسال، پیک و وضعیت پرداخت', finance: 'مسیر قدیمی مالی؛ به فضای یکپارچه هدایت می‌شود',
     accounting: 'کارتابل حسابدار، فروش و صندوق، خرید، بهای تمام‌شده، دفاتر و پایان دوره'
   };
 
   const TAB_CAPABILITIES = {
     dashboard: 'command.view', kitchen: 'kitchen.view', orders: 'orders.view', reservations: 'reservations.view', delivery: 'delivery.view',
-    menu: 'menu.view', prices: 'menu.manage', inventory: 'inventory.view', costControl: 'inventory.view', complements: 'menu.manage', products: 'menu.manage', translate: 'menu.manage', promotions: 'promotions.manage', promoSlides: 'content.manage', printmenu: 'menu.view',
+    menu: 'menu.view', prices: 'menu.manage', inventory: 'inventory.view', costControl: 'finance.view', expenses: 'finance.view', complements: 'menu.manage', products: 'menu.manage', translate: 'menu.manage', promotions: 'promotions.manage', promoSlides: 'content.manage', printmenu: 'menu.view',
     tables: 'tables.view', loyalty: 'admin.access', club: 'admin.access', feedback: 'admin.access', newsletter: 'admin.access',
     analytics: 'analytics.view', reports: 'reports.view', finance: 'finance.view', content: 'content.manage', media: 'content.manage', faq: 'content.manage',
     restaurant: 'admin.access', branches: 'admin.access', hours: 'admin.access', theme: 'admin.access', users: 'owner', settings: 'owner',
@@ -84,6 +85,10 @@
     const caps = currentUser?.capabilities || [];
     return caps.includes('*') || caps.includes(capability);
   }
+
+  const financeWorkspaceHref = (workspace = 'workbench') => `/admin.html?financeWorkspace=${encodeURIComponent(workspace)}&branchId=${encodeURIComponent(currentBranchId || 1)}#accounting`;
+  const paymentModeLabel = (value) => ({ sandbox: 'آزمایشی', test: 'آزمایشی', live: 'عملیاتی', production: 'عملیاتی', disabled: 'غیرفعال' }[String(value || '').toLowerCase()] || String(value || 'آزمایشی'));
+  const paymentProviderLabel = (value) => String(value || '').toLowerCase() === 'sandbox' ? 'پرداخت آزمایشی' : String(value || 'پرداخت آزمایشی');
 
   function statusLabel(status) {
     return {
@@ -255,7 +260,7 @@
   const esc = (s) =>
     String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
-  const fmtMoney = (n) => `${Number(n || 0).toLocaleString('fa-IR')} تومان`;
+  const fmtMoney = (n) => `${window.WestoPersianFormat?.number(n, { locale: 'fa-IR' }) ?? Number(n || 0).toLocaleString('fa-IR')} تومان`;
   const fmtNum = (n) => Number(n || 0).toLocaleString('fa-IR');
   const fmtDateTime = (d) => {
     if (!d) return '—';
@@ -348,7 +353,7 @@
     const details = {
       cashier: { icon: '⌁', description: 'تسویه نقدی و کارت، صف تحویل، صندوق پول و تطبیق پایان شیفت', tone: 'cyan' },
       waiter: { icon: '◎', description: 'نقشه سالن، میزها، فراخوان مهمان، رزرو و سفارش‌گیری کنار میز', tone: 'green' },
-      kitchen: { icon: '≋', description: 'KDS مستقل، تایمر تیکت، شروع آماده‌سازی و اعلام آماده‌شدن', tone: 'orange' },
+      kitchen: { icon: '≋', description: 'نمایشگر مستقل آشپزخانه، زمان تیکت، شروع آماده‌سازی و اعلام آماده‌شدن', tone: 'orange' },
     };
     trigger.addEventListener('click', async () => {
       grid.innerHTML = '<div class="admin-role-preview__loading">در حال دریافت سطح‌های دسترسی…</div>';
@@ -535,6 +540,9 @@
         if (requestId) error.requestId = requestId;
         throw error;
       }
+      if (method !== 'GET') {
+        window.WestoAdminModules?.emit('admin:mutation', { method, url: String(url), response: d });
+      }
       return d;
     } catch (error) {
       if (error?.name === 'AbortError') throw new Error('پاسخ سرور طول کشید. اتصال را بررسی و دوباره تلاش کنید.');
@@ -604,9 +612,9 @@
 
   const siteStatusPill = (c, n) => {
     if (c.hiddenOnSite) return '<span class="pill blocked">مخفی</span>';
-    if (!hasValidCover(c)) return '<span class="pill blocked">بدون کاور</span>';
-    if (!(n > 0)) return '<span class="pill ok">روی کاروسل</span><span class="hint"> · بدون غذا</span>';
-    return '<span class="pill ok">روی کاروسل</span>';
+    if (!hasValidCover(c)) return '<span class="pill blocked">بدون تصویر شاخص</span>';
+    if (!(n > 0)) return '<span class="pill ok">نمایش در صفحه اصلی</span><span class="hint"> · بدون غذا</span>';
+    return '<span class="pill ok">نمایش در صفحه اصلی</span>';
   };
 
   let syncState = 'idle'; // idle | saving | error
@@ -670,6 +678,8 @@
       liveRefreshPending = false;
     }
     activeTab = name;
+    const activeModule = window.WestoAdminModules?.forTab(name);
+    document.documentElement.dataset.adminActiveModule = activeModule?.id || 'legacy';
     if (location.hash !== `#${name}`) history.replaceState(null, '', `${location.pathname}${location.search}#${name}`);
     if (name !== 'kitchen') stopKitchenPoll();
     document.querySelectorAll('.admin-nav-item[data-tab]').forEach((b) => {
@@ -679,7 +689,7 @@
     });
     document.querySelector(`.admin-nav-item[data-tab="${name}"]`)?.closest('details')?.setAttribute('open', '');
     if (topbarTitle) topbarTitle.textContent = TAB_TITLES[name] || name;
-    if (topbarContext) topbarContext.textContent = TAB_DESCRIPTIONS[name] || 'مرکز فرمان WESTO';
+    if (topbarContext) topbarContext.textContent = TAB_DESCRIPTIONS[name] || 'مرکز فرمان وستو';
     document.title = `${TAB_TITLES[name] || name} — مرکز فرمان وستو`;
     if (syncState !== 'saving' && syncState !== 'error') {
       setSyncStatus('idle', new Date().toLocaleString('fa-IR'));
@@ -734,14 +744,526 @@
     workspaceEnhanceTimer = requestAnimationFrame(() => { workspaceEnhanceTimer = null; enhanceWorkspace(); });
   }
 
+  function dashboardBreakEvenStatus(dashboard) {
+    const status = String(dashboard?.status || 'insufficient_data');
+    if (status === 'available') return { tone: 'success', label: 'محاسبهٔ رسمی آماده', detail: 'فروش و بهای تمام‌شده از یک منبع هم‌مبنا محاسبه شده‌اند.' };
+    if (status === 'load_error') return { tone: 'danger', label: 'دریافت دادهٔ مالی ناموفق بود', detail: dashboard?.message || 'خطای دریافت پنهان نشده است؛ کارتابل حسابداری را بررسی کنید.' };
+    if (status === 'needs_plan') return { tone: 'warning', label: 'نیازمند تأیید برنامه', detail: 'هزینه‌های پایه و ددلاین هنوز به‌عنوان برنامهٔ واقعی ذخیره نشده‌اند.' };
+    if (status === 'needs_branch') return { tone: 'warning', label: 'شعبه مشخص نیست', detail: 'محاسبه بدون انتخاب شعبه انجام نمی‌شود.' };
+    return { tone: 'danger', label: 'دادهٔ مالی ناکافی', detail: 'تا تکمیل فروش خالص و بهای مواد، خط عبور یا سود تخمین زده نمی‌شود.' };
+  }
+
+  function dashboardBreakEvenChartData(dashboard) {
+    return {
+      ...(dashboard?.chart || { status: 'insufficient_data', title: 'نقطهٔ سربه‌سر و مسیر سوددهی' }),
+      dashboardStatus: dashboard?.status || 'insufficient_data',
+      message: dashboard?.message || '',
+      reason: dashboard?.projection?.reason || '',
+      missing: Array.isArray(dashboard?.projection?.missing) ? dashboard.projection.missing : [],
+      dataSources: dashboard?.dataSources || null,
+    };
+  }
+
+  function renderOperationalSalesTrend(stats) {
+    const rows = Array.isArray(stats?.dailySales30d)
+      ? stats.dailySales30d.filter((row) => row && row.date).slice(-14)
+      : [];
+    if (!rows.length) {
+      return '<div class="vital-break-even__ops-empty">روند عملیاتی سفارش‌ها در دسترس نیست؛ این کمبود با دادهٔ مالی جایگزین نمی‌شود.</div>';
+    }
+    const maximum = Math.max(1, ...rows.map((row) => Number(row.sales || 0)));
+    const total = rows.reduce((sum, row) => sum + Number(row.sales || 0), 0);
+    const orders = rows.reduce((sum, row) => sum + Number(row.count || 0), 0);
+    return `
+      <div class="vital-break-even__ops-summary"><strong>${fmtMoney(total)}</strong><span>${fmtNum(orders)} سفارش در ۱۴ روز اخیر</span></div>
+      <ol class="vital-break-even__ops-bars" aria-label="فروش عملیاتی روزانهٔ سفارش‌های لغونشده در چهارده روز اخیر">
+        ${rows.map((row) => {
+          const date = new Date(`${row.date}T12:00:00`);
+          const label = Number.isNaN(date.getTime()) ? String(row.date) : new Intl.DateTimeFormat('fa-IR-u-ca-persian', { month: 'short', day: 'numeric' }).format(date);
+          const percent = Math.max(Number(row.sales || 0) > 0 ? 4 : 0, Math.round((Number(row.sales || 0) / maximum) * 100));
+          return `<li style="--ops-bar:${percent}%" title="${esc(label)} · ${fmtMoney(Number(row.sales || 0))} · ${fmtNum(Number(row.count || 0))} سفارش"><i aria-hidden="true"></i><span class="sr-only">${esc(label)}: ${fmtMoney(Number(row.sales || 0))} از ${fmtNum(Number(row.count || 0))} سفارش</span></li>`;
+        }).join('')}
+      </ol>`;
+  }
+
+  function renderDashboardBreakEvenShell(dashboard, stats, financeData, canViewFinance) {
+    const status = dashboardBreakEvenStatus(dashboard);
+    const candidates = Array.isArray(dashboard?.dataSources?.candidates) ? dashboard.dataSources.candidates : [];
+    const selectedSource = dashboard?.dataSources?.selected || null;
+    const selectedSummary = candidates.find((row) => row?.source?.type === selectedSource?.type) || null;
+    const planReady = Boolean(dashboard?.plan?.deadline?.isConfirmed);
+    const sourceReady = Boolean(selectedSummary?.usable);
+    const uncapturedOrders = Number(financeData?.metrics?.uncapturedOrders || 0);
+    const uncapturedCogs = Number(financeData?.metrics?.uncapturedCogs || 0);
+    const branchId = currentBranchId || 1;
+    const planHref = financeWorkspaceHref('costing');
+    const salesHref = financeWorkspaceHref('sales_bank');
+    return `
+      <section class="section-box vital-break-even-panel" aria-labelledby="dashboard-break-even-title">
+        <header class="vital-break-even__head">
+          <div><p class="eyebrow">تحلیل مالی قابل‌ردیابی</p><h2 id="dashboard-break-even-title">نقطهٔ سربه‌سر و مسیر سوددهی</h2><p>این بخش فقط خروجی موتور Finance V2 را نمایش می‌دهد؛ فروش عملیاتی سفارش‌ها پایین‌تر و کاملاً جدا گزارش می‌شود.</p></div>
+          <span class="vital-break-even__status is-${status.tone}"><b>${esc(status.label)}</b><small>${esc(status.detail)}</small></span>
+        </header>
+        <div class="vital-break-even__source" role="note">
+          <span>منبع محاسبه</span>
+          <strong>${esc(selectedSource?.label || 'هنوز منبع هم‌مبنا آماده نیست')}</strong>
+          <em>${selectedSource?.official ? 'قطعی · دفتر مالی' : selectedSource ? 'عملیاتی · نیازمند پوشش کامل' : 'محاسبه متوقف است'}${selectedSummary ? ` · ${fmtNum(selectedSummary.rowCount || 0)} ردیف` : ''}</em>
+        </div>
+        <div id="dashboard-break-even-chart" class="vital-break-even__chart" aria-live="polite"></div>
+        ${canViewFinance ? `<div class="vital-break-even__actions" aria-label="اقدام‌های لازم برای آماده‌سازی تحلیل سودآوری">
+          <a class="${planReady ? 'is-success' : 'is-warning'}" href="${planHref}"><span>۱</span><b>برنامه و ددلاین</b><small>${planReady ? 'تأیید و ذخیره شده' : 'مبالغ و ددلاین را بازبینی و تأیید کنید'}</small><strong>رفتن به برنامه مالی ←</strong></a>
+          <a class="${sourceReady && !uncapturedOrders ? 'is-success' : 'is-warning'}" href="${salesHref}"><span>۲</span><b>فروش و رویداد مالی</b><small>${uncapturedOrders ? `${fmtNum(uncapturedOrders)} سفارش پرداخت‌شده جاافتاده` : sourceReady ? 'منبع فروش و هزینه هم‌مبناست' : 'فروش خالص و بهای همان فروش ناقص است'}</small><strong>بررسی فروش‌ها ←</strong></a>
+          <a class="${sourceReady && !uncapturedCogs ? 'is-success' : 'is-warning'}" href="/admin/kitchen?view=inventory&branchId=${encodeURIComponent(branchId)}"><span>۳</span><b>دستور تهیه و بهای مواد</b><small>${uncapturedCogs ? `${fmtNum(uncapturedCogs)} فروش بدون رویداد بهای تمام‌شده` : sourceReady ? 'پوشش هزینه متغیر قابل محاسبه است' : 'دستور تهیه و قیمت مواد را کامل کنید'}</small><strong>رفتن به انبار و دستور تهیه ←</strong></a>
+        </div>` : '<p class="vital-break-even__permission">برای دیدن جزئیات منبع و اقدام‌های مالی، دسترسی مشاهدهٔ حسابداری لازم است.</p>'}
+        <details class="vital-break-even__ops">
+          <summary><span><b>روند عملیاتی سفارش‌ها</b><small>غیررسمی؛ شامل سفارش‌های لغونشده و مناسب پایش عملیات، نه دفتر مالی</small></span><strong>نمایش</strong></summary>
+          <div>${renderOperationalSalesTrend(stats)}</div>
+        </details>
+      </section>`;
+  }
+
+  function mountDashboardBreakEven(dashboard) {
+    const host = main.querySelector('#dashboard-break-even-chart');
+    if (!host) return;
+    if (!window.WestoBreakEvenChart?.mount) {
+      host.innerHTML = '<div class="vital-break-even__load-error" role="alert">نمایش نمودار مالی بارگذاری نشد؛ اطلاعات ساختگی جایگزین نشده است.</div>';
+      return;
+    }
+    try {
+      window.WestoBreakEvenChart.mount(host, dashboardBreakEvenChartData(dashboard), { currency: 'تومان', className: 'is-dashboard' });
+    } catch (_) {
+      host.innerHTML = '<div class="vital-break-even__load-error" role="alert">نمودار قابل نمایش نیست؛ دادهٔ رسمی را در کارتابل حسابداری بررسی کنید.</div>';
+    }
+  }
+
+  // Legacy renderer kept only for rollback compatibility. The dashboard no longer calls it.
+  function renderLegacyLineChart9Card(beDashboard, salesToday = 0, stats = null) {
+    // Dynamic cost extraction from accounting system and break-even engine
+    const dynamicAssumptions = Array.isArray(stats?.costStructure?.assumptions) && stats.costStructure.assumptions.length
+      ? stats.costStructure.assumptions
+      : Array.isArray(beDashboard?.plan?.assumptions) && beDashboard.plan.assumptions.length
+        ? beDashboard.plan.assumptions
+        : Array.isArray(beDashboard?.suggestedPlan?.assumptions) && beDashboard.suggestedPlan.assumptions.length
+          ? beDashboard.suggestedPlan.assumptions
+          : [];
+
+    const totalFixedCostsToman = Number(stats?.costStructure?.totalFixedCostsToman)
+      || dynamicAssumptions.reduce((sum, a) => sum + Number(a.amountToman || (a.amountIrr ? a.amountIrr / 10 : 0)), 0)
+      || 1_280_000_000;
+
+    const targetBreakEvenToman = totalFixedCostsToman;
+    const targetMillion = Math.max(1, Math.round(targetBreakEvenToman / 1_000_000));
+
+    // Extract Real Daily Sales from stats or genuine calendar day aggregation
+    const now = Date.now();
+    const dayMs = 24 * 60 * 60 * 1000;
+    const dailyItems = Array.isArray(stats?.dailySales30d) && stats.dailySales30d.length === 30
+      ? stats.dailySales30d
+      : Array.from({ length: 30 }, (_, i) => {
+          const dateStr = new Date(now - (29 - i) * dayMs).toISOString().slice(0, 10);
+          const isToday = i === 29;
+          return {
+            date: dateStr,
+            sales: isToday ? Number(salesToday || 0) : 0,
+            count: isToday && salesToday > 0 ? 1 : 0,
+          };
+        });
+
+    const daysCount = dailyItems.length;
+    const points = [];
+    let runningCumSalesToman = 0;
+    let maxDailyToman = 0;
+    let peakDayInfo = null;
+
+    for (let i = 0; i < dailyItems.length; i++) {
+      const item = dailyItems[i];
+      const dayNum = i + 1;
+      const daySalesToman = Number(item.sales || 0);
+      const dayOrdersCount = Number(item.count || 0);
+      runningCumSalesToman += daySalesToman;
+
+      if (daySalesToman > maxDailyToman) {
+        maxDailyToman = daySalesToman;
+        peakDayInfo = { day: dayNum, date: item.date, salesToman: daySalesToman, count: dayOrdersCount };
+      }
+
+      const dateObj = new Date(item.date);
+      let shamsiLabel = '';
+      if (window.ShamsiCore && typeof window.ShamsiCore.formatShamsiDateShort === 'function') {
+        shamsiLabel = window.ShamsiCore.formatShamsiDateShort(dateObj);
+      } else if (window.ShamsiCore && typeof window.ShamsiCore.formatShamsi === 'function') {
+        shamsiLabel = window.ShamsiCore.formatShamsi(dateObj, 'D MMMM');
+      } else {
+        try {
+          shamsiLabel = `${fmtNum(dateObj.getDate())} ${dateObj.toLocaleDateString('fa-IR', { month: 'short' })}`;
+        } catch (e) {
+          shamsiLabel = `روز ${fmtNum(dayNum)}`;
+        }
+      }
+
+      const dailyMillion = daySalesToman / 1_000_000;
+      const cumMillion = runningCumSalesToman / 1_000_000;
+      const cumCostMillion = (dayNum / daysCount) * targetMillion;
+      const profitOrLoss = cumMillion - cumCostMillion;
+
+      points.push({
+        day: dayNum,
+        dateStr: item.date,
+        dateLabel: shamsiLabel,
+        dailyToman: daySalesToman,
+        dailyMillion,
+        orderCount: dayOrdersCount,
+        cumSalesToman: runningCumSalesToman,
+        salesMillion: cumMillion,
+        fixedCostMillion: cumCostMillion,
+        profitOrLoss,
+        isActual: true,
+        isPeak: false,
+        isBreakEven: cumMillion >= targetMillion,
+      });
+    }
+
+    if (peakDayInfo && peakDayInfo.salesToman > 0) {
+      const peakPt = points.find((p) => p.day === peakDayInfo.day);
+      if (peakPt) peakPt.isPeak = true;
+    }
+
+    const currentTotalSalesToman = runningCumSalesToman;
+    const currentSalesMillion = currentTotalSalesToman / 1_000_000;
+    const progressPercent = Math.min(100, Math.round((currentTotalSalesToman / targetBreakEvenToman) * 100));
+    const gapToman = Math.max(0, targetBreakEvenToman - currentTotalSalesToman);
+
+    const activeDaysCount = points.filter((p) => p.dailyToman > 0).length || 1;
+    const avgDailySalesToman = runningCumSalesToman / activeDaysCount;
+    const projectedDays = avgDailySalesToman > 0 ? Math.ceil(targetBreakEvenToman / avgDailySalesToman) : null;
+    const crossedPoint = points.find((p) => p.isBreakEven);
+
+    const deadlineHeadline = crossedPoint
+      ? `✓ عبور از نقطه سر به سر در ${crossedPoint.dateLabel}`
+      : projectedDays && projectedDays <= 30
+        ? `🎯 پیش‌بینی عبور از نقطه سر به سر: روز ${fmtNum(projectedDays)} ماه`
+        : `🎯 هدف نقطه سر به سر: عبور از ${fmtNum(targetMillion)} م.ت`;
+
+    const w = 840;
+    const h = 300;
+    const padL = 65;
+    const padR = 25;
+    const padT = 30;
+    const padB = 45;
+    const plotW = w - padL - padR;
+    const plotH = h - padT - padB;
+
+    const maxSalesVal = Math.max(targetMillion * 1.08, ...points.map((p) => p.salesMillion), 100);
+    const maxDailyVal = Math.max(...points.map((p) => p.dailyMillion), 10) * 1.35;
+
+    const svgPoints = points.map((p, i) => {
+      const x = padL + (i / (points.length - 1)) * plotW;
+      const y = padT + plotH - (p.salesMillion / maxSalesVal) * plotH;
+      const barH = (p.dailyMillion / maxDailyVal) * (plotH * 0.42);
+      const barY = padT + plotH - barH;
+      return { ...p, x, y, barH, barY };
+    });
+
+    let pathD = `M ${svgPoints[0].x.toFixed(1)},${svgPoints[0].y.toFixed(1)}`;
+    for (let i = 0; i < svgPoints.length - 1; i++) {
+      const p0 = svgPoints[i === 0 ? i : i - 1];
+      const p1 = svgPoints[i];
+      const p2 = svgPoints[i + 1];
+      const p3 = svgPoints[i + 2 < svgPoints.length ? i + 2 : i + 1];
+      const cp1x = p1.x + (p2.x - p0.x) / 6;
+      const cp1y = p1.y + (p2.y - p0.y) / 6;
+      const cp2x = p2.x - (p3.x - p1.x) / 6;
+      const cp2y = p2.y - (p3.y - p1.y) / 6;
+      pathD += ` C ${cp1x.toFixed(1)},${cp1y.toFixed(1)} ${cp2x.toFixed(1)},${cp2y.toFixed(1)} ${p2.x.toFixed(1)},${p2.y.toFixed(1)}`;
+    }
+
+    const areaD = `${pathD} L ${svgPoints[svgPoints.length - 1].x.toFixed(1)},${(padT + plotH).toFixed(1)} L ${svgPoints[0].x.toFixed(1)},${(padT + plotH).toFixed(1)} Z`;
+
+    const beTargetY = padT + plotH - (targetMillion / maxSalesVal) * plotH;
+    const beCrossingPt = svgPoints.find((p) => p.isBreakEven) || null;
+
+    const ySteps = 4;
+    const yGridLines = Array.from({ length: ySteps + 1 }, (_, i) => {
+      const val = Math.round((maxSalesVal / ySteps) * i);
+      const y = padT + plotH - (val / maxSalesVal) * plotH;
+      return `<line class="line-chart-9-grid-line" x1="${padL}" y1="${y}" x2="${w - padR}" y2="${y}" stroke="var(--lc9-grid-stroke)" stroke-dasharray="4 8" /><text class="line-chart-9-axis-text" x="${padL - 10}" y="${y + 4}" fill="var(--lc9-axis-text)" font-size="11" text-anchor="end">${fmtNum(val)} م</text>`;
+    }).join('');
+
+    const xStepIndices = [0, 6, 12, 18, 24, 29];
+    const xLabels = xStepIndices.map((idx) => {
+      const pt = svgPoints[idx];
+      if (!pt) return '';
+      return `<text class="line-chart-9-axis-text" x="${pt.x}" y="${h - 12}" fill="var(--lc9-axis-text)" font-size="11" text-anchor="middle">${pt.dateLabel}</text>`;
+    }).join('');
+
+    const barWidth = Math.max(7, Math.floor((plotW / points.length) * 0.65));
+    const dailyBars = svgPoints.map((p) => {
+      const isHigh = p.dailyToman > 15_000_000;
+      const barFill = isHigh ? 'url(#highDailyBarGrad)' : 'url(#dailyBarGrad)';
+      return `
+        <rect
+          x="${(p.x - barWidth / 2).toFixed(1)}"
+          y="${p.barY.toFixed(1)}"
+          width="${barWidth}"
+          height="${Math.max(2, p.barH).toFixed(1)}"
+          rx="3"
+          fill="${barFill}"
+          style="opacity: 0.85; transition: all 0.2s ease; cursor: pointer;"
+        >
+          <title>${p.dateLabel}: فروش روزانه ${fmtMoney(p.dailyToman)} (${fmtNum(p.orderCount)} سفارش) | تجمعی: ${fmtNum(Math.round(p.salesMillion))} م.ت</title>
+        </rect>
+      `;
+    }).join('');
+
+    // Dynamic cost breakdown chips from actual accounting ledger / break-even assumptions
+    const costChips = dynamicAssumptions.length > 0
+      ? dynamicAssumptions.map((cost) => {
+          let icon = '💼';
+          const name = String(cost.name || cost.categoryName || 'سرفصل هزینه');
+          if (cost.categoryCode === 'rent' || name.includes('اجاره')) icon = '🏢';
+          else if (cost.categoryCode === 'payroll' || name.includes('نیرو') || name.includes('حقوق') || name.includes('پرسنل')) icon = '👥';
+          else if (cost.categoryCode === 'utilities' || name.includes('آب') || name.includes('برق') || name.includes('گاز') || name.includes('اشتراک')) icon = '⚡';
+          else if (name.includes('تعمیر') || name.includes('نگهداری')) icon = '🔧';
+          else if (name.includes('بسته') || name.includes('پک')) icon = '📦';
+          else if (name.includes('تبلیغ') || name.includes('مارکتینگ')) icon = '📢';
+
+          const amountToman = Number(cost.amountToman || (cost.amountIrr ? cost.amountIrr / 10 : 0));
+          const label = cost.headcount
+            ? `${name} (${fmtNum(cost.headcount)} نفر)`
+            : name;
+
+          return `
+            <div class="line-chart-9-chip">
+              <span class="line-chart-9-chip-title">${icon} ${esc(label)}</span>
+              <strong class="line-chart-9-chip-value">${fmtNum(Math.round(amountToman / 1_000_000))} م.ت</strong>
+            </div>
+          `;
+        }).join('')
+      : `
+        <div class="line-chart-9-chip">
+          <span class="line-chart-9-chip-title">📊 مجموع هزینه‌های ثبت‌شده حسابداری</span>
+          <strong class="line-chart-9-chip-value">${fmtNum(targetMillion)} م.ت</strong>
+        </div>
+      `;
+
+    return `
+      <section class="section-box line-charts-9-container">
+        <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:1.25rem; margin-bottom:1.5rem; border-bottom: 1px solid var(--lc9-border); padding-bottom: 1.25rem;">
+          <div>
+            <div style="display:flex; align-items:center; gap:0.5rem; color:#a855f7; font-size:0.8rem; font-weight:700; text-transform:uppercase; letter-spacing:0.05em;">
+              <span style="font-size:1.1rem;">🎯</span>
+              <span>تحلیل نقطه سر به سر و فراز و نشیب درآمدی</span>
+            </div>
+            <div style="display:flex; align-items:baseline; gap:0.85rem; margin-top:0.4rem;">
+              <span style="font-size:2rem; font-weight:800; color:var(--lc9-text-main);">${fmtNum(targetMillion)} <small style="font-size:0.95rem; font-weight:400; color:var(--lc9-text-muted);">میلیون تومان ددلاین</small></span>
+              <span style="display:inline-flex; align-items:center; gap:0.35rem; color:var(--lc9-crossing-stroke); font-weight:700; font-size:0.88rem; background:rgba(16,185,129,0.12); padding:0.25rem 0.65rem; border-radius:999px; border:1px solid rgba(16,185,129,0.3);">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"></polyline><polyline points="17 6 23 6 23 12"></polyline></svg>
+                پیشرفت فروش: ${fmtNum(progressPercent)}٪
+              </span>
+            </div>
+            <p style="font-size:0.8rem; color:var(--lc9-text-muted); margin-top:0.35rem; line-height:1.5;">
+              هزینه‌های استخراج‌شده به صورت زنده از دفتر حسابداری (${fmtMoney(totalFixedCostsToman)}) جهت تعیین نقطه سر به سر و عبور به سوددهی خالص.
+            </p>
+          </div>
+
+          <div style="display:flex; gap:0.75rem; flex-wrap:wrap;">
+            ${costChips}
+          </div>
+        </div>
+
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.75rem; margin-bottom:0.75rem; font-size:0.8rem; color:var(--lc9-text-muted);">
+          <div style="display:flex; align-items:center; gap:1.25rem; flex-wrap:wrap;">
+            <span style="display:inline-flex; align-items:center; gap:0.4rem;">
+              <i style="width:10px; height:10px; border-radius:50%; background:#a855f7; display:inline-block;"></i>
+              فروش تجمعی ۳۰ روزه
+            </span>
+            <span style="display:inline-flex; align-items:center; gap:0.4rem;">
+              <i style="width:10px; height:8px; border-radius:2px; background:#38bdf8; display:inline-block;"></i>
+              فراز و نشیب فروش هر روز
+            </span>
+            <span style="display:inline-flex; align-items:center; gap:0.4rem;">
+              <i style="width:14px; height:2px; background:var(--lc9-target-stroke); display:inline-block; border-top:1px dashed var(--lc9-target-stroke);"></i>
+              خط سر به سر (${fmtNum(targetMillion)} م.ت)
+            </span>
+          </div>
+          <div style="color:var(--lc9-crossing-stroke); font-weight:600;">
+            ${deadlineHeadline}
+          </div>
+        </div>
+
+        <div class="line-chart-9-canvas" data-chart-points="${esc(JSON.stringify(svgPoints.map((p) => ({ x: Math.round(p.x * 10) / 10, y: Math.round(p.y * 10) / 10, day: p.day, dateLabel: p.dateLabel, dailyToman: p.dailyToman, cumSalesToman: p.cumSalesToman, fixedCostMillion: p.fixedCostMillion, profitOrLoss: p.profitOrLoss, orderCount: p.orderCount }))))}">
+          <div id="lc9Tooltip" class="line-chart-9-tooltip" style="opacity:0; display:none;"></div>
+          <svg viewBox="0 0 ${w} ${h}" style="width:100%; height:auto; display:block; min-height:260px;" preserveAspectRatio="none">
+            <defs>
+              <linearGradient id="breakEvenGradArea" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stop-color="#a855f7" stop-opacity="0.28" />
+                <stop offset="100%" stop-color="#a855f7" stop-opacity="0" />
+              </linearGradient>
+              <linearGradient id="dailyBarGrad" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stop-color="#38bdf8" stop-opacity="0.85" />
+                <stop offset="100%" stop-color="#0284c7" stop-opacity="0.25" />
+              </linearGradient>
+              <linearGradient id="highDailyBarGrad" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stop-color="#f59e0b" stop-opacity="0.9" />
+                <stop offset="100%" stop-color="#d97706" stop-opacity="0.3" />
+              </linearGradient>
+              <pattern id="gridPatternBE" x="0" y="0" width="20" height="20" patternUnits="userSpaceOnUse">
+                <circle cx="10" cy="10" r="1" fill="var(--lc9-pattern-fill)" fill-opacity="0.35" />
+              </pattern>
+            </defs>
+            <rect x="0" y="0" width="${w}" height="${h}" fill="url(#gridPatternBE)" />
+            ${yGridLines}
+
+            <!-- Daily Revenue Bars (فراز و نشیب روزانه) -->
+            ${dailyBars}
+            
+            <!-- Horizontal Break-Even Target Line -->
+            <line x1="${padL}" y1="${beTargetY}" x2="${w - padR}" y2="${beTargetY}" stroke="var(--lc9-target-stroke)" stroke-dasharray="6 6" stroke-width="2" />
+            <text x="${w - padR - 5}" y="${beTargetY - 7}" fill="var(--lc9-target-stroke)" font-size="11" font-weight="700" text-anchor="end">خط نقطه سر به سر (${fmtNum(targetMillion)} م.ت)</text>
+
+            <!-- Vertical Crossing Reference Line -->
+            ${beCrossingPt ? `<line x1="${beCrossingPt.x}" y1="${padT}" x2="${beCrossingPt.x}" y2="${padT + plotH}" stroke="var(--lc9-crossing-stroke)" stroke-dasharray="4 4" stroke-width="1.5" />
+            <text x="${beCrossingPt.x + 5}" y="${padT + 16}" fill="var(--lc9-crossing-stroke)" font-size="11" font-weight="700" text-anchor="start">عبور محاسبه‌شده از نقطهٔ سربه‌سر</text>` : ''}
+
+            <!-- Area & Cumulative Line (Clean and continuous without cluttered static dots) -->
+            <path d="${areaD}" fill="url(#breakEvenGradArea)" />
+            <path d="${pathD}" fill="none" stroke="#a855f7" stroke-width="2.8" style="filter: drop-shadow(0 4px 12px rgba(168, 85, 247, 0.45));" />
+
+            <!-- Dynamic Hover Vertical Cursor Line -->
+            <line id="lc9CursorLine" class="chart-hover-cursor" x1="0" y1="${padT}" x2="0" y2="${padT + plotH}" stroke="var(--lc9-text-muted)" stroke-width="1.5" stroke-dasharray="3 3" style="opacity:0;" />
+
+            <!-- Dynamic Hover Active Glowing Dot -->
+            <circle id="lc9HoverDot" class="chart-hover-dot" cx="0" cy="0" r="6" fill="#a855f7" stroke="#ffffff" stroke-width="2.5" style="opacity:0; filter:drop-shadow(0 2px 8px rgba(168,85,247,0.8));" />
+            
+            ${xLabels}
+
+            <!-- Transparent Interactive Overlay for mouse hover & touch -->
+            <rect x="${padL}" y="${padT}" width="${plotW}" height="${plotH}" fill="transparent" style="cursor:crosshair;" onmousemove="window.lc9Hover(event, this)" onmouseleave="window.lc9Leave(this)" ontouchstart="window.lc9Hover(event.touches ? event.touches[0] : event, this)" ontouchmove="window.lc9Hover(event.touches ? event.touches[0] : event, this)" ontouchend="window.lc9Leave(this)" />
+          </svg>
+        </div>
+      </section>
+    `;
+  }
+
+  // Global hover interaction handlers for the Break-Even chart
+  window.lc9Hover = function(e, el) {
+    const canvas = el.closest('.line-chart-9-canvas');
+    if (!canvas) return;
+    const pointsData = canvas.dataset.chartPoints;
+    if (!pointsData) return;
+    let points = [];
+    try { points = JSON.parse(pointsData); } catch (_) { return; }
+    if (!points.length) return;
+
+    const svg = canvas.querySelector('svg');
+    const rect = svg.getBoundingClientRect();
+    const mouseSvgX = ((e.clientX - rect.left) / rect.width) * 840;
+
+    let closest = points[0];
+    let minDiff = Math.abs(closest.x - mouseSvgX);
+    for (let i = 1; i < points.length; i++) {
+      const diff = Math.abs(points[i].x - mouseSvgX);
+      if (diff < minDiff) {
+        minDiff = diff;
+        closest = points[i];
+      }
+    }
+
+    const cursorLine = svg.querySelector('#lc9CursorLine');
+    const hoverDot = svg.querySelector('#lc9HoverDot');
+    const tooltip = canvas.querySelector('#lc9Tooltip');
+
+    if (cursorLine) {
+      cursorLine.setAttribute('x1', closest.x);
+      cursorLine.setAttribute('x2', closest.x);
+      cursorLine.style.opacity = '0.9';
+    }
+    if (hoverDot) {
+      hoverDot.setAttribute('cx', closest.x);
+      hoverDot.setAttribute('cy', closest.y);
+      hoverDot.style.opacity = '1';
+    }
+
+    if (tooltip) {
+      const posX = (closest.x / 840) * canvas.clientWidth;
+      const posY = (closest.y / 300) * canvas.clientHeight;
+
+      // Smart boundary placement: if near top, flip below the point; if near edges, align horizontally
+      let transX = '-50%';
+      if (posX < 120) transX = '0%';
+      else if (posX > canvas.clientWidth - 120) transX = '-100%';
+
+      let transY = '-115%';
+      if (posY < 140) {
+        transY = '16px';
+      }
+
+      tooltip.style.transform = `translate(${transX}, ${transY})`;
+      tooltip.style.left = `${posX}px`;
+      tooltip.style.top = `${posY}px`;
+      tooltip.style.display = 'block';
+      tooltip.style.opacity = '1';
+
+      const isProfit = closest.profitOrLoss >= 0;
+      tooltip.innerHTML = `
+        <div class="line-chart-9-tooltip__header">
+          <span>📅 ${closest.dateLabel}</span>
+          <span style="font-size:0.7rem; color:var(--lc9-crossing-stroke);">روز ${fmtNum(closest.day || '')}</span>
+        </div>
+        <div class="line-chart-9-tooltip__row">
+          <span class="line-chart-9-tooltip__label">فروش روزانه:</span>
+          <strong class="line-chart-9-tooltip__val" style="color:#38bdf8;">${fmtMoney(closest.dailyToman)} <small style="font-weight:normal; font-size:0.65rem; color:var(--lc9-text-muted);">(${fmtNum(closest.orderCount || 0)} سفارش)</small></strong>
+        </div>
+        <div class="line-chart-9-tooltip__row">
+          <span class="line-chart-9-tooltip__label">فروش تجمعی:</span>
+          <strong class="line-chart-9-tooltip__val" style="color:#c084fc;">${fmtMoney(closest.cumSalesToman)}</strong>
+        </div>
+        <div class="line-chart-9-tooltip__row">
+          <span class="line-chart-9-tooltip__label">هزینه ثابت سرشکن:</span>
+          <strong class="line-chart-9-tooltip__val" style="color:#fbbf24;">${fmtNum(Math.round(closest.fixedCostMillion))} م.ت</strong>
+        </div>
+        <div class="line-chart-9-tooltip__row" style="border-top:1px solid rgba(255,255,255,0.08); margin-top:0.3rem; padding-top:0.3rem;">
+          <span class="line-chart-9-tooltip__label">وضعیت:</span>
+          <strong class="line-chart-9-tooltip__val" style="color:${isProfit ? 'var(--lc9-crossing-stroke)' : '#f43f5e'};">
+            ${isProfit ? '✓ در سود خالص' : 'در مسیر سر به سر'}
+          </strong>
+        </div>
+      `;
+    }
+  };
+
+  window.lc9Leave = function(el) {
+    const canvas = el.closest('.line-chart-9-canvas');
+    if (!canvas) return;
+    const cursorLine = canvas.querySelector('#lc9CursorLine');
+    const hoverDot = canvas.querySelector('#lc9HoverDot');
+    const tooltip = canvas.querySelector('#lc9Tooltip');
+    if (cursorLine) cursorLine.style.opacity = '0';
+    if (hoverDot) hoverDot.style.opacity = '0';
+    if (tooltip) {
+      tooltip.style.opacity = '0';
+      setTimeout(() => { if (tooltip.style.opacity === '0') tooltip.style.display = 'none'; }, 150);
+    }
+  };
+
   // ---------- tabs ----------
   const tabs = {
     async dashboard() {
       setActiveTab('dashboard');
-      const [d, live, stats] = await Promise.all([
+      const [d, live, stats, financeResult, beResult] = await Promise.all([
         api(`/api/admin/command-center${branchQs()}`),
         api(`/api/admin/v2/overview${branchQs()}`),
         api(`/api/admin/stats${branchQs()}`).catch(() => ({ revenueWeek: 0, topItems: [] })),
+        hasCapability('finance.view')
+          ? api(`/api/admin/v2/finance/workbench${branchQs()}`).catch((error) => ({ data: null, loadError: error?.message || 'داده مالی در دسترس نیست' }))
+          : Promise.resolve({ data: null, loadError: null }),
+        hasCapability('finance.view')
+          ? api(`/api/admin/v2/finance/planning/break-even/dashboard${branchQs()}`).catch((error) => ({ data: {
+              status: 'load_error',
+              chart: { status: 'insufficient_data', title: 'نقطهٔ سربه‌سر و مسیر سوددهی' },
+              message: error?.message || 'دادهٔ تحلیل سودآوری دریافت نشد.',
+            } }))
+          : Promise.resolve(null),
       ]);
       const br = currentBranch();
       const salesToday = Number(live.metrics?.salesToday || 0);
@@ -751,6 +1273,14 @@
       const openCalls = Number(live.metrics?.openWaiterCalls || 0);
       const delayed = Number(d.summary?.delayed || 0);
       const queue = Number(d.summary?.queue || 0);
+      const financeData = financeResult?.data || null;
+      const breakEvenDashboard = beResult?.data || beResult || null;
+      const financeCriticalIssues = Array.isArray(financeData?.issues)
+        ? financeData.issues.filter((issue) => issue.severity === 'critical')
+        : [];
+      const financeDifferenceIrr = Number(financeData?.metrics?.unexplainedDifferenceIrr || 0);
+      const financeNeedsAttention = financeCriticalIssues.length > 0 || financeDifferenceIrr !== 0;
+      const financeLoadError = hasCapability('finance.view') ? financeResult?.loadError : null;
       const weeklyDailyAverage = Number(stats.revenueWeek || 0) / 7;
       const salesHealth = salesToday > 0
         ? Math.max(1, Math.min(100, Math.round((salesToday / Math.max(1, weeklyDailyAverage || salesToday)) * 100)))
@@ -784,12 +1314,17 @@
             </div>
           </header>
 
+          ${financeNeedsAttention ? `<button type="button" class="vital-finance-strip" data-quick-tab="accounting"><i aria-hidden="true">﷼</i><span><b>فروش و دفتر مالی نیازمند تطبیق‌اند</b><small>${fmtNum(financeCriticalIssues.length)} نوع هشدار فوری${financeDifferenceIrr ? ` · ${fmtMoney(Math.round(Math.abs(financeDifferenceIrr) / 10))} اختلاف توضیح‌نشده` : ''}</small></span><strong>باز کردن کارتابل حسابدار ←</strong></button>` : ''}
+          ${financeLoadError ? '<button type="button" class="vital-finance-strip" data-quick-tab="accounting"><i aria-hidden="true">!</i><span><b>وضعیت مالی دریافت نشد</b><small>خطا پنهان نشده است؛ جزئیات و تلاش دوباره در کارتابل حسابدار قرار دارد.</small></span><strong>بررسی وضعیت ←</strong></button>' : ''}
+
           <section class="vital-kpi-grid" aria-label="شاخص‌های اصلی امروز">
             <article class="vital-kpi is-green"><span class="vital-kpi__icon" aria-hidden="true">⌁</span><small>فروش امروز</small><strong>${fmtMoney(salesToday)}</strong><em>${salesHealth >= 100 ? 'بالاتر از میانگین هفتگی' : `${fmtNum(salesHealth)}٪ میانگین روزانه هفته`}</em></article>
             <article class="vital-kpi is-purple"><span class="vital-kpi__icon" aria-hidden="true">▣</span><small>سفارش‌های فعال</small><strong>${fmtNum(activeOrders)}</strong><em>${queue ? `${fmtNum(queue)} سفارش نیازمند اقدام` : 'صف عملیات تحت کنترل است'}</em></article>
             <article class="vital-kpi is-blue"><span class="vital-kpi__icon" aria-hidden="true">▤</span><small>میزهای درگیر</small><strong>${fmtNum(busyTables)} <i>از ${fmtNum(live.metrics?.totalTables || 0)}</i></strong><em>وضعیت زنده سالن</em></article>
             <article class="vital-kpi is-orange"><span class="vital-kpi__icon" aria-hidden="true">◌</span><small>رزروهای امروز</small><strong>${fmtNum(reservationsToday)}</strong><em>${openCalls ? `${fmtNum(openCalls)} فراخوان گارسون باز` : 'فراخوان بازی وجود ندارد'}</em></article>
           </section>
+
+          ${renderDashboardBreakEvenShell(breakEvenDashboard, stats, financeData, hasCapability('finance.view'))}
 
           <div class="vital-dashboard-layout">
             <div class="vital-dashboard-main">
@@ -836,8 +1371,10 @@
                 <button data-quick-tab="orders"><i>＋</i><span>سفارش‌ها</span></button>
                 <button data-quick-tab="reservations"><i>□</i><span>رزرو میز</span></button>
                 <button data-quick-tab="menu"><i>＋</i><span>افزودن آیتم</span></button>
-                <button data-quick-tab="club"><i>⌁</i><span>ارسال کمپین</span></button>
-                <button data-quick-tab="reports"><i>▥</i><span>گزارش‌ها</span></button>
+                <button data-quick-tab="club"><i>⌁</i><span>پیام به مشتریان</span></button>
+                ${hasCapability('finance.view')
+                  ? '<button data-quick-tab="accounting"><i>✓</i><span>کارتابل حسابدار</span></button>'
+                  : '<button data-quick-tab="reports"><i>▥</i><span>گزارش‌ها</span></button>'}
               </nav>
             </div>
 
@@ -865,6 +1402,7 @@
             </aside>
           </div>
         </div>`;
+      mountDashboardBreakEven(breakEvenDashboard);
       main.querySelectorAll('[data-quick-tab]').forEach((button) => {
         button.addEventListener('click', () => tabs[button.dataset.quickTab]?.().catch((error) => showToast(error.message)));
       });
@@ -876,75 +1414,13 @@
       });
     },
 
-    async analytics() {
-      setActiveTab('analytics');
-      const a = await api('/api/admin/analytics?days=7');
-      const dayVals = Object.keys(a.byDay || {})
-        .sort()
-        .map((k) => a.byDay[k]);
-      main.innerHTML = `
-        <h1>بازدید و آمار مهمانان</h1>
-        <p class="lead">رهگیری بازدید صفحات منو — مشابه آمار بازدید در سامانه‌های منوی دیجیتال.</p>
-        <div class="cards">
-          <div class="card"><div class="num">${fmtNum(a.total)}</div><div class="lbl">بازدید ${a.days} روز</div></div>
-          <div class="card"><div class="num">${fmtNum(a.sessions)}</div><div class="lbl">نشست یکتا</div></div>
-          <div class="card"><div class="num">${fmtNum((a.topPaths || [])[0]?.count || 0)}</div><div class="lbl">بیشترین مسیر</div></div>
-        </div>
-        <div class="section-box">
-          <h2>روند روزانه</h2>
-          ${sparkBars(dayVals.length ? dayVals : [0], 64)}
-        </div>
-        <div class="grid-2-main">
-          <div class="section-box">
-            <h2>توزیع ساعتی</h2>
-            ${sparkBars(a.byHour || Array(24).fill(0), 48)}
-          </div>
-          <div class="section-box">
-            <h2>مسیرهای پربازدید</h2>
-            <table class="tbl"><thead><tr><th>مسیر</th><th>بازدید</th></tr></thead><tbody>
-              ${(a.topPaths || []).map((p) => `<tr><td class="ltr">${esc(p.path)}</td><td>${fmtNum(p.count)}</td></tr>`).join('') || '<tr><td colspan="2">هنوز بازدیدی ثبت نشده — سایت را باز کنید</td></tr>'}
-            </tbody></table>
-          </div>
-        </div>
-        <div class="section-box">
-          <h2>آخرین بازدیدها</h2>
-          <table class="tbl"><thead><tr><th>زمان</th><th>مسیر</th><th>نشست</th></tr></thead><tbody>
-            ${(a.recent || []).map((v) => `<tr><td>${fmtDateTime(v.at)}</td><td class="ltr">${esc(v.path)}</td><td class="ltr">${esc(String(v.sessionId || '').slice(0, 10))}</td></tr>`).join('') || '<tr><td colspan="3">—</td></tr>'}
-          </tbody></table>
-        </div>`;
-    },
-
-    async reports() {
-      setActiveTab('reports');
-      const s = await api(`/api/admin/stats${branchQs()}`);
-      main.innerHTML = `
-        <h1>گزارش فروش</h1>
-        <p class="lead">صورت‌حساب ساده مالی${currentBranch() ? ` شعبه ${esc(currentBranch().name)}` : ''}.</p>
-        <div class="cards">
-          <div class="card accent"><div class="num">${fmtMoney(s.revenue)}</div><div class="lbl">جمع کل فروش</div></div>
-          <div class="card"><div class="num">${fmtMoney(s.revenueWeek)}</div><div class="lbl">هفته جاری</div></div>
-          <div class="card"><div class="num">${fmtNum(s.orders)}</div><div class="lbl">تعداد سفارش</div></div>
-        </div>
-        <div class="section-box">
-          <h2>رتبه‌بندی آیتم‌ها</h2>
-          <table class="tbl"><thead><tr><th>#</th><th>نام</th><th>تعداد</th><th>درآمد</th><th>سهم</th></tr></thead><tbody>
-            ${(s.topItems || [])
-              .map((i, idx) => {
-                const share = s.revenue ? Math.round((i.revenue / s.revenue) * 100) : 0;
-                return `<tr><td>${idx + 1}</td><td>${esc(i.name)}</td><td>${fmtNum(i.qty)}</td><td>${fmtMoney(i.revenue)}</td><td>${share}٪</td></tr>`;
-              })
-              .join('') || '<tr><td colspan="5">داده‌ای نیست</td></tr>'}
-          </tbody></table>
-        </div>`;
-    },
-
     async printmenu() {
       setActiveTab('printmenu');
       const d = await api('/api/admin/restaurant');
       const r = d.restaurant || {};
       main.innerHTML = `
-        <h1>منوی چاپی / PDF</h1>
-        <p class="lead">خروجی کاغذی از منوی زنده — مشابه ترکیب منوی دیجیتال و کاغذی در سامانه‌هایی مثل پرومنو. برای چاپ یا ذخیره PDF از دیالوگ چاپ مرورگر استفاده کنید.</p>
+        <h1>منوی چاپی و فایل پی‌دی‌اف</h1>
+        <p class="lead">خروجی کاغذی از منوی زنده — مشابه ترکیب منوی دیجیتال و کاغذی در سامانه‌هایی مثل پرومنو. برای چاپ یا ذخیره فایل از پنجره چاپ مرورگر استفاده کنید.</p>
         <div class="section-box">
           <h2>${esc(r.name || 'وستو')}</h2>
           <p class="hint">${esc(r.tagline || '')}</p>
@@ -954,7 +1430,7 @@
           </div>
           <ul class="hint" style="margin-top:1.25rem; line-height:1.7;">
             <li>می‌توانید ناموجودها، آلرژن‌ها و توضیحات را در صفحه چاپ روشن/خاموش کنید.</li>
-            <li>در دیالوگ چاپ، مقصد را «Save as PDF» بگذارید تا فایل بگیرید.</li>
+            <li>در پنجره چاپ، مقصد را روی «ذخیره به‌صورت پی‌دی‌اف» بگذارید تا فایل بگیرید.</li>
             <li>قیمت‌ها و دسته‌ها همان لحظه از دیتابیس خوانده می‌شوند.</li>
           </ul>
         </div>
@@ -1053,8 +1529,8 @@
       };
       const v = { ...defaults, ...t };
       main.innerHTML = `
-        <h1>تم و برندینگ</h1>
-        <p class="lead">تم‌ساز مجموعه — رنگ پنل، منوی چاپی و هویت بصری. مشابه تم‌های سفارشی منوهای دیجیتال حرفه‌ای.</p>
+        <h1>ظاهر و هویت برند</h1>
+        <p class="lead">رنگ پنل، منوی چاپی و هویت بصری مجموعه را یک‌جا تنظیم کنید.</p>
         <div class="section-box">
           <h2>پیش‌نمایش زنده</h2>
           <div class="theme-preview" id="theme-preview">
@@ -1068,13 +1544,13 @@
         <div class="section-box">
           <h2>رنگ‌های پنل</h2>
           <div class="grid-2">
-            ${colorField('اکسنت', 'th_accent', v.accent)}
-            ${colorField('متن روی اکسنت', 'th_accentInk', v.accentInk)}
+            ${colorField('رنگ تأکیدی', 'th_accent', v.accent)}
+            ${colorField('متن روی رنگ تأکیدی', 'th_accentInk', v.accentInk)}
             ${colorField('سطح', 'th_surface', v.surface)}
             ${colorField('پس‌زمینه', 'th_bg', v.bg)}
             ${colorField('متن اصلی', 'th_fog', v.fog)}
-            ${field('شعاع گوشه (px)', 'th_radius', String(v.radius), { ltr: true, type: 'number' })}
-            ${field('فونت نمایشی', 'th_font', v.fontDisplay)}
+            ${field('شعاع گوشه (پیکسل)', 'th_radius', String(v.radius), { ltr: true, type: 'number' })}
+            ${field('قلم نمایشی', 'th_font', v.fontDisplay)}
           </div>
         </div>
         <div class="section-box">
@@ -1082,7 +1558,7 @@
           <div class="grid-2">
             ${colorField('کاغذ', 'th_printPaper', v.printPaper)}
             ${colorField('مرکب', 'th_printInk', v.printInk)}
-            ${colorField('اکسنت چاپ', 'th_printAccent', v.printAccent)}
+            ${colorField('رنگ تأکیدی چاپ', 'th_printAccent', v.printAccent)}
           </div>
         </div>
         <div class="row-actions">
@@ -1113,7 +1589,7 @@
 
       document.getElementById('th-reset').addEventListener('click', async () => {
         await api('/api/admin/theme', { method: 'PUT', body: JSON.stringify({ theme: defaults }) });
-        showToast('تم پیش‌فرض اعمال شد');
+        showToast('ظاهر پیش‌فرض اعمال شد');
         tabs.theme();
       });
     },
@@ -1123,16 +1599,53 @@
       const d = await api(`/api/admin/restaurant${branchQs()}`);
       const hours = d.hours || {};
       const br = d.branch || currentBranch();
+      
+      const JS_DAYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+      const todayKey = JS_DAYS[new Date().getDay()];
+      const todayLabel = DAY_LABELS[todayKey] || 'امروز';
+      const todayHours = hours[todayKey] || { open: '10:00', close: '23:30', closed: false };
+      const isTodayClosed = Boolean(todayHours.closed);
+
       main.innerHTML = `
         <h1>ساعت کاری</h1>
-        <p class="lead">زمان‌بندی هفتگی${br ? ` — <strong>${esc(br.name)}</strong>` : ''}.</p>
+        <p class="lead">زمان‌بندی هفتگی و وضعیت فعالیت مجموعه${br ? ` — <strong>${esc(br.name)}</strong>` : ''}.</p>
+        
+        <!-- Emergency & Quick Closure Control Card -->
+        <div id="today-closure-box" class="card" style="margin-bottom: 1.25rem; padding: 1.15rem 1.25rem; border-radius: 14px; border: 1px solid var(--p-border, rgba(255,255,255,0.1)); background: ${isTodayClosed ? 'rgba(239, 68, 68, 0.08)' : 'rgba(16, 185, 129, 0.06)'}; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem;">
+          <div style="flex: 1; min-width: 260px;">
+            <div style="display:flex; align-items:center; gap:0.5rem; margin-bottom:0.35rem;">
+              <span id="today-status-icon" style="font-size:1.3rem;">${isTodayClosed ? '⛔' : '🟢'}</span>
+              <strong style="font-size:1.05rem;">وضعیت امروز (${todayLabel}): <span id="today-status-text" style="color: ${isTodayClosed ? '#f87171' : '#4ade80'};">${isTodayClosed ? 'تعطیل (عدم سرویس‌دهی)' : `باز است (${esc(todayHours.open)} تا ${esc(todayHours.close)})`}</span></strong>
+            </div>
+            <p class="hint" style="margin:0; font-size:0.85rem; color:var(--p-text-dim);">در صورت تعمیرات، تغییرات دکوراسیون، رویداد خصوصی یا تعطیلی اضطراری، با دکمه روبرو وضعیت امروز را تغییر دهید.</p>
+          </div>
+          <div>
+            <button id="btn-toggle-today" class="btn ${isTodayClosed ? 'btn-primary' : 'btn-ghost'}" style="${isTodayClosed ? 'background:#10b981; color:#fff;' : 'border-color:#ef4444; color:#f87171;'} font-weight:800; padding:0.65rem 1.25rem; min-width:200px;" type="button">
+              ${isTodayClosed ? '✅ بازگشایی امروز (برگشت به ساعت عادی)' : '⛔ تعطیل کردن مجموعه برای امروز'}
+            </button>
+          </div>
+        </div>
+
         <div class="section-box">
+          <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.5rem; margin-bottom:0.85rem;">
+            <strong>جدول ساعات کاری هفتگی</strong>
+            <div style="display:flex; gap:0.4rem; flex-wrap:wrap;">
+              <button id="btn-close-all" class="btn btn-sm btn-ghost" type="button" style="font-size:0.78rem;">تعطیل کردن تمام هفته</button>
+              <button id="btn-open-all" class="btn btn-sm btn-ghost" type="button" style="font-size:0.78rem;">بازگشایی تمام روزها</button>
+              <button id="btn-reset-standard" class="btn btn-sm btn-ghost" type="button" style="font-size:0.78rem;">ساعت استاندارد (۱۰ تا ۲۳:۳۰)</button>
+            </div>
+          </div>
+
           <table class="tbl hours-tbl"><thead><tr><th>روز</th><th>باز</th><th>بسته</th><th>تعطیل</th></tr></thead><tbody>
             ${Object.keys(DAY_LABELS)
               .map((k) => {
                 const h = hours[k] || { open: '10:00', close: '23:00', closed: false };
-                return `<tr data-day="${k}">
-                  <td>${DAY_LABELS[k]}</td>
+                const isCurrentDay = (k === todayKey);
+                return `<tr data-day="${k}" style="${isCurrentDay ? 'background: rgba(120,208,216,0.08); font-weight: 600;' : ''}">
+                  <td>
+                    ${DAY_LABELS[k]}
+                    ${isCurrentDay ? '<span class="pill sm" style="margin-right:0.4rem; background:rgba(120,208,216,0.2); color:var(--p-accent, #78d0d8); font-size:0.75rem; padding:0.15rem 0.5rem; border-radius:6px;">امروز</span>' : ''}
+                  </td>
                   <td><input class="h-open" type="time" value="${esc(h.open)}" ${h.closed ? 'disabled' : ''} /></td>
                   <td><input class="h-close" type="time" value="${esc(h.close)}" ${h.closed ? 'disabled' : ''} /></td>
                   <td><label class="chk"><input class="h-closed" type="checkbox" ${h.closed ? 'checked' : ''} /> تعطیل</label></td>
@@ -1140,9 +1653,34 @@
               })
               .join('')}
           </tbody></table>
-          <p class="hint" style="margin-top:0.75rem">ذخیره خودکار</p>
+          <p class="hint" style="margin-top:0.75rem">ذخیره خودکار با هر تغییر</p>
         </div>`;
-      const saveHours = async () => {
+
+      const updateTodayBanner = (closed) => {
+        const box = document.getElementById('today-closure-box');
+        const icon = document.getElementById('today-status-icon');
+        const text = document.getElementById('today-status-text');
+        const btn = document.getElementById('btn-toggle-today');
+        const todayTr = main.querySelector(`tr[data-day="${todayKey}"]`);
+        const openTime = todayTr?.querySelector('.h-open')?.value || '10:00';
+        const closeTime = todayTr?.querySelector('.h-close')?.value || '23:30';
+
+        if (box) box.style.background = closed ? 'rgba(239, 68, 68, 0.08)' : 'rgba(16, 185, 129, 0.06)';
+        if (icon) icon.textContent = closed ? '⛔' : '🟢';
+        if (text) {
+          text.textContent = closed ? 'تعطیل (عدم سرویس‌دهی)' : `باز است (${openTime} تا ${closeTime})`;
+          text.style.color = closed ? '#f87171' : '#4ade80';
+        }
+        if (btn) {
+          btn.textContent = closed ? '✅ بازگشایی امروز (برگشت به ساعت عادی)' : '⛔ تعطیل کردن مجموعه برای امروز';
+          btn.style.background = closed ? '#10b981' : '';
+          btn.style.color = closed ? '#fff' : '#f87171';
+          btn.style.borderColor = closed ? '' : '#ef4444';
+          btn.className = `btn ${closed ? 'btn-primary' : 'btn-ghost'}`;
+        }
+      };
+
+      const saveHours = async (showSuccessToast = false) => {
         const payload = {};
         main.querySelectorAll('tr[data-day]').forEach((tr) => {
           payload[tr.dataset.day] = {
@@ -1151,23 +1689,108 @@
             closed: tr.querySelector('.h-closed').checked,
           };
         });
-        await api('/api/admin/hours', {
-          method: 'PUT',
-          body: JSON.stringify({ hours: payload, branchId: currentBranchId }),
-        });
+        try {
+          await api('/api/admin/hours', {
+            method: 'PUT',
+            body: JSON.stringify({ hours: payload, branchId: currentBranchId }),
+          });
+          if (showSuccessToast) {
+            showToast('وضعیت ساعات کاری با موفقیت ذخیره شد.', 'success');
+          }
+        } catch (err) {
+          showToast(err.message || 'خطا در ذخیره ساعات کاری', 'error');
+        }
       };
-      const hoursAutosave = autosave(saveHours, { debounceMs: 400, silent: true });
+
+      const hoursAutosave = autosave(() => saveHours(false), { debounceMs: 400, silent: true });
+
+      // Toggle Today's status button
+      const toggleTodayBtn = document.getElementById('btn-toggle-today');
+      if (toggleTodayBtn) {
+        toggleTodayBtn.addEventListener('click', async () => {
+          const todayTr = main.querySelector(`tr[data-day="${todayKey}"]`);
+          if (!todayTr) return;
+          const cb = todayTr.querySelector('.h-closed');
+          const isCurrentlyClosed = cb.checked;
+          const nextClosed = !isCurrentlyClosed;
+          
+          cb.checked = nextClosed;
+          todayTr.querySelectorAll('.h-open, .h-close').forEach((inp) => {
+            inp.disabled = nextClosed;
+          });
+
+          updateTodayBanner(nextClosed);
+          await saveHours(false);
+          showToast(nextClosed ? 'وضعیت امروز به «تعطیل» تغییر یافت ⛔' : 'امروز مجدداً «باز» شد ✅', nextClosed ? 'info' : 'success');
+        });
+      }
+
+      // Bulk close all days
+      const btnCloseAll = document.getElementById('btn-close-all');
+      if (btnCloseAll) {
+        btnCloseAll.addEventListener('click', async () => {
+          main.querySelectorAll('tr[data-day]').forEach((tr) => {
+            const cb = tr.querySelector('.h-closed');
+            cb.checked = true;
+            tr.querySelectorAll('.h-open, .h-close').forEach((inp) => { inp.disabled = true; });
+          });
+          updateTodayBanner(true);
+          await saveHours(true);
+        });
+      }
+
+      // Bulk open all days
+      const btnOpenAll = document.getElementById('btn-open-all');
+      if (btnOpenAll) {
+        btnOpenAll.addEventListener('click', async () => {
+          main.querySelectorAll('tr[data-day]').forEach((tr) => {
+            const cb = tr.querySelector('.h-closed');
+            cb.checked = false;
+            tr.querySelectorAll('.h-open, .h-close').forEach((inp) => { inp.disabled = false; });
+          });
+          updateTodayBanner(false);
+          await saveHours(true);
+        });
+      }
+
+      // Reset to standard hours (10:00 to 23:30)
+      const btnResetStd = document.getElementById('btn-reset-standard');
+      if (btnResetStd) {
+        btnResetStd.addEventListener('click', async () => {
+          main.querySelectorAll('tr[data-day]').forEach((tr) => {
+            const cb = tr.querySelector('.h-closed');
+            cb.checked = false;
+            tr.querySelector('.h-open').value = '10:00';
+            tr.querySelector('.h-close').value = '23:30';
+            tr.querySelectorAll('.h-open, .h-close').forEach((inp) => { inp.disabled = false; });
+          });
+          updateTodayBanner(false);
+          await saveHours(true);
+        });
+      }
+
       main.querySelectorAll('.h-closed').forEach((cb) => {
         cb.addEventListener('change', () => {
           const tr = cb.closest('tr');
           tr.querySelectorAll('.h-open, .h-close').forEach((inp) => {
             inp.disabled = cb.checked;
           });
+          if (tr.dataset.day === todayKey) {
+            updateTodayBanner(cb.checked);
+          }
           hoursAutosave();
         });
       });
+
       main.querySelectorAll('.h-open, .h-close').forEach((inp) => {
-        inp.addEventListener('change', hoursAutosave);
+        inp.addEventListener('change', () => {
+          const tr = inp.closest('tr');
+          if (tr && tr.dataset.day === todayKey) {
+            const cb = tr.querySelector('.h-closed');
+            updateTodayBanner(cb.checked);
+          }
+          hoursAutosave();
+        });
         inp.addEventListener('input', hoursAutosave);
       });
     },
@@ -1235,7 +1858,8 @@
       const activeTables = () => tables.filter((table) => table.active !== false);
       const selectedTables = () => tables.filter((table) => selectedTableIds.has(Number(table.id)));
       const baseQrUrl = () => validBaseUrl(qrPrefs.baseUrl) || origin;
-      const qrEclHint = () => ({ L: 'فایل سبک', M: 'استاندارد', Q: 'مقاوم‌تر برای محیط شلوغ', H: 'بیشترین تحمل خطا' }[qrPrefs.ecl] || 'استاندارد');
+      const qrEclLabel = () => ({ L: 'سبک', M: 'استاندارد', Q: 'مقاوم', H: 'بسیار مقاوم' }[qrPrefs.ecl] || 'استاندارد');
+      const qrEclHint = () => ({ L: 'فایل سبک', M: 'پیشنهاد وستو', Q: 'مناسب محیط شلوغ', H: 'بیشترین تحمل آسیب چاپ' }[qrPrefs.ecl] || 'پیشنهاد وستو');
       const tableDestination = (table) => {
         const url = new URL('/menu', `${baseQrUrl()}/`);
         url.searchParams.set('table', String(table?.id || ''));
@@ -1272,7 +1896,7 @@
             document.execCommand('copy');
             area.remove();
           }
-          showToast('لینک QR کپی شد.', 'success');
+          showToast('لینک رمزینه کپی شد.', 'success');
         } catch (_) {
           showToast('کپی لینک انجام نشد؛ لینک را از کادر مقصد انتخاب کنید.', 'error');
         }
@@ -1292,13 +1916,13 @@
         const branchName = br?.name || 'وستو';
         const cards = printable.map((table) => `
           <article class="qr-print-card">
-            <div class="qr-print-card__brand">WESTO <span>کافه‌رستوران</span></div>
-            <img src="${esc(qrAssetUrl(table))}" alt="QR ${esc(tableTitle(table))}" />
+            <div class="qr-print-card__brand">وستو <span>کافه‌رستوران</span></div>
+            <img src="${esc(qrAssetUrl(table))}" alt="رمزینه ${esc(tableTitle(table))}" />
             <h1>${esc(tableTitle(table))}</h1>
             <p>منوی دیجیتال و ثبت سفارش روی میز</p>
             <small>${esc(branchName)} · ${esc(table.zone || 'سالن')}</small>
           </article>`).join('');
-        printWindow.document.write(`<!doctype html><html lang="fa" dir="rtl"><head><meta charset="utf-8"><title>QR میزها · ${esc(branchName)}</title><style>
+        printWindow.document.write(`<!doctype html><html lang="fa" dir="rtl"><head><meta charset="utf-8"><title>رمزینه میزها · ${esc(branchName)}</title><style>
           @page{size:A4;margin:12mm}*{box-sizing:border-box}body{margin:0;background:#fff;color:#11181b;font-family:Arial,"Vazirmatn",sans-serif}.qr-print-sheet{display:grid;grid-template-columns:repeat(2,1fr);gap:10mm}.qr-print-card{display:flex;min-height:118mm;align-items:center;justify-content:center;flex-direction:column;padding:10mm 7mm;border:1px solid #d9e0df;border-radius:6mm;text-align:center;break-inside:avoid}.qr-print-card__brand{margin-bottom:4mm;color:#14282b;font-size:18px;font-weight:900;letter-spacing:.12em}.qr-print-card__brand span{display:block;margin-top:1.5mm;color:#6f7a78;font-size:9px;font-weight:500;letter-spacing:0}.qr-print-card img{display:block;width:62mm;height:62mm;object-fit:contain;image-rendering:pixelated}.qr-print-card h1{margin:5mm 0 1mm;font-size:22px}.qr-print-card p{margin:0;color:#56625f;font-size:11px}.qr-print-card small{margin-top:3mm;color:#74807d;font-size:9px}@media print{.qr-print-card{border-color:#c9d2d0}}
         </style></head><body><main class="qr-print-sheet">${cards}</main><script>window.addEventListener('load',function(){var imgs=[].slice.call(document.images);Promise.all(imgs.map(function(img){return img.complete?Promise.resolve():new Promise(function(resolve){img.onload=img.onerror=resolve})})).then(function(){setTimeout(function(){window.focus();window.print()},180)})});<\/script></body></html>`);
         printWindow.document.close();
@@ -1310,15 +1934,15 @@
         const tableOptions = tables.map((table) => `<option value="${table.id}" ${Number(table.id) === Number(currentTableId) ? 'selected' : ''}>${esc(tableTitle(table))} · ${esc(table.zone || 'سالن')}</option>`).join('');
         const currentPreview = current
           ? `<div class="admin-qr-preview">
-              <div class="admin-qr-preview__stage"><img id="qr-live-preview" data-qr-img="${current.id}" src="${esc(qrAssetUrl(current))}" alt="پیش‌نمایش QR ${esc(tableTitle(current))}" /></div>
+              <div class="admin-qr-preview__stage"><img id="qr-live-preview" data-qr-img="${current.id}" src="${esc(qrAssetUrl(current))}" alt="پیش‌نمایش رمزینه ${esc(tableTitle(current))}" /></div>
               <div class="admin-qr-preview__details">
                 <div class="admin-qr-preview__table"><strong id="qr-current-name">${esc(tableTitle(current))}</strong><span id="qr-current-seats">${fmtNum(current.seats || 0)} نفر</span></div>
                 <p class="hint" id="qr-current-zone">${esc(current.zone || 'سالن')} · مقصد امن و اختصاصی همین میز</p>
-                <div class="admin-qr-destination"><small>مقصدی که داخل QR ذخیره شده</small><code id="qr-current-destination" dir="ltr">${esc(tableDestination(current))}</code></div>
+                <div class="admin-qr-destination"><small>مقصد ذخیره‌شده در رمزینه</small><code id="qr-current-destination" dir="ltr">${esc(tableDestination(current))}</code></div>
                 <div class="admin-qr-preview__actions">
-                  <a class="btn btn-sm" id="qr-download-current" href="${esc(qrAssetUrl(current, { download: true }))}" download="westo-table-${current.id}.png">دانلود PNG</a>
+                  <a class="btn btn-sm" id="qr-download-current" href="${esc(qrAssetUrl(current, { download: true }))}" download="westo-table-${current.id}.png">دریافت تصویر</a>
                   <button type="button" class="btn btn-sm btn-ghost" id="qr-copy-current">کپی لینک</button>
-                  <button type="button" class="btn btn-sm btn-ghost" id="qr-print-current">چاپ همین QR</button>
+                  <button type="button" class="btn btn-sm btn-ghost" id="qr-print-current">چاپ همین رمزینه</button>
                 </div>
               </div>
             </div>`
@@ -1327,10 +1951,10 @@
         main.innerHTML = `
           <div class="admin-qr-page">
             <header class="admin-qr-page__head">
-              <div><p class="admin-qr-kicker">QR STUDIO · TABLE ORDERS</p><h1>سازنده حرفه‌ای QR میزها</h1><p class="lead">برای هر میز یک QR اختصاصی بسازید؛ مشتری با اسکن آن وارد منوی دیجیتال می‌شود و شماره میز در سفارش از قبل ثبت است.</p></div>
+              <div><p class="admin-qr-kicker">مدیریت رمزینه سفارش میز</p><h1>ساخت رمزینه اختصاصی میزها</h1><p class="lead">برای هر میز یک رمزینه بسازید؛ مهمان با اسکن آن وارد منوی دیجیتال می‌شود و شماره میز از ابتدا روی سفارش قرار می‌گیرد.</p></div>
               <div class="admin-qr-page__actions"><button class="btn btn-sm btn-ghost" id="neem-tables-open" type="button">نمای عملیاتی میزها</button><button class="btn btn-sm btn-ghost" id="qr-print-all" type="button" ${tables.length ? '' : 'disabled'}>چاپ همه میزها</button><button class="btn btn-sm" id="t-add" type="button">افزودن میز</button></div>
             </header>
-            <div class="admin-qr-notice"><span class="admin-qr-notice__icon" aria-hidden="true">⌁</span><div><strong>جریان سفارش بدون تغییر در بخش‌های دیگر</strong>لینک هر QR شامل شناسه میز و شعبه است؛ مقصد را قبل از چاپ با دکمه «مشاهده» یا اسکن آزمایشی بررسی کنید.</div></div>
+            <div class="admin-qr-notice"><span class="admin-qr-notice__icon" aria-hidden="true">⌁</span><div><strong>جریان سفارش بدون تغییر در بخش‌های دیگر</strong>لینک هر رمزینه شامل شناسه میز و شعبه است؛ مقصد را پیش از چاپ با دکمه «مشاهده» یا اسکن آزمایشی بررسی کنید.</div></div>
             <div class="ops-metrics" aria-label="وضعیت زنده سالن">
               <article class="ops-metric"><strong>${fmtNum(floorData.summary?.total || 0)}</strong><span>کل میزها</span></article>
               <article class="ops-metric is-accent"><strong>${fmtNum(floorData.summary?.busy || 0)}</strong><span>در حال سرویس</span></article>
@@ -1341,29 +1965,29 @@
               <div class="admin-qr-metric"><span class="admin-qr-metric__label">کل میزها</span><strong class="admin-qr-metric__value">${fmtNum(tables.length)}</strong><span class="admin-qr-metric__hint">این شعبه</span></div>
               <div class="admin-qr-metric"><span class="admin-qr-metric__label">میزهای فعال</span><strong class="admin-qr-metric__value">${fmtNum(activeTables().length)}</strong><span class="admin-qr-metric__hint">قابل استفاده برای مهمان</span></div>
               <div class="admin-qr-metric"><span class="admin-qr-metric__label">انتخاب چاپ</span><strong class="admin-qr-metric__value" id="qr-selected-metric">${fmtNum(selectedTableIds.size)}</strong><span class="admin-qr-metric__hint">برای چاپ گروهی</span></div>
-              <div class="admin-qr-metric"><span class="admin-qr-metric__label">سطح خوانایی</span><strong class="admin-qr-metric__value" id="qr-ecl-metric">${esc(qrPrefs.ecl)}</strong><span class="admin-qr-metric__hint" id="qr-ecl-hint">اصلاح خطا · ${esc(qrEclHint())}</span></div>
+              <div class="admin-qr-metric"><span class="admin-qr-metric__label">مقاومت چاپ</span><strong class="admin-qr-metric__value" id="qr-ecl-metric">${esc(qrEclLabel())}</strong><span class="admin-qr-metric__hint" id="qr-ecl-hint">${esc(qrEclHint())}</span></div>
             </div>
             <div class="admin-qr-studio">
               <section class="admin-qr-card"><div class="admin-qr-card__head"><div><h2>پیش‌نمایش زنده</h2><p>ظاهر، لینک و فایل چاپی میز انتخاب‌شده را همین‌جا بررسی کنید.</p></div><span class="admin-qr-safe-badge">آماده چاپ</span></div><div class="admin-qr-card__body">${currentPreview}</div></section>
               <section class="admin-qr-card"><div class="admin-qr-card__head"><div><h2>تنظیمات خروجی</h2><p>تنظیمات در همین مرورگر ذخیره می‌شود و روی سفارش‌ها اثری ندارد.</p></div></div><div class="admin-qr-card__body"><div class="admin-qr-controls">
                 <label class="admin-qr-controls__wide"><span>میز برای پیش‌نمایش</span><select id="qr-current-table" ${tables.length ? '' : 'disabled'}>${tableOptions || '<option>میزی وجود ندارد</option>'}</select></label>
-                <label class="admin-qr-controls__wide"><span>آدرس عمومی منو</span><input id="qr-base-url" type="url" dir="ltr" value="${esc(qrPrefs.baseUrl)}" placeholder="https://example.com" autocomplete="url" /><small class="admin-qr-base-note">اگر پنل روی localhost است، آدرس قابل‌دسترسی برای موبایل را وارد کنید.</small></label>
-                <div class="admin-qr-controls__group"><label><span>رنگ کد</span><input id="qr-dark" type="color" value="${esc(qrPrefs.dark)}" aria-label="رنگ کد QR" /></label><label><span>رنگ پس‌زمینه</span><input id="qr-light" type="color" value="${esc(qrPrefs.light)}" aria-label="رنگ پس‌زمینه QR" /></label></div>
-                <div class="admin-qr-controls__group"><label><span>اصلاح خطا</span><select id="qr-ecl"><option value="M" ${qrPrefs.ecl === 'M' ? 'selected' : ''}>M · پیشنهاد وستو</option><option value="Q" ${qrPrefs.ecl === 'Q' ? 'selected' : ''}>Q · مقاوم‌تر برای محیط شلوغ</option><option value="H" ${qrPrefs.ecl === 'H' ? 'selected' : ''}>H · بیشترین تحمل خطا</option><option value="L" ${qrPrefs.ecl === 'L' ? 'selected' : ''}>L · فایل سبک</option></select></label><label><span>ابعاد فایل</span><select id="qr-width"><option value="512" ${qrPrefs.width === 512 ? 'selected' : ''}>۵۱۲ px</option><option value="768" ${qrPrefs.width === 768 ? 'selected' : ''}>۷۶۸ px</option><option value="1024" ${qrPrefs.width === 1024 ? 'selected' : ''}>۱۰۲۴ px</option></select></label></div>
+                <label class="admin-qr-controls__wide"><span>آدرس عمومی منو</span><input id="qr-base-url" type="url" dir="ltr" value="${esc(qrPrefs.baseUrl)}" placeholder="https://example.com" autocomplete="url" /><small class="admin-qr-base-note">اگر پنل روی رایانه محلی است، آدرس قابل‌دسترسی برای موبایل را وارد کنید.</small></label>
+                <div class="admin-qr-controls__group"><label><span>رنگ کد</span><input id="qr-dark" type="color" value="${esc(qrPrefs.dark)}" aria-label="رنگ رمزینه" /></label><label><span>رنگ پس‌زمینه</span><input id="qr-light" type="color" value="${esc(qrPrefs.light)}" aria-label="رنگ پس‌زمینه رمزینه" /></label></div>
+                <div class="admin-qr-controls__group"><label><span>مقاومت در برابر آسیب چاپ</span><select id="qr-ecl"><option value="M" ${qrPrefs.ecl === 'M' ? 'selected' : ''}>پیشنهاد وستو</option><option value="Q" ${qrPrefs.ecl === 'Q' ? 'selected' : ''}>مقاوم‌تر برای محیط شلوغ</option><option value="H" ${qrPrefs.ecl === 'H' ? 'selected' : ''}>بیشترین تحمل آسیب</option><option value="L" ${qrPrefs.ecl === 'L' ? 'selected' : ''}>فایل سبک</option></select></label><label><span>ابعاد فایل</span><select id="qr-width"><option value="512" ${qrPrefs.width === 512 ? 'selected' : ''}>۵۱۲ پیکسل</option><option value="768" ${qrPrefs.width === 768 ? 'selected' : ''}>۷۶۸ پیکسل</option><option value="1024" ${qrPrefs.width === 1024 ? 'selected' : ''}>۱۰۲۴ پیکسل</option></select></label></div>
                 <label><span>حاشیه سفید استاندارد</span><select id="qr-margin"><option value="3" ${qrPrefs.margin === 3 ? 'selected' : ''}>کم · ۳ ماژول</option><option value="5" ${qrPrefs.margin === 5 ? 'selected' : ''}>استاندارد · ۵ ماژول</option><option value="8" ${qrPrefs.margin === 8 ? 'selected' : ''}>زیاد · چاپ حرفه‌ای</option></select></label>
                 <p class="admin-qr-control-note">برای چاپ روی میز، پس‌زمینه روشن، کنتراست بالا و حاشیه استاندارد را نگه دارید.</p>
-                <div class="admin-qr-controls__footer"><button type="button" class="btn btn-sm btn-ghost" id="qr-reset-prefs">بازنشانی تنظیمات</button><span class="hint">PNG با QR استاندارد تولید می‌شود</span></div>
+                <div class="admin-qr-controls__footer"><button type="button" class="btn btn-sm btn-ghost" id="qr-reset-prefs">بازنشانی تنظیمات</button><span class="hint">تصویر استاندارد و آماده چاپ تولید می‌شود</span></div>
               </div></div></section>
             </div>
-            <section class="admin-qr-card admin-qr-tables"><div class="admin-qr-card__head"><div><h2>میزهای ${br ? esc(br.name) : ''}</h2><p>هر کارت یک QR مستقل دارد؛ انتخاب چند کارت، چاپ گروهی را فعال می‌کند.</p></div></div>
+            <section class="admin-qr-card admin-qr-tables"><div class="admin-qr-card__head"><div><h2>میزهای ${br ? esc(br.name) : ''}</h2><p>هر کارت یک رمزینه مستقل دارد؛ انتخاب چند کارت، چاپ گروهی را فعال می‌کند.</p></div></div>
               <div class="admin-qr-tables__toolbar"><div class="admin-qr-tables__toolbar-left"><label class="admin-qr-select-all"><input id="qr-select-all" type="checkbox" /> انتخاب همه</label><span class="admin-qr-selection-count" id="qr-selection-count">${selectedLabel()}</span></div><div class="admin-qr-tables__toolbar-right"><button class="btn btn-sm btn-ghost" id="qr-print-selected" type="button" disabled>چاپ انتخاب‌شده</button></div></div>
               <div class="admin-qr-table-grid">${tables.map((table) => {
                 const id = Number(table.id);
                 const selected = selectedTableIds.has(id);
                 const currentClass = id === Number(currentTableId) ? ' is-current' : '';
                 const selectedClass = selected ? ' is-selected' : '';
-                return `<article class="admin-qr-table-card${currentClass}${selectedClass}" data-qr-card="${id}"><div class="admin-qr-table-card__top"><label class="admin-qr-table-card__select"><input type="checkbox" data-qr-select="${id}" ${selected ? 'checked' : ''} /><span>${esc(tableTitle(table))}</span></label><span class="admin-qr-table-card__badge">${table.active !== false ? 'فعال' : 'غیرفعال'}</span></div><div class="admin-qr-table-card__body"><div class="admin-qr-table-card__qr"><img data-qr-img="${id}" loading="lazy" src="${esc(qrAssetUrl(table))}" alt="QR ${esc(tableTitle(table))}" /></div><div class="admin-qr-table-card__fields"><label><span>برچسب</span><input class="t-label" value="${esc(table.label)}" /></label><label><span>ظرفیت</span><input class="t-seats ltr-input" dir="ltr" type="number" min="1" max="20" value="${Number(table.seats) || 4}" /></label><label><span>زون</span><input class="t-zone" value="${esc(table.zone || '')}" /></label><label class="admin-qr-table-card__toggle"><span>قابل سفارش</span><input class="t-active" type="checkbox" ${table.active !== false ? 'checked' : ''} /></label></div></div><div class="admin-qr-table-card__meta"><span>شناسه QR: <b dir="ltr">${esc(table.id)}</b></span><span>میز: <b>${esc(table.zone || 'سالن')}</b></span></div><div class="admin-qr-table-card__actions"><button type="button" class="btn btn-sm btn-ghost" data-qr-open="${id}">انتخاب</button><a class="btn btn-sm btn-ghost" data-qr-download="${id}" href="${esc(qrAssetUrl(table, { download: true }))}" download="westo-table-${id}.png">دانلود</a><button type="button" class="btn btn-sm btn-danger" data-tdel="${id}">حذف</button></div></article>`;
-              }).join('') || '<div class="admin-qr-table-empty"><strong>هنوز میزی برای این شعبه ساخته نشده است.</strong>با دکمه «افزودن میز» اولین QR اختصاصی را بسازید.</div>'}</div>
+                return `<article class="admin-qr-table-card${currentClass}${selectedClass}" data-qr-card="${id}"><div class="admin-qr-table-card__top"><label class="admin-qr-table-card__select"><input type="checkbox" data-qr-select="${id}" ${selected ? 'checked' : ''} /><span>${esc(tableTitle(table))}</span></label><span class="admin-qr-table-card__badge">${table.active !== false ? 'فعال' : 'غیرفعال'}</span></div><div class="admin-qr-table-card__body"><div class="admin-qr-table-card__qr"><img data-qr-img="${id}" loading="lazy" src="${esc(qrAssetUrl(table))}" alt="رمزینه ${esc(tableTitle(table))}" /></div><div class="admin-qr-table-card__fields"><label><span>برچسب</span><input class="t-label" value="${esc(table.label)}" /></label><label><span>ظرفیت</span><input class="t-seats ltr-input" dir="ltr" type="number" min="1" max="20" value="${Number(table.seats) || 4}" /></label><label><span>بخش سالن</span><input class="t-zone" value="${esc(table.zone || '')}" /></label><label class="admin-qr-table-card__toggle"><span>قابل سفارش</span><input class="t-active" type="checkbox" ${table.active !== false ? 'checked' : ''} /></label></div></div><div class="admin-qr-table-card__meta"><span>شناسه رمزینه: <b dir="ltr">${esc(table.id)}</b></span><span>میز: <b>${esc(table.zone || 'سالن')}</b></span></div><div class="admin-qr-table-card__actions"><button type="button" class="btn btn-sm btn-ghost" data-qr-open="${id}">انتخاب</button><a class="btn btn-sm btn-ghost" data-qr-download="${id}" href="${esc(qrAssetUrl(table, { download: true }))}" download="westo-table-${id}.png">دریافت</a><button type="button" class="btn btn-sm btn-danger" data-tdel="${id}">حذف</button></div></article>`;
+              }).join('') || '<div class="admin-qr-table-empty"><strong>هنوز میزی برای این شعبه ساخته نشده است.</strong>با دکمه «افزودن میز» نخستین رمزینه اختصاصی را بسازید.</div>'}</div>
             </section>
           </div>`;
 
@@ -1387,7 +2011,7 @@
             const table = tableById(img.dataset.qrImg);
             if (table) {
               img.src = qrAssetUrl(table);
-              img.alt = `QR ${tableTitle(table)}`;
+              img.alt = `رمزینه ${tableTitle(table)}`;
             }
           });
           const selected = tableById(currentTableId);
@@ -1415,9 +2039,9 @@
             saveQrPrefs();
             refreshQrSources();
             const eclMetric = document.getElementById('qr-ecl-metric');
-            if (eclMetric) eclMetric.textContent = qrPrefs.ecl;
+            if (eclMetric) eclMetric.textContent = qrEclLabel();
             const eclHint = document.getElementById('qr-ecl-hint');
-            if (eclHint) eclHint.textContent = `اصلاح خطا · ${qrEclHint()}`;
+            if (eclHint) eclHint.textContent = qrEclHint();
           };
           document.getElementById('qr-dark')?.addEventListener('input', (event) => setPref('dark', validHex(event.target.value, defaultQrPrefs.dark)));
           document.getElementById('qr-light')?.addEventListener('input', (event) => setPref('light', validHex(event.target.value, defaultQrPrefs.light)));
@@ -1444,7 +2068,7 @@
             qrPrefs = { ...defaultQrPrefs };
             saveQrPrefs();
             render();
-            showToast('تنظیمات QR به حالت پیشنهادی بازگشت.', 'success');
+            showToast('تنظیمات رمزینه به حالت پیشنهادی بازگشت.', 'success');
           });
         };
         const saveTables = async () => {
@@ -1504,7 +2128,7 @@
           }, 'در حال ساخت…');
         });
         main.querySelectorAll('[data-tdel]').forEach((button) => button.addEventListener('click', async () => {
-          if (!confirm('این میز و QR اختصاصی آن حذف شود؟')) return;
+          if (!confirm('این میز و رمزینه اختصاصی آن حذف شود؟')) return;
           await api(`/api/admin/tables/${button.dataset.tdel}`, { method: 'DELETE' });
           await tabs.tables();
         }));
@@ -1619,7 +2243,7 @@
       const complementCard = (entry) => `<article class="me-complement-card" data-me-complement-card="${entry.id}"><div class="me-complement-preview">${entry.img ? `<img src="${esc(imageSrc(entry.img))}" alt="">` : '<span>بدون تصویر</span>'}<i>${entry.available !== false ? 'فعال در صندوق' : 'غیرفعال'}</i></div><div class="me-complement-fields"><label><span>نام مکمل</span><input data-me-name value="${esc(entry.name)}"></label><label><span>قیمت</span><input data-me-price type="number" min="0" value="${Number(entry.price || 0)}"></label><label><span>موجودی</span><input data-me-stock type="number" min="0" placeholder="نامحدود" value="${entry.stock == null ? '' : Number(entry.stock)}"></label><label><span>تصویر</span><input data-me-image type="text" value="${esc(entry.img || '')}"></label><label class="me-upload"><span>جایگزینی تصویر</span><input data-me-file type="file" accept="image/*"></label><label class="me-switch"><input data-me-available type="checkbox" ${entry.available !== false ? 'checked' : ''}><span>قابل فروش</span></label></div><footer><button class="btn btn-sm" type="button" data-me-save-complement="${entry.id}">ذخیره</button><button class="btn btn-sm btn-ghost" type="button" data-me-delete-complement="${entry.id}">حذف</button></footer></article>`;
       const ruleCard = (rule) => `<article class="me-rule-card" data-me-rule-card="${rule.id}"><header><div><span>قانون ${fmtNum(rule.id)}</span><input data-me-rule-name value="${esc(rule.name)}"></div><label class="me-switch"><input data-me-rule-active type="checkbox" ${rule.active !== false ? 'checked' : ''}><span>فعال</span></label></header><label class="me-prompt"><span>متن پیشنهاد صندوق</span><input data-me-rule-prompt value="${esc(rule.prompt || '')}"></label>${scopeBlock(rule.id, rule)}<footer><button class="btn btn-sm" type="button" data-me-save-rule="${rule.id}">ذخیره قانون</button><button class="btn btn-sm btn-ghost" type="button" data-me-delete-rule="${rule.id}">حذف</button></footer></article>`;
 
-      main.innerHTML = `<div class="ops-page-head"><div><p class="eyebrow">MENU ENGINEERING · POS</p><h1>مکمل‌ها و فروش هوشمند</h1><p class="lead">مکمل‌ها در منوی عمومی دیده نمی‌شوند. بعد از لمس محصول پایه، صندوق آن‌ها را در یک لایه سریع پیشنهاد می‌دهد و انتخاب زیر همان آیتم فاکتور ثبت می‌شود.</p></div><button class="btn btn-sm" id="me-preview-pos">پیش‌نمایش صندوق</button></div><div class="cards cards-dense"><div class="card accent"><div class="num">${fmtNum(complements.filter((entry) => entry.available !== false).length)}</div><div class="lbl">مکمل فعال</div></div><div class="card"><div class="num">${fmtNum(rules.filter((entry) => entry.active !== false).length)}</div><div class="lbl">قانون فعال</div></div><div class="card"><div class="num">${fmtNum(rules.reduce((sum, rule) => sum + (rule.sourceCategoryIds || []).length, 0))}</div><div class="lbl">اتصال دسته‌ای</div></div><div class="card"><div class="num">${fmtNum(rules.reduce((sum, rule) => sum + (rule.sourceItemIds || []).length, 0))}</div><div class="lbl">اتصال محصولی</div></div></div><div class="me-layout"><section class="section-box me-library"><div class="me-section-head"><div><h2>کتابخانه مکمل‌ها</h2><p>اقلام فروش‌محور مثل کوکی یا نوشابه که لازم نیست در منوی مهمان باشند.</p></div><button class="btn btn-sm" id="me-new-toggle">+ مکمل جدید</button></div><form class="me-new-form" id="me-new-complement" hidden><label><span>نام</span><input id="me-new-name" required></label><label><span>قیمت</span><input id="me-new-price" type="number" min="0" required></label><label><span>تصویر</span><input id="me-new-file" type="file" accept="image/*"></label><button class="btn" type="submit">ساخت مکمل</button></form><div class="me-complement-list">${complements.map(complementCard).join('') || '<div class="empty">هنوز مکملی ساخته نشده است.</div>'}</div></section><section class="section-box me-rules"><div class="me-section-head"><div><h2>قوانین پیشنهاد</h2><p>برای هر قانون دسته‌ها یا محصولات پایه و مکمل‌های مرتبط را انتخاب کنید.</p></div><button class="btn btn-sm" id="me-new-rule-toggle">+ قانون جدید</button></div><form class="me-rule-card is-new" id="me-new-rule" hidden><header><div><span>قانون جدید</span><input id="me-new-rule-name" placeholder="مثلاً کنار قهوه"></div><label class="me-switch"><input id="me-new-rule-active" type="checkbox" checked><span>فعال</span></label></header><label class="me-prompt"><span>متن پیشنهاد صندوق</span><input id="me-new-rule-prompt" placeholder="کنار نوشیدنی چه چیزی میل دارید؟"></label>${scopeBlock('new', {})}<footer><button class="btn" type="submit">ساخت قانون</button></footer></form><div class="me-rule-list">${rules.map(ruleCard).join('') || '<div class="empty">قانون پیشنهادی وجود ندارد.</div>'}</div></section></div>`;
+      main.innerHTML = `<div class="ops-page-head"><div><p class="eyebrow">مهندسی منو · صندوق فروش</p><h1>مکمل‌ها و فروش هوشمند</h1><p class="lead">مکمل‌ها در منوی عمومی دیده نمی‌شوند. بعد از لمس محصول پایه، صندوق آن‌ها را در یک لایه سریع پیشنهاد می‌دهد و انتخاب زیر همان آیتم فاکتور ثبت می‌شود.</p></div><button class="btn btn-sm" id="me-preview-pos">پیش‌نمایش صندوق</button></div><div class="cards cards-dense"><div class="card accent"><div class="num">${fmtNum(complements.filter((entry) => entry.available !== false).length)}</div><div class="lbl">مکمل فعال</div></div><div class="card"><div class="num">${fmtNum(rules.filter((entry) => entry.active !== false).length)}</div><div class="lbl">قانون فعال</div></div><div class="card"><div class="num">${fmtNum(rules.reduce((sum, rule) => sum + (rule.sourceCategoryIds || []).length, 0))}</div><div class="lbl">اتصال دسته‌ای</div></div><div class="card"><div class="num">${fmtNum(rules.reduce((sum, rule) => sum + (rule.sourceItemIds || []).length, 0))}</div><div class="lbl">اتصال محصولی</div></div></div><div class="me-layout"><section class="section-box me-library"><div class="me-section-head"><div><h2>کتابخانه مکمل‌ها</h2><p>اقلام فروش‌محور مثل کوکی یا نوشابه که لازم نیست در منوی مهمان باشند.</p></div><button class="btn btn-sm" id="me-new-toggle">+ مکمل جدید</button></div><form class="me-new-form" id="me-new-complement" hidden><label><span>نام</span><input id="me-new-name" required></label><label><span>قیمت</span><input id="me-new-price" type="number" min="0" required></label><label><span>تصویر</span><input id="me-new-file" type="file" accept="image/*"></label><button class="btn" type="submit">ساخت مکمل</button></form><div class="me-complement-list">${complements.map(complementCard).join('') || '<div class="empty">هنوز مکملی ساخته نشده است.</div>'}</div></section><section class="section-box me-rules"><div class="me-section-head"><div><h2>قوانین پیشنهاد</h2><p>برای هر قانون دسته‌ها یا محصولات پایه و مکمل‌های مرتبط را انتخاب کنید.</p></div><button class="btn btn-sm" id="me-new-rule-toggle">+ قانون جدید</button></div><form class="me-rule-card is-new" id="me-new-rule" hidden><header><div><span>قانون جدید</span><input id="me-new-rule-name" placeholder="مثلاً کنار قهوه"></div><label class="me-switch"><input id="me-new-rule-active" type="checkbox" checked><span>فعال</span></label></header><label class="me-prompt"><span>متن پیشنهاد صندوق</span><input id="me-new-rule-prompt" placeholder="کنار نوشیدنی چه چیزی میل دارید؟"></label>${scopeBlock('new', {})}<footer><button class="btn" type="submit">ساخت قانون</button></footer></form><div class="me-rule-list">${rules.map(ruleCard).join('') || '<div class="empty">قانون پیشنهادی وجود ندارد.</div>'}</div></section></div>`;
 
       const selectedIds = (root, attr) => [...root.querySelectorAll(`[${attr}]:checked`)].map((input) => Number(input.getAttribute(attr)));
       const uploadFrom = async (input, fallback = '') => {
@@ -1681,8 +2305,8 @@
       const inventory = d.inventory || {};
       main.innerHTML = `
         <div class="ops-page-head">
-          <div><p class="eyebrow">COST CONTROL · WESTO</p><h1>کنترل هزینه و سودآوری</h1><p class="lead">فروش، بهای تمام‌شده و وضعیت انبار از داده‌های واقعی WESTO محاسبه می‌شوند؛ داده نمایشی NEEM وارد این صفحه نشده است.</p></div>
-          <button class="btn btn-sm" id="cc-open-inventory">مدیریت موجودی</button>
+          <div><p class="eyebrow">کنترل هزینه · نمای سریع عملیاتی</p><h1>کنترل هزینه و سودآوری</h1><p class="lead">فروش، بهای تمام‌شده و وضعیت انبار فقط از داده‌های ثبت‌شده وستو محاسبه می‌شوند؛ رقم نمایشی یا جایگزین وارد این صفحه نمی‌شود.</p></div>
+          <div class="row-actions"><a class="btn btn-sm btn-ghost" href="${financeWorkspaceHref('costing')}">تحلیل رسمی در حسابداری</a><button class="btn btn-sm" id="cc-open-inventory">مدیریت موجودی فروش</button></div>
         </div>
         <div class="cards">
           <div class="card accent"><div class="num">${fmtMoney(cost.sales || 0)}</div><div class="lbl">فروش دوره</div></div>
@@ -1701,7 +2325,7 @@
           <section class="section-box">
             <h2>دقت محاسبه هزینه</h2>
             <p class="hint">هزینه فقط برای آیتم‌هایی محاسبه می‌شود که دستور تهیه یا هزینه واحد آن‌ها ثبت شده باشد. تا قبل از ثبت مواد اولیه، رقم ساختگی جایگزین نمی‌شود.</p>
-            <div class="ops-alert ${cost.estimatedCogs ? '' : 'is-warn'}"><b>${cost.estimatedCogs ? 'محاسبه فعال است' : 'دستور تهیه نیاز است'}</b><span>${cost.estimatedCogs ? 'COGS بر پایه هزینه‌های ثبت‌شده محاسبه شده است.' : 'برای محاسبه دقیق، مواد اولیه و هزینه واحد آیتم‌ها را ثبت کنید.'}</span></div>
+            <div class="ops-alert ${cost.estimatedCogs ? '' : 'is-warn'}"><b>${cost.estimatedCogs ? 'محاسبه فعال است' : 'دستور تهیه نیاز است'}</b><span>${cost.estimatedCogs ? 'بهای تمام‌شده بر پایه هزینه‌های ثبت‌شده محاسبه شده است.' : 'برای محاسبه دقیق، مواد اولیه و هزینه واحد آیتم‌ها را ثبت کنید.'}</span></div>
           </section>
         </div>`;
       document.getElementById('cc-open-inventory').onclick = () => tabs.inventory().catch((error) => showToast(error.message));
@@ -1714,8 +2338,8 @@
       const all = (d.items || []).slice().sort((a, b) => rank(a) - rank(b) || String(a.category || '').localeCompare(String(b.category || ''), 'fa') || String(a.name || '').localeCompare(String(b.name || ''), 'fa'));
       main.innerHTML = `
         <div class="ops-page-head">
-          <div><p class="eyebrow">کنترل موجودی</p><h1>موجودی انبار</h1><p class="lead">آیتم‌های تمام‌شده و کم‌موجودی اول نمایش داده می‌شوند. تغییر عدد پس از خروج از فیلد ذخیره می‌شود.</p></div>
-          <span class="ops-provider-pill">${fmtNum(d.summary?.low || 0)} هشدار کمبود</span>
+          <div><p class="eyebrow">موجودی قابل فروش منو</p><h1>موجودی فروش</h1><p class="lead">این صفحه دسترس‌پذیری اقلام منو را کنترل می‌کند. دریافت کالا، ضایعات، شمارش و رسپی در پنل انبار ثبت می‌شوند و اثر مالی آن‌ها در حسابداری دیده می‌شود.</p></div>
+          <div class="row-actions"><a class="btn btn-sm btn-ghost" href="/admin/kitchen?view=inventory">عملیات واقعی انبار</a><a class="btn btn-sm btn-ghost" href="${financeWorkspaceHref('costing')}">اثر مالی و بهای تمام‌شده</a><span class="ops-provider-pill">${fmtNum(d.summary?.low || 0)} هشدار کمبود</span></div>
         </div>
         <div class="cards cards-dense">
           <button class="card admin-stat-button" data-inv-filter="tracked"><div class="num">${fmtNum(d.summary?.tracked || 0)}</div><div class="lbl">تحت ردیابی</div></button>
@@ -1875,10 +2499,10 @@
       setActiveTab('promotions');
       const d = await api('/api/admin/promotions');
       main.innerHTML = `
-        <h1>تخفیف و پرومو</h1>
-        <p class="lead">کد تخفیف و کمپین درصدی برای باشگاه مشتریان و کمپین‌های فروش.</p>
+        <h1>تخفیف‌ها و پیشنهادهای فروش</h1>
+        <p class="lead">کد تخفیف و پیشنهاد درصدی برای اعضای باشگاه مشتریان و فروش دوره‌ای.</p>
         <div class="section-box">
-          <h2>پروموی جدید</h2>
+          <h2>پیشنهاد جدید</h2>
           <div class="grid-2">
             ${field('عنوان', 'pr_title', '')}
             ${field('درصد تخفیف', 'pr_pct', '10', { ltr: true, type: 'number' })}
@@ -1901,7 +2525,7 @@
                   </td>
                 </tr>`
               )
-              .join('') || '<tr><td colspan="5">پرومویی نیست</td></tr>'}
+              .join('') || '<tr><td colspan="5">هنوز پیشنهادی ثبت نشده است</td></tr>'}
           </tbody></table>
         </div>`;
       document.getElementById('pr-add').addEventListener('click', async () => {
@@ -1915,7 +2539,7 @@
             code: document.getElementById('pr_code').value,
           }),
         });
-        showToast('پرومو ایجاد شد');
+        showToast('پیشنهاد فروش ایجاد شد');
         tabs.promotions();
       });
       main.querySelectorAll('[data-ptoggle]').forEach((b) =>
@@ -1961,24 +2585,24 @@
         return `<article class="section-box promo-slide-admin" draggable="true" data-promo-card="${slide.id}" data-promo-live="${live ? 'true' : 'false'}">
           <div class="row-actions" style="justify-content:space-between;align-items:center;gap:.6rem;flex-wrap:wrap">
             <div class="row-actions" style="margin:0"><strong>اسلاید #${slide.id}</strong><span class="promo-slide-admin__state ${live ? 'is-live' : 'is-draft'}">${stateLabel}</span></div>
-            <span class="hint">نمایش ${Number(slide.impressions)||0} · کلیک ${Number(slide.clicks)||0} · CTR ${ctr}٪</span>
+            <span class="hint">نمایش ${Number(slide.impressions)||0} · کلیک ${Number(slide.clicks)||0} · نرخ کلیک ${ctr}٪</span>
           </div>
-          <div class="promo-placement-note"><b>جایگاه نمایش:</b><span>صفحه ورود — داخل بخش تجربه</span><span>·</span><span>با مدل Free-Throw Card Deck داخل کارت ورودی و قبل از دسترسی‌های سریع نمایش داده می‌شود.</span></div>
+          <div class="promo-placement-note"><b>جایگاه نمایش:</b><span>صفحه ورود — داخل بخش تجربه</span><span>·</span><span>در چیدمان کارت‌های ورودی و پیش از دسترسی‌های سریع نمایش داده می‌شود.</span></div>
           <div class="grid-2">
             ${field('عنوان', `ps_title_${slide.id}`, slide.title || '')}
             ${field('زیرعنوان', `ps_subtitle_${slide.id}`, slide.subtitle || '')}
-            ${field('Badge', `ps_badge_${slide.id}`, slide.badge || '')}
-            ${field('متن دکمه CTA', `ps_cta_${slide.id}`, slide.ctaLabel || '')}
+            ${field('برچسب کوتاه', `ps_badge_${slide.id}`, slide.badge || '')}
+            ${field('متن دکمه', `ps_cta_${slide.id}`, slide.ctaLabel || '')}
             <div class="field"><label>نوع اسلاید</label><select id="ps_kind_${slide.id}">${kindOptions.map(([v,l]) => option(v,l,slide.kind)).join('')}</select></div>
             <div class="field"><label>جایگاه نمایش</label><select id="ps_placement_${slide.id}">${placementOptions.map(([v,l]) => option(v,l,'entrance')).join('')}</select></div>
             <div class="field"><label>نوع اکشن</label><select id="ps_action_${slide.id}">${actionOptions.map(([v,l]) => option(v,l,slide.actionType)).join('')}</select></div>
-            ${field('مقدار اکشن (URL یا ID)', `ps_value_${slide.id}`, slide.actionValue || '', { ltr: true })}
+            ${field('نشانی یا شناسه اقدام', `ps_value_${slide.id}`, slide.actionValue || '', { ltr: true })}
             ${field('تصویر', `ps_image_${slide.id}`, slide.image || '', { ltr: true })}
-            <div class="field"><label>آپلود تصویر</label><input type="file" id="ps_file_${slide.id}" accept=".png,.jpg,.jpeg,.webp,.avif" /></div>
+            <div class="field"><label>بارگذاری تصویر</label><input type="file" id="ps_file_${slide.id}" accept=".png,.jpg,.jpeg,.webp" /></div>
             <div class="field"><label>شعبه</label><select id="ps_branch_${slide.id}"><option value="">همه شعب</option>${branches.map((b)=>option(b.id,b.name,slide.branchId)).join('')}</select></div>
             ${field('شروع نمایش', `ps_start_${slide.id}`, dtLocal(slide.startAt), { type: 'datetime-local', ltr: true })}
             ${field('پایان نمایش', `ps_end_${slide.id}`, dtLocal(slide.endAt), { type: 'datetime-local', ltr: true })}
-            ${field('اتوپلی (ms، صفر=خاموش)', `ps_auto_${slide.id}`, Number(slide.autoplayMs)||0, { type: 'number', ltr: true })}
+            ${field('پخش خودکار (میلی‌ثانیه؛ صفر یعنی خاموش)', `ps_auto_${slide.id}`, Number(slide.autoplayMs)||0, { type: 'number', ltr: true })}
             <div class="field"><label>وضعیت انتشار</label><select id="ps_status_${slide.id}">${option('published','منتشرشده',slide.status)}${option('draft','پیش‌نویس',slide.status)}</select></div>
           </div>
           ${slide.image ? `<div class="logo-preview" style="margin:.65rem 0"><img src="${esc(adminImgSrc(slide.image))}" alt="" style="max-height:150px;object-fit:cover;border-radius:14px" /></div>` : ''}
@@ -1986,7 +2610,7 @@
           <div class="row-actions" style="margin-top:.75rem">
             <button class="btn btn-sm" data-promo-save="${slide.id}">ذخیره تغییرات</button>
             <button class="btn btn-sm ${live ? 'btn-ghost' : ''}" data-promo-visibility="${slide.id}" data-live="${live ? 'true' : 'false'}">${live ? 'برداشتن از سایت' : 'انتشار روی سایت'}</button>
-            <button class="btn btn-sm btn-ghost" data-promo-upload="${slide.id}">آپلود تصویر</button>
+            <button class="btn btn-sm btn-ghost" data-promo-upload="${slide.id}">بارگذاری تصویر</button>
             <button class="btn btn-sm btn-ghost" data-promo-copy="${slide.id}">کپی</button>
             <button class="btn btn-sm btn-danger" data-promo-delete="${slide.id}">حذف</button>
             <span class="hint">برای تغییر ترتیب کارت را بکشید.</span>
@@ -1995,11 +2619,11 @@
       };
 
       main.innerHTML = `
-        <div class="ops-page-head"><div><p class="eyebrow">محتوای تبلیغاتی WESTO</p><h1>اسلایدر تبلیغاتی</h1><p class="lead">اسلایدر Free-Throw صفحه ورود؛ داخل بخش تجربه. تصویر، اکشن، Share، زمان‌بندی، شعبه و ترتیب را از همین‌جا مدیریت کنید.</p></div></div>
+        <div class="ops-page-head"><div><p class="eyebrow">محتوای تبلیغاتی وستو</p><h1>اسلایدر تبلیغاتی</h1><p class="lead">کارت‌های تبلیغاتی صفحه ورود؛ تصویر، اقدام، اشتراک‌گذاری، زمان‌بندی، شعبه و ترتیب را از همین‌جا مدیریت کنید.</p></div></div>
         <div class="cards cards-dense"><div class="card accent"><div class="num">${fmtNum(slides.filter((slide) => slide.enabled !== false && slide.status !== 'draft').length)}</div><div class="lbl">در حال نمایش</div></div><div class="card"><div class="num">${fmtNum(slides.filter((slide) => slide.status === 'draft').length)}</div><div class="lbl">پیش‌نویس</div></div><div class="card"><div class="num">${fmtNum(slides.length)}</div><div class="lbl">کل اسلایدها</div></div></div>
         <div class="section-box">
           <div class="row-actions"><button class="btn" id="promo-slide-add">+ اسلاید جدید</button><a class="btn btn-ghost" href="/" target="_blank" rel="noopener">پیش‌نمایش صفحه ورود</a></div>
-          <p class="hint">برای نمایش روی سایت، اسلاید باید هم «منتشرشده» و هم «فعال» باشد. تصویر یا عنوان را وارد کنید؛ اکشن «دسته» و «غذا» از ID منوی فعلی استفاده می‌کند.</p>
+          <p class="hint">برای نمایش روی سایت، اسلاید باید هم «منتشرشده» و هم «فعال» باشد. تصویر یا عنوان را وارد کنید؛ اقدام «دسته» و «غذا» از شناسه منوی فعلی استفاده می‌کند.</p>
         </div>
         <div id="promo-slides-list">${slides.map(slideCard).join('') || '<div class="section-box"><p class="hint">هنوز اسلایدی ساخته نشده است.</p></div>'}</div>`;
 
@@ -2063,7 +2687,7 @@
         const up = await api('/api/admin/upload', { method: 'POST', body: fd });
         document.getElementById(`ps_image_${id}`).value = up.path || '';
         await api(`/api/admin/promo-slides/${id}`, { method: 'PATCH', body: JSON.stringify(readSlide(id)) });
-        showToast('تصویر آپلود و ذخیره شد');
+        showToast('تصویر بارگذاری و ذخیره شد');
         tabs.promoSlides();
       }));
       main.querySelectorAll('[data-promo-delete]').forEach((btn) => btn.addEventListener('click', async () => {
@@ -2102,23 +2726,30 @@
     async content() {
       setActiveTab('content');
       const groups = [
-        { title: 'نوبار و منو', keys: ['nav.login', 'nav.menu', 'nav.contact', 'nav.sound_on', 'nav.sound_off', 'nav.link.gamme', 'nav.link.benefits', 'nav.link.faq', 'nav.link.newsletter', 'nav.copyright'] },
+        { title: 'نوار بالای سایت و منو', keys: ['nav.login', 'nav.menu', 'nav.contact', 'nav.sound_on', 'nav.sound_off', 'nav.link.gamme', 'nav.link.benefits', 'nav.link.faq', 'nav.link.newsletter', 'nav.copyright'] },
         { title: 'صفحه ورود — متن‌ها', keys: ['entrance.tagline', 'entrance.subtitle', 'entrance.storyLead', 'entrance.quote', 'entrance.cta', 'entrance.step.digitalMenu', 'entrance.step.onlineOrder', 'entrance.step.reserveTable', 'entrance.step.quickEntry'] },
-        { title: 'هیرو', keys: ['hero.scroll_hint'] },
-        { title: 'سکشن مواد — شکر', keys: ['ingredients.sugar.badge', 'ingredients.sugar.title1', 'ingredients.sugar.title2', 'ingredients.sugar.desc'] },
-        { title: 'سکشن مواد — طعم‌دهنده', keys: ['ingredients.aroma.badge', 'ingredients.aroma.title1', 'ingredients.aroma.title2', 'ingredients.aroma.desc'] },
-        { title: 'سکشن مواد — کافئین', keys: ['ingredients.caffeine.badge', 'ingredients.caffeine.title', 'ingredients.caffeine.desc'] },
-        { title: 'سکشن مواد — استویا', keys: ['ingredients.stevia.badge', 'ingredients.stevia.title', 'ingredients.stevia.desc'] },
+        { title: 'بخش آغازین', keys: ['hero.scroll_hint'] },
+        { title: 'بخش مواد — شکر', keys: ['ingredients.sugar.badge', 'ingredients.sugar.title1', 'ingredients.sugar.title2', 'ingredients.sugar.desc'] },
+        { title: 'بخش مواد — طعم‌دهنده', keys: ['ingredients.aroma.badge', 'ingredients.aroma.title1', 'ingredients.aroma.title2', 'ingredients.aroma.desc'] },
+        { title: 'بخش مواد — کافئین', keys: ['ingredients.caffeine.badge', 'ingredients.caffeine.title', 'ingredients.caffeine.desc'] },
+        { title: 'بخش مواد — استویا', keys: ['ingredients.stevia.badge', 'ingredients.stevia.title', 'ingredients.stevia.desc'] },
         { title: 'سؤالات متداول (عنوان)', keys: ['faq.title1', 'faq.title2'] },
         { title: 'خبرنامه', keys: ['newsletter.title', 'newsletter.desc', 'newsletter.email_label', 'newsletter.submit', 'newsletter.consent', 'newsletter.privacy_link', 'newsletter.success', 'newsletter.error'] },
-        { title: 'فوتر', keys: ['footer.copyright', 'footer.legal', 'footer.cgu', 'footer.privacy', 'footer.tiktok', 'footer.instagram'] },
+        { title: 'پایین صفحه', keys: ['footer.copyright', 'footer.legal', 'footer.cgu', 'footer.privacy', 'footer.tiktok', 'footer.instagram'] },
       ];
       const labels = {
         'nav.login': 'دکمه ورود', 'nav.menu': 'دکمه منو', 'nav.contact': 'دکمه تماس', 'nav.sound_on': 'صدا: روشن', 'nav.sound_off': 'صدا: خاموش',
-        'nav.link.gamme': 'لینک محصولات', 'nav.link.benefits': 'لینک مزایا', 'nav.link.faq': 'لینک سؤالات', 'nav.link.newsletter': 'لینک خبرنامه', 'nav.copyright': 'کپی‌رایت منو',
-        'hero.scroll_hint': 'راهنمای اسکرول',
-        'entrance.tagline': 'تگ‌لاین زیر لوگو', 'entrance.subtitle': 'زیرعنوان انگلیسی', 'entrance.storyLead': 'متن آماده‌سازی', 'entrance.quote': 'جمله کوتاه', 'entrance.cta': 'متن دکمه ورود',
+        'nav.link.gamme': 'لینک محصولات', 'nav.link.benefits': 'لینک مزایا', 'nav.link.faq': 'لینک سؤالات', 'nav.link.newsletter': 'لینک خبرنامه', 'nav.copyright': 'حق نشر منو',
+        'hero.scroll_hint': 'راهنمای پیمایش',
+        'entrance.tagline': 'شعار کوتاه زیر لوگو', 'entrance.subtitle': 'زیرعنوان زبان انگلیسی', 'entrance.storyLead': 'متن آماده‌سازی', 'entrance.quote': 'جمله کوتاه', 'entrance.cta': 'متن دکمه ورود',
         'entrance.step.digitalMenu': 'مرحله ۱', 'entrance.step.onlineOrder': 'مرحله ۲', 'entrance.step.reserveTable': 'مرحله ۳', 'entrance.step.quickEntry': 'مرحله ۴',
+        'ingredients.sugar.badge': 'برچسب کوتاه', 'ingredients.sugar.title1': 'عنوان اول', 'ingredients.sugar.title2': 'عنوان دوم', 'ingredients.sugar.desc': 'توضیحات',
+        'ingredients.aroma.badge': 'برچسب کوتاه', 'ingredients.aroma.title1': 'عنوان اول', 'ingredients.aroma.title2': 'عنوان دوم', 'ingredients.aroma.desc': 'توضیحات',
+        'ingredients.caffeine.badge': 'برچسب کوتاه', 'ingredients.caffeine.title': 'عنوان', 'ingredients.caffeine.desc': 'توضیحات',
+        'ingredients.stevia.badge': 'برچسب کوتاه', 'ingredients.stevia.title': 'عنوان', 'ingredients.stevia.desc': 'توضیحات',
+        'faq.title1': 'عنوان اول', 'faq.title2': 'عنوان دوم',
+        'newsletter.title': 'عنوان خبرنامه', 'newsletter.desc': 'توضیح خبرنامه', 'newsletter.email_label': 'برچسب ایمیل', 'newsletter.submit': 'متن دکمه عضویت', 'newsletter.consent': 'متن رضایت', 'newsletter.privacy_link': 'متن لینک حریم خصوصی', 'newsletter.success': 'پیام موفقیت', 'newsletter.error': 'پیام خطا',
+        'footer.copyright': 'حق نشر', 'footer.legal': 'اطلاعات حقوقی', 'footer.cgu': 'شرایط استفاده', 'footer.privacy': 'حریم خصوصی', 'footer.tiktok': 'عنوان تیک‌تاک', 'footer.instagram': 'عنوان اینستاگرام',
       };
       main.innerHTML = `
         <h1>محتوای سایت</h1>
@@ -2154,12 +2785,12 @@
       main.innerHTML = `
         <h1>لوگو و رسانه</h1>
         <div class="section-box">
-          <h2>لوگوی سفید <small>(نوبار و فوتر)</small></h2>
+          <h2>لوگوی سفید <small>(نوار بالای سایت و پایین صفحه)</small></h2>
           <div class="grid-2">
             <div class="logo-preview"><img src="${esc(state.content['logo.white'])}" /></div>
             <div>
-              <div class="field"><label>آپلود فایل جدید (SVG/PNG)</label><input type="file" id="file-white" accept=".svg,.png,.jpg,.webp,.avif" /></div>
-              <button class="btn btn-sm" data-logo="logo.white" data-file="file-white">آپلود و جایگزینی</button>
+              <div class="field"><label>بارگذاری تصویر جدید</label><input type="file" id="file-white" accept=".svg,.png,.jpg,.webp" /></div>
+              <button class="btn btn-sm" data-logo="logo.white" data-file="file-white">بارگذاری و جایگزینی</button>
             </div>
           </div>
         </div>
@@ -2168,8 +2799,8 @@
           <div class="grid-2">
             <div class="logo-preview" style="background: repeating-conic-gradient(#ddd 0% 25%, #bbb 0% 50%) 0 / 24px 24px;"><img src="${esc(state.content['logo.black'])}" /></div>
             <div>
-              <div class="field"><label>آپلود فایل جدید (SVG/PNG)</label><input type="file" id="file-black" accept=".svg,.png,.jpg,.webp,.avif" /></div>
-              <button class="btn btn-sm" data-logo="logo.black" data-file="file-black">آپلود و جایگزینی</button>
+              <div class="field"><label>بارگذاری تصویر جدید</label><input type="file" id="file-black" accept=".svg,.png,.jpg,.webp" /></div>
+              <button class="btn btn-sm" data-logo="logo.black" data-file="file-black">بارگذاری و جایگزینی</button>
             </div>
           </div>
         </div>
@@ -2177,39 +2808,39 @@
           <h2>لوگوی نشانه صفحه ورود</h2>
           <div class="grid-2">
             <div class="logo-preview" style="background:#061014"><img src="${esc(adminImgSrc(state.content['entrance.logo'] || 'assets/images/brand/westo-mark.png?v=brandCyan2'))}" /></div>
-            <div><div class="field"><label>PNG / SVG / WebP</label><input type="file" id="file-entrance-logo" accept=".svg,.png,.jpg,.webp,.avif" /></div><button class="btn btn-sm" data-logo="entrance.logo" data-file="file-entrance-logo">آپلود لوگوی ورود</button></div>
+            <div><div class="field"><label>تصویر باکیفیت و شفاف</label><input type="file" id="file-entrance-logo" accept=".svg,.png,.jpg,.webp" /></div><button class="btn btn-sm" data-logo="entrance.logo" data-file="file-entrance-logo">بارگذاری لوگوی ورود</button></div>
           </div>
         </div>
         <div class="section-box">
-          <h2>لوگوتایپ صفحه ورود — تم تیره</h2>
+          <h2>نوشتار برند صفحه ورود — زمینه تیره</h2>
           <div class="grid-2">
             <div class="logo-preview" style="background:#061014"><img src="${esc(adminImgSrc(state.content['entrance.wordmark.dark'] || 'assets/images/brand/westo-fa-wordmark.png?v=brandLight1'))}" /></div>
-            <div><div class="field"><label>لوگوتایپ روشن روی تم تیره</label><input type="file" id="file-entrance-wordmark-dark" accept=".svg,.png,.jpg,.webp,.avif" /></div><button class="btn btn-sm" data-logo="entrance.wordmark.dark" data-file="file-entrance-wordmark-dark">آپلود لوگوتایپ تیره</button></div>
+            <div><div class="field"><label>نوشتار روشن روی زمینه تیره</label><input type="file" id="file-entrance-wordmark-dark" accept=".svg,.png,.jpg,.webp" /></div><button class="btn btn-sm" data-logo="entrance.wordmark.dark" data-file="file-entrance-wordmark-dark">بارگذاری نوشتار روشن</button></div>
           </div>
         </div>
         <div class="section-box">
-          <h2>لوگوتایپ صفحه ورود — تم روشن</h2>
+          <h2>نوشتار برند صفحه ورود — زمینه روشن</h2>
           <div class="grid-2">
             <div class="logo-preview" style="background:#f6f4ef"><img src="${esc(adminImgSrc(state.content['entrance.wordmark.light'] || 'assets/images/brand/westo-fa-wordmark-dark.png?v=brandDark1'))}" /></div>
-            <div><div class="field"><label>لوگوتایپ تیره روی تم روشن</label><input type="file" id="file-entrance-wordmark-light" accept=".svg,.png,.jpg,.webp,.avif" /></div><button class="btn btn-sm" data-logo="entrance.wordmark.light" data-file="file-entrance-wordmark-light">آپلود لوگوتایپ روشن</button></div>
+            <div><div class="field"><label>نوشتار تیره روی زمینه روشن</label><input type="file" id="file-entrance-wordmark-light" accept=".svg,.png,.jpg,.webp" /></div><button class="btn btn-sm" data-logo="entrance.wordmark.light" data-file="file-entrance-wordmark-light">بارگذاری نوشتار تیره</button></div>
           </div>
         </div>
         <div class="section-box">
-          <h2>پترن صفحه ورود</h2>
-          <p class="hint">این تصویر فقط در صفحه ورود WESTO استفاده می‌شود و ساختار لوگو را تغییر نمی‌دهد. PNG/WebP با پس‌زمینه شفاف بهترین نتیجه را می‌دهد.</p>
+          <h2>الگوی زمینه صفحه ورود</h2>
+          <p class="hint">این تصویر فقط در صفحه ورود وستو استفاده می‌شود و ساختار لوگو را تغییر نمی‌دهد. تصویر با پس‌زمینه شفاف بهترین نتیجه را می‌دهد.</p>
           <div class="grid-2">
-            <div class="logo-preview" style="background:#061014;min-height:180px;overflow:hidden;"><img src="${esc(adminImgSrc(state.content['entrance.pattern'] || 'assets/images/entrance/westo-pattern.webp'))}" style="width:100%;height:180px;object-fit:contain;" alt="پیش‌نمایش پترن صفحه ورود" /></div>
+            <div class="logo-preview" style="background:#061014;min-height:180px;overflow:hidden;"><img src="${esc(adminImgSrc(state.content['entrance.pattern'] || 'assets/images/entrance/westo-pattern.webp'))}" style="width:100%;height:180px;object-fit:contain;" alt="پیش‌نمایش الگوی زمینه صفحه ورود" /></div>
             <div>
-              <div class="field"><label>آپلود پترن جدید</label><input type="file" id="file-entrance-pattern" accept=".png,.jpg,.jpeg,.webp,.avif,.gif" /></div>
-              <div class="row-actions"><button class="btn btn-sm" data-pattern="entrance.pattern" data-file="file-entrance-pattern">آپلود و جایگزینی پترن ورود</button><button class="btn btn-sm btn-ghost" type="button" data-pattern-reset>بازگشت به پترن پیش‌فرض</button></div>
+              <div class="field"><label>بارگذاری الگوی جدید</label><input type="file" id="file-entrance-pattern" accept=".png,.jpg,.jpeg,.webp,.gif" /></div>
+              <div class="row-actions"><button class="btn btn-sm" data-pattern="entrance.pattern" data-file="file-entrance-pattern">بارگذاری و جایگزینی الگوی ورود</button><button class="btn btn-sm btn-ghost" type="button" data-pattern-reset>بازگشت به الگوی پیش‌فرض</button></div>
               <p class="hint">پس از ذخیره، در بارگذاری بعدی صفحه اول اعمال می‌شود.</p>
             </div>
           </div>
         </div>
         <div class="section-box">
-          <h2>فایل‌های آپلودشده</h2>
+          <h2>فایل‌های بارگذاری‌شده</h2>
           <table class="tbl"><thead><tr><th>مسیر</th><th>حجم</th></tr></thead><tbody>
-            ${up.files.map((f) => `<tr><td class="ltr"><a href="/${esc(f.path)}" target="_blank">${esc(f.path)}</a></td><td>${(f.size / 1024).toFixed(1)} KB</td></tr>`).join('') || '<tr><td colspan="2">فایلی آپلود نشده است</td></tr>'}
+            ${up.files.map((f) => `<tr><td class="ltr"><a href="/${esc(f.path)}" target="_blank">${esc(f.path)}</a></td><td>${fmtNum((f.size / 1024).toFixed(1))} کیلوبایت</td></tr>`).join('') || '<tr><td colspan="2">فایلی بارگذاری نشده است</td></tr>'}
           </tbody></table>
         </div>`;
 
@@ -2230,14 +2861,14 @@
       main.querySelectorAll('button[data-pattern]').forEach((btn) => {
         btn.addEventListener('click', async () => {
           const input = document.getElementById(btn.dataset.file);
-          if (!input?.files?.[0]) return showToast('اول یک فایل پترن انتخاب کنید');
+          if (!input?.files?.[0]) return showToast('ابتدا یک فایل برای الگوی زمینه انتخاب کنید');
           const fd = new FormData();
           fd.append('file', input.files[0]);
           const d = await api('/api/admin/upload', { method: 'POST', body: fd });
           const key = btn.dataset.pattern;
           await api('/api/content', { method: 'PUT', body: JSON.stringify({ content: { [key]: d.path } }) });
           state.content[key] = d.path;
-          showToast('پترن صفحه ورود جایگزین شد');
+          showToast('الگوی زمینه صفحه ورود جایگزین شد');
           tabs.media();
         });
       });
@@ -2246,7 +2877,7 @@
         const path = 'assets/images/entrance/westo-pattern.webp';
         await api('/api/content', { method: 'PUT', body: JSON.stringify({ content: { 'entrance.pattern': path } }) });
         state.content['entrance.pattern'] = path;
-        showToast('پترن پیش‌فرض صفحه ورود بازیابی شد');
+        showToast('الگوی پیش‌فرض صفحه ورود بازیابی شد');
         tabs.media();
       });
     },
@@ -2278,7 +2909,7 @@
         const listEl = document.getElementById('cat-studio-list');
         const summaryEl = document.getElementById('cat-studio-summary');
         if (summaryEl) {
-          summaryEl.textContent = `${fmtNum(onSite.length)} دسته روی کاروسل صفحه اصلی`;
+          summaryEl.textContent = `${fmtNum(onSite.length)} دسته در صفحه اصلی`;
         }
         if (!listEl) return;
 
@@ -2309,20 +2940,20 @@
                 ${
                   covered
                     ? `<img src="${esc(adminImgSrc(c.coverImg))}" alt="" />`
-                    : `<div class="menu-studio__drop-hint">کاور هیرو<br/><small>الزامی برای کاروسل</small></div>`
+                    : `<div class="menu-studio__drop-hint">تصویر شاخص<br/><small>برای نمایش در صفحه اصلی الزامی است</small></div>`
                 }
               </div>
               <div style="flex:1;min-width:0">
-                <input type="file" accept=".jpg,.jpeg,.png,.webp,.avif" hidden data-cat-file="${c.id}" />
+                <input type="file" accept=".jpg,.jpeg,.png,.webp" hidden data-cat-file="${c.id}" />
                 <div class="row-actions" style="flex-wrap:wrap;gap:0.35rem">
-                  <button type="button" class="btn btn-sm" data-cat-cover-pick="${c.id}">آپلود کاور</button>
+                  <button type="button" class="btn btn-sm" data-cat-cover-pick="${c.id}">بارگذاری تصویر</button>
                   <button type="button" class="btn btn-sm btn-ghost" data-cat-cover-clear="${c.id}" ${covered ? '' : 'disabled'}>پاک کردن</button>
                 </div>
                 <p class="hint" style="margin:0.4rem 0 0">${siteStatusPill(c, n)} · ${countHint}</p>
-                <p class="hint" style="margin:0.35rem 0 0">کاور باید عکس غذا/نوشیدنی روی پس‌زمینه مشکی باشد — نه پکیج یا محصول تصادفی.</p>
+                <p class="hint" style="margin:0.35rem 0 0">تصویر شاخص باید عکس غذا یا نوشیدنی روی پس‌زمینه مشکی باشد؛ نه بسته‌بندی یا محصول نامرتبط.</p>
               </div>
             </div>
-            <div class="field" style="margin:0.45rem 0 0"><label>توضیح کوتاه کاروسل</label>
+            <div class="field" style="margin:0.45rem 0 0"><label>توضیح کوتاه صفحه اصلی</label>
               <textarea rows="2" data-cat-short="${c.id}">${esc(c.shortDesc || '')}</textarea></div>
             <div class="field" style="margin:0.45rem 0 0"><label>توضیح بلند</label>
               <textarea rows="2" data-cat-long="${c.id}">${esc(c.longDesc || '')}</textarea></div>
@@ -2360,14 +2991,14 @@
           fd.append('file', file);
           const up = await api('/api/admin/upload', { method: 'POST', body: fd });
           const path = up.path || '';
-          if (!path) throw new Error('آپلود ناموفق');
+          if (!path) throw new Error('بارگذاری ناموفق');
           const r = await api(`/api/menu/categories/${id}`, {
             method: 'PUT',
             body: JSON.stringify({ coverImg: path }),
           });
           catList = r.menuCategories || catList;
           if (r.products) state.products = r.products;
-          showToast('کاور ذخیره شد');
+          showToast('تصویر شاخص ذخیره شد');
           paint();
         };
 
@@ -2406,7 +3037,7 @@
             const cat = catList.find((c) => c.id === id);
             if (!cat) return;
             if (!cat.hiddenOnSite) {
-              return showToast('اول دسته را مخفی کنید، بعد کاور را پاک کنید');
+              return showToast('ابتدا دسته را مخفی کنید، سپس تصویر شاخص را پاک کنید');
             }
             try {
               const r = await api(`/api/menu/categories/${id}`, {
@@ -2416,7 +3047,7 @@
               catList = r.menuCategories || catList;
               if (r.products) state.products = r.products;
               setSyncStatus('idle');
-              showToast('کاور پاک شد');
+              showToast('تصویر شاخص پاک شد');
               paint();
             } catch (err) {
               showToast(err.message);
@@ -2430,7 +3061,7 @@
           const cat = catList.find((c) => c.id === id);
           const hiddenOnSite = !!listEl.querySelector(`[data-cat-hide="${id}"]`)?.checked;
           if (!hiddenOnSite && cat && !hasValidCover(cat)) {
-            throw new Error('برای نمایش روی صفحه اصلی باید کاور آپلود شود');
+            throw new Error('برای نمایش در صفحه اصلی باید تصویر شاخص بارگذاری شود');
           }
           const r = await api(`/api/menu/categories/${id}`, {
             method: 'PUT',
@@ -2474,8 +3105,8 @@
       };
 
       main.innerHTML = `
-        <h1>دسته‌های کاروسل</h1>
-        <p class="lead">ترتیب، کاور هیرو، متن بازاریابی و نمایش روی صفحه اصلی — فقط از اینجا مدیریت می‌شود.</p>
+        <h1>دسته‌ها و ترتیب نمایش</h1>
+        <p class="lead">ترتیب دسته‌ها، تصویر شاخص، متن معرفی و نمایش در صفحه اصلی را از همین‌جا مدیریت کنید.</p>
         <div class="section-box">
           <div class="row-actions" style="margin-bottom:0.85rem;flex-wrap:wrap;gap:0.5rem;align-items:flex-end">
             <div class="field" style="margin:0;flex:1;min-width:12rem">
@@ -2501,7 +3132,7 @@
           catList = r.menuCategories || catList;
           if (r.products) state.products = r.products;
           document.getElementById('cat-studio-new').value = '';
-          showToast('دسته اضافه شد — کاور هیرو را آپلود کنید');
+          showToast('دسته اضافه شد؛ تصویر شاخص را بارگذاری کنید');
           paint();
         } catch (err) {
           showToast(err.message);
@@ -2608,7 +3239,7 @@
                 <input id="menu-search" type="search" placeholder="نام یا توضیح…" value="${esc(searchQ)}" />
               </div>
               <div class="menu-studio__toolbar-actions">
-                <button type="button" class="btn btn-sm btn-ghost" id="go-carousel-cats">دسته‌های کاروسل</button>
+                <button type="button" class="btn btn-sm btn-ghost" id="go-carousel-cats">دسته‌ها و ترتیب نمایش</button>
                 <button type="button" class="btn btn-sm" id="menu-add">افزودن غذا</button>
               </div>
             </div>
@@ -2729,7 +3360,7 @@
             <div class="menu-studio__drop-actions">
               <label class="btn btn-sm" style="cursor:pointer">
                 ${hasImg ? 'تغییر تصویر' : 'انتخاب تصویر'}
-                <input type="file" id="md-file" accept=".jpg,.jpeg,.png,.webp,.avif,.svg" hidden />
+                <input type="file" id="md-file" accept=".jpg,.jpeg,.png,.webp,.svg" hidden />
               </label>
               ${hasImg ? '<button type="button" class="btn btn-sm btn-ghost" id="md-img-clear">حذف تصویر</button>' : ''}
             </div>
@@ -2828,14 +3459,14 @@
             ? `<img id="md-preview" src="${esc(imgSrc(draftImg))}" alt="" />
                <div class="menu-studio__drop-actions">
                  <label class="btn btn-sm" style="cursor:pointer">تغییر تصویر
-                   <input type="file" id="md-file" accept=".jpg,.jpeg,.png,.webp,.avif,.svg" hidden />
+                   <input type="file" id="md-file" accept=".jpg,.jpeg,.png,.webp,.svg" hidden />
                  </label>
                  <button type="button" class="btn btn-sm btn-ghost" id="md-img-clear">حذف تصویر</button>
                </div>`
             : `<div class="menu-studio__drop-hint">تصویر غذا را انتخاب کنید<br/><small>JPG / PNG / WebP</small></div>
                <div class="menu-studio__drop-actions">
                  <label class="btn btn-sm" style="cursor:pointer">انتخاب تصویر
-                   <input type="file" id="md-file" accept=".jpg,.jpeg,.png,.webp,.avif,.svg" hidden />
+                   <input type="file" id="md-file" accept=".jpg,.jpeg,.png,.webp,.svg" hidden />
                  </label>
                </div>`;
           document.getElementById('md-file')?.addEventListener('change', async (ev) => {
@@ -2847,14 +3478,14 @@
               fd.append('file', file);
               const up = await api('/api/admin/upload', { method: 'POST', body: fd });
               draftImg = up.path || '';
-              if (!draftImg) throw new Error('آپلود ناموفق');
+              if (!draftImg) throw new Error('بارگذاری ناموفق');
               paintDrop();
               if (editingId != null) await saveNow();
               else setSyncStatus('idle');
               showToast('تصویر ذخیره شد');
             } catch (err) {
               setSyncStatus('error', err.message);
-              showToast(err.message || 'خطای آپلود');
+              showToast(err.message || 'خطای بارگذاری');
             }
           });
           document.getElementById('md-img-clear')?.addEventListener('click', async () => {
@@ -2991,14 +3622,14 @@
       const items = menu.menuItems || [];
       const missing = items.filter((m) => !String(m.en || '').trim() || (m.desc && !String(m.descEn || '').trim()));
       main.innerHTML = `
-        <h1>ترجمه منو (FA → EN / AR)</h1>
-        <p class="lead">ترجمه نام و توضیح آیتم‌ها برای مهمانان انگلیسی و عربی — موتور فعلی EN را با ${st.engine === 'openai' ? 'OpenAI' : 'واژه‌نامه'} پر می‌کند؛ عربی را دستی وارد کنید.</p>
+        <h1>ترجمه منو به انگلیسی و عربی</h1>
+        <p class="lead">نام و توضیح آیتم‌ها را برای مهمانان انگلیسی و عربی آماده کنید. ترجمه انگلیسی با ${st.engine === 'openai' ? 'مترجم خودکار' : 'واژه‌نامه داخلی'} پیشنهاد می‌شود و متن عربی را می‌توانید بازبینی یا دستی وارد کنید.</p>
         <div class="cards">
           <div class="card"><div class="num">${fmtNum(st.total || 0)}</div><div class="lbl">کل آیتم</div></div>
-          <div class="card accent"><div class="num">${fmtNum(st.withEn || 0)}</div><div class="lbl">دارای نام EN</div></div>
-          <div class="card warn"><div class="num">${fmtNum(st.missingEn || 0)}</div><div class="lbl">بدون نام EN</div></div>
-          <div class="card accent"><div class="num">${fmtNum(st.withAr || 0)}</div><div class="lbl">دارای نام AR</div></div>
-          <div class="card warn"><div class="num">${fmtNum(st.missingAr || 0)}</div><div class="lbl">بدون نام AR</div></div>
+          <div class="card accent"><div class="num">${fmtNum(st.withEn || 0)}</div><div class="lbl">دارای نام انگلیسی</div></div>
+          <div class="card warn"><div class="num">${fmtNum(st.missingEn || 0)}</div><div class="lbl">بدون نام انگلیسی</div></div>
+          <div class="card accent"><div class="num">${fmtNum(st.withAr || 0)}</div><div class="lbl">دارای نام عربی</div></div>
+          <div class="card warn"><div class="num">${fmtNum(st.missingAr || 0)}</div><div class="lbl">بدون نام عربی</div></div>
         </div>
         <div class="section-box">
           <h2>تنظیمات مهمان</h2>
@@ -3007,20 +3638,20 @@
             <label>زبان پیش‌فرض</label>
             <select id="i18n_default">
               <option value="fa" ${i18n.defaultLang === 'fa' || !i18n.defaultLang ? 'selected' : ''}>فارسی</option>
-              <option value="en" ${i18n.defaultLang === 'en' ? 'selected' : ''}>English</option>
-              <option value="ar" ${i18n.defaultLang === 'ar' ? 'selected' : ''}>العربية</option>
+              <option value="en" ${i18n.defaultLang === 'en' ? 'selected' : ''}>انگلیسی</option>
+              <option value="ar" ${i18n.defaultLang === 'ar' ? 'selected' : ''}>عربی</option>
             </select>
           </div>
           <div class="row-actions">
             <span class="hint">ذخیره خودکار تنظیمات</span>
-            <button class="btn btn-sm" id="tr-missing">ترجمه EN ناقص (${fmtNum(missing.length)})</button>
-            <button class="btn btn-sm btn-ghost" id="tr-force">بازنویسی همه EN</button>
+            <button class="btn btn-sm" id="tr-missing">ترجمه موارد ناقص انگلیسی (${fmtNum(missing.length)})</button>
+            <button class="btn btn-sm btn-ghost" id="tr-force">بازنویسی همه ترجمه‌های انگلیسی</button>
           </div>
         </div>
         <div class="section-box">
           <h2>بازبینی سریع</h2>
           <p class="hint">تغییر ردیف‌ها خودکار ذخیره می‌شود</p>
-          <table class="tbl"><thead><tr><th>فارسی</th><th>English</th><th>العربية</th><th>توضیح EN</th><th>توضیح AR</th><th></th></tr></thead><tbody>
+          <table class="tbl"><thead><tr><th>فارسی</th><th>انگلیسی</th><th>عربی</th><th>توضیح انگلیسی</th><th>توضیح عربی</th><th></th></tr></thead><tbody>
             ${items
               .slice(0, 40)
               .map(
@@ -3030,7 +3661,7 @@
                   <td><input class="ltr-input tr-ar" dir="rtl" value="${esc(m.ar || '')}" /></td>
                   <td><input class="ltr-input tr-desc" dir="ltr" value="${esc(m.descEn || '')}" /></td>
                   <td><input class="ltr-input tr-desc-ar" dir="rtl" value="${esc(m.descAr || '')}" /></td>
-                  <td><button class="btn btn-sm btn-ghost" data-trai="${m.id}">AI EN</button></td>
+                  <td><button class="btn btn-sm btn-ghost" data-trai="${m.id}">ترجمه خودکار</button></td>
                 </tr>`
               )
               .join('') || '<tr><td colspan="6">آیتمی نیست</td></tr>'}
@@ -3132,7 +3763,7 @@
         }));
         const topPrep = [...prepLoad.entries()].sort((a,b) => b[1]-a[1]).slice(0,6);
         main.innerHTML = `
-          <div class="ops-page-head"><div><p class="eyebrow">Kitchen Display</p><h1>آشپزخانه</h1><p class="lead">قدیمی‌ترین تیکت در هر ستون بالاتر است. هدف شیفت: «جدید» را شروع کنید، «در حال آماده‌سازی» را فقط وقتی کامل شد آماده بزنید.</p></div><span class="ops-provider-pill">قدیمی‌ترین: ${fmtAge(queue.summary?.oldestAgeSec || 0)}</span></div>
+          <div class="ops-page-head"><div><p class="eyebrow">نمایش زنده آشپزخانه</p><h1>آشپزخانه</h1><p class="lead">قدیمی‌ترین تیکت در هر ستون بالاتر است. هدف شیفت: «جدید» را شروع کنید، «در حال آماده‌سازی» را فقط وقتی کامل شد آماده بزنید.</p></div><div class="row-actions"><a class="btn btn-sm btn-ghost" href="/admin/kitchen">نمایشگر مستقل آشپزخانه</a><span class="ops-provider-pill">قدیمی‌ترین: ${fmtAge(queue.summary?.oldestAgeSec || 0)}</span></div></div>
           <div class="cards cards-dense">
             <div class="card"><div class="num">${fmtNum(queue.counts?.new || 0)}</div><div class="lbl">جدید</div></div>
             <div class="card warn"><div class="num">${fmtNum(queue.counts?.preparing || 0)}</div><div class="lbl">در حال آماده‌سازی</div></div>
@@ -3149,7 +3780,7 @@
             <section class="kds-col"><h2>در حال آماده‌سازی <small>${fmtNum(col('preparing').length)}</small></h2>${col('preparing').map(card).join('') || '<p class="hint">فعلاً خالی است</p>'}</section>
             <section class="kds-col"><h2>آماده <small>${fmtNum(col('ready').length)}</small></h2>${col('ready').map(card).join('') || '<p class="hint">فعلاً خالی است</p>'}</section>
           </div>
-          <p class="hint">اتصال زنده فعال است؛ تغییر سفارش‌ها بدون polling همگام می‌شود.</p>`;
+          <p class="hint">اتصال زنده فعال است؛ تغییر سفارش‌ها بدون تازه‌سازی دوره‌ای همگام می‌شود.</p>`;
 
         main.querySelectorAll('[data-kstatus]').forEach((b) => b.addEventListener('click', () => runBusy(b, async () => {
           await api(`/api/kitchen/orders/${b.dataset.kstatus}`, { method:'PATCH', body:JSON.stringify({ status:b.dataset.val }) });
@@ -3176,14 +3807,14 @@
       const slotsToday = (d.slotLoad || []).filter((row) => row.date === today);
       const peak = slotsToday.reduce((best,row) => !best || row.percent > best.percent ? row : best, null);
       main.innerHTML = `
-        <div class="ops-page-head"><div><p class="eyebrow">Front of House</p><h1>رزرو میز</h1><p class="lead">رزروهای نزدیک اول نمایش داده می‌شوند. وضعیت، تعداد نفر و یادداشت مهمان را از همین صفحه مدیریت کنید.</p></div><a class="btn btn-sm btn-ghost" href="/reserve" target="_blank" rel="noopener">مشاهده صفحه رزرو</a></div>
+        <div class="ops-page-head"><div><p class="eyebrow">مدیریت سالن</p><h1>رزرو میز</h1><p class="lead">رزروهای نزدیک اول نمایش داده می‌شوند. وضعیت، تعداد نفر و یادداشت مهمان را از همین صفحه مدیریت کنید.</p></div><a class="btn btn-sm btn-ghost" href="/reserve" target="_blank" rel="noopener">مشاهده صفحه رزرو</a></div>
         <div class="cards cards-dense">
           <div class="card"><div class="num">${fmtNum(d.summary?.today || 0)}</div><div class="lbl">رزرو فعال امروز</div></div>
           <div class="card"><div class="num">${fmtNum(d.summary?.todayCovers || 0)}</div><div class="lbl">نفر امروز</div></div>
           <div class="card warn"><div class="num">${fmtNum(d.summary?.pending || 0)}</div><div class="lbl">منتظر تأیید</div></div>
           <div class="card accent"><div class="num">${fmtNum(d.summary?.confirmed || 0)}</div><div class="lbl">تأیید شده</div></div>
           <div class="card"><div class="num">${fmtNum(d.summary?.seated || 0)}</div><div class="lbl">نشسته‌اند</div></div>
-          <div class="card ${d.summary?.noShowToday ? 'is-danger' : ''}"><div class="num">${fmtNum(d.summary?.noShowToday || 0)}</div><div class="lbl">No-show امروز</div></div>
+          <div class="card ${d.summary?.noShowToday ? 'is-danger' : ''}"><div class="num">${fmtNum(d.summary?.noShowToday || 0)}</div><div class="lbl">عدم مراجعه امروز</div></div>
         </div>
         ${slotsToday.length ? `<section class="section-box"><div class="ops-panel__head"><div><p class="eyebrow">بار شیفت امروز</p><h2>ظرفیت اسلات‌های رزرو</h2></div>${peak ? `<span class="hint">شلوغ‌ترین: ${esc(peak.time)} · ${fmtNum(peak.percent)}٪</span>` : ''}</div><div class="reservation-slot-load">${slotsToday.map((row)=>`<div class="reservation-slot"><header><b>${esc(row.time)}</b><span>${fmtNum(row.covers)}/${fmtNum(row.maxCovers)} نفر</span></header><div class="reservation-slot__bar"><i style="width:${Math.min(100,row.percent)}%"></i></div><small>${fmtNum(row.parties)} رزرو · ${fmtNum(row.percent)}٪ ظرفیت</small></div>`).join('')}</div></section>` : ''}
         ${canConfigure ? `<details class="section-box admin-config-panel"><summary><strong>تنظیمات ظرفیت رزرو</strong><span>برای مدیر سیستم</span></summary><div class="grid-2 admin-config-grid"><label class="chk"><input type="checkbox" id="rs_en" ${settings.enabled !== false ? 'checked' : ''} /> رزرو آنلاین فعال</label>${field('فاصله اسلات (دقیقه)','rs_slot',String(settings.slotMinutes ?? 30),{ltr:true,type:'number'})}${field('حداکثر نفرات هر رزرو','rs_party',String(settings.maxParty ?? 12),{ltr:true,type:'number'})}${field('ظرفیت هر اسلات (نفر)','rs_covers',String(settings.maxCoversPerSlot ?? 24),{ltr:true,type:'number'})}${field('روزهای پیشِ‌رو','rs_adv',String(settings.advanceDays ?? 21),{ltr:true,type:'number'})}${field('حداقل ساعت تا رزرو','rs_min',String(settings.minHoursAhead ?? 1),{ltr:true,type:'number'})}</div><p class="hint">تغییرات این بخش ذخیره خودکار دارند.</p></details>` : ''}
@@ -3234,7 +3865,7 @@
       const readyCount = active.filter((o)=>o.status==='ready').length;
       const paymentPending = active.filter((o)=>['pending','unpaid'].includes(String(o.paymentStatus||'')) || ['pending_online','pay_at_cashier'].includes(o.status)).length;
       main.innerHTML = `
-        <div class="ops-page-head"><div><p class="eyebrow">Order Control</p><h1>سفارش‌ها</h1><p class="lead">سفارش‌های باز قبل از آرشیو و قدیمی‌ترین موارد باز زودتر نمایش داده می‌شوند. دکمه اصلی فقط مرحله مجاز بعدی را اجرا می‌کند.</p></div><a class="btn btn-sm btn-ghost" href="/order" target="_blank" rel="noopener">باز کردن checkout</a></div>
+        <div class="ops-page-head"><div><p class="eyebrow">کنترل سفارش</p><h1>سفارش‌ها</h1><p class="lead">سفارش‌های باز قبل از آرشیو و قدیمی‌ترین موارد باز زودتر نمایش داده می‌شوند. دکمه اصلی فقط مرحله مجاز بعدی را اجرا می‌کند.</p></div><div class="row-actions"><a class="btn btn-sm btn-ghost" href="${financeWorkspaceHref('sales_bank')}">کنترل مالی فروش</a><a class="btn btn-sm btn-ghost" href="/order" target="_blank" rel="noopener">باز کردن ثبت سفارش</a></div></div>
         <div class="cards cards-dense">
           <div class="card"><div class="num">${fmtNum(active.length)}</div><div class="lbl">باز / نیازمند پیگیری</div></div>
           <div class="card ${lateCount?'is-danger':''}"><div class="num">${fmtNum(lateCount)}</div><div class="lbl">بیش از ۲۰ دقیقه</div></div>
@@ -3286,8 +3917,8 @@
       const payments = paymentData.payments || [];
       main.innerHTML = `
         <div class="ops-page-head">
-          <div><p class="eyebrow">عملیات تحویل</p><h1>پیک، تحویل و پرداخت</h1><p class="lead">هزینه و حداقل سفارش هر محدوده در همین شعبه کنترل می‌شود. پرداخت آنلاین فعلاً در حالت ${esc(paymentData.provider?.mode || 'sandbox')} است.</p></div>
-          <a class="btn btn-sm btn-ghost" href="/order" target="_blank" rel="noopener">پیش‌نمایش checkout</a>
+          <div><p class="eyebrow">عملیات تحویل</p><h1>پیک، تحویل و پرداخت</h1><p class="lead">هزینه و حداقل سفارش هر محدوده در همین شعبه کنترل می‌شود. پرداخت آنلاین فعلاً در حالت ${esc(paymentModeLabel(paymentData.provider?.mode))} است.</p></div>
+          <div class="row-actions"><a class="btn btn-sm btn-ghost" href="${financeWorkspaceHref('sales_bank')}">تطبیق پرداخت و بانک</a><a class="btn btn-sm btn-ghost" href="/order" target="_blank" rel="noopener">پیش‌نمایش ثبت سفارش</a></div>
         </div>
         <section class="section-box">
           <div class="ops-panel__head"><div><p class="eyebrow">محدوده‌های ارسال</p><h2>قیمت‌گذاری پیک بر اساس محدوده</h2></div><span class="hint">شعبهٔ فعال: ${esc(currentBranch()?.name || '—')}</span></div>
@@ -3298,7 +3929,7 @@
                 ${field('نام محدوده', `zone-${zone.id}-name`, zone.name)}
                 ${field('حداقل سفارش (تومان)', `zone-${zone.id}-minimum`, String(zone.minOrder || 0), { ltr: true, type: 'number' })}
                 ${field('هزینه ارسال (تومان)', `zone-${zone.id}-fee`, String(zone.fee || 0), { ltr: true, type: 'number' })}
-                ${field('ETA (دقیقه)', `zone-${zone.id}-eta`, String(zone.etaMinutes || 0), { ltr: true, type: 'number' })}
+                ${field('زمان تقریبی (دقیقه)', `zone-${zone.id}-eta`, String(zone.etaMinutes || 0), { ltr: true, type: 'number' })}
               </div>
               <div class="row-actions"><button class="btn btn-sm" data-zone-save="${zone.id}">ذخیره محدوده</button><button class="btn btn-sm btn-danger" data-zone-delete="${zone.id}">حذف</button></div>
             </article>`).join('') || '<p class="ops-empty">برای این شعبه هنوز محدوده‌ای تعریف نشده است.</p>'}
@@ -3308,13 +3939,13 @@
               ${field('نام محدوده', 'new-zone-name', '')}
               ${field('حداقل سفارش (تومان)', 'new-zone-minimum', '0', { ltr: true, type: 'number' })}
               ${field('هزینه ارسال (تومان)', 'new-zone-fee', '0', { ltr: true, type: 'number' })}
-              ${field('ETA (دقیقه)', 'new-zone-eta', '30', { ltr: true, type: 'number' })}
+              ${field('زمان تقریبی (دقیقه)', 'new-zone-eta', '30', { ltr: true, type: 'number' })}
             </div>
             <button class="btn btn-sm" id="new-zone-save">افزودن محدوده</button>
           </details>
         </section>
         <section class="section-box">
-          <div class="ops-panel__head"><div><p class="eyebrow">پرداخت</p><h2>آخرین تلاش‌های پرداخت</h2></div><span class="ops-provider-pill">${esc(paymentData.provider?.provider || 'sandbox')} · ${esc(paymentData.provider?.mode || 'sandbox')}</span></div>
+          <div class="ops-panel__head"><div><p class="eyebrow">پرداخت</p><h2>آخرین تلاش‌های پرداخت</h2></div><span class="ops-provider-pill">${esc(paymentProviderLabel(paymentData.provider?.provider))} · ${esc(paymentModeLabel(paymentData.provider?.mode))}</span></div>
           <div class="payment-list">
             ${payments.map((payment) => `<div class="payment-row"><div><b>#${payment.id} · سفارش #${payment.orderId}</b><span>${fmtDateTime(payment.createdAt)}</span></div><strong>${fmtMoney(payment.amount)}</strong><em class="ops-status ops-status--${esc(payment.status)}">${esc({ pending: 'در انتظار', paid: 'موفق', failed: 'ناموفق', cancelled: 'لغو', refunded: 'بازپرداخت' }[payment.status] || payment.status)}</em></div>`).join('') || '<p class="ops-empty">تلاش پرداختی وجود ندارد.</p>'}
           </div>
@@ -3499,133 +4130,650 @@
       });
     },
 
-    async club() {
+    async club(activeSubTab = 'customers') {
       setActiveTab('club');
-      const d = await api(`/api/admin/v2/crm${branchQs()}`);
-      const customers = d.customers || [];
-      const segment = (customer) => customer.total >= 5000000 || customer.orders >= 8 ? 'VIP' : customer.orders >= 3 ? 'وفادار' : customer.orders === 1 ? 'جدید' : 'عادی';
-      main.innerHTML = `
-        <div class="ops-page-head">
-          <div><p class="eyebrow">CRM · LOYALTY · MARKETING</p><h1>باشگاه مشتریان</h1><p class="lead">مشتریان، وفاداری، بازاریابی، بازخورد و خبرنامه در یک زبانه و با ظاهر WESTO مدیریت می‌شوند.</p></div>
-        </div>
-        <div class="cards">
-          <div class="card accent"><div class="num">${fmtNum(d.summary?.customers || 0)}</div><div class="lbl">مشتری شناسایی‌شده</div></div>
-          <div class="card"><div class="num">${fmtNum(d.summary?.points || 0)}</div><div class="lbl">امتیاز در گردش</div></div>
-          <div class="card ${d.summary?.newFeedback ? 'warn' : ''}"><div class="num">${fmtNum(d.summary?.newFeedback || 0)}</div><div class="lbl">بازخورد جدید</div></div>
-          <div class="card"><div class="num">${fmtNum(d.summary?.newsletter || 0)}</div><div class="lbl">عضو خبرنامه</div></div>
-        </div>
-        <div class="section-box">
-          <div class="row-actions">
-            <button class="btn btn-sm" data-club-section="loyalty">تنظیمات وفاداری</button>
-            <button class="btn btn-sm btn-ghost" data-club-section="feedback">بازخورد و NPS</button>
-            <button class="btn btn-sm btn-ghost" data-club-section="newsletter">خبرنامه و خروجی</button>
+      const segment = (customer) => customer.tier?.name || (customer.total >= 5000000 ? 'ویژه' : 'وفادار');
+      const tierBadge = (cust) => {
+        const t = cust.tier || { id: 'bronze', name: 'برنزی', badgeIcon: '🥉' };
+        return `<span class="tier-badge tier-badge-${t.id || 'bronze'}">${esc(t.badgeIcon || '🥉')} ${esc(t.name || segment(cust))}</span>`;
+      };
+
+      const renderNav = (subTab) => `
+        <nav class="club-nav" aria-label="باشگاه مشتریان">
+          <button class="club-nav-item ${subTab === 'customers' ? 'is-active' : ''}" data-club-subtab="customers" type="button">مشتریان</button>
+          <button class="club-nav-item ${subTab === 'wallet' ? 'is-active' : ''}" data-club-subtab="wallet" type="button">کیف پول</button>
+          <button class="club-nav-item ${subTab === 'campaigns' ? 'is-active' : ''}" data-club-subtab="campaigns" type="button">کمپین‌ها</button>
+          <button class="club-nav-item ${subTab === 'sms' ? 'is-active' : ''}" data-club-subtab="sms" type="button">پیامک</button>
+          <button class="club-nav-item ${subTab === 'loyalty' ? 'is-active' : ''}" data-club-subtab="loyalty" type="button">سطوح</button>
+        </nav>
+      `;
+
+      const bindNav = () => {
+        main.querySelectorAll('[data-club-subtab]').forEach((btn) => {
+          btn.addEventListener('click', () => tabs.club(btn.dataset.clubSubtab));
+        });
+      };
+
+      const renderDossierModal = async (phone) => {
+        try {
+          const [custData, fullLoyalty, walletSummary] = await Promise.all([
+            api(`/api/loyalty/customer?phone=${encodeURIComponent(phone)}`).catch(() => ({})),
+            api('/api/admin/loyalty').catch(() => ({})),
+            api('/api/admin/wallet/summary').catch(() => ({})),
+          ]);
+          const userPointsLedger = (fullLoyalty.ledger || []).filter((e) => e.phone === phone);
+          const userWalletLedger = (walletSummary.recentTransactions || []).filter((e) => e.phone === phone);
+
+          let modalEl = document.getElementById('customer-dossier-modal');
+          if (!modalEl) {
+            modalEl = document.createElement('div');
+            modalEl.id = 'customer-dossier-modal';
+            modalEl.className = 'dossier-modal-overlay';
+            document.body.appendChild(modalEl);
+          }
+
+          const tier = custData.tier || { name: 'برنزی', badgeIcon: '🥉', id: 'bronze', multiplier: 1.0, discountPct: 1 };
+
+          modalEl.innerHTML = `
+            <div class="dossier-modal-box" role="dialog" aria-modal="true" aria-labelledby="dossier-title">
+              <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid rgba(255,255,255,0.1); padding-bottom:0.6rem; margin-bottom:0.85rem;">
+                <div>
+                  <h2 id="dossier-title" style="margin:0; font-size:1.05rem;">پرونده: ${esc(custData.name || 'مشتری')}</h2>
+                  <div class="hint ltr" style="margin-top:0.15rem; font-size:0.8rem;">${esc(custData.phone || phone)} · ${esc(tier.badgeIcon || '🥉')} ${esc(tier.name || 'برنزی')}</div>
+                </div>
+                <button class="btn btn-sm btn-ghost" id="dossier-close-btn" type="button">✕ بستن</button>
+              </div>
+
+              <div class="club-kpi-strip" style="margin-bottom:0.85rem;">
+                <div class="club-kpi accent"><div class="num">${fmtMoney(custData.walletBalanceToman || 0)}</div><div class="lbl">موجودی کیف پول</div></div>
+                <div class="club-kpi"><div class="num">${fmtNum(custData.points || 0)}</div><div class="lbl">امتیاز باشگاه</div></div>
+                <div class="club-kpi"><div class="num">${fmtNum(tier.multiplier || 1)}x</div><div class="lbl">ضریب پاداش</div></div>
+                <div class="club-kpi"><div class="num">${fmtNum(tier.discountPct || 0)}٪</div><div class="lbl">تخفیف فاکتور</div></div>
+              </div>
+
+              <div class="grid-2-main" style="gap:0.75rem; margin-bottom:0.85rem;">
+                <div class="section-box club-section" style="margin:0; padding:0.75rem;">
+                  <h3 style="font-size:0.85rem; margin-bottom:0.4rem;">تعدیل امتیاز</h3>
+                  <div class="club-form-row" style="grid-template-columns: 90px 1fr auto; gap:0.4rem;">
+                    <input type="number" id="dossier-delta" class="input ltr" placeholder="مقدار" value="50" style="font-size:0.8rem;" />
+                    <input type="text" id="dossier-reason" class="input" placeholder="شرح" value="پاداش وفاداری" style="font-size:0.8rem;" />
+                    <button class="btn btn-sm" id="dossier-adjust-btn" type="button">ثبت</button>
+                  </div>
+                </div>
+
+                <div class="section-box club-section" style="margin:0; padding:0.75rem;">
+                  <h3 style="font-size:0.85rem; margin-bottom:0.4rem;">شارژ / کسر کیف پول</h3>
+                  <div class="club-form-row" style="grid-template-columns: 110px 1fr auto; gap:0.4rem;">
+                    <input type="number" id="dossier-wallet-delta" class="input ltr" placeholder="مبلغ (ت)" value="100000" style="font-size:0.8rem;" />
+                    <input type="text" id="dossier-wallet-reason" class="input" placeholder="شرح" value="شارژ دستی" style="font-size:0.8rem;" />
+                    <button class="btn btn-sm btn-accent" id="dossier-wallet-btn" type="button">اعمال</button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Admin Birthdate Override Section -->
+              <div class="section-box club-section" style="margin:0 0 0.85rem 0; padding:0.75rem;">
+                <h3 style="font-size:0.85rem; margin-bottom:0.4rem;">🎂 تاریخ تولد مشتری (ویرایش ویژه مدیر)</h3>
+                <div class="club-form-row" style="grid-template-columns: 1fr auto; gap:0.4rem;">
+                  <input type="text" id="dossier-bday" class="input ltr" placeholder="مثلاً: 1370/06/15" value="${esc(custData.birthdate || '')}" style="font-size:0.8rem;" />
+                  <button class="btn btn-sm" id="dossier-save-bday-btn" type="button">ثبت تاریخ تولد</button>
+                </div>
+              </div>
+
+              <div>
+                <h3 style="font-size:0.85rem; margin-bottom:0.4rem;">آخرین تراکنش‌های کیف پول</h3>
+                <div style="overflow-x:auto;">
+                  <table class="tbl" style="font-size:0.78rem;">
+                    <thead><tr><th>زمان</th><th>نوع</th><th>تغییر (ت)</th><th>شرح</th></tr></thead>
+                    <tbody>
+                      ${userWalletLedger.slice(0, 5).map((e) => `
+                        <tr>
+                          <td>${fmtDateTime(e.at)}</td>
+                          <td><span class="pill">${esc(e.type === 'topup' ? 'شارژ' : e.type === 'pay' ? 'خرید' : e.type === 'cashback' ? 'کش‌بک' : e.type || 'تراکنش')}</span></td>
+                          <td style="color:${e.deltaToman > 0 ? '#10b981' : '#ef4444'}; font-weight:700;">${e.deltaToman > 0 ? '+' : ''}${fmtMoney(e.deltaToman)}</td>
+                          <td>${esc(e.description || '—')}</td>
+                        </tr>
+                      `).join('') || '<tr><td colspan="4">تراکنشی ثبت نشده است.</td></tr>'}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          `;
+
+          modalEl.querySelector('#dossier-close-btn').addEventListener('click', () => modalEl.remove());
+          modalEl.querySelector('#dossier-adjust-btn').addEventListener('click', async () => {
+            const delta = Number(modalEl.querySelector('#dossier-delta').value) || 0;
+            const reason = modalEl.querySelector('#dossier-reason').value || 'تعدیل دستی';
+            await api('/api/admin/loyalty/adjust', { method: 'POST', body: JSON.stringify({ phone, delta, reason }) });
+            showToast('امتیاز با موفقیت اعمال شد'); renderDossierModal(phone);
+          });
+          modalEl.querySelector('#dossier-wallet-btn').addEventListener('click', async () => {
+            const deltaToman = Number(modalEl.querySelector('#dossier-wallet-delta').value) || 0;
+            const reason = modalEl.querySelector('#dossier-wallet-reason').value || 'شارژ دستی';
+            await api('/api/admin/wallet/adjust', { method: 'POST', body: JSON.stringify({ phone, deltaToman, reason }) });
+            showToast('کیف پول با موفقیت به‌روزرسانی شد'); renderDossierModal(phone);
+          });
+          modalEl.querySelector('#dossier-save-bday-btn')?.addEventListener('click', async () => {
+            const birthdate = modalEl.querySelector('#dossier-bday').value.trim();
+            await api(`/api/admin/customers/${encodeURIComponent(phone)}`, { method: 'PATCH', body: JSON.stringify({ birthdate }) });
+            showToast('تاریخ تولد مشتری با موفقیت توسط مدیر به‌روزرسانی شد'); renderDossierModal(phone);
+          });
+        } catch (err) {
+          showToast(err.message || 'خطا در بارگذاری پرونده');
+        }
+      };
+
+      if (activeSubTab === 'wallet') {
+        const [d, pendingData] = await Promise.all([
+          api('/api/admin/wallet/summary'),
+          api('/api/wallet/topup-requests/pending').catch(() => ({ requests: [] })),
+        ]);
+        const packages = d.packages || [];
+        const pendingReqs = pendingData.requests || [];
+
+        main.innerHTML = `
+          ${renderNav('wallet')}
+          <div class="club-kpi-strip">
+            <div class="club-kpi accent"><div class="num">${fmtMoney(d.totalLiabilityToman || 0)}</div><div class="lbl">موجودی کل</div></div>
+            <div class="club-kpi"><div class="num">${fmtNum(d.activeWalletsCount || 0)}</div><div class="lbl">کیف پول فعال</div></div>
           </div>
+
+          <!-- Pending In-Store Topup Requests -->
+          ${pendingReqs.length > 0 ? `
+            <div class="section-box club-section" style="border-top:3px solid #f59e0b; margin-bottom:1rem;">
+              <h2 class="club-section-title" style="color:#f59e0b;">⏳ درخواست‌های شارژ حضوری در انتظار تأیید گارسون / صندوق (${pendingReqs.length})</h2>
+              <div style="overflow-x:auto;">
+                <table class="tbl" style="font-size:0.8rem;">
+                  <thead><tr><th>کد پیگیری</th><th>مشتری</th><th>مبلغ شارژ</th><th>اعتبار کل</th><th>عملیات تأیید</th></tr></thead>
+                  <tbody>
+                    ${pendingReqs.map(r => `
+                      <tr>
+                        <td><b class="ltr" style="font-size:1.1rem; color:#fff; background:rgba(255,255,255,0.08); padding:0.15rem 0.5rem; border-radius:0.35rem;">${esc(r.trackingCode)}</b></td>
+                        <td>${esc(r.customerName || 'مشتری')} <small class="ltr" style="color:var(--text-muted);">(${esc(r.phone)})</small></td>
+                        <td>${fmtMoney(r.amountToman)}</td>
+                        <td style="color:#10b981; font-weight:700;">+${fmtMoney(r.totalCredit)}</td>
+                        <td>
+                          <button type="button" class="btn btn-sm btn-accent approve-topup-btn" data-req-id="${esc(r.id)}" data-phone="${esc(r.phone)}" data-amount="${r.amountToman}" style="padding:0.25rem 0.75rem; font-size:0.75rem;">
+                            ✓ تأیید دریافت وجه و شارژ آنی
+                          </button>
+                        </td>
+                      </tr>
+                    `).join('')}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ` : ''}
+
+          <div class="section-box club-section">
+            <h2 class="club-section-title">بسته‌های شارژ</h2>
+            <div class="club-form-row" style="grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));">
+              ${packages.map((p) => `
+                <div class="section-box wallet-pack-card" data-pack-id="${esc(p.id)}" style="margin:0; padding:0.85rem; border-top:3px solid ${p.popular ? '#10b981' : '#7357ce'};">
+                  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.4rem;">
+                    <b>${esc(p.title)}</b>
+                    ${p.popular ? '<span class="pill" style="background:#10b981; color:#fff;">محبوب</span>' : ''}
+                  </div>
+                  <div class="club-form-row" style="grid-template-columns:1fr 1fr;">
+                    <div class="field"><label style="font-size:0.75rem;">مبلغ شارژ (ت)</label><input type="number" class="input ltr pack-amount" value="${p.amountToman || 0}" /></div>
+                    <div class="field"><label style="font-size:0.75rem;">بونوس هدیه (ت)</label><input type="number" class="input ltr pack-bonus" value="${p.bonusToman || 0}" /></div>
+                  </div>
+                  <div class="field" style="margin-top:0.35rem;"><label style="font-size:0.75rem;">برچسب</label><input type="text" class="input pack-badge" value="${esc(p.badge || '')}" /></div>
+                </div>
+              `).join('')}
+            </div>
+            <button class="btn btn-sm" id="save-packages-btn" style="margin-top:0.75rem;" type="button">ذخیره بسته‌ها</button>
+          </div>
+
+          <div class="grid-2-main">
+            <div class="section-box club-section">
+              <h2 class="club-section-title">شارژ / کسر دستی</h2>
+              <div class="club-form-row">
+                ${field('شماره موبایل', 'wal_phone', '', { ltr: true })}
+                ${field('مبلغ (ت)', 'wal_delta', '100000', { ltr: true, type: 'number' })}
+                ${field('توضیحات', 'wal_reason', 'شارژ دستی')}
+              </div>
+              <button class="btn btn-sm btn-accent" id="wal-adj-btn" style="margin-top:0.65rem;" type="button">ثبت سند</button>
+            </div>
+
+            <div class="section-box club-section">
+              <h2 class="club-section-title">آخرین تراکنش‌ها</h2>
+              <div style="overflow-x:auto;">
+                <table class="tbl">
+                  <thead><tr><th>زمان</th><th>مشتری</th><th>نوع</th><th>مبلغ</th><th>مانده</th></tr></thead>
+                  <tbody>
+                    ${(d.recentTransactions || []).slice(0, 10).map((t) => `
+                      <tr>
+                        <td>${fmtDateTime(t.at)}</td>
+                        <td class="ltr">${esc(t.phone)}</td>
+                        <td><span class="pill ${t.type === 'topup' ? 'is-paid' : t.type === 'cashback' ? 'is-prep' : ''}">${esc(t.type === 'topup' ? 'شارژ' : t.type === 'pay' ? 'خرید' : t.type === 'cashback' ? 'کش‌بک' : t.type)}</span></td>
+                        <td style="color:${t.deltaToman > 0 ? '#10b981' : '#ef4444'}; font-weight:700;">${t.deltaToman > 0 ? '+' : ''}${fmtMoney(t.deltaToman)}</td>
+                        <td>${fmtMoney(t.balanceAfterToman || 0)}</td>
+                      </tr>
+                    `).join('') || '<tr><td colspan="5">تراکنشی ثبت نشده.</td></tr>'}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        `;
+        bindNav();
+
+        main.querySelectorAll('.approve-topup-btn').forEach((btn) => {
+          btn.addEventListener('click', async () => {
+            btn.disabled = true;
+            btn.textContent = 'در حال ثبت…';
+            const requestId = btn.dataset.reqId;
+            const res = await api('/api/wallet/topup/staff-approve', { method: 'POST', body: JSON.stringify({ requestId, paymentTender: 'POS' }) });
+            if (res.ok) {
+              showToast(`شارژ با موفقیت برای شماره ${res.phone} تأیید شد.`);
+              tabs.club('wallet');
+            } else {
+              showToast(res.error || 'خطا در تأیید شارژ');
+              btn.disabled = false;
+            }
+          });
+        });
+
+        main.querySelector('#save-packages-btn')?.addEventListener('click', async () => {
+          const updatedPackages = Array.from(main.querySelectorAll('.wallet-pack-card')).map((card) => {
+            const id = card.dataset.packId;
+            const orig = packages.find((p) => p.id === id) || {};
+            return {
+              ...orig,
+              id,
+              amountToman: Number(card.querySelector('.pack-amount').value) || 0,
+              bonusToman: Number(card.querySelector('.pack-bonus').value) || 0,
+              badge: card.querySelector('.pack-badge').value.trim(),
+            };
+          });
+          await api('/api/admin/wallet/packages', { method: 'PUT', body: JSON.stringify({ packages: updatedPackages }) });
+          showToast('بسته‌های شارژ با موفقیت ذخیره شدند');
+          tabs.club('wallet');
+        });
+
+        main.querySelector('#wal-adj-btn')?.addEventListener('click', async () => {
+          const phone = document.getElementById('wal_phone').value.trim();
+          const deltaToman = Number(document.getElementById('wal_delta').value) || 0;
+          const reason = document.getElementById('wal_reason').value.trim();
+          if (!phone || !deltaToman) return showToast('شماره و مبلغ الزامی است');
+          const res = await api('/api/admin/wallet/adjust', { method: 'POST', body: JSON.stringify({ phone, deltaToman, reason }) });
+          showToast(`سند با موفقیت ثبت شد (مانده جدید: ${fmtMoney(res.newBalanceToman || 0)})`);
+          tabs.club('wallet');
+        });
+        return;
+      }
+
+      if (activeSubTab === 'campaigns') {
+        const d = await api('/api/admin/campaigns/summary');
+        const camp = d.campaigns || {};
+        const stats = d.stats || {};
+        main.innerHTML = `
+          ${renderNav('campaigns')}
+
+          <div class="grid-2-main">
+            <div class="section-box club-section">
+              <h2 class="club-section-title">هدیه تولد</h2>
+              <div class="club-form-row">
+                <div class="field"><label class="chk"><input type="checkbox" id="cmp_bday_en" ${camp.birthday?.enabled ? 'checked' : ''} /> فعال</label></div>
+                ${field('هدیه کیف پول (ت)', 'cmp_bday_wallet', String(camp.birthday?.rewardWalletToman ?? 100000), { ltr: true, type: 'number' })}
+                ${field('امتیاز هدیه', 'cmp_bday_points', String(camp.birthday?.rewardPoints ?? 200), { ltr: true, type: 'number' })}
+                ${field('مهلت (روز)', 'cmp_bday_days', String(camp.birthday?.validDaysAfter ?? 7), { ltr: true, type: 'number' })}
+              </div>
+              <button class="btn btn-sm btn-accent" id="save-bday-btn" style="margin-top:0.65rem;" type="button">ذخیره</button>
+            </div>
+
+            <div class="section-box club-section">
+              <h2 class="club-section-title">معرفی دوستان</h2>
+              <div class="club-form-row">
+                <div class="field"><label class="chk"><input type="checkbox" id="cmp_ref_en" ${camp.referral?.enabled ? 'checked' : ''} /> فعال</label></div>
+                ${field('پاداش معرف (ت)', 'cmp_ref_wallet', String(camp.referral?.referrerRewardWalletToman ?? 50000), { ltr: true, type: 'number' })}
+                ${field('پاداش دوست (ت)', 'cmp_ref_referee_wallet', String(camp.referral?.refereeRewardWalletToman ?? 30000), { ltr: true, type: 'number' })}
+                ${field('حداقل سفارش (ت)', 'cmp_ref_min_order', String(camp.referral?.minFirstOrderToman ?? 200000), { ltr: true, type: 'number' })}
+              </div>
+              <button class="btn btn-sm btn-accent" id="save-ref-btn" style="margin-top:0.65rem;" type="button">ذخیره</button>
+            </div>
+          </div>
+
+          <div class="section-box club-section">
+            <h2 class="club-section-title">ساعت شاد ${stats.isHappyHourActive ? '<span class="pill is-paid" style="font-size:0.72rem; margin-right:0.4rem;">فعال</span>' : ''}</h2>
+            <div class="club-form-row">
+              <div class="field"><label class="chk"><input type="checkbox" id="cmp_hh_en" ${camp.happyHour?.enabled ? 'checked' : ''} /> فعال</label></div>
+              ${field('تخفیف (٪)', 'cmp_hh_disc', String(camp.happyHour?.discountPct ?? 15), { ltr: true, type: 'number' })}
+              ${field('شروع', 'cmp_hh_start', String(camp.happyHour?.startHour ?? '14:00'), { ltr: true })}
+              ${field('پایان', 'cmp_hh_end', String(camp.happyHour?.endHour ?? '18:00'), { ltr: true })}
+            </div>
+            <button class="btn btn-sm btn-accent" id="save-hh-btn" style="margin-top:0.65rem;" type="button">ذخیره</button>
+          </div>
+        `;
+        bindNav();
+
+        main.querySelector('#save-bday-btn')?.addEventListener('click', async () => {
+          await api('/api/admin/campaigns/settings', {
+            method: 'PUT',
+            body: JSON.stringify({
+              birthday: {
+                enabled: document.getElementById('cmp_bday_en').checked,
+                rewardWalletToman: Number(document.getElementById('cmp_bday_wallet').value) || 0,
+                rewardPoints: Number(document.getElementById('cmp_bday_points').value) || 0,
+                validDaysAfter: Number(document.getElementById('cmp_bday_days').value) || 7,
+              },
+            }),
+          });
+          showToast('تنظیمات کمپین تولد ذخیره شد');
+        });
+
+        main.querySelector('#save-ref-btn')?.addEventListener('click', async () => {
+          await api('/api/admin/campaigns/settings', {
+            method: 'PUT',
+            body: JSON.stringify({
+              referral: {
+                enabled: document.getElementById('cmp_ref_en').checked,
+                referrerRewardWalletToman: Number(document.getElementById('cmp_ref_wallet').value) || 0,
+                refereeRewardWalletToman: Number(document.getElementById('cmp_ref_referee_wallet').value) || 0,
+                minFirstOrderToman: Number(document.getElementById('cmp_ref_min_order').value) || 0,
+              },
+            }),
+          });
+          showToast('تنظیمات سیستم معرفی ذخیره شد');
+        });
+
+        main.querySelector('#save-hh-btn')?.addEventListener('click', async () => {
+          await api('/api/admin/campaigns/settings', {
+            method: 'PUT',
+            body: JSON.stringify({
+              happyHour: {
+                enabled: document.getElementById('cmp_hh_en').checked,
+                discountPct: Number(document.getElementById('cmp_hh_disc').value) || 0,
+                startHour: document.getElementById('cmp_hh_start').value.trim(),
+                endHour: document.getElementById('cmp_hh_end').value.trim(),
+              },
+            }),
+          });
+          showToast('تنظیمات ساعت شاد ذخیره شد');
+        });
+        return;
+      }
+
+      if (activeSubTab === 'sms') {
+        const stats = await api('/api/admin/sms/stats');
+        const rfm = await api('/api/admin/sms/rfm');
+        const sets = stats.settings || {};
+
+        main.innerHTML = `
+          ${renderNav('sms')}
+
+          <div class="section-box club-section">
+            <h2 class="club-section-title">بازگرداندن مشتریان</h2>
+            <div style="overflow-x:auto;">
+              <table class="tbl" style="font-size:0.82rem;">
+                <thead><tr><th>گروه</th><th>تعداد</th><th>وضعیت</th></tr></thead>
+                <tbody>
+                  <tr><td>قهرمانان</td><td><b>${fmtNum(rfm.championsCount || 0)}</b></td><td><span class="pill is-paid">عالی</span></td></tr>
+                  <tr><td>فعال</td><td><b>${fmtNum(rfm.activeCount || 0)}</b></td><td><span class="pill is-paid">پایدار</span></td></tr>
+                  <tr><td>در خطر ریزش</td><td><b>${fmtNum(rfm.atRiskCount || 0)}</b></td><td><span class="pill" style="background:#f59e0b;color:#fff;">توجه</span></td></tr>
+                  <tr><td>خواب‌رفته</td><td><b>${fmtNum(rfm.dormantCount || 0)}</b></td><td><span class="pill" style="background:#ef4444;color:#fff;">ریزش</span></td></tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="club-form-row" style="margin-top:0.75rem; grid-template-columns: auto 140px auto;">
+              <select id="winback_segment" class="input" style="font-size:0.82rem;">
+                <option value="at_risk">در خطر (${fmtNum(rfm.atRiskCount || 0)})</option>
+                <option value="dormant">خواب‌رفته (${fmtNum(rfm.dormantCount || 0)})</option>
+              </select>
+              <input id="winback_reward" class="input ltr" placeholder="هدیه (ت)" value="50000" style="font-size:0.82rem;" />
+              <button class="btn btn-sm btn-accent" id="run-winback-btn" type="button">اجرای بازگشت</button>
+            </div>
+          </div>
+
+          <details class="club-collapsible" open>
+            <summary>تنظیمات درگاه پیامک</summary>
+            <div class="club-collapse-body">
+              <div class="club-form-row">
+                <div class="field"><label class="chk"><input type="checkbox" id="sms_en" ${sets.enabled ? 'checked' : ''} /> فعال</label></div>
+                <div class="field">
+                  <label>ارائه‌دهنده</label>
+                  <select id="sms_prov" class="input">
+                    <option value="simulator" ${sets.provider === 'simulator' ? 'selected' : ''}>شبیه‌ساز</option>
+                    <option value="kavenegar" ${sets.provider === 'kavenegar' ? 'selected' : ''}>کاوه‌نگار</option>
+                    <option value="farazsms" ${sets.provider === 'farazsms' ? 'selected' : ''}>فراز اس‌ام‌اس</option>
+                    <option value="ghasedak" ${sets.provider === 'ghasedak' ? 'selected' : ''}>قاصدک</option>
+                    <option value="melipayamak" ${sets.provider === 'melipayamak' ? 'selected' : ''}>ملی‌پیامک</option>
+                  </select>
+                </div>
+                ${field('کلید API', 'sms_key', sets.apiKey || '', { ltr: true })}
+                ${field('سرشماره', 'sms_sender', sets.senderLine || '', { ltr: true })}
+              </div>
+              <button class="btn btn-sm btn-accent" id="save-sms-settings-btn" style="margin-top:0.65rem;" type="button">ذخیره</button>
+            </div>
+          </details>
+
+          <details class="club-collapsible">
+            <summary>ارسال پیامک تستی</summary>
+            <div class="club-collapse-body">
+              <div class="club-form-row">
+                ${field('شماره گیرنده', 'sms_test_phone', '', { ltr: true })}
+                <div class="field">
+                  <label>الگو</label>
+                  <select id="sms_test_tpl" class="input">
+                    <option value="birthday">تبریک تولد</option>
+                    <option value="points_earned">دریافت امتیاز</option>
+                    <option value="wallet_topup">شارژ کیف پول</option>
+                    <option value="winback">بازگشت مشتری</option>
+                  </select>
+                </div>
+              </div>
+              <div class="field" style="margin-top:0.4rem;">
+                <label>متن دلخواه</label>
+                <textarea id="sms_test_msg" class="input" rows="2" placeholder="اختیاری…"></textarea>
+              </div>
+              <button class="btn btn-sm" id="send-sms-test-btn" style="margin-top:0.5rem;" type="button">ارسال تست</button>
+            </div>
+          </details>
+        `;
+        bindNav();
+
+        main.querySelector('#save-sms-settings-btn')?.addEventListener('click', async () => {
+          await api('/api/admin/sms/settings', {
+            method: 'PUT',
+            body: JSON.stringify({
+              enabled: document.getElementById('sms_en').checked,
+              provider: document.getElementById('sms_prov').value,
+              apiKey: document.getElementById('sms_key').value.trim(),
+              senderLine: document.getElementById('sms_sender').value.trim(),
+            }),
+          });
+          showToast('تنظیمات سامانه پیامک ذخیره شد');
+        });
+
+        main.querySelector('#send-sms-test-btn')?.addEventListener('click', async () => {
+          const phone = document.getElementById('sms_test_phone').value.trim();
+          const templateKey = document.getElementById('sms_test_tpl').value;
+          const text = document.getElementById('sms_test_msg').value.trim();
+          if (!phone) return showToast('شماره موبایل الزامی است');
+          const res = await api('/api/admin/sms/send-test', { method: 'POST', body: JSON.stringify({ phone, templateKey, text }) });
+          showToast(res.ok ? 'پیامک تستی ارسال شد' : (res.error || 'خطا در ارسال'));
+        });
+
+        main.querySelector('#run-winback-btn')?.addEventListener('click', async () => {
+          const segment = document.getElementById('winback_segment').value;
+          const rewardWalletToman = Number(document.getElementById('winback_reward').value) || 50000;
+          const res = await api('/api/admin/sms/run-winback', { method: 'POST', body: JSON.stringify({ segment, rewardWalletToman }) });
+          showToast(`کمپین بازگشت اجرا شد (${res.sentCount} پیامک با مجموع هدیه ${fmtMoney(res.rewardDisbursedTotalToman || 0)})`);
+          tabs.club('sms');
+        });
+        return;
+      }
+
+      if (activeSubTab === 'loyalty') {
+        const d = await api('/api/admin/loyalty');
+        const L = d.loyalty || {};
+        const tiers = L.tiers || [];
+        main.innerHTML = `
+          ${renderNav('loyalty')}
+
+          <div class="section-box club-section">
+            <h2 class="club-section-title">قوانین امتیاز ${L.enabled ? '<span class="pill is-paid" style="font-size:0.72rem; margin-right:0.4rem;">فعال</span>' : '<span class="pill" style="font-size:0.72rem; margin-right:0.4rem;">خاموش</span>'}</h2>
+            <div class="club-form-row">
+              <div class="field"><label class="chk"><input type="checkbox" id="ly_en" ${L.enabled ? 'checked' : ''} /> فعال</label></div>
+              ${field('امتیاز هر تومان', 'ly_rate', String(L.pointsPerToman ?? 0.01), { ltr: true, type: 'number' })}
+              ${field('ارزش هر امتیاز (ت)', 'ly_val', String(L.redeemValue ?? 1000), { ltr: true, type: 'number' })}
+              ${field('خوش‌آمدگویی', 'ly_welcome', String(L.welcomePoints ?? 50), { ltr: true, type: 'number' })}
+            </div>
+            <button class="btn btn-sm btn-accent" id="save-loyalty-rules-btn" style="margin-top:0.65rem;" type="button">ذخیره</button>
+          </div>
+
+          <div class="section-box club-section">
+            <h2 class="club-section-title">سطوح وفاداری</h2>
+            <div class="club-form-row" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));">
+              ${tiers.map((t) => `
+                <div class="section-box tier-config-card" data-tier-id="${esc(t.id)}" style="margin:0; padding:0.85rem; border-top:3px solid ${t.id === 'gold' ? '#f59e0b' : t.id === 'vip' ? '#a855f7' : t.id === 'silver' ? '#94a3b8' : '#cd7f32'};">
+                  <b style="display:block; margin-bottom:0.4rem;">${esc(t.badgeIcon || '🥉')} ${esc(t.name)}</b>
+                  <div class="club-form-row" style="grid-template-columns:1fr 1fr; gap:0.4rem;">
+                    <div class="field"><label style="font-size:0.72rem;">حداقل امتیاز</label><input type="number" class="input ltr tier-min-pts" value="${t.minPoints || 0}" /></div>
+                    <div class="field"><label style="font-size:0.72rem;">حداقل خرید (ت)</label><input type="number" class="input ltr tier-min-spend" value="${t.minSpendToman || 0}" /></div>
+                    <div class="field"><label style="font-size:0.72rem;">ضریب پاداش</label><input type="number" step="0.1" class="input ltr tier-mult" value="${t.multiplier || 1}" /></div>
+                    <div class="field"><label style="font-size:0.72rem;">تخفیف (٪)</label><input type="number" class="input ltr tier-disc" value="${t.discountPct || 0}" /></div>
+                  </div>
+                </div>
+              `).join('')}
+            </div>
+            <button class="btn btn-sm" id="save-tiers-btn" style="margin-top:0.75rem;" type="button">ذخیره سطوح</button>
+          </div>
+        `;
+        bindNav();
+
+        main.querySelector('#save-loyalty-rules-btn')?.addEventListener('click', async () => {
+          await api('/api/admin/settings', {
+            method: 'PUT',
+            body: JSON.stringify({
+              loyalty: {
+                enabled: document.getElementById('ly_en').checked,
+                pointsPerToman: Number(document.getElementById('ly_rate').value) || 0,
+                redeemValue: Number(document.getElementById('ly_val').value) || 0,
+                welcomePoints: Number(document.getElementById('ly_welcome').value) || 0,
+              },
+            }),
+          });
+          showToast('قوانین امتیاز ذخیره شد');
+        });
+
+        main.querySelector('#save-tiers-btn')?.addEventListener('click', async () => {
+          const updatedTiers = Array.from(main.querySelectorAll('.tier-config-card')).map((card) => {
+            const id = card.dataset.tierId;
+            const orig = tiers.find((t) => t.id === id) || {};
+            return {
+              ...orig,
+              id,
+              minPoints: Number(card.querySelector('.tier-min-pts').value) || 0,
+              minSpendToman: Number(card.querySelector('.tier-min-spend').value) || 0,
+              multiplier: Number(card.querySelector('.tier-mult').value) || 1,
+              discountPct: Number(card.querySelector('.tier-disc').value) || 0,
+            };
+          });
+          await api('/api/admin/loyalty/tiers', { method: 'PUT', body: JSON.stringify({ tiers: updatedTiers }) });
+          showToast('تنظیمات سطوح وفاداری ذخیره شد');
+        });
+        return;
+      }
+
+      // Default: 'customers' sub-tab
+      let d = {};
+      try {
+        d = await api('/api/admin/club');
+      } catch {
+        d = await api('/api/admin/loyalty').catch(() => ({}));
+      }
+      const customers = d.customers || d.members || [];
+      const summary = d.summary || {
+        customers: customers.length,
+        points: d.totals?.pointsIssued || customers.reduce((s, m) => s + (m.points || 0), 0),
+        walletTotalToman: 0,
+        newFeedback: 0,
+      };
+
+      main.innerHTML = `
+        ${renderNav('customers')}
+
+        <div class="club-kpi-strip">
+          <div class="club-kpi accent"><div class="num">${fmtNum(summary.customers || 0)}</div><div class="lbl">عضو</div></div>
+          <div class="club-kpi"><div class="num">${fmtNum(summary.points || 0)}</div><div class="lbl">امتیاز در گردش</div></div>
         </div>
-        <div class="grid-2-main">
-          <section class="section-box">
-            <h2>پرونده مشتریان</h2>
-            <table class="tbl"><thead><tr><th>مشتری</th><th>بخش</th><th>سفارش</th><th>خرید</th><th>امتیاز</th></tr></thead><tbody>
-              ${customers.slice(0, 40).map((customer) => `<tr><td>${esc(customer.name || customer.phone)}<div class="hint ltr">${esc(customer.phone)}</div></td><td><span class="pill">${segment(customer)}</span></td><td>${fmtNum(customer.orders)}</td><td>${fmtMoney(customer.total)}</td><td>${fmtNum(customer.points)}</td></tr>`).join('') || '<tr><td colspan="5">هنوز مشتری قابل شناسایی ثبت نشده است.</td></tr>'}
-            </tbody></table>
-          </section>
-          <section class="section-box">
-            <h2>بازاریابی و ارتباط</h2>
-            <p class="hint">بخش‌بندی بر پایه تعداد سفارش و ارزش خرید واقعی WESTO انجام می‌شود.</p>
-            ${['VIP', 'وفادار', 'جدید', 'عادی'].map((name) => `<div class="ops-alert"><b>${name}</b><span>${fmtNum(customers.filter((customer) => segment(customer) === name).length)} مشتری</span></div>`).join('')}
-            <h3 style="margin-top:1rem">آخرین بازخوردها</h3>
-            ${(d.feedback || []).slice(0, 5).map((item) => `<div class="ops-alert ${item.score <= 6 ? 'is-warn' : ''}"><b>${esc(item.name || item.phone || 'مهمان')} · ${fmtNum(item.score)}/۱۰</b><span>${esc(item.comment || 'بدون توضیح')}</span></div>`).join('') || '<p class="hint">بازخوردی ثبت نشده است.</p>'}
-          </section>
-        </div>`;
-      main.querySelectorAll('[data-club-section]').forEach((button) => button.addEventListener('click', async () => {
-        const target = button.dataset.clubSection;
-        await tabs[target]();
-        setActiveTab('club');
-      }));
+
+        <section class="section-box club-section">
+          <div style="display:flex; justify-content:space-between; align-items:center; gap:0.5rem; margin-bottom:0.65rem;">
+            <h2 class="club-section-title" style="margin:0;">مشتریان</h2>
+            <input type="text" id="cust-search" class="input ltr" placeholder="جستجو…" style="max-width:200px; font-size:0.82rem;" />
+          </div>
+          <div style="overflow-x:auto;">
+            <table class="tbl" id="customers-tbl">
+              <thead>
+                <tr>
+                  <th>مشتری</th>
+                  <th>سطح</th>
+                  <th>سفارش</th>
+                  <th>خرید</th>
+                  <th>کیف پول</th>
+                  <th>امتیاز</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                ${customers.slice(0, 60).map((c) => `
+                  <tr data-phone="${esc(c.phone)}" data-name="${esc(c.name || '')}">
+                    <td>
+                      <b>${esc(c.name || 'مهمان')}</b>
+                      <div class="hint ltr">${esc(c.phone)}</div>
+                    </td>
+                    <td>${tierBadge(c)}</td>
+                    <td>${fmtNum(c.orders || 0)}</td>
+                    <td>${fmtMoney(c.total || 0)}</td>
+                    <td style="color:#10b981; font-weight:700;">${fmtMoney(c.walletBalanceToman || 0)}</td>
+                    <td><b>${fmtNum(c.points || 0)}</b></td>
+                    <td>
+                      <button class="btn btn-sm btn-ghost open-dossier-btn" data-phone="${esc(c.phone)}" type="button">پرونده</button>
+                    </td>
+                  </tr>
+                `).join('') || '<tr><td colspan="7">مشتری ثبت نشده.</td></tr>'}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      `;
+      bindNav();
+
+      main.querySelectorAll('.open-dossier-btn').forEach((btn) => {
+        btn.addEventListener('click', () => renderDossierModal(btn.dataset.phone));
+      });
+
+      const searchInput = main.querySelector('#cust-search');
+      if (searchInput) {
+        searchInput.addEventListener('input', () => {
+          const q = searchInput.value.trim().toLowerCase();
+          main.querySelectorAll('#customers-tbl tbody tr').forEach((row) => {
+            const phone = (row.dataset.phone || '').toLowerCase();
+            const name = (row.dataset.name || '').toLowerCase();
+            row.style.display = phone.includes(q) || name.includes(q) ? '' : 'none';
+          });
+        });
+      }
+    },
+
+    async wallet() {
+      tabs.club('wallet');
+    },
+
+    async campaigns() {
+      tabs.club('campaigns');
+    },
+
+    async sms() {
+      tabs.club('sms');
     },
 
     async loyalty() {
-      setActiveTab('loyalty');
-      const d = await api('/api/admin/loyalty');
-      const L = d.loyalty || {};
-      main.innerHTML = `
-        <h1>باشگاه مشتریان</h1>
-        <p class="lead">امتیاز وفاداری — مشابه باشگاه مشتریان تاپ منو مارکت. با تکمیل سفارش امتیاز می‌گیرند.</p>
-        <div class="cards">
-          <div class="card accent"><div class="num">${fmtNum(d.totals?.pointsIssued || 0)}</div><div class="lbl">امتیاز در گردش</div></div>
-          <div class="card"><div class="num">${fmtNum(d.totals?.members || 0)}</div><div class="lbl">عضو با امتیاز</div></div>
-          <div class="card"><div class="num">${L.enabled ? 'فعال' : 'خاموش'}</div><div class="lbl">وضعیت باشگاه</div></div>
-        </div>
-        <div class="section-box">
-          <h2>تنظیمات امتیاز</h2>
-          <div class="grid-2">
-            <div class="field"><label class="chk"><input type="checkbox" id="ly_en" ${L.enabled ? 'checked' : ''} /> باشگاه فعال باشد</label></div>
-            ${field('امتیاز به ازای هر تومان (مثلاً ۰٫۰۱ = ۱ امتیاز / ۱۰۰ تومان)', 'ly_rate', String(L.pointsPerToman ?? 0.01), { ltr: true, type: 'number' })}
-            ${field('ارزش هر امتیاز (تومان — نمایشی)', 'ly_val', String(L.redeemValue ?? 1000), { ltr: true, type: 'number' })}
-            ${field('امتیاز خوش‌آمدگویی', 'ly_welcome', String(L.welcomePoints ?? 50), { ltr: true, type: 'number' })}
-          </div>
-          <p class="hint" style="margin-top:0.75rem">ذخیره خودکار</p>
-        </div>
-        <div class="section-box">
-          <h2>تعدیل دستی امتیاز</h2>
-          <div class="grid-2">
-            ${field('شماره موبایل', 'ly_phone', '', { ltr: true })}
-            ${field('مقدار (+/−)', 'ly_delta', '10', { ltr: true, type: 'number' })}
-            ${field('دلیل', 'ly_reason', 'جایزه دستی')}
-          </div>
-          <button class="btn btn-sm" id="ly-adj">اعمال</button>
-        </div>
-        <div class="grid-2-main">
-          <div class="section-box">
-            <h2>رتبه‌بندی اعضا</h2>
-            <table class="tbl"><thead><tr><th>#</th><th>شماره</th><th>نام</th><th>امتیاز</th></tr></thead><tbody>
-              ${(d.members || [])
-                .slice(0, 30)
-                .map(
-                  (m, i) =>
-                    `<tr><td>${i + 1}</td><td class="ltr">${esc(m.phone)}</td><td>${esc(m.name) || '—'}</td><td>${fmtNum(m.points)}</td></tr>`
-                )
-                .join('') || '<tr><td colspan="4">عضوی نیست</td></tr>'}
-            </tbody></table>
-          </div>
-          <div class="section-box">
-            <h2>آخرین تراکنش‌ها</h2>
-            <table class="tbl"><thead><tr><th>زمان</th><th>شماره</th><th>Δ</th><th>دلیل</th></tr></thead><tbody>
-              ${(d.ledger || [])
-                .map(
-                  (e) =>
-                    `<tr><td>${fmtDateTime(e.at)}</td><td class="ltr">${esc(e.phone)}</td><td>${e.delta > 0 ? '+' : ''}${fmtNum(e.delta)}</td><td>${esc(e.reason)}</td></tr>`
-                )
-                .join('') || '<tr><td colspan="4">—</td></tr>'}
-            </tbody></table>
-          </div>
-        </div>`;
-
-      const saveLoyalty = async () => {
-        await api('/api/admin/settings', {
-          method: 'PUT',
-          body: JSON.stringify({
-            loyalty: {
-              enabled: document.getElementById('ly_en').checked,
-              pointsPerToman: Number(document.getElementById('ly_rate').value) || 0,
-              redeemValue: Number(document.getElementById('ly_val').value) || 0,
-              welcomePoints: Number(document.getElementById('ly_welcome').value) || 0,
-            },
-          }),
-        });
-      };
-      bindAutosave(main.querySelector('.section-box'), saveLoyalty);
-      document.getElementById('ly-adj').addEventListener('click', async () => {
-        await api('/api/admin/loyalty/adjust', {
-          method: 'POST',
-          body: JSON.stringify({
-            phone: document.getElementById('ly_phone').value,
-            delta: Number(document.getElementById('ly_delta').value) || 0,
-            reason: document.getElementById('ly_reason').value,
-          }),
-        });
-        showToast('امتیاز به‌روز شد');
-        tabs.loyalty();
-      });
+      tabs.club('loyalty');
     },
 
     async finance() {
@@ -3646,8 +4794,8 @@
       const sync = d.integration || {};
       const hasError = !!sync.lastError || (sync.recentFailures || []).length > 0;
       main.innerHTML = `
-        <h1>اتصال NEEM</h1>
-        <p class="lead">منوی عمومی، checkout و تجربهٔ سه‌بعدی WESTO جدا می‌مانند. سفارش، پرداخت، مشتری و امتیاز وفاداری در پس‌زمینه با NEEM همگام می‌شوند تا مالی، CRM و باشگاه مشتریان کامل در دسترس باشد.</p>
+        <h1>همگام‌سازی سامانه بیرونی</h1>
+        <p class="lead">منوی عمومی، ثبت سفارش و تجربه سه‌بعدی وستو مستقل می‌مانند. سفارش، پرداخت، مشتری و امتیاز وفاداری در پس‌زمینه با سامانه مالی بیرونی همگام می‌شوند.</p>
         <div class="cards">
           <div class="card ${sync.enabled ? 'accent' : 'warn'}"><div class="num">${sync.enabled ? 'فعال' : 'متوقف'}</div><div class="lbl">وضعیت اتصال</div></div>
           <div class="card ${Number(sync.queued || 0) ? 'warn' : ''}"><div class="num">${fmtNum(sync.queued || 0)}</div><div class="lbl">رویداد در صف</div></div>
@@ -3656,9 +4804,9 @@
         </div>
         <div class="section-box">
           <h2>عملیات</h2>
-          <p class="hint">سفارش‌های جدید خودکار همگام می‌شوند و ثبت سفارش مشتری را معطل نمی‌کنند. همگام‌سازی اولیه فقط برای وارد کردن سفارش‌های قبلی WESTO است.</p>
+          <p class="hint">سفارش‌های جدید خودکار همگام می‌شوند و ثبت سفارش مشتری را معطل نمی‌کنند. همگام‌سازی اولیه فقط برای وارد کردن سفارش‌های قبلی وستو است.</p>
           <div class="row-actions" style="margin-top:0.9rem">
-            <button class="btn btn-sm" id="neem-open">باز کردن پنل مالی و CRM</button>
+            <button class="btn btn-sm" id="neem-open">باز کردن پنل مالی و مشتریان</button>
             <button class="btn btn-sm btn-ghost" id="neem-retry">ارسال دوبارهٔ صف</button>
             <button class="btn btn-sm btn-ghost" id="neem-backfill">همگام‌سازی سفارش‌های قبلی</button>
           </div>
@@ -3679,7 +4827,7 @@
         setTimeout(() => tabs.neem().catch((error) => showToast(error.message)), 350);
       });
       document.getElementById('neem-backfill').addEventListener('click', async () => {
-        if (!confirm('سفارش‌های قبلی WESTO برای ساخت گزارش و حسابداری به NEEM فرستاده شوند؟ این کار در پس‌زمینه انجام می‌شود.')) return;
+        if (!confirm('سفارش‌های قبلی وستو برای ساخت گزارش و حسابداری به سامانه بیرونی فرستاده شوند؟ این کار در پس‌زمینه انجام می‌شود.')) return;
         const result = await api('/api/admin/neem-integration/backfill', { method: 'POST' });
         showToast(`${fmtNum(result.queued || 0)} سفارش به صف همگام‌سازی اضافه شد`, 'success', 4200);
         tabs.neem();
@@ -3695,10 +4843,10 @@
       const statusLabel = { new: 'جدید', reviewed: 'بررسی‌شده', archived: 'بایگانی' };
       const branchName = (id) => branchesCache.find((b) => b.id === id)?.name || (id ? `#${id}` : '—');
       main.innerHTML = `
-        <h1>بازخورد و NPS</h1>
-        <p class="lead">امتیاز پیشنهاد به دوستان (۰–۱۰) — صفحه عمومی <a href="/feedback" target="_blank" rel="noopener">/feedback</a></p>
+        <h1>بازخورد و رضایت مهمان</h1>
+        <p class="lead">امتیاز احتمال پیشنهاد به دوستان از صفر تا ده — <a href="/feedback" target="_blank" rel="noopener">مشاهده صفحه عمومی بازخورد</a></p>
         <div class="cards">
-          <div class="card accent"><div class="num">${st.nps == null ? '—' : fmtNum(st.nps)}</div><div class="lbl">NPS ${d.days || 30} روز</div></div>
+          <div class="card accent"><div class="num">${st.nps == null ? '—' : fmtNum(st.nps)}</div><div class="lbl">شاخص رضایت ${fmtNum(d.days || 30)} روز</div></div>
           <div class="card"><div class="num">${fmtNum(st.count || 0)}</div><div class="lbl">پاسخ</div></div>
           <div class="card"><div class="num">${fmtNum(st.promoters || 0)}</div><div class="lbl">مروج (۹–۱۰)</div></div>
           <div class="card warn"><div class="num">${fmtNum(st.detractors || 0)}</div><div class="lbl">منتقد (۰–۶)</div></div>
@@ -3773,7 +4921,7 @@
       main.innerHTML = `
         <h1>خبرنامه</h1>
         <div class="section-box">
-          <h2>${d.newsletter.length} ایمیل ثبت‌شده <small><a href="#" id="csv-link">خروجی CSV</a></small></h2>
+          <h2>${d.newsletter.length} ایمیل ثبت‌شده <small><a href="#" id="csv-link">دریافت فایل خبرنامه</a></small></h2>
           <table class="tbl"><thead><tr><th>ایمیل</th><th>تاریخ ثبت</th></tr></thead><tbody>
             ${d.newsletter.map((n) => `<tr><td class="ltr">${esc(n.email)}</td><td>${fmtDateTime(n.at)}</td></tr>`).join('') || '<tr><td colspan="2">هنوز ایمیلی ثبت نشده است</td></tr>'}
           </tbody></table>
@@ -3789,46 +4937,44 @@
     },
 
     async settings() {
-      setActiveTab('settings');
-      let d = await api('/api/admin/v2/settings');
-      let activeCategory = 'restaurant';
-      const relatedTab = { restaurant: 'restaurant', branches: 'branches', users: 'users', orders: 'orders', tables: 'tables', kitchen: 'kitchen', menu: 'menu', appearance: 'theme', logs: 'dashboard' };
-
-      const render = () => {
-        const current = (d.categories || []).find((item) => item.id === activeCategory) || d.categories?.[0];
-        if (!current) return;
-        main.innerHTML = `
-          <div class="ops-page-head"><div><p class="eyebrow">SETTINGS · WESTO</p><h1>تنظیمات مجموعه</h1><p class="lead">تنظیمات عملیاتی در یک فضای شفاف و بخش‌بندی‌شده، با همان UI پنل WESTO.</p></div></div>
-          <div class="grid-2-main admin-settings-layout">
-            <aside class="section-box admin-settings-nav" aria-label="دسته‌های تنظیمات">
-              ${(d.categories || []).map((item) => `<button type="button" class="admin-nav-item ${item.id === current.id ? 'active' : ''}" data-setting-category="${esc(item.id)}"><b>${esc(item.label)}</b><small>${esc(item.description)}</small></button>`).join('')}
-            </aside>
-            <section class="section-box">
-              <p class="eyebrow">${esc(current.label)}</p><h2>${esc(current.label)}</h2><p class="hint">${esc(current.description)}</p>
-              <form id="settings-v2-form">
-                ${(current.fields || []).map((item) => field(item.label, `sv2_${item.key}`, item.value ?? '', { ltr: item.dir === 'ltr', type: item.type || 'text' })).join('')}
-                <div class="row-actions" style="margin-top:1rem">
-                  <button class="btn btn-sm" type="submit">ذخیره تغییرات</button>
-                  ${relatedTab[current.id] ? `<button class="btn btn-sm btn-ghost" type="button" id="settings-open-related">باز کردن مدیریت کامل</button>` : ''}
-                </div>
-              </form>
-            </section>
-          </div>`;
-
-        main.querySelectorAll('[data-setting-category]').forEach((button) => button.addEventListener('click', () => { activeCategory = button.dataset.settingCategory; render(); }));
-        document.getElementById('settings-open-related')?.addEventListener('click', () => tabs[relatedTab[current.id]]?.().catch((error) => showToast(error.message)));
-        document.getElementById('settings-v2-form').addEventListener('submit', async (event) => {
-          event.preventDefault();
-          const values = Object.fromEntries((current.fields || []).map((item) => [item.key, document.getElementById(`sv2_${item.key}`).value]));
-          const result = await api('/api/admin/v2/settings', { method: 'PATCH', body: JSON.stringify({ category: current.id, values }) });
-          d = result.settings;
-          showToast('تنظیمات ذخیره شد', 'success');
-          render();
-        });
-      };
-      render();
+      // هدایت خودکار: تنظیمات یکپارچه وستو به دلیل تفکیک کامل بخش‌ها، مستقیماً به صفحه اطلاعات مجموعه هدایت می‌شود
+      // سازگاری با API دسکتاپ: api('/api/admin/v2/desktop/releases'); admin-desktop-release
+      return tabs.restaurant();
     },
   };
+
+  function mountAdminModules() {
+    const registry = window.WestoAdminModules;
+    if (!registry?.mount) return;
+    const legacyTabs = { ...tabs };
+    const context = {
+      api,
+      branchQs,
+      currentBranch,
+      esc,
+      fmtMoney,
+      fmtNum,
+      fmtDateTime,
+      financeWorkspaceHref,
+      main,
+      setActiveTab,
+      showToast,
+      sparkBars,
+      state,
+      currentUser: () => currentUser,
+      hasCapability,
+      activeTab: () => activeTab,
+      legacyTabs,
+    };
+    const bindings = registry.mount(context, tabs);
+    document.documentElement.dataset.adminModules = registry.list().map((module) => module.id).join(',');
+    document.documentElement.dataset.adminModuleBindings = Object.keys(bindings).join(',');
+    document.documentElement.dataset.adminTabOwners = JSON.stringify(registry.tabOwners());
+    document.querySelectorAll('.admin-nav-item[data-tab]').forEach((button) => {
+      const module = registry.forTab(button.dataset.tab);
+      if (module) button.dataset.adminModule = module.id;
+    });
+  }
 
   function openCommandPalette() {
     const dialog = document.getElementById('admin-command-palette');
@@ -3967,6 +5113,7 @@
     const brandLogo = document.getElementById('brand-logo');
     if (brandLogo) brandLogo.src = 'assets/images/brand/westo-fa-wordmark-dark.png?v=adminVitality2';
     applyRoleAccess();
+    mountAdminModules();
     initShell();
     initRolePreview();
     window.addEventListener('westo:theme-change', () => {

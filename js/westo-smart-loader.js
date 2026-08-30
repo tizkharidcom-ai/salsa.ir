@@ -8,7 +8,7 @@
 
   if (window.WestoResources && window.WestoSmartLoad) return;
 
-  const VERSION = 'release14uf1d23-landscape-shell';
+  const VERSION = 'release14uf1d28-webp-only';
   const now = () => performance.now();
   const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection || null;  const coarse = Boolean(window.matchMedia?.('(pointer: coarse)')?.matches);
   const lowMemory = Number(navigator.deviceMemory || 8) <= 4;
@@ -53,11 +53,9 @@
 
   let budget = networkBudget();
   const records = new Map();
-  // Logical WebP paths are kept in the menu data. These maps let the resource
-  // scheduler choose an AVIF sibling without changing that data contract, and
-  // remember a bad/missing AVIF for the rest of the session.
+  // Menu data owns stable WebP paths. The scheduler keeps that contract intact
+  // and never upgrades a request to a lower-quality sibling format.
   const resolvedImageSources = new Map();
-  const failedImageCandidates = new Set();
   const queue = [];
   const active = new Set();
   const imageBindings = new WeakMap();
@@ -101,54 +99,17 @@
     }
   }
 
-  // A tiny valid AVIF. This is a capability probe only: it never touches the
-  // network, so unsupported/older devices go straight to their WebP source.
-  const AVIF_PROBE = 'data:image/avif;base64,AAAAIGZ0eXBhdmlmAAAAAGF2aWZtaWYxbWlhZk1BMUEAAADrbWV0YQAAAAAAAAAhaGRscgAAAAAAAAAAcGljdAAAAAAAAAAAAAAAAAAAAAAOcGl0bQAAAAAAAQAAAB5pbG9jAAAAAEQAAAEAAQAAAAEAAAETAAAAGQAAAChpaW5mAAAAAAABAAAAGmluZmUCAAAAAAEAAGF2MDFDb2xvcgAAAABqaXBycAAAAEtpcGNvAAAAFGlzcGUAAAAAAAAAAQAAAAEAAAAQcGl4aQAAAAADCAgIAAAADGF2MUOBIAAAAAAAE2NvbHJuY2x4AAEADQAGgAAAABdpcG1hAAAAAAAAAAEAAQQBAoMEAAAAIW1kYXQSAAoHOAAGEBDQaTIMF4AJJJJEAAB5TNbo';
-  let avifSupportPromise = null;
-
-  function supportsAvif() {
-    if (avifSupportPromise) return avifSupportPromise;
-    if (typeof window.__WESTO_TEST_AVIF_SUPPORT__ === 'boolean') {
-      avifSupportPromise = Promise.resolve(window.__WESTO_TEST_AVIF_SUPPORT__);
-      return avifSupportPromise;
-    }
-    // Deterministic scheduler tests intentionally have no browser image
-    // decoder. Production browsers always take the capability probe below.
-    if (window.__WESTO_SMART_TEST_NO_BOOT__ || typeof Image !== 'function') {
-      avifSupportPromise = Promise.resolve(false);
-      return avifSupportPromise;
-    }
-    avifSupportPromise = new Promise((resolve) => {
-      const probe = new Image();
-      let done = false;
-      const finish = (supported) => {
-        if (done) return;
-        done = true;
-        clearTimeout(timeout);
-        resolve(Boolean(supported));
-      };
-      const timeout = setTimeout(() => finish(false), 700);
-      probe.onload = () => finish(probe.naturalWidth > 0);
-      probe.onerror = () => finish(false);
-      try {
-        probe.decoding = 'async';
-        probe.src = AVIF_PROBE;
-      } catch (_) {
-        finish(false);
-      }
-    });
-    return avifSupportPromise;
-  }
-
-  function siblingImageUrl(url, extension) {
+  function webpImageUrl(url) {
     try {
       const parsed = new URL(String(url || ''), location.href);
       const base = new URL(location.href);
-      // Keep external/CDN URLs untouched: we cannot assume they expose the
-      // same filename in both formats or allow credentialed fetches.
-      if (parsed.origin !== base.origin) return '';
-      if (!/\.(?:avif|webp)$/i.test(parsed.pathname)) return '';
-      parsed.pathname = parsed.pathname.replace(/\.(?:avif|webp)$/i, extension);
+      // A legacy local AVIF reference is translated to its retained WebP
+      // sibling before fetching. Third-party AVIFs are intentionally skipped:
+      // there is no reliable WebP sibling contract outside this application.
+      if (/\.avif$/i.test(parsed.pathname)) {
+        if (parsed.origin !== base.origin) return '';
+        parsed.pathname = parsed.pathname.replace(/\.avif$/i, '.webp');
+      }
       return parsed.href;
     } catch (_) {
       return '';
@@ -157,12 +118,14 @@
 
   function previewImageUrl(url) {
     try {
-      const parsed = new URL(String(url || ''), location.href);
+      const source = webpImageUrl(url);
+      if (!source) return '';
+      const parsed = new URL(source, location.href);
       const base = new URL(location.href);
       if (parsed.origin !== base.origin || /\/previews\//i.test(parsed.pathname)) return '';
-      if (!/\.(?:avif|webp)$/i.test(parsed.pathname)) return '';
+      if (!/\.webp$/i.test(parsed.pathname)) return '';
       const directory = parsed.pathname.slice(0, parsed.pathname.lastIndexOf('/'));
-      const filename = parsed.pathname.slice(parsed.pathname.lastIndexOf('/') + 1).replace(/\.(?:avif|webp)$/i, '');
+      const filename = parsed.pathname.slice(parsed.pathname.lastIndexOf('/') + 1).replace(/\.webp$/i, '');
       parsed.pathname = `${directory}/previews/${filename}.webp`;
       return parsed.href;
     } catch (_) {
@@ -170,25 +133,14 @@
     }
   }
 
-  async function imageCandidates(url, options = {}) {
+  async function imageCandidates(url) {
     const source = canonical(url);
-    if (options.preferAvif === false) return [{ url: source, format: 'webp' }];
-    const isWebp = /\.webp(?:$|[?#])/i.test(source);
-    const isAvif = /\.avif(?:$|[?#])/i.test(source);
-    if (!isWebp && !isAvif) return [{ url: source, format: 'source' }];
-
-    const avifSupported = await supportsAvif();
-    if (isAvif) {
-      const webp = siblingImageUrl(source, '.webp');
-      return avifSupported
-        ? [{ url: source, format: 'avif' }, ...(webp ? [{ url: webp, format: 'webp' }] : [])]
-        : (webp ? [{ url: webp, format: 'webp' }] : [{ url: source, format: 'avif' }]);
-    }
-
-    const avif = siblingImageUrl(source, '.avif');
-    return avifSupported && avif && !failedImageCandidates.has(avif)
-      ? [{ url: avif, format: 'avif' }, { url: source, format: 'webp' }]
-      : [{ url: source, format: 'webp' }];
+    const webp = webpImageUrl(source);
+    if (!webp) return [];
+    return [{
+      url: webp,
+      format: /\.webp(?:$|[?#])/i.test(webp) ? 'webp' : 'source',
+    }];
   }
 
   function fetchPriority(priority) {
@@ -435,19 +387,12 @@
     let lastError = null;
     for (let index = 0; index < candidates.length; index += 1) {
       const candidate = candidates[index];
-      if (!candidate?.url || failedImageCandidates.has(candidate.url)) continue;
+      if (!candidate?.url) continue;
       try {
         const result = await requestBlob(candidate.url, {
           ...options,
           kind: 'image',
         });
-        // An HTTP 200 is not enough: a corrupt AVIF must fall back before it
-        // can replace an already visible image. WebP retains the existing
-        // browser-native decode path.
-        if (candidate.format === 'avif' && options.verify !== false) {
-          const decoded = await decodeObjectUrl(result.url);
-          if (!decoded) throw new Error('AVIF decode failed');
-        }
         resolvedImageSources.set(logicalSource, candidate.url);
         return {
           ...result,
@@ -458,7 +403,6 @@
       } catch (error) {
         if (error?.name === 'AbortError') throw error;
         lastError = error;
-        if (candidate.format === 'avif') failedImageCandidates.add(candidate.url);
       }
     }
     throw lastError || new Error('image candidates unavailable');
@@ -903,7 +847,7 @@
       if (cat.cover) work.push(warmCategoryCover(cat.cover, P.NEAR, 'fill:covers'));
     }
     // Session-prewarm policy: every food gets a tiny same-photo preview first,
-    // then its normal AVIF/WebP resource. The queue remains interruptible, so
+    // then its normal WebP resource. The queue remains interruptible, so
     // a tap or scroll always preempts background work. This removes the old
     // 8/24-item cap that made distant categories visibly load on entry.
     const focusIndex = Math.max(0, categoryIndex(currentCategory));
@@ -1005,7 +949,6 @@
     }
     records.clear();
     resolvedImageSources.clear();
-    failedImageCandidates.clear();
     queue.length = 0;
     active.clear();
     decodePromises.clear();

@@ -7,8 +7,15 @@ const { toInt } = require('./money');
 
 function getPredictiveAnalytics(db, filter = {}) {
   const acc = db.accounting || {};
-  const entries = (acc.journalEntries || []).filter(e => e.status === 'posted');
-  const orders = (db.orders || []).filter(o => o.paymentStatus === 'paid' || ['paid', 'delivered', 'done'].includes(o.status));
+  const branchId = filter.branchId == null ? null : Number(filter.branchId);
+  const entries = (acc.journalEntries || []).filter((entry) => {
+    if (entry.status !== 'posted') return false;
+    if (branchId == null) return true;
+    const lines = entry.lines || [];
+    return lines.some((line) => Number(line.branchId ?? entry.branchId) === branchId);
+  });
+  const orders = (db.orders || []).filter((order) => (branchId == null || Number(order.branchId) === branchId)
+    && (order.paymentStatus === 'paid' || ['paid', 'delivered', 'done'].includes(order.status)));
 
   // 1. Calculate liquid cash and monthly average burn
   let totalCash = 0;
@@ -19,6 +26,7 @@ function getPredictiveAnalytics(db, filter = {}) {
   accounts.forEach(a => { balanceMap[a.code] = 0; });
   entries.forEach(e => {
     (e.lines || []).forEach(l => {
+      if (branchId != null && Number(l.branchId ?? e.branchId) !== branchId) return;
       const code = l.accountCode;
       if (balanceMap[code] !== undefined) {
         balanceMap[code] += (l.debit || 0) - (l.credit || 0);
@@ -42,6 +50,7 @@ function getPredictiveAnalytics(db, filter = {}) {
     const eDate = new Date(e.date).getTime();
     if (eDate >= ninetyDaysAgo) {
       (e.lines || []).forEach(l => {
+        if (branchId != null && Number(l.branchId ?? e.branchId) !== branchId) return;
         const accDef = accounts.find(a => a.code === l.accountCode);
         if (accDef) {
           if (accDef.type === 'expense' || accDef.type === 'cogs') recentExpenses += (l.debit || 0) - (l.credit || 0);
@@ -77,7 +86,7 @@ function getPredictiveAnalytics(db, filter = {}) {
 
   // 3. Expense Anomalies (detect categories with > 25% spike)
   const categoryExpenses = {};
-  (acc.expenses || []).forEach(exp => {
+  (acc.expenses || []).filter((exp) => branchId == null || Number(exp.branchId) === branchId).forEach(exp => {
     const cat = exp.category || 'عمومی';
     categoryExpenses[cat] = (categoryExpenses[cat] || 0) + toInt(exp.amount || 0);
   });

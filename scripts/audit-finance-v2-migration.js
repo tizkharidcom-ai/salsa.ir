@@ -19,6 +19,7 @@ const inferred = classified.rows.filter((row) => row.trustStatus === 'inferred_n
 const quarantined = classified.rows.filter((row) => row.trustStatus === 'quarantined');
 const countReason = (reason) => quarantined.filter((row) => row.reason === reason).length;
 const countGroups = (reason) => new Set(quarantined.filter((row) => row.reason === reason).map((row) => row.classificationDetails?.duplicateKey).filter(Boolean)).size;
+const dataQuality = financeV2.dataQuality(db);
 
 const report = {
   schemaVersion: 1,
@@ -42,11 +43,12 @@ const report = {
     quarantined,
   },
   reconciliation: financeV2.reportSnapshot(db),
-  releaseGate: { status: 'NO_GO', reasons: financeV2.dataQuality(db).issues.map((issue) => issue.code) },
+  releaseGate: { status: dataQuality.issues.length ? 'NO_GO' : 'GO', reasons: dataQuality.issues.map((issue) => issue.code) },
 };
 
 fs.mkdirSync(outputDir, { recursive: true });
 const stamp = generatedAt.replace(/[:.]/g, '-');
 const outputPath = path.join(outputDir, `migration-audit-${stamp}.json`);
 fs.writeFileSync(outputPath, `${JSON.stringify(report, null, 2)}\n`, { mode: 0o600 });
-process.stdout.write(`${JSON.stringify({ ok: true, outputPath, sha256, summary: report.summary, releaseGate: report.releaseGate }, null, 2)}\n`);
+process.stdout.write(`${JSON.stringify({ ok: report.releaseGate.status === 'GO', outputPath, sha256, summary: report.summary, releaseGate: report.releaseGate }, null, 2)}\n`);
+if (report.releaseGate.status !== 'GO') process.exitCode = 3;

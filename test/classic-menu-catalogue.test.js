@@ -9,7 +9,7 @@ const read = (file) => fs.readFileSync(path.join(root, file), 'utf8');
 test('catalogue redesign loads after legacy production styles', () => {
   const html = read('menu.html');
   const production = html.indexOf('css/westo-production-v12.css');
-  const catalogue = html.indexOf('css/classic-menu-catalogue-v2.css?v=menuBrand6');
+  const catalogue = html.indexOf('css/classic-menu-catalogue-v2.css?v=menuBrand7');
 
   assert.ok(production >= 0);
   assert.ok(catalogue > production);
@@ -68,4 +68,16 @@ test('catalogue interactions preserve item ids and use the existing cart owner',
   assert.match(js, /function setDetailExpanded\(expanded\)/);
   assert.match(js, /url\.searchParams\.set\('item', String\(detailItem\.id\)\)/);
   assert.match(js, /event\.target\.matches\('\.cm-item\[data-id\]'\)/);
+});
+
+test('Persian catalogue uses genuine RTL flow and a readable currency label', () => {
+  const html = read('menu.html');
+  const js = read('js/classic-menu.js');
+
+  assert.match(html, /<html lang="fa" dir="rtl"/);
+  assert.match(html, /<body class="classic-menu" lang="fa" dir="rtl">/);
+  assert.match(js, /document\.documentElement\.dir = textDir/);
+  assert.match(js, /document\.body\.dir = textDir/);
+  assert.doesNotMatch(js, /<small>IRT<\/small>/);
+  assert.match(js, /<small>.*تومان.*<\/small>/);
 });

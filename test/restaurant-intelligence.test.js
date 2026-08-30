@@ -104,6 +104,56 @@ test('stockout forecast uses paid recipe consumption only after minimum history'
   assert.equal(milk.daysRemaining, 10);
 });
 
+test('stockout forecast uses weekday demand, explicit safety days and only future approved PO receipts', () => {
+  const fixture = milkshakeFixture({ milkLiters: 5, bananaGrams: 5000 });
+  fixture.items[0].leadTimeDays = 3;
+  fixture.items[0].safetyDays = 1;
+  const orders = Array.from({ length: 28 }, (_, index) => ({
+    id: index + 1, branchId: 1, status: 'done', paymentStatus: 'paid',
+    createdAt: new Date(Date.UTC(2026, 7, index + 1, 12)).toISOString(),
+    items: [{ menuItemId: 'milkshake', qty: 4 }],
+  }));
+  const purchaseOrders = [{
+    id: 'po-inbound', number: 'PO-INBOUND', branchId: 1, status: 'partially_received', expectedDate: '2026-08-30',
+    lines: [{ itemId: 'milk', quantity: 5, receivedQuantity: 2 }],
+  }];
+  const forecast = intelligence.calculateStockoutForecast({ ...fixture, orders, purchaseOrders, branchId: 1, minHistoryDays: 14 });
+  const milk = forecast.items.find((row) => row.itemId === 'milk');
+  assert.equal(forecast.forecastMethod, 'weekday_consumption_with_approved_po');
+  assert.equal(milk.averageDailyUsage, 1);
+  assert.deepEqual(milk.weekdayAverageUsage, [1, 1, 1, 1, 1, 1, 1]);
+  assert.equal(milk.projectedInboundQuantity, 3);
+  assert.equal(milk.daysRemaining, 8);
+  assert.equal(milk.forecastDate, '2026-09-05');
+  assert.equal(milk.reorderByDate, '2026-09-01');
+  assert.equal(milk.backtestWapePercent, 0);
+  assert.equal(milk.confidence, 'medium');
+
+  const overdue = intelligence.calculateStockoutForecast({
+    ...fixture, orders, branchId: 1, minHistoryDays: 14,
+    purchaseOrders: [{ ...purchaseOrders[0], id: 'po-overdue', expectedDate: '2026-08-28' }],
+  });
+  const overdueMilk = overdue.items.find((row) => row.itemId === 'milk');
+  assert.equal(overdueMilk.projectedInboundQuantity, 0);
+  assert.equal(overdueMilk.daysRemaining, 5);
+  assert.ok(overdue.inboundIssues.some((issue) => issue.code === 'approved_po_overdue_not_assumed_received'));
+});
+
+test('stockout coverage drops when a recipe ingredient or unit cannot be validated', () => {
+  const fixture = milkshakeFixture({ milkLiters: 5, bananaGrams: 500 });
+  fixture.recipes[0].ingredients.push({ itemId: 'missing-ice', qty: 1, unit: 'عدد' });
+  const orders = Array.from({ length: 15 }, (_, index) => ({
+    id: index + 1, branchId: 1, status: 'done', paymentStatus: 'paid',
+    createdAt: new Date(Date.UTC(2026, 7, index + 1, 12)).toISOString(),
+    items: [{ menuItemId: 'milkshake', qty: 2 }],
+  }));
+  const forecast = intelligence.calculateStockoutForecast({ ...fixture, orders, branchId: 1, minHistoryDays: 14 });
+  assert.equal(forecast.status, 'insufficient_data');
+  assert.equal(forecast.recipeCoveragePercent, 0);
+  assert.equal(forecast.items.length, 0);
+  assert.ok(forecast.coverageIssues.every((issue) => issue.code === 'ingredient_item_missing'));
+});
+
 test('stockout forecast excludes paid orders outside the requested period', () => {
   const fixture = milkshakeFixture({ milkLiters: 5, bananaGrams: 500 });
   const orders = Array.from({ length: 20 }, (_, index) => ({

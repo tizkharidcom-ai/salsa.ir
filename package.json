@@ -2,6 +2,8 @@
   "name": "westo",
   "version": "1.0.0",
   "private": true,
+  "author": "WESTO",
+  "main": "desktop/main.cjs",
   "description": "Local mirror of westo.local (Webflow + Three.js r161 + GSAP + Lenis) as design base for Westo",
   "scripts": {
     "start": "node server/server.js",
@@ -11,11 +13,14 @@
     "test:integration": "RUN_HTTP_TESTS=true node --test test/command-center-http.test.js",
     "migrate:postgres": "node server/migrate-postgres.js",
     "migrate:unified": "node server/migrate-unified-postgres.js",
+    "migrate:unified:apply": "node server/migrate-unified-postgres.js --apply",
     "migrate:finance-v2": "node scripts/migrate-finance-v2-postgres.js",
+    "migrate:finance-v2:apply": "node scripts/migrate-finance-v2-postgres.js --apply",
     "verify:finance-v2-concurrency": "node scripts/verify-finance-v2-concurrency.js",
     "audit:finance-v2": "node scripts/audit-finance-v2-migration.js",
+    "preflight:finance-cutover": "node scripts/finance-cutover-preflight.js",
+    "evidence:finance-cutover": "node scripts/finance-cutover-preflight.js --write-evidence",
     "perf:har": "node scripts/analyze-har.js",
-    "images:avif": "node scripts/generate-avif-fallbacks.js",
     "images:previews": "node scripts/generate-menu-previews.js",
     "test:session-prewarm": "node scripts/test-session-prewarm.js",
     "test:static-bootstrap": "node scripts/test-static-bootstrap-fallback.js",
@@ -26,13 +31,82 @@
     "validate:pwa": "node scripts/validate-pwa-standalone.js",
     "validate:cleanup": "node scripts/validate-cleanup.js",
     "validate:admin": "node scripts/validate-admin-center.js",
-    "validate:admin1000": "node scripts/validate-admin-1000.js"
+    "validate:admin1000": "node scripts/validate-admin-1000.js",
+    "desktop:dev": "electron desktop/main.cjs",
+    "desktop:pack": "electron-builder --dir",
+    "desktop:dist": "electron-builder --mac --win",
+    "desktop:dist:mac": "electron-builder --mac",
+    "desktop:dist:win": "electron-builder --win"
   },
   "dependencies": {
+    "@radix-ui/react-avatar": "^1.2.6",
+    "@radix-ui/react-slot": "^1.3.3",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
     "compression": "^1.8.1",
     "express": "^5.2.1",
+    "iconv-lite": "^0.7.3",
+    "lucide-react": "^1.37.0",
     "multer": "^2.2.0",
     "pg": "^8.22.0",
-    "qrcode": "^1.5.4"
+    "qrcode": "^1.5.4",
+    "radix-ui": "^1.6.7",
+    "recharts": "^3.10.1",
+    "tailwind-merge": "^3.6.0"
+  },
+  "devDependencies": {
+    "electron": "^37.2.6",
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "ir.westo.admin",
+    "productName": "WESTO Admin",
+    "artifactName": "westo-admin-${version}-${arch}.${ext}",
+    "asar": true,
+    "directories": {
+      "output": "dist-desktop",
+      "buildResources": "assets/icons"
+    },
+    "files": [
+      "desktop/**/*",
+      "package.json"
+    ],
+    "mac": {
+      "category": "public.app-category.business",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
+      ],
+      "icon": "assets/icons/pwa-512.png"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "assets/icons/pwa-512.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "WESTO Admin"
+    }
   }
 }

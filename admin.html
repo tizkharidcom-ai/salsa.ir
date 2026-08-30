@@ -32,17 +32,29 @@
   <link rel="stylesheet" href="css/admin-operations-v3.css?v=adminOps4" />
   <link rel="stylesheet" href="css/admin-professional-v4.css?v=adminPro4" />
   <link rel="stylesheet" href="css/admin-qr.css?v=qrStudio1" />
-  <link rel="stylesheet" href="css/admin-accounting.css?v=finance-v2-20260825-opening24" />
+  <link rel="stylesheet" href="css/admin-accounting.css?v=finance-v2-20260829-break-even3" />
+  <link rel="stylesheet" href="css/admin-break-even-chart.css?v=break-even-chart4-dashboard" />
+  <link rel="stylesheet" href="css/admin-inventory-v2.css?v=inventoryV2-20260829" />
   <link rel="stylesheet" href="css/shamsi-datepicker.css?v=shamsi2-20260825" />
-  <script src="js/shamsi-core.js?v=shamsi1"></script>
+  <script src="js/shamsi-core.js?v=shamsi2-20260829"></script>
   <script src="js/shamsi-datepicker.js?v=shamsi2-20260825"></script>
+  <script src="js/persian-format.js?v=persianNumbers1"></script>
   <script src="js/theme.js?v=adminVitality2" defer></script>
-  <script src="js/admin.js?v=adminVitality20260825" defer></script>
+  <script src="js/admin/modules/core/registry.js?v=adminModules2" defer></script>
+  <script src="js/admin/modules/catalog/menu-module.js?v=adminModules3-inventory" defer></script>
+  <script src="js/admin/modules/insights/reports-module.js?v=adminModules2" defer></script>
+  <script src="js/admin/modules/operations/operations-module.js?v=adminModules2" defer></script>
+  <script src="js/admin/modules/finance/finance-module.js?v=adminModules2" defer></script>
+  <script src="js/admin/modules/inventory/inventory-module.js?v=inventoryV2-20260829-2" defer></script>
+  <script src="js/admin/modules/content/content-module.js?v=adminModules2" defer></script>
+  <script src="js/admin/modules/settings/settings-module.js?v=adminModules2" defer></script>
+  <script src="js/admin.js?v=adminVitality20260830-break-even-official" defer></script>
   <script src="js/admin-professional-v4.js?v=adminVitality2" defer></script>
-  <script src="js/admin-accounting.js?v=finance-v2-20260825-opening24"></script>
+  <script src="js/admin/modules/finance/break-even-chart.js?v=break-even-chart4-dashboard"></script>
+  <script src="js/admin-accounting.js?v=finance-v2-20260829-break-even5"></script>
   <link rel="stylesheet" href="css/vazir-system.css?v=font1" />
   <link rel="stylesheet" href="css/design-logic-v13.css?v=logic13r1" />
-  <link rel="stylesheet" href="css/admin-vitality-v5.css?v=adminVitality15" />
+  <link rel="stylesheet" href="css/admin-vitality-v5.css?v=adminVitality19" />
   <script src="js/design-logic-v13.js?v=logic13r1" defer></script>
 </head>
 <body class="panel-body admin-pro admin-app">
@@ -75,9 +87,9 @@
 
       <details class="nav-group nav-workspace">
         <summary class="nav-label">منو و محصولات</summary>
-        <button class="admin-nav-item" data-tab="menu" data-capability="menu.view" type="button">استودیو منو</button>
+        <button class="admin-nav-item" data-tab="menu" data-capability="menu.view" type="button">مدیریت منو</button>
         <button class="admin-nav-item" data-tab="prices" data-capability="menu.manage" type="button">قیمت‌ها</button>
-        <button class="admin-nav-item" data-tab="products" data-capability="menu.manage" type="button">دسته‌ها و کاروسل</button>
+        <button class="admin-nav-item" data-tab="products" data-capability="menu.manage" type="button">دسته‌ها و ترتیب نمایش</button>
         <button class="admin-nav-item" data-tab="complements" data-capability="menu.manage" type="button">مکمل‌ها و مهندسی منو</button>
         <button class="admin-nav-item" data-tab="translate" data-capability="menu.manage" type="button">ترجمه و زبان‌ها</button>
         <button class="admin-nav-item" data-tab="printmenu" data-capability="menu.view" type="button">منوی چاپی</button>
@@ -85,15 +97,16 @@
 
       <details class="nav-group nav-workspace">
         <summary class="nav-label">انبار و هزینه</summary>
-        <button class="admin-nav-item" data-tab="inventory" data-capability="inventory.view" type="button">موجودی انبار</button>
-        <button class="admin-nav-item" data-tab="costControl" data-capability="inventory.view" type="button">کنترل هزینه</button>
+        <button class="admin-nav-item" data-tab="inventory" data-capability="inventory.view" type="button">انبار و مواد اولیه</button>
+        <button class="admin-nav-item" data-tab="costControl" data-capability="finance.view" type="button">بهای تمام‌شده</button>
+        <button class="admin-nav-item" data-tab="expenses" data-capability="finance.view" type="button">هزینه‌ها</button>
       </details>
 
       <details class="nav-group nav-workspace">
         <summary class="nav-label">مشتریان و پذیرایی</summary>
         <button class="admin-nav-item" data-tab="tables" data-capability="tables.view" type="button">میزها و چیدمان</button>
         <button class="admin-nav-item" data-tab="club" data-capability="admin.access" type="button">باشگاه مشتریان</button>
-        <button class="admin-nav-item" data-tab="promotions" data-capability="promotions.manage" type="button">پرومو و تخفیف</button>
+        <button class="admin-nav-item" data-tab="promotions" data-capability="promotions.manage" type="button">تخفیف‌ها و پیشنهادها</button>
         <button class="admin-nav-item" data-tab="promoSlides" data-capability="content.manage" type="button">اسلایدر تبلیغاتی</button>
       </details>
 
@@ -109,7 +122,7 @@
         <button class="admin-nav-item" data-tab="content" data-capability="content.manage" type="button">محتوای سایت</button>
         <button class="admin-nav-item" data-tab="media" data-capability="content.manage" type="button">لوگو و رسانه</button>
         <button class="admin-nav-item" data-tab="faq" data-capability="content.manage" type="button">سؤالات متداول</button>
-        <button class="admin-nav-item" data-tab="theme" data-capability="admin.access" type="button">تم و برندینگ</button>
+        <button class="admin-nav-item" data-tab="theme" data-capability="admin.access" type="button">ظاهر و هویت برند</button>
       </details>
 
       <details class="nav-group nav-workspace">
@@ -118,7 +131,6 @@
         <button class="admin-nav-item" data-tab="branches" data-capability="admin.access" type="button">شعبه‌ها</button>
         <button class="admin-nav-item" data-tab="hours" data-capability="admin.access" type="button">ساعت کاری</button>
         <button class="admin-nav-item" data-tab="users" data-capability="owner" type="button">نقش‌ها و کاربران</button>
-        <button class="admin-nav-item" data-tab="settings" data-capability="owner" type="button">تنظیمات یکپارچه</button>
       </details>
 
       <div class="spacer"></div>

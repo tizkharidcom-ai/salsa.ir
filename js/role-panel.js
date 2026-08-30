@@ -1,4 +1,4 @@
-/* WESTO role workspaces: cashier, waiter and kitchen. */
+/* WESTO role workspaces: cashier, waiter and kitchen/inventory operations. */
 (() => {
   'use strict';
 
@@ -17,9 +17,13 @@
     session: null, branchId: null, activeView: '', data: {}, menuItems: [], menuCategories: [], menuComplements: [], menuComplementRules: [],
     cart: new Map(), stream: null, posCategory: null, posCheck: null, posSearch: '', pendingPosItem: null,
     floorZone: 'all', floorCountdownTimer: null,
-    kdsStation: readLocal('westo_kds_station', 'expo'), kdsFulfillment: 'all', kdsSearch: '', kdsPage: 0,
-    kdsSettings: readLocal('westo_kds_settings', { layout: 'tile', columns: 6, textSize: 'normal', warnMinutes: 8, lateMinutes: 15, sound: true }),
-    kdsUndo: null, kdsUndoTimer: null, kdsClockTimer: null, kdsLastOpenCount: null, kdsAudioArmed: false, kdsConnected: false, kdsHighlightItem: '', kdsPendingTickets: new Set(),
+    // The kitchen display is intentionally one queue. The API still keeps the
+    // original item station for costing/reporting, but operators should never
+    // have to switch between hot, cold, bar or expo panels.
+    kdsStation: 'kitchen', kdsFulfillment: 'all', kdsSearch: '', kdsPage: 0, kdsSelectedTicketId: null, kdsOrderEntry: '', kdsOrderEntryTimer: null, kdsNumLock: null,
+      kdsSettings: readLocal('westo_kds_settings', { layout: 'tile', columns: 6, textSize: 'normal', warnMinutes: 8, lateMinutes: 15, sound: true }),
+    kdsUndo: null, kdsUndoTimer: null, kdsClockTimer: null, kdsLastOpenCount: null, kdsAudioArmed: false, kdsConnected: false, kdsHighlightItem: '', kdsAllDayOpen: false, kdsPendingTickets: new Set(),
+    printer: null,
   };
   let toastTimer = null;
 
@@ -28,28 +32,29 @@
 
   const ROLE_CONFIG = {
     cashier: {
-      eyebrow: 'Front of house · POS',
+      eyebrow: 'عملیات سالن · صندوق فروش',
       title: 'ایستگاه صندوق',
       description: 'ثبت سفارش، ارسال به آشپزخانه و تسویه',
       views: [['menu', 'منو'], ['floor', 'نقشه سالن'], ['orders', 'سفارش‌ها'], ['transactions', 'تراکنش‌ها'], ['drawer', 'صندوق پول']],
     },
     waiter: {
-      eyebrow: 'Floor service · Handheld',
+      eyebrow: 'خدمت‌رسانی سالن · همراه',
       title: 'سالن و گارسون',
       description: 'میزها، فراخوان مهمان و سفارش‌گیری کنار میز',
       views: [['floor', 'نقشه سالن'], ['calls', 'فراخوان‌ها'], ['orders', 'سفارش‌ها'], ['reservations', 'رزروها']],
     },
     kitchen: {
-      eyebrow: 'Back of house · KDS',
+      eyebrow: 'عملیات پشت صحنه · نمایشگر آشپزخانه',
       title: 'نمایشگر آشپزخانه',
-      description: 'تیکت‌ها، موجودی فیزیکی، ضایعات، شمارش و تولید بچ',
-      views: [['board', 'صف آشپزخانه'], ['ready', 'آماده تحویل'], ['inventory', 'انبار و ضایعات']],
+      description: 'سفارش‌های آشپزخانه، دریافت کالا، موجودی فیزیکی، ضایعات، شمارش و تولید آماده‌سازی',
+      views: [['board', 'صف آشپزخانه'], ['ready', 'آماده تحویل'], ['inventory', 'انبار و دریافت']],
     },
   };
 
   const esc = (value) => String(value ?? '').replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
-  const money = (value) => `${Number(value || 0).toLocaleString('fa-IR')} تومان`;
-  const num = (value) => Number(value || 0).toLocaleString('fa-IR');
+  const formatNumber = (value, options = {}) => window.WestoPersianFormat?.number(value, { ...options, locale: 'fa-IR' }) ?? Number(value || 0).toLocaleString('fa-IR', options);
+  const money = (value) => `${formatNumber(value)} تومان`;
+  const num = (value) => formatNumber(value);
   const ageMin = (date) => Math.max(0, Math.floor((Date.now() - new Date(date || 0).getTime()) / 60000));
   const time = (date) => date ? (window.ShamsiCore ? window.ShamsiCore.formatShamsiTime(date) : new Date(date).toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' })) : '—';
   const fmtDate = (date) => date ? (window.ShamsiCore ? window.ShamsiCore.formatShamsiDateLong(date) : esc(date)) : '—';
@@ -62,12 +67,24 @@
       cash_drawer_not_open: 'برای دریافت نقدی ابتدا صندوق پول را باز کنید.', order_not_payable: 'این سفارش در مرحله قابل تسویه نیست.',
       cashier_transition_invalid: 'این تغییر وضعیت برای صندوق مجاز نیست.', waiter_transition_invalid: 'این تغییر وضعیت برای گارسون مجاز نیست.',
       kitchen_transition_invalid: 'این تغییر وضعیت در آشپزخانه مجاز نیست.',
-      kds_item_invalid: 'این آیتم دیگر در تیکت فعال نیست.', kds_station_invalid: 'ایستگاه انتخاب‌شده معتبر نیست.',
-      kds_station_empty: 'این تیکت آیتمی برای ایستگاه انتخاب‌شده ندارد.', kitchen_recall_invalid: 'این تیکت در وضعیت قابل بازگردانی نیست.',
-      kds_ticket_incomplete: 'تا وقتی همهٔ اقلام تکمیل نشده‌اند، تیکت آماده نمی‌شود.',
+      kds_item_invalid: 'این قلم دیگر در سفارش فعال نیست.', kds_station_invalid: 'ایستگاه انتخاب‌شده معتبر نیست.',
+      kds_station_empty: 'این سفارش قلمی برای ایستگاه انتخاب‌شده ندارد.', kitchen_recall_invalid: 'این سفارش در وضعیت قابل بازگردانی نیست.',
+      kds_ticket_incomplete: 'تا وقتی همهٔ اقلام تکمیل نشده‌اند، سفارش آماده نمی‌شود.',
       order_edit_locked: 'آشپزخانه آماده‌سازی را شروع کرده؛ ویرایش این سفارش قفل شده است.',
       order_edit_refund_required: 'مبلغ جدید از پرداخت ثبت‌شده کمتر است؛ ابتدا بازپرداخت را ثبت کنید.',
       order_edit_branch_mismatch: 'این سفارش متعلق به شعبه فعال نیست.',
+      printer_not_configured: 'برای این شعبه پرینتر صندوق تنظیم نشده است.', printer_disabled: 'پرینتر صندوق غیرفعال است.',
+      printer_unreachable: 'اتصال به پرینتر برقرار نشد؛ IP و روشن‌بودن دستگاه را بررسی کنید.',
+      printer_timeout: 'پرینتر در زمان مشخص پاسخ نداد.', printer_write_failed: 'ارسال رسید به پرینتر ناموفق بود.',
+      printer_config_invalid: 'تنظیمات پرینتر معتبر نیست.',
+      purchase_order_not_found: 'سفارش خرید پیدا نشد یا دیگر قابل دریافت نیست.',
+      purchase_order_not_approved: 'این سفارش خرید هنوز تأیید نشده است.',
+      purchase_order_line_not_found: 'ردیف سفارش خرید معتبر نیست.',
+      goods_receipt_over_quantity: 'مقدار دریافت از ماندهٔ سفارش بیشتر است.',
+      goods_receipt_duplicate: 'شماره حوالهٔ تأمین‌کننده قبلاً ثبت شده است.',
+      goods_receipt_branch_mismatch: 'سفارش خرید متعلق به شعبهٔ فعال نیست.',
+      production_inventory_shortage: 'موجودی مواد برای این مرحله تولید کافی نیست؛ ابتدا دریافت یا شمارش موجودی را ثبت کنید.',
+      production_recipe_not_executable: 'دستور تهیه یا واحد مواد برای ثبت تولید کامل نیست.',
     };
     const code = typeof data?.error === 'object' ? data.error.code : data?.error;
     const message = typeof data?.error === 'object' ? data.error.message : null;
@@ -117,7 +134,7 @@
     return (order.items || []).map((item) => {
       const complements = (item.complements || []).map((entry) => `${num(entry.qty || 1)}× ${esc(entry.name)}`).join('، ');
       return `${num(item.qty || 1)}× ${esc(item.name)}${complements ? ` ← ${complements}` : ''}`;
-    }).join(' · ') || 'بدون آیتم';
+    }).join(' · ') || 'بدون قلم';
   }
 
   function orderCard(order, actions = '') {
@@ -264,9 +281,17 @@
     await render();
   }
 
+  function syncKitchenScrollMode() {
+    document.body.classList.toggle('is-kitchen-inventory', role === 'kitchen' && state.activeView === 'inventory');
+  }
+
   function paintNav() {
     const config = ROLE_CONFIG[role];
-    if (!state.activeView) state.activeView = config.views[0][0];
+    if (!state.activeView) {
+      const requested = new URLSearchParams(location.search).get('view');
+      state.activeView = config.views.some(([id]) => id === requested) ? requested : config.views[0][0];
+    }
+    syncKitchenScrollMode();
     nav.innerHTML = config.views.map(([id, label]) => `<button type="button" data-view="${id}" class="${state.activeView === id ? 'active' : ''}">${esc(label)}</button>`).join('');
     nav.querySelectorAll('[data-view]').forEach((button) => button.addEventListener('click', () => {
       state.activeView = button.dataset.view;
@@ -337,7 +362,11 @@
       note: order.note || '',
       sent: ['sent_to_kitchen', 'paid', 'preparing', 'ready'].includes(order.status),
       paymentStatus: order.paymentStatus || 'unpaid',
+      paymentTender: order.paymentTender || '',
       amountPaid: Number(order.amountPaid || 0),
+      total: Number(order.total || 0),
+      createdAt: order.createdAt || '',
+      paidAt: order.paidAt || '',
       status: order.status,
       editable,
       startedAt: order.startedAt || null,
@@ -377,10 +406,10 @@
 
   function openNewCheck() {
     const tables = state.data.floor?.tables || [];
-    openDialog('POS · سفارش جدید', 'نوع سفارش را انتخاب کنید', `
+    openDialog('صندوق فروش · سفارش جدید', 'نوع سفارش را انتخاب کنید', `
       <div class="pos-order-types">
         <button type="button" data-pos-type="dine_in"><span>داخل مجموعه</span><small>انتخاب میز و ارسال به آشپزخانه</small><b>←</b></button>
-        <button type="button" data-pos-type="pickup"><span>بیرون‌بر</span><small>ثبت سفارش کانتر یا تحویل حضوری</small><b>←</b></button>
+        <button type="button" data-pos-type="pickup"><span>بیرون‌بر</span><small>ثبت سفارش پیشخوان یا تحویل حضوری</small><b>←</b></button>
       </div><div id="pos-table-picker" hidden></div>`);
     dialogBody.querySelectorAll('[data-pos-type]').forEach((button) => button.addEventListener('click', () => {
       if (button.dataset.posType === 'pickup') return startPosCheck('pickup');
@@ -415,7 +444,7 @@
     if (!query && !state.posCategory) {
       return `<div class="pos-category-deck">${categories.map((category, index) => {
         const count = state.menuItems.filter((item) => Number(item.categoryId) === Number(category.id)).length;
-        return `<button type="button" class="pos-category-card" data-pos-category="${category.id}" style="--pos-category-index:${index}">${category.coverImg ? `<img src="${esc(category.coverImg)}" alt="" />` : '<span class="pos-category-card__placeholder" aria-hidden="true">و</span>'}<span class="pos-category-card__content"><b>${esc(category.title || category.name1 || 'دسته')}</b><small>${num(count)} آیتم</small></span><i aria-hidden="true">←</i></button>`;
+        return `<button type="button" class="pos-category-card" data-pos-category="${category.id}" style="--pos-category-index:${index}">${category.coverImg ? `<img src="${esc(category.coverImg)}" alt="" />` : '<span class="pos-category-card__placeholder" aria-hidden="true">و</span>'}<span class="pos-category-card__content"><b>${esc(category.title || category.name1 || 'دسته')}</b><small>${num(count)} محصول</small></span><i aria-hidden="true">←</i></button>`;
       }).join('')}</div>`;
     }
     const category = categories.find((entry) => Number(entry.id) === Number(state.posCategory));
@@ -427,8 +456,8 @@
     const mobileRows = Math.max(1, Math.ceil(items.length / mobileColumns));
     const density = items.length > 15 ? 'dense' : items.length > 8 ? 'medium' : 'relaxed';
     const searchHint = query && matchedItems.length > items.length ? `<div class="pos-search-hint">${num(matchedItems.length)} نتیجه · برای نمایش دقیق‌تر عبارت بیشتری بنویسید</div>` : '';
-    const path = query ? `<div class="pos-menu-path"><button type="button" id="pos-clear-search">→ پاک‌کردن جست‌وجو</button><div><b>نتایج جست‌وجو</b><span>${num(matchedItems.length)} نتیجه</span></div></div>` : `<div class="pos-menu-path"><button type="button" id="pos-back-categories">→ همه دسته‌ها</button><div><b>${esc(category?.title || 'منو')}</b><span>${num(matchedItems.length)} آیتم</span></div></div>`;
-    return `${path}${searchHint}<div class="pos-product-grid" data-density="${density}" style="--pos-cols:${columns};--pos-rows:${rows};--pos-grid-max:${rows * 118}px;--pos-mobile-cols:${mobileColumns};--pos-mobile-rows:${mobileRows};--pos-mobile-grid-max:${mobileRows * 82}px">${items.map((item) => `<article class="pos-product-card"><button type="button" class="pos-product-card__add" data-pos-quick-add="${item.id}">${item.img ? `<img src="${esc(item.img)}" alt="" />` : '<span class="pos-product-card__placeholder" aria-hidden="true">و</span>'}<span class="pos-product-card__info"><b>${esc(item.name)}</b><small>${money(item.price)}</small><span>+ افزودن</span></span></button></article>`).join('') || empty('آیتمی در این دسته پیدا نشد.')}</div>`;
+    const path = query ? `<div class="pos-menu-path"><button type="button" id="pos-clear-search">→ پاک‌کردن جست‌وجو</button><div><b>نتایج جست‌وجو</b><span>${num(matchedItems.length)} نتیجه</span></div></div>` : `<div class="pos-menu-path"><button type="button" id="pos-back-categories">→ همه دسته‌ها</button><div><b>${esc(category?.title || 'منو')}</b><span>${num(matchedItems.length)} محصول</span></div></div>`;
+    return `${path}${searchHint}<div class="pos-product-grid" data-density="${density}" style="--pos-cols:${columns};--pos-rows:${rows};--pos-grid-max:${rows * 118}px;--pos-mobile-cols:${mobileColumns};--pos-mobile-rows:${mobileRows};--pos-mobile-grid-max:${mobileRows * 82}px">${items.map((item) => `<article class="pos-product-card"><button type="button" class="pos-product-card__add" data-pos-quick-add="${item.id}">${item.img ? `<img src="${esc(item.img)}" alt="" />` : '<span class="pos-product-card__placeholder" aria-hidden="true">و</span>'}<span class="pos-product-card__info"><b>${esc(item.name)}</b><small>${money(item.price)}</small><span>+ افزودن</span></span></button></article>`).join('') || empty('محصولی در این دسته پیدا نشد.')}</div>`;
   }
 
   function posCheckMarkup() {
@@ -441,7 +470,7 @@
     return `<aside class="pos-check">
       <div class="pos-check__title"><div><strong>${esc(posLocationLabel(check))}</strong><small>${check.orderNo ? `${esc(check.orderNo)}${editable && check.orderId ? ' · قابل ویرایش تا شروع آشپزخانه' : ''}` : 'فاکتور جدید'}</small></div><span class="pos-status ${check.sent ? 'is-sent' : ''}">${esc(statusText)}</span></div>
       <div class="pos-check__tabs"><button class="active" type="button">فاکتور</button><button type="button" id="pos-actions-tab">عملیات</button><button type="button" id="pos-guest-tab">مهمان</button></div>
-      <div class="pos-lines">${lines.map((line) => posInvoiceRows(line)).join('') || empty('هنوز آیتمی به فاکتور اضافه نشده است.')}</div>
+      <div class="pos-lines">${lines.map((line) => posInvoiceRows(line)).join('') || empty('هنوز محصولی به فاکتور اضافه نشده است.')}</div>
       <div class="pos-totals"><div><span>جمع جزء</span><b>${money(posTotal())}</b></div><div class="is-total"><span>مبلغ نهایی</span><strong>${money(posTotal())}</strong></div></div>
       <div class="pos-check__buttons"><button type="button" class="pos-ghost" id="pos-print" ${check.orderId ? '' : 'disabled'}>چاپ</button><button type="button" class="pos-pay" id="pos-pay" ${lines.length && check.paymentStatus !== 'paid' ? '' : 'disabled'}>${check.paymentStatus === 'paid' ? 'پرداخت‌شده' : 'پرداخت'}</button></div>
       <button type="button" class="pos-send ${check.orderId && editable ? 'is-edit-save' : ''}" id="pos-send" ${!lines.length || (check.orderId && !editable) ? 'disabled' : ''}>${submitLabel}</button>
@@ -453,8 +482,7 @@
     const product = `<article class="pos-line pos-line--product"><button type="button" class="pos-line__edit" data-pos-line="${esc(line.localId)}" ${locked ? 'disabled' : ''}><div><b>${esc(line.name)}</b>${(line.modifiers || []).length ? `<small>${line.modifiers.map((modifier) => esc(modifier.name)).join('، ')}</small>` : ''}${line.note ? `<small>یادداشت: ${esc(line.note)}</small>` : ''}</div><span>${money(posBaseLineTotal(line))}</span></button><div class="pos-line__qty" aria-label="تعداد ${esc(line.name)}"><button type="button" data-pos-line-delta="-1" data-pos-line-id="${esc(line.localId)}" ${locked ? 'disabled' : ''}>−</button><b>${num(line.qty)}</b><button type="button" data-pos-line-delta="1" data-pos-line-id="${esc(line.localId)}" ${locked ? 'disabled' : ''}>+</button></div></article>`;
     const complements = (line.complements || []).map((complement, index) => {
       const qty = Math.max(1, Number(complement.qty || 1));
-      const total = Number(complement.price || 0) * qty;
-      return `<article class="pos-line pos-line--complement" data-complement-row="${esc(line.localId)}-${index}"><div class="pos-line__complement"><div><span class="pos-line__complement-tag">مکمل</span><b>${esc(complement.name)}</b><small>همراه ${esc(line.name)}</small></div><span>${money(total)}</span></div><div class="pos-line__qty" aria-label="تعداد ${esc(complement.name)}"><button type="button" data-pos-complement-delta="-1" data-pos-line-id="${esc(line.localId)}" data-pos-complement-index="${index}" ${locked ? 'disabled' : ''}>−</button><b>${num(qty)}</b><button type="button" data-pos-complement-delta="1" data-pos-line-id="${esc(line.localId)}" data-pos-complement-index="${index}" ${locked ? 'disabled' : ''}>+</button></div></article>`;
+      return `<article class="pos-line pos-line--complement" data-complement-row="${esc(line.localId)}-${index}"><div class="pos-line__complement"><div><span class="pos-line__complement-tag">مکمل</span><b>${esc(complement.name)}</b><small>همراه ${esc(line.name)}</small></div><span>${money(Number(complement.price || 0) * Number(complement.qty || 1))}</span></div><div class="pos-line__qty" aria-label="تعداد ${esc(complement.name)}"><button type="button" data-pos-complement-delta="-1" data-pos-line-id="${esc(line.localId)}" data-pos-complement-index="${index}" ${locked ? 'disabled' : ''}>−</button><b>${num(qty)}</b><button type="button" data-pos-complement-delta="1" data-pos-line-id="${esc(line.localId)}" data-pos-complement-index="${index}" ${locked ? 'disabled' : ''}>+</button></div></article>`;
     }).join('');
     return product + complements;
   }
@@ -496,17 +524,18 @@
     }));
     main.querySelector('#pos-actions-tab')?.addEventListener('click', openPosActions);
     main.querySelector('#pos-guest-tab')?.addEventListener('click', openPosGuest);
+    main.querySelector('#pos-printer-settings')?.addEventListener('click', openPrinterSettings);
     main.querySelector('#pos-send')?.addEventListener('click', (event) => {
       if (state.posCheck?.orderId) return action(event.currentTarget, () => saveEditedPosOrder(), 'تغییرات سفارش ذخیره و برای آشپزخانه به‌روزرسانی شد.');
       return action(event.currentTarget, async () => { await createPosOrder(true); state.posCheck = null; state.activeView = 'floor'; paintNav(); }, 'سفارش با جزئیات کامل به آشپزخانه ارسال شد.');
     });
     main.querySelector('#pos-pay')?.addEventListener('click', async () => { try { const order = await createPosOrder(false); openPayment(order); } catch (error) { showToast(error.message, 'error'); } });
-    main.querySelector('#pos-print')?.addEventListener('click', () => printOrder(state.posCheck));
+    main.querySelector('#pos-print')?.addEventListener('click', (event) => action(event.currentTarget, () => printOrder(state.posCheck), 'رسید مستقیماً به پرینتر صندوق ارسال شد.'));
   }
 
   function cashierMenu() {
     document.body.classList.add('is-pos-station');
-    main.innerHTML = `<section class="pos-shell"><div class="pos-catalog"><header class="pos-toolbar"><div><span>منوی وستو</span><strong>منوی سریع</strong></div><label><span aria-hidden="true">⌕</span><input id="pos-search" value="${esc(state.posSearch)}" placeholder="جست‌وجوی منو" /></label><button type="button" id="pos-new-check">+ سفارش جدید</button></header><div class="pos-catalog__body">${posCategoryMarkup()}</div></div>${posCheckMarkup()}</section>`;
+    main.innerHTML = `<section class="pos-shell"><div class="pos-catalog"><header class="pos-toolbar"><div><span>منوی وستو</span><strong>منوی سریع</strong></div><label><span aria-hidden="true">⌕</span><input id="pos-search" value="${esc(state.posSearch)}" placeholder="جست‌وجوی منو" /></label><div class="pos-toolbar__actions"><button type="button" class="pos-ghost" id="pos-printer-settings">پرینتر</button><button type="button" id="pos-new-check">+ سفارش جدید</button></div></header><div class="pos-catalog__body">${posCategoryMarkup()}</div></div>${posCheckMarkup()}</section>`;
     wirePos();
   }
 
@@ -537,7 +566,7 @@
   function openComplementLayer(item, line, rules, options) {
     const prompt = rules.map((rule) => rule.prompt).find(Boolean) || 'مکملی برای این سفارش اضافه شود؟';
     const selected = new Map();
-    openDialog('پیشنهاد هوشمند', `مکمل ${item.name}`, `<div class="pos-complement-layer"><div class="pos-complement-intro"><span>محصول به فاکتور اضافه شد</span><strong>${esc(prompt)}</strong><small>انتخاب اختیاری است و مکمل زیر همین آیتم ثبت می‌شود.</small></div><div class="pos-complement-grid">${options.map((entry) => `<article class="pos-complement-card" data-complement-card="${entry.id}">${entry.img ? `<img src="${esc(entry.img)}" alt="" />` : '<span class="pos-complement-card__placeholder">و</span>'}<div><b>${esc(entry.name)}</b><small>${money(entry.price)}</small></div><button type="button" data-complement-add="${entry.id}" aria-label="افزودن ${esc(entry.name)}">+</button><div class="pos-complement-qty" hidden><button type="button" data-complement-delta="-1" data-complement-id="${entry.id}">−</button><b data-complement-count="${entry.id}">۰</b><button type="button" data-complement-delta="1" data-complement-id="${entry.id}">+</button></div></article>`).join('')}</div><footer><button type="button" class="pos-complement-skip" id="pos-complement-skip">ادامه بدون مکمل</button><button type="button" class="pos-pay" id="pos-complement-save" disabled>یک مکمل انتخاب کنید</button></footer></div>`);
+    openDialog('پیشنهاد هوشمند', `مکمل ${item.name}`, `<div class="pos-complement-layer"><div class="pos-complement-intro"><span>محصول به فاکتور اضافه شد</span><strong>${esc(prompt)}</strong><small>انتخاب اختیاری است و مکمل زیر همین محصول ثبت می‌شود.</small></div><div class="pos-complement-grid">${options.map((entry) => `<article class="pos-complement-card" data-complement-card="${entry.id}">${entry.img ? `<img src="${esc(entry.img)}" alt="" />` : '<span class="pos-complement-card__placeholder">و</span>'}<div><b>${esc(entry.name)}</b><small>${money(entry.price)}</small></div><button type="button" data-complement-add="${entry.id}" aria-label="افزودن ${esc(entry.name)}">+</button><div class="pos-complement-qty" hidden><button type="button" data-complement-delta="-1" data-complement-id="${entry.id}">−</button><b data-complement-count="${entry.id}">۰</b><button type="button" data-complement-delta="1" data-complement-id="${entry.id}">+</button></div></article>`).join('')}</div><footer><button type="button" class="pos-complement-skip" id="pos-complement-skip">ادامه بدون مکمل</button><button type="button" class="pos-pay" id="pos-complement-save" disabled>یک مکمل انتخاب کنید</button></footer></div>`);
     const paint = () => {
       let count = 0;
       for (const option of options) {
@@ -586,7 +615,7 @@
     const item = existing || state.menuItems.find((entry) => Number(entry.id) === Number(menuItemId));
     if (!item) return;
     const selected = new Set((existing?.modifiers || []).map((modifier) => modifier.name));
-    openDialog('ویرایش آیتم', item.name, `<div class="modifier-layout"><section><div class="modifier-base"><span>قیمت پایه</span><b>${money(item.price)}</b></div>${POS_MODIFIERS.map((group) => `<div class="modifier-group"><h3>${esc(group.group)}</h3><div>${group.items.map((modifier) => `<label><input type="checkbox" value="${esc(modifier.name)}" ${selected.has(modifier.name) ? 'checked' : ''}/><span>${esc(modifier.name)}</span><small>${modifier.price ? `+ ${money(modifier.price)}` : 'بدون هزینه'}</small></label>`).join('')}</div></div>`).join('')}</section><aside><label class="field"><span>یادداشت آیتم</span><textarea id="modifier-note" rows="4" maxlength="180">${esc(existing?.note || '')}</textarea></label><label class="field"><span>شماره صندلی (اختیاری)</span><input id="modifier-seat" type="number" min="0" max="99" value="${Number(existing?.seat || 0)}" /></label><div class="modifier-qty"><button type="button" data-mod-qty="-1">−</button><b id="modifier-qty">${num(existing?.qty || 1)}</b><button type="button" data-mod-qty="1">+</button></div><button type="button" class="pos-pay" id="modifier-save">${existing ? 'ذخیره تغییرات' : 'افزودن به فاکتور'}</button>${existing ? '<button type="button" class="role-danger" id="modifier-remove">حذف از سفارش</button>' : ''}</aside></div>`);
+    openDialog('ویرایش محصول', item.name, `<div class="modifier-layout"><section><div class="modifier-base"><span>قیمت پایه</span><b>${money(item.price)}</b></div>${POS_MODIFIERS.map((group) => `<div class="modifier-group"><h3>${esc(group.group)}</h3><div>${group.items.map((modifier) => `<label><input type="checkbox" value="${esc(modifier.name)}" ${selected.has(modifier.name) ? 'checked' : ''}/><span>${esc(modifier.name)}</span><small>${modifier.price ? `+ ${money(modifier.price)}` : 'بدون هزینه'}</small></label>`).join('')}</div></div>`).join('')}</section><aside><label class="field"><span>یادداشت محصول</span><textarea id="modifier-note" rows="4" maxlength="180">${esc(existing?.note || '')}</textarea></label><label class="field"><span>شماره صندلی (اختیاری)</span><input id="modifier-seat" type="number" min="0" max="99" value="${Number(existing?.seat || 0)}" /></label><div class="modifier-qty"><button type="button" data-mod-qty="-1">−</button><b id="modifier-qty">${num(existing?.qty || 1)}</b><button type="button" data-mod-qty="1">+</button></div><button type="button" class="pos-pay" id="modifier-save">${existing ? 'ذخیره تغییرات' : 'افزودن به فاکتور'}</button>${existing ? '<button type="button" class="role-danger" id="modifier-remove">حذف از سفارش</button>' : ''}</aside></div>`);
     let qty = Number(existing?.qty || 1);
     dialogBody.querySelectorAll('[data-mod-qty]').forEach((button) => button.addEventListener('click', () => { qty = Math.max(1, Math.min(99, qty + Number(button.dataset.modQty))); document.getElementById('modifier-qty').textContent = num(qty); }));
     document.getElementById('modifier-save').addEventListener('click', () => {
@@ -612,7 +641,7 @@
   }
 
   async function createPosOrder(sendToKitchen) {
-    if (!state.posCheck?.lines?.length) throw new Error('حداقل یک آیتم انتخاب کنید.');
+    if (!state.posCheck?.lines?.length) throw new Error('حداقل یک محصول انتخاب کنید.');
     if (state.posCheck.orderId) return state.posCheck.editable ? saveEditedPosOrder() : ((state.data.orders || []).find((order) => Number(order.id) === Number(state.posCheck.orderId)) || state.posCheck);
     const data = await api('/api/staff/orders', {
       method: 'POST', headers: { 'Idempotency-Key': `pos-${Date.now()}-${Math.random().toString(16).slice(2)}` },
@@ -630,7 +659,7 @@
   async function saveEditedPosOrder() {
     const check = state.posCheck;
     if (!check?.orderId || !check.editable) throw new Error('آشپزخانه آماده‌سازی را شروع کرده؛ ویرایش قفل است.');
-    if (!check.lines?.length) throw new Error('سفارش باید حداقل یک آیتم داشته باشد.');
+    if (!check.lines?.length) throw new Error('سفارش باید حداقل یک محصول داشته باشد.');
     const data = await api(`/api/cashier/orders/${check.orderId}`, {
       method: 'PATCH',
       body: JSON.stringify({ branchId: state.branchId, name: check.customerName, phone: check.phone, note: check.note, items: posOrderItemsPayload(check) }),
@@ -648,7 +677,106 @@
     const outstanding = Math.max(0, total - paid);
     const charge = Math.min(outstanding, Math.max(1, Math.round(Number(splitAmount) || outstanding)));
     const rounded = Math.ceil(charge / 500000) * 500000 || charge;
-    openDialog('پرداخت', `مبلغ ${money(charge)}`, `<div class="payment-sheet"><button type="button" class="split-payment" id="split-payment">تقسیم مبلغ</button><div class="payment-total"><span>${charge < outstanding ? 'سهم انتخاب‌شده' : 'مبلغ قابل پرداخت'}</span><strong>${money(charge)}</strong><small>${esc(posLocationLabel(state.posCheck))}${paid ? ` · پرداخت‌شده ${money(paid)} · مانده ${money(outstanding)}` : ''}</small></div><div class="split-options" id="split-options" hidden><button type="button" data-split="${Math.ceil(outstanding / 2)}">نصف مانده</button><button type="button" data-split="${Math.ceil(outstanding / 3)}">یک‌سوم مانده</button><button type="button" data-split="${Math.ceil(outstanding / 4)}">یک‌چهارم مانده</button><label><span>مبلغ دلخواه</span><input id="split-custom" inputmode="numeric" value="${charge}" /></label><button type="button" id="split-custom-apply">اعمال</button></div><section><h3>نقدی</h3><div class="cash-presets"><button type="button" data-pay="cash" data-amount="${charge}">مبلغ دقیق</button><button type="button" data-pay="cash" data-amount="${rounded}">${money(rounded)}</button><button type="button" id="custom-cash">مبلغ دلخواه</button></div></section><div class="payment-methods"><button type="button" data-pay="card"><span>کارت‌خوان</span><small>ثبت پرداخت کارت حضوری</small><b>←</b></button><button type="button" data-pay="manual_card"><span>ورود دستی کارت</span><small>ثبت ممیزی‌شده تراکنش</small><b>←</b></button><button type="button" data-pay="gift_card"><span>کارت هدیه</span><small>اعتبار هدیه مجموعه</small><b>←</b></button><button type="button" data-pay="card_on_file"><span>کارت ذخیره‌شده</span><small>مشتری باشگاه</small><b>←</b></button></div><div id="custom-cash-row" hidden><label class="field"><span>وجه دریافتی</span><input id="cash-received" inputmode="numeric" value="${charge}" /></label><button type="button" class="pos-pay" id="cash-confirm">ثبت دریافت</button></div></div>`);
+    openDialog('پرداخت', `مبلغ ${money(charge)}`, `<div class="payment-sheet">
+      <button type="button" class="split-payment" id="split-payment">تقسیم مبلغ</button>
+      <div class="payment-total">
+        <span>${charge < outstanding ? 'سهم انتخاب‌شده' : 'مبلغ قابل پرداخت'}</span>
+        <strong>${money(charge)}</strong>
+        <small>${esc(posLocationLabel(state.posCheck))}${paid ? ` · پرداخت‌شده ${money(paid)} · مانده ${money(outstanding)}` : ''}</small>
+      </div>
+
+      <!-- Customer Club & Points Redemption -->
+      <div class="loyalty-pos-box" style="margin-bottom:0.75rem; background:rgba(255,255,255,0.04); border:1px solid rgba(168,85,247,0.3); border-radius:0.5rem; padding:0.55rem; text-align:right;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.35rem;">
+          <span style="font-size:0.8rem; font-weight:700; color:#a855f7;">💎 باشگاه مشتریان و کسر مستقیم امتیاز</span>
+          <span id="pos-loyalty-status" style="font-size:0.72rem; color:var(--text-muted);"></span>
+        </div>
+        <div style="display:flex; gap:0.4rem; align-items:center;">
+          <input id="pos-loyalty-phone" class="input ltr" placeholder="شماره همراه مشتری" value="${esc(order.phone || state.posCheck?.phone || '')}" style="font-size:0.8rem; padding:0.25rem 0.5rem; flex:1;" />
+          <button type="button" class="btn btn-sm" id="pos-loyalty-check-btn" style="font-size:0.75rem; padding:0.25rem 0.6rem;">استعلام</button>
+        </div>
+        <div id="pos-loyalty-details" style="display:none; margin-top:0.45rem; border-top:1px dashed rgba(255,255,255,0.1); padding-top:0.4rem;">
+          <div id="pos-loyalty-info" style="font-size:0.75rem; margin-bottom:0.4rem; line-height:1.4;"></div>
+          <div style="display:flex; gap:0.4rem; flex-wrap:wrap;">
+            <button type="button" class="btn btn-sm btn-accent" id="pos-apply-tier-btn" style="font-size:0.72rem; padding:0.2rem 0.5rem;">اعمال تخفیف سطح</button>
+            <button type="button" class="btn btn-sm" id="pos-apply-points-btn" style="font-size:0.72rem; padding:0.2rem 0.5rem; background:#f59e0b; border-color:#f59e0b; color:#fff;">کسر امتیاز باشگاه</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="split-options" id="split-options" hidden>
+        <button type="button" data-split="${Math.ceil(outstanding / 2)}">نصف مانده</button>
+        <button type="button" data-split="${Math.ceil(outstanding / 3)}">یک‌سوم مانده</button>
+        <button type="button" data-split="${Math.ceil(outstanding / 4)}">یک‌چهارم مانده</button>
+        <label><span>مبلغ دلخواه</span><input id="split-custom" inputmode="numeric" value="${charge}" /></label>
+        <button type="button" id="split-custom-apply">اعمال</button>
+      </div>
+      <section>
+        <h3>نقدی</h3>
+        <div class="cash-presets">
+          <button type="button" data-pay="cash" data-amount="${charge}">مبلغ دقیق</button>
+          <button type="button" data-pay="cash" data-amount="${rounded}">${money(rounded)}</button>
+          <button type="button" id="custom-cash">مبلغ دلخواه</button>
+        </div>
+      </section>
+      <div class="payment-methods">
+        <button type="button" data-pay="card"><span>کارت‌خوان</span><small>ثبت پرداخت کارت حضوری</small><b>←</b></button>
+        <button type="button" data-pay="wallet"><span>کیف پول مشتری</span><small>کسر مستقیم از مانده کیف پول</small><b>←</b></button>
+        <button type="button" data-pay="manual_card"><span>ورود دستی کارت</span><small>ثبت ممیزی‌شده تراکنش</small><b>←</b></button>
+        <button type="button" data-pay="gift_card"><span>کارت هدیه</span><small>اعتبار هدیه مجموعه</small><b>←</b></button>
+        <button type="button" data-pay="card_on_file"><span>کارت ذخیره‌شده</span><small>مشتری باشگاه</small><b>←</b></button>
+      </div>
+      <div id="custom-cash-row" hidden>
+        <label class="field"><span>وجه دریافتی</span><input id="cash-received" inputmode="numeric" value="${charge}" /></label>
+        <button type="button" class="pos-pay" id="cash-confirm">ثبت دریافت</button>
+      </div>
+    </div>`);
+
+    let currentDiscounts = null;
+    const checkLoyalty = async () => {
+      const p = document.getElementById('pos-loyalty-phone')?.value.trim();
+      if (!p) return;
+      try {
+        const res = await api(`/api/cashier/orders/${order.id}/apply-loyalty`, {
+          method: 'POST',
+          body: JSON.stringify({ phone: p, redeemPoints: 0, apply: false }),
+        });
+        currentDiscounts = res.discounts;
+        const detailsWrap = document.getElementById('pos-loyalty-details');
+        const infoEl = document.getElementById('pos-loyalty-info');
+        if (detailsWrap && infoEl && res.customer) {
+          detailsWrap.style.display = 'block';
+          infoEl.innerHTML = `<b>${esc(res.customer.name || 'مشتری')}</b> (سطح ${esc(res.discounts?.tier?.name || 'برنزی')}) | امتیاز: <b>${(res.customer.points || 0).toLocaleString('fa-IR')}</b> | کیف پول: <b>${(res.customer.walletBalance || 0).toLocaleString('fa-IR')} تومان</b>`;
+        } else if (detailsWrap) {
+          detailsWrap.style.display = 'none';
+          document.getElementById('pos-loyalty-status').textContent = 'مشتری یافت نشد';
+        }
+      } catch (_) {}
+    };
+
+    document.getElementById('pos-loyalty-check-btn')?.addEventListener('click', checkLoyalty);
+    if (order.phone || state.posCheck?.phone) setTimeout(checkLoyalty, 50);
+
+    document.getElementById('pos-apply-tier-btn')?.addEventListener('click', async () => {
+      const p = document.getElementById('pos-loyalty-phone')?.value.trim();
+      const res = await api(`/api/cashier/orders/${order.id}/apply-loyalty`, {
+        method: 'POST',
+        body: JSON.stringify({ phone: p, apply: true, redeemPoints: 0 }),
+      });
+      showToast('تخفیف سطح باشگاه روی فاکتور اعمال شد');
+      openPayment(res.order);
+    });
+
+    document.getElementById('pos-apply-points-btn')?.addEventListener('click', async () => {
+      const p = document.getElementById('pos-loyalty-phone')?.value.trim();
+      const maxPts = currentDiscounts?.maxRedeemablePoints || 0;
+      const res = await api(`/api/cashier/orders/${order.id}/apply-loyalty`, {
+        method: 'POST',
+        body: JSON.stringify({ phone: p, apply: true, redeemPoints: maxPts }),
+      });
+      showToast(`${maxPts} امتیاز کسر و تخفیف روی فاکتور اعمال شد`);
+      openPayment(res.order);
+    });
     dialogBody.querySelectorAll('[data-pay]').forEach((button) => button.addEventListener('click', () => settlePosOrder(order, button.dataset.pay, Number(button.dataset.amount || charge), charge, button)));
     document.getElementById('split-payment').addEventListener('click', () => { document.getElementById('split-options').hidden = !document.getElementById('split-options').hidden; });
     dialogBody.querySelectorAll('[data-split]').forEach((button) => button.addEventListener('click', () => openPayment(order, Number(button.dataset.split))));
@@ -687,21 +815,402 @@
     document.getElementById('receipt-send').addEventListener('click', () => finishReceipt(order, selectedMethod, document.getElementById('receipt-value').value));
   }
 
+  function receiptLineTotal(line) {
+    if (Number.isFinite(Number(line?.lineTotal))) return Number(line.lineTotal);
+    const qty = Math.max(1, Number(line?.qty || 1));
+    const modifiers = (line?.modifiers || []).reduce((sum, entry) => sum + Number(entry?.price || 0), 0);
+    const complements = (line?.complements || []).reduce((sum, entry) => sum + Number(entry?.price || 0) * Math.max(1, Number(entry?.qty || 1)), 0);
+    return (Number(line?.price || 0) + modifiers) * qty + complements;
+  }
+
+  function receiptTotal(order) {
+    const explicit = Number(order?.total);
+    if (Number.isFinite(explicit) && explicit >= 0) return explicit;
+    return (order?.lines || order?.items || []).reduce((sum, line) => sum + receiptLineTotal(line), 0);
+  }
+
+  function receiptLocation(order) {
+    if (order?.tableNo) return `میز ${order.tableNo}`;
+    if (order?.fulfillment === 'delivery') return 'ارسال با پیک';
+    if (order?.fulfillment === 'dine_in') return 'سرو داخل مجموعه';
+    return 'بیرون‌بر';
+  }
+
+  function receiptPayment(order) {
+    const label = {
+      cash: 'نقدی', card: 'کارت‌خوان', manual_card: 'کارت دستی', gift_card: 'کارت هدیه',
+      card_on_file: 'کارت ذخیره‌شده', online: 'پرداخت اینترنتی', wallet: 'کیف پول', cashier: 'صندوق',
+    }[String(order?.paymentTender || order?.tender || '')];
+    return label || (order?.paymentStatus === 'paid' ? 'تسویه‌شده' : 'پیش‌فاکتور');
+  }
+
+  function receiptDate(order) {
+    const value = order?.paidAt || order?.createdAt;
+    if (!value || !Number.isFinite(new Date(value).getTime())) return new Date().toLocaleString('fa-IR', { dateStyle: 'short', timeStyle: 'short' });
+    return new Date(value).toLocaleString('fa-IR', { dateStyle: 'short', timeStyle: 'short' });
+  }
+
+  function bytesToBase64(bytes) {
+    let binary = '';
+    for (let offset = 0; offset < bytes.length; offset += 0x8000) {
+      binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
+    }
+    return btoa(binary);
+  }
+
+  let receiptLogoPromise = null;
+  function loadReceiptLogo() {
+    if (receiptLogoPromise) return receiptLogoPromise;
+    receiptLogoPromise = new Promise((resolve) => {
+      const image = new Image();
+      let settled = false;
+      const finish = (value) => {
+        if (settled) return;
+        settled = true;
+        resolve(value);
+      };
+      const timer = setTimeout(() => finish(null), 2500);
+      image.onload = () => { clearTimeout(timer); finish(image); };
+      image.onerror = () => { clearTimeout(timer); finish(null); };
+      image.src = '/assets/images/brand/westo-fa-wordmark-dark.png';
+    });
+    return receiptLogoPromise;
+  }
+
+  async function buildReceiptRasterPayload(source, { printer = {}, test = false } = {}) {
+    if (document.fonts?.ready) await document.fonts.ready;
+    const [logo, restaurantData] = await Promise.all([
+      loadReceiptLogo(),
+      api(`/api/restaurant${qs()}`),
+    ]);
+    const restaurantPhone = String(restaurantData?.restaurant?.phone || '').trim();
+    const order = test ? {
+      orderNo: 'نمونه-۳۵۰', tableNo: '۷', fulfillment: 'dine_in', customerName: 'مهمان آزمایشی',
+      phone: '09120000000', paymentStatus: 'paid', paymentTender: 'card', createdAt: new Date().toISOString(),
+      note: 'نمونهٔ کامل فیش فروش صندوق', total: 2350000,
+      lines: [
+        { name: 'چیکن پارمسان', qty: 1, price: 940000, lineTotal: 940000, modifiers: [{ name: 'بدون پیاز' }], complements: [] },
+        { name: 'چای زعفرانی مخصوص وستو', qty: 2, price: 520000, lineTotal: 1040000, modifiers: [], complements: [{ name: 'کوکی شکلاتی', qty: 1, price: 180000 }] },
+        { name: 'آب معدنی', qty: 1, price: 190000, lineTotal: 190000, modifiers: [], complements: [] },
+      ],
+    } : source;
+    if (!order) throw new Error('اطلاعات فیش برای چاپ در دسترس نیست.');
+
+    const width = Number(printer.paperWidth) === 58 ? 384 : 576;
+    const maxHeight = 4095;
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = maxHeight;
+    const ctx = canvas.getContext('2d', { alpha: false, willReadFrequently: true });
+    if (!ctx) throw new Error('امکان ساخت تصویر فیش در مرورگر وجود ندارد.');
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, 0, width, maxHeight);
+    ctx.fillStyle = '#000';
+    ctx.strokeStyle = '#000';
+    ctx.direction = 'rtl';
+    ctx.textBaseline = 'top';
+
+    const compact = width === 384;
+    const padding = compact ? 22 : 32;
+    const left = padding;
+    const right = width - padding;
+    const contentWidth = width - padding * 2;
+    let y = padding;
+    const font = (size, weight = 500) => { ctx.font = `${weight} ${size}px Vazirmatn, Tahoma, sans-serif`; };
+    const wrap = (value, maxWidth, size = 25, weight = 500) => {
+      font(size, weight);
+      const words = String(value ?? '').replace(/\s+/g, ' ').trim().split(' ').filter(Boolean);
+      if (!words.length) return [];
+      const rows = [];
+      let row = '';
+      for (const word of words) {
+        const candidate = row ? `${row} ${word}` : word;
+        if (ctx.measureText(candidate).width <= maxWidth) { row = candidate; continue; }
+        if (row) rows.push(row);
+        if (ctx.measureText(word).width <= maxWidth) { row = word; continue; }
+        let fragment = '';
+        for (const char of Array.from(word)) {
+          const next = fragment + char;
+          if (fragment && ctx.measureText(next).width > maxWidth) { rows.push(fragment); fragment = char; }
+          else fragment = next;
+        }
+        row = fragment;
+      }
+      if (row) rows.push(row);
+      return rows;
+    };
+    const drawCenter = (value, size = 27, weight = 650, gap = 9) => {
+      font(size, weight); ctx.textAlign = 'center'; ctx.direction = 'rtl';
+      const rows = wrap(value, contentWidth, size, weight);
+      for (const row of rows) { ctx.fillText(row, width / 2, y); y += size + gap; }
+    };
+    const drawRight = (value, size = 25, weight = 500, indent = 0, gap = 9) => {
+      font(size, weight); ctx.textAlign = 'right'; ctx.direction = 'rtl';
+      const rows = wrap(value, contentWidth - indent, size, weight);
+      for (const row of rows) { ctx.fillText(row, right - indent, y); y += size + gap; }
+    };
+    const divider = (gap = 20) => {
+      y += gap / 2; ctx.save(); ctx.setLineDash([9, 7]); ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(left, y); ctx.lineTo(right, y); ctx.stroke(); ctx.restore(); y += gap;
+    };
+    const metaRow = (label, value) => {
+      font(compact ? 21 : 24, 650); ctx.direction = 'rtl';
+      ctx.textAlign = 'right'; ctx.fillText(label, right, y);
+      ctx.textAlign = 'left'; ctx.fillText(String(value || '—'), left, y);
+      y += compact ? 33 : 38;
+    };
+    const band = (rightText, leftText, { height = compact ? 62 : 76, size = compact ? 23 : 28 } = {}) => {
+      ctx.fillStyle = '#000';
+      ctx.fillRect(left, y, contentWidth, height);
+      ctx.fillStyle = '#fff';
+      font(size, 800); ctx.direction = 'rtl'; ctx.textBaseline = 'middle';
+      ctx.textAlign = 'right'; ctx.fillText(rightText, right - 15, y + height / 2);
+      ctx.textAlign = 'left'; ctx.fillText(String(leftText), left + 15, y + height / 2);
+      ctx.textBaseline = 'top'; ctx.fillStyle = '#000';
+      y += height + (compact ? 14 : 18);
+    };
+    const sectionTitle = (value) => {
+      y += 3;
+      font(compact ? 23 : 27, 800); ctx.direction = 'rtl'; ctx.textAlign = 'center';
+      ctx.fillText(value, width / 2, y);
+      y += compact ? 38 : 44;
+    };
+
+    if (logo) {
+      const logoWidth = compact ? 250 : 350;
+      const logoHeight = Math.round(logoWidth * logo.naturalHeight / logo.naturalWidth);
+      ctx.drawImage(logo, Math.round((width - logoWidth) / 2), y, logoWidth, logoHeight);
+      y += logoHeight + (compact ? 18 : 22);
+    } else {
+      drawCenter('وستو', compact ? 38 : 46, 900, 14);
+    }
+    drawCenter(test ? 'نمونه فیش فروش' : 'فیش فروش', compact ? 24 : 30, 800, 12);
+    divider(22);
+    band('شماره سفارش', order.orderNo || order.orderId || order.id || '—');
+    sectionTitle('جزئیات سفارش');
+    metaRow('نوع سفارش', receiptLocation(order));
+    metaRow('تاریخ و ساعت', receiptDate(order));
+    metaRow('روش پرداخت', receiptPayment(order));
+    const customerName = order.customerName || order.name;
+    if (customerName) metaRow('نام مهمان', customerName);
+    if (restaurantPhone) metaRow('شماره تماس مجموعه', restaurantPhone);
+    if (order.note) { y += 5; drawRight(`یادداشت سفارش: ${order.note}`, compact ? 20 : 23, 600); }
+    divider(24);
+    band('شرح سفارش', 'مبلغ', { height: compact ? 50 : 60, size: compact ? 21 : 25 });
+
+    const lines = order.lines || order.items || [];
+    if (!lines.length) drawCenter('قلمی در این فیش ثبت نشده است', compact ? 21 : 25, 600, 10);
+    for (const line of lines) {
+      const qty = Math.max(1, Number(line.qty || 1));
+      const name = `${qty.toLocaleString('fa-IR')} × ${line.name || 'محصول'}`;
+      const nameWidth = contentWidth - (compact ? 135 : 190);
+      const nameRows = wrap(name, nameWidth, compact ? 23 : 27, 750);
+      const rowStart = y;
+      font(compact ? 23 : 27, 750); ctx.direction = 'rtl'; ctx.textAlign = 'right';
+      for (const row of nameRows) { ctx.fillText(row, right, y); y += compact ? 33 : 39; }
+      font(compact ? 21 : 24, 800); ctx.textAlign = 'left';
+      ctx.fillText(money(receiptLineTotal(line)), left, rowStart + 1);
+      for (const modifier of line.modifiers || []) drawRight(`• ${modifier.name || modifier}`, compact ? 19 : 22, 550, 18, 7);
+      for (const complement of line.complements || []) {
+        const complementQty = Math.max(1, Number(complement.qty || 1));
+        drawRight(`+ ${complementQty.toLocaleString('fa-IR')} × ${complement.name || 'مکمل'} — ${money(Number(complement.price || 0) * complementQty)}`, compact ? 19 : 22, 550, 18, 7);
+      }
+      if (line.note) drawRight(`یادداشت: ${line.note}`, compact ? 19 : 22, 550, 18, 7);
+      y += 12;
+      ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(left, y); ctx.lineTo(right, y); ctx.stroke(); y += 16;
+      if (y > maxHeight - 300) throw new Error('فیش از حداکثر طول قابل چاپ بیشتر است.');
+    }
+
+    y += 6;
+    band('جمع کل', money(receiptTotal(order)), { height: compact ? 70 : 86, size: compact ? 27 : 34 });
+    ctx.lineWidth = 3;
+    ctx.strokeRect(left, y, contentWidth, compact ? 56 : 68);
+    font(compact ? 21 : 25, 800); ctx.textAlign = 'center'; ctx.direction = 'rtl'; ctx.textBaseline = 'middle';
+    ctx.fillText(order.paymentStatus === 'paid' ? 'پرداخت‌شده' : 'پیش‌فاکتور — تسویه نشده', width / 2, y + (compact ? 28 : 34));
+    ctx.textBaseline = 'top';
+    y += compact ? 66 : 80;
+
+    const height = Math.min(maxHeight, Math.ceil(y + Math.round(padding * 0.8)));
+    const pixels = ctx.getImageData(0, 0, width, height).data;
+    const rowBytes = width / 8;
+    const packed = new Uint8Array(rowBytes * height);
+    for (let py = 0; py < height; py += 1) {
+      for (let px = 0; px < width; px += 1) {
+        const offset = (py * width + px) * 4;
+        const luminance = (pixels[offset] * 299 + pixels[offset + 1] * 587 + pixels[offset + 2] * 114) / 1000;
+        if (luminance < 190) packed[py * rowBytes + (px >> 3)] |= 0x80 >> (px & 7);
+      }
+    }
+    return { format: 'escpos-raster-v1', width, height, data: bytesToBase64(packed) };
+  }
+
+  async function activePrinter() {
+    if (state.printer) return state.printer;
+    const data = await api(`/api/cashier/printer${qs()}`);
+    state.printer = data.printer;
+    if (!state.printer) throw new Error('پرینتر صندوق تنظیم نشده است.');
+    return state.printer;
+  }
+
   async function finishReceipt(order, method, destination) {
     try {
-      const result = await api(`/api/cashier/orders/${order.id}/receipt`, { method: 'POST', body: JSON.stringify({ method, destination }) });
+      const body = { method, destination, branchId: state.branchId };
+      if (method === 'print') body.raster = await buildReceiptRasterPayload(order, { printer: await activePrinter() });
+      const result = await api(`/api/cashier/orders/${order.id}/receipt`, { method: 'POST', body: JSON.stringify(body) });
       if ((method === 'email' || method === 'sms') && !result.deliveryConfigured) showToast('انتخاب ثبت شد؛ سرویس ارسال بیرونی هنوز پیکربندی نشده است.');
-      if (method === 'print') printOrder(posCheckFromOrder(order));
       state.posCheck = null; dialog.close(); await render();
     } catch (error) { showToast(error.message, 'error'); }
   }
 
-  function printOrder(check) {
-    if (!check) return;
-    const receipt = window.open('', '_blank', 'width=460,height=720');
-    if (!receipt) return showToast('اجازه بازشدن پنجره چاپ داده نشده است.', 'error');
-    receipt.document.write(`<!doctype html><html lang="fa" dir="rtl"><meta charset="utf-8"><title>رسید وستو</title><style>body{font-family:Tahoma;padding:24px;line-height:1.9}h1{font-size:24px}.line,.total{display:flex;justify-content:space-between;border-bottom:1px dashed #bbb;padding:8px 0}.line small{display:block;color:#666}.line.complement{padding-right:14px;background:#f5fafa}.total{font-size:20px;font-weight:bold}</style><h1>WESTO</h1><p>${esc(posLocationLabel(check))} · ${esc(check.orderNo || '')}</p>${(check.lines || []).map((line) => `<div class="line"><span>${num(line.qty)}× ${esc(line.name)}</span><b>${money(posBaseLineTotal(line))}</b></div>${(line.complements || []).map((entry) => `<div class="line complement"><span><small>مکمل ${esc(line.name)}</small>${num(entry.qty || 1)}× ${esc(entry.name)}</span><b>${money(Number(entry.price || 0) * Number(entry.qty || 1))}</b></div>`).join('')}`).join('')}<div class="total"><span>جمع</span><b>${money(posTotal(check))}</b></div><script>print();<\/script>`);
-    receipt.document.close();
+  async function printOrder(check) {
+    if (!check?.orderId) throw new Error('برای چاپ، ابتدا سفارش را ثبت کنید.');
+    const printer = await activePrinter();
+    const raster = await buildReceiptRasterPayload(check, { printer });
+    return api(`/api/cashier/orders/${check.orderId}/print`, {
+      method: 'POST',
+      body: JSON.stringify({ branchId: state.branchId, raster }),
+    });
+  }
+
+  async function openPrinterSettings() {
+    let data;
+    let systemInfo = { supported: true, platform: '', printers: [] };
+    let systemInfoError = '';
+    try {
+      data = await api(`/api/cashier/printer${qs()}`);
+    } catch (error) {
+      showToast(error.message, 'error');
+      return;
+    }
+    try {
+      systemInfo = await api('/api/cashier/printers/system');
+    } catch (error) {
+      systemInfoError = error.message;
+    }
+    const printer = data.printer || {
+      id: 'cashier-main', name: 'پرینتر صندوق', host: '192.168.254.4', port: 9100,
+      model: 'bixolon-srp-350iii', transport: 'network', systemPrinterName: '', enabled: true,
+      paperWidth: 80, charsPerLine: 48, renderMode: 'raster', encoding: 'windows-1256', codePage: 40, cut: true, timeoutMs: 5000,
+    };
+    const initialTransport = printer.transport === 'system' ? 'system' : 'network';
+    const targetLabel = (value) => value.transport === 'system'
+      ? `USB / سیستم · ${value.systemPrinterName || 'انتخاب‌نشده'}`
+      : `شبکه · ${value.host}:${value.port}`;
+    const queueLabel = (entry) => `${entry.label || entry.name}${entry.connection === 'usb' ? ' · USB' : entry.connection === 'network' ? ' · شبکه' : ' · سیستم'}`;
+    const knownSystemPrinters = [...(systemInfo.printers || [])];
+    if (printer.systemPrinterName && !knownSystemPrinters.some((entry) => entry.name === printer.systemPrinterName)) {
+      knownSystemPrinters.unshift({ name: printer.systemPrinterName, label: printer.systemPrinterName, connection: 'system' });
+    }
+    const queueOptions = knownSystemPrinters.length
+      ? knownSystemPrinters.map((entry) => `<option value="${esc(entry.name)}" ${entry.name === printer.systemPrinterName ? 'selected' : ''}>${esc(queueLabel(entry))}</option>`).join('')
+      : '<option value="">پرینتری شناسایی نشده است</option>';
+    state.printer = printer;
+    openDialog('تنظیمات صندوق', 'پرینتر صندوق', `
+      <div class="printer-settings">
+        <div class="printer-settings__intro"><strong>BIXOLON SRP-350III · رول ۸۰ میلی‌متر</strong><span>نوع اتصال را انتخاب کنید؛ چاپ فیش بدون بازشدن پنجرهٔ چاپ انجام می‌شود.</span></div>
+        <div class="printer-settings__status" id="printer-settings-status" role="status">${esc(targetLabel(printer))}</div>
+        <div id="printer-settings-form" class="field-grid">
+          <div class="printer-settings__transport field--full" role="radiogroup" aria-label="نوع اتصال پرینتر">
+            <label><input type="radio" name="transport" value="network" ${initialTransport === 'network' ? 'checked' : ''} /><span><b>شبکه</b><small>اتصال مستقیم با IP</small></span></label>
+            <label class="${systemInfo.supported === false ? 'is-disabled' : ''}"><input type="radio" name="transport" value="system" ${initialTransport === 'system' ? 'checked' : ''} ${systemInfo.supported === false ? 'disabled' : ''} /><span><b>USB / سیستم</b><small>صف چاپ نصب‌شده روی مک</small></span></label>
+          </div>
+          <div class="printer-settings__panel field--full" id="printer-network-fields">
+            <label class="field"><span>IP پرینتر</span><input name="host" dir="ltr" inputmode="decimal" maxlength="15" value="${esc(printer.host || '192.168.254.4')}" /></label>
+            <label class="field"><span>پورت</span><input name="port" dir="ltr" type="number" min="1" max="65535" value="${Number(printer.port) || 9100}" /></label>
+          </div>
+          <div class="printer-settings__system field--full" id="printer-system-fields">
+            <label class="field"><span>پرینتر نصب‌شده</span><select name="systemPrinterName">${queueOptions}</select></label>
+            <button type="button" class="role-secondary" id="printer-system-refresh">شناسایی دوباره</button>
+            <small id="printer-system-hint">${esc(systemInfoError || (knownSystemPrinters.length ? `${knownSystemPrinters.length.toLocaleString('fa-IR')} صف چاپ پیدا شد.` : 'پرینتر USB را وصل و در تنظیمات Printers & Scanners مک اضافه کنید.'))}</small>
+          </div>
+          <div class="printer-settings__actions field--full"><button type="button" class="role-secondary" id="printer-save">ذخیره تنظیمات</button><button type="button" class="role-primary" id="printer-test">ذخیره و چاپ فیش نمونه</button></div>
+        </div>
+        <small class="printer-settings__hint">فیش همیشه با عرض کامل ۸۰ میلی‌متر، برش خودکار و ارتفاع متناسب با محتوای سفارش چاپ می‌شود.</small>
+      </div>`);
+
+    // The dialog sheet is already a form (`method="dialog"`). A nested form is
+    // invalid HTML and browsers discard its opening tag, which previously left
+    // this reference null and made both printer buttons fail at runtime.
+    const form = dialog.querySelector('form.role-dialog__sheet');
+    const status = document.getElementById('printer-settings-status');
+    const networkFields = document.getElementById('printer-network-fields');
+    const systemFields = document.getElementById('printer-system-fields');
+    const systemSelect = form.elements.systemPrinterName;
+    const systemHint = document.getElementById('printer-system-hint');
+    const transportInputs = [...dialogBody.querySelectorAll('input[name="transport"]')];
+    const paintTransport = () => {
+      const isSystem = form.elements.transport.value === 'system';
+      networkFields.hidden = isSystem;
+      systemFields.hidden = !isSystem;
+      form.elements.host.required = !isSystem;
+      form.elements.port.required = !isSystem;
+      systemSelect.required = isSystem;
+    };
+    transportInputs.forEach((input) => input.addEventListener('change', paintTransport));
+    paintTransport();
+
+    const renderSystemPrinters = (rows) => {
+      const selected = systemSelect.value || printer.systemPrinterName;
+      systemSelect.innerHTML = rows.length
+        ? rows.map((entry) => `<option value="${esc(entry.name)}">${esc(queueLabel(entry))}</option>`).join('')
+        : '<option value="">پرینتری شناسایی نشده است</option>';
+      if (rows.some((entry) => entry.name === selected)) systemSelect.value = selected;
+      systemHint.textContent = rows.length
+        ? `${rows.length.toLocaleString('fa-IR')} صف چاپ پیدا شد؛ پرینتر USB موردنظر را انتخاب کنید.`
+        : 'پرینتر USB را وصل و در تنظیمات Printers & Scanners مک اضافه کنید.';
+    };
+    document.getElementById('printer-system-refresh').addEventListener('click', async (event) => {
+      const button = event.currentTarget;
+      setBusy(button, true);
+      try {
+        const refreshed = await api('/api/cashier/printers/system');
+        renderSystemPrinters(refreshed.printers || []);
+        status.textContent = 'فهرست پرینترهای سیستم به‌روزرسانی شد.';
+      } catch (error) {
+        systemHint.textContent = error.message;
+        showToast(error.message, 'error');
+      } finally { setBusy(button, false); }
+    });
+    const readForm = () => ({
+      id: printer.id,
+      name: 'پرینتر صندوق',
+      model: 'bixolon-srp-350iii',
+      transport: form.elements.transport.value,
+      systemPrinterName: systemSelect.value,
+      host: form.elements.host.value,
+      port: Number(form.elements.port.value),
+      paperWidth: 80,
+      renderMode: 'raster',
+      timeoutMs: 5000,
+      enabled: true,
+      cut: true,
+      branchId: state.branchId,
+    });
+    const saveConfig = async () => {
+      if (!form.reportValidity()) throw new Error(form.elements.transport.value === 'system' ? 'یک پرینتر USB/سیستم انتخاب کنید.' : 'IP و پورت پرینتر را درست وارد کنید.');
+      const result = await api('/api/cashier/printer', { method: 'PUT', body: JSON.stringify(readForm()) });
+      state.printer = result.printer;
+      status.textContent = `ذخیره شد · ${targetLabel(result.printer)}`;
+      return result;
+    };
+    document.getElementById('printer-save').addEventListener('click', async (event) => {
+      const button = event.currentTarget;
+      setBusy(button, true);
+      try { await saveConfig(); showToast('تنظیمات پرینتر ذخیره شد.'); }
+      catch (error) { status.textContent = error.message; showToast(error.message, 'error'); }
+      finally { setBusy(button, false); }
+    });
+    document.getElementById('printer-test').addEventListener('click', async (event) => {
+      const button = event.currentTarget;
+      setBusy(button, true);
+      try {
+        const saved = await saveConfig();
+        const raster = await buildReceiptRasterPayload(null, { printer: saved.printer, test: true });
+        const result = await api('/api/cashier/printer/test', { method: 'POST', body: JSON.stringify({ branchId: state.branchId, raster }) });
+        status.textContent = `فیش نمونه ارسال شد · ${targetLabel(saved.printer)} · ${raster.width}×${raster.height}`;
+        showToast(`برگهٔ آزمایشی چاپ شد (${num(result.result?.bytes || 0)} بایت).`);
+      } catch (error) { status.textContent = error.message; showToast(error.message, 'error'); }
+      finally { setBusy(button, false); }
+    });
   }
 
   function cashierFloor() {
@@ -712,7 +1221,7 @@
     const visibleTables = state.floorZone === 'all' ? tables : tables.filter((table) => (table.zone || 'سالن') === state.floorZone);
     const zoneButton = (id, label, count) => `<button type="button" data-floor-zone="${esc(id)}" class="${state.floorZone === id ? 'active' : ''}" aria-pressed="${state.floorZone === id}"><span>${esc(label)}</span><small>${num(count)}</small></button>`;
     const tableCard = (table) => `<button type="button" data-cashier-table="${esc(table.id)}" data-state="${esc(table.state)}" ${table.autoReleased ? 'data-auto-released="true"' : ''}><b>${esc(table.label || table.id)}</b><small>${esc(table.zone || 'سالن')} · ${num(table.seats)} نفر</small><span>${esc(table.autoReleased ? 'آزادشده خودکار' : table.stateLabel || 'آزاد')}</span>${table.serviceEndsAt && !table.autoReleased && ['busy', 'attention'].includes(table.state) ? `<time data-service-ends="${esc(table.serviceEndsAt)}">${floorCountdownLabel(table.serviceEndsAt)}</time>` : ''}</button>`;
-    main.innerHTML = `${pageHead('Floor plan', 'نقشه سالن', 'میزهای باز، آزاد و نیازمند رسیدگی', '<button class="role-primary" id="floor-new">+ سفارش جدید</button>')}<section class="pos-floor"><div class="pos-floor__zones" aria-label="فیلتر بخش‌های رستوران">${zoneButton('all', 'همه', tables.length)}${zones.map((zone) => zoneButton(zone, zone, tables.filter((table) => (table.zone || 'سالن') === zone).length)).join('')}</div><div class="pos-floor__map">${visibleTables.map(tableCard).join('') || empty('در این بخش میزی تعریف نشده است.')}</div><footer><span><i class="is-free"></i> آزاد</span><span><i class="is-busy"></i> در سرویس</span><span><i class="is-call"></i> فراخوان</span><b>آزادسازی خودکار پس از ${num(state.data.floor?.summary?.serviceMinutes || 45)} دقیقه</b></footer></section>`;
+    main.innerHTML = `${pageHead('مدیریت سالن', 'نقشه سالن', 'میزهای باز، آزاد و نیازمند رسیدگی', '<button class="role-primary" id="floor-new">+ سفارش جدید</button>')}<section class="pos-floor"><div class="pos-floor__zones" aria-label="انتخاب بخش رستوران">${zoneButton('all', 'همه', tables.length)}${zones.map((zone) => zoneButton(zone, zone, tables.filter((table) => (table.zone || 'سالن') === zone).length)).join('')}</div><div class="pos-floor__map">${visibleTables.map(tableCard).join('') || empty('در این بخش میزی تعریف نشده است.')}</div><footer><span><i class="is-free"></i> آزاد</span><span><i class="is-busy"></i> در سرویس</span><span><i class="is-call"></i> فراخوان</span><b>آزادسازی خودکار پس از ${num(state.data.floor?.summary?.serviceMinutes || 45)} دقیقه</b></footer></section>`;
     document.getElementById('floor-new').addEventListener('click', openNewCheck);
     main.querySelectorAll('[data-floor-zone]').forEach((button) => button.addEventListener('click', () => {
       state.floorZone = button.dataset.floorZone;
@@ -770,7 +1279,7 @@
       const displayStatus = paymentNeedsAttention ? 'نیازمند تکمیل پرداخت' : statusLabel(order.status);
       return `<article class="pos-order-row ${editable ? 'is-editable' : ''}"><div><b>${esc(order.orderNo || `#${order.id}`)}</b><span>${esc(order.tableNo ? `میز ${order.tableNo}` : 'بیرون‌بر')} · ${time(order.createdAt)}</span></div><p>${orderItems(order)}</p><span class="pos-status">${esc(displayStatus)}</span><strong>${money(order.total)}</strong><button type="button" class="pos-order-row__action ${editable ? 'is-edit' : ''}" data-open-order="${order.id}" ${orderIsOpen(order) ? '' : 'disabled'}>${editable ? 'ویرایش سفارش' : 'مشاهده'}</button></article>`;
     };
-    main.innerHTML = `${pageHead('Checks', 'سفارش‌ها', 'فاکتورهای باز و بسته ایستگاه', '<button class="role-primary" id="orders-new">+ سفارش جدید</button>')}<section class="role-section"><div class="role-section__head"><h2>باز</h2><span>${num(open.length)} فاکتور</span></div><div class="pos-order-list">${open.map(row).join('') || empty('فاکتور بازی وجود ندارد.')}</div></section><section class="role-section" style="margin-top:14px"><div class="role-section__head"><h2>بسته‌شده‌های اخیر</h2><span>${num(closed.length)} فاکتور</span></div><div class="pos-order-list">${closed.map(row).join('') || empty('هنوز سفارشی بسته نشده است.')}</div></section>`;
+    main.innerHTML = `${pageHead('کنترل سفارش', 'سفارش‌ها', 'فاکتورهای باز و بسته ایستگاه', '<button class="role-primary" id="orders-new">+ سفارش جدید</button>')}<section class="role-section"><div class="role-section__head"><h2>باز</h2><span>${num(open.length)} فاکتور</span></div><div class="pos-order-list">${open.map(row).join('') || empty('فاکتور بازی وجود ندارد.')}</div></section><section class="role-section" style="margin-top:14px"><div class="role-section__head"><h2>بسته‌شده‌های اخیر</h2><span>${num(closed.length)} فاکتور</span></div><div class="pos-order-list">${closed.map(row).join('') || empty('هنوز سفارشی بسته نشده است.')}</div></section>`;
     document.getElementById('orders-new').addEventListener('click', openNewCheck);
     main.querySelectorAll('[data-open-order]').forEach((button) => button.addEventListener('click', () => { const order = orders.find((item) => Number(item.id) === Number(button.dataset.openOrder)); state.posCheck = posCheckFromOrder(order); state.activeView = 'menu'; paintNav(); cashierMenu(); }));
   }
@@ -778,8 +1287,24 @@
   function cashierTransactions() {
     document.body.classList.remove('is-pos-station');
     const paid = (state.data.orders || []).filter((order) => order.paymentStatus === 'paid').slice(0, 80);
-    const tenderLabel = { cash: 'نقدی', card: 'کارت‌خوان', manual_card: 'کارت دستی', gift_card: 'کارت هدیه', card_on_file: 'کارت ذخیره‌شده' };
-    main.innerHTML = `${pageHead('Transactions', 'تراکنش‌ها', 'پرداخت‌های ثبت‌شده و روش دریافت')}<section class="role-metrics">${metric('تعداد', num(paid.length))}${metric('جمع پرداخت', money(paid.reduce((sum, order) => sum + Number(order.total || 0), 0)))}${metric('نقدی', money(paid.filter((order) => order.paymentTender === 'cash').reduce((sum, order) => sum + Number(order.total || 0), 0)))}${metric('غیرنقدی', money(paid.filter((order) => order.paymentTender !== 'cash').reduce((sum, order) => sum + Number(order.total || 0), 0)))}</section><section class="role-section"><div class="pos-transaction-list">${paid.map((order) => `<article><div><b>${esc(order.orderNo || `#${order.id}`)}</b><span>${esc(posLocationLabel(posCheckFromOrder(order)))} · ${time(order.paidAt)}</span></div><span>${esc(tenderLabel[order.paymentTender] || 'پرداخت')}</span><strong>${money(order.total)}</strong></article>`).join('') || empty('تراکنشی ثبت نشده است.')}</div></section>`;
+    const tenderLabel = { cash: 'نقدی', card: 'کارت‌خوان', manual_card: 'کارت دستی', gift_card: 'کارت هدیه', card_on_file: 'کارت ذخیره‌شده', online: 'پرداخت اینترنتی' };
+    const hasTender = (order) => Object.prototype.hasOwnProperty.call(tenderLabel, order.paymentTender);
+    const cash = paid.filter((order) => order.paymentTender === 'cash');
+    const nonCash = paid.filter((order) => hasTender(order) && order.paymentTender !== 'cash');
+    const missingTender = paid.filter((order) => !hasTender(order));
+    const totalOf = (orders) => orders.reduce((sum, order) => sum + Number(order.total || 0), 0);
+    main.innerHTML = `${pageHead('دریافت و پرداخت', 'تراکنش‌ها', 'پرداخت‌های ثبت‌شده و روش دریافت')}
+      <section class="role-metrics">
+        ${metric('جمع پرداخت', money(totalOf(paid)), `${num(paid.length)} تراکنش`)}
+        ${metric('نقدی', money(totalOf(cash)), `${num(cash.length)} تراکنش`)}
+        ${metric('غیرنقدی معتبر', money(totalOf(nonCash)), `${num(nonCash.length)} تراکنش`)}
+        ${metric('روش ثبت‌نشده', money(totalOf(missingTender)), `${num(missingTender.length)} مورد برای بازبینی`)}
+      </section>
+      ${missingTender.length ? `<div class="role-inline-warning" role="status"><b>${num(missingTender.length)} پرداخت قدیمی روش دریافت ندارد.</b><span>این مبلغ نقدی یا غیرنقدی فرض نشده و برای تصمیم حسابدار جدا نگه داشته شده است.</span></div>` : ''}
+      <section class="role-section"><div class="pos-transaction-list">${paid.map((order) => {
+        const missing = !hasTender(order);
+        return `<article class="${missing ? 'is-warning' : ''}"><div><b>${esc(order.orderNo || `#${order.id}`)}</b><span>${esc(posLocationLabel(posCheckFromOrder(order)))} · ${time(order.paidAt)}</span></div><span>${esc(missing ? 'روش ثبت‌نشده' : tenderLabel[order.paymentTender])}</span><strong>${money(order.total)}</strong></article>`;
+      }).join('') || empty('تراکنشی ثبت نشده است.')}</div></section>`;
   }
 
   function cashierRegister() {
@@ -792,7 +1317,7 @@
       <button class="role-primary" data-settle="cash">نقدی</button>
       <button class="role-secondary" data-settle="card">کارت</button>
       <button class="role-danger" data-cashier-status="cancelled">لغو</button>`)).join('');
-    main.innerHTML = `${pageHead('POS', 'صف تسویه', 'سفارش‌های پرداخت در محل، دریافت وجه و ثبت روش پرداخت', '<button class="role-primary" id="new-order">سفارش جدید</button>')}
+    main.innerHTML = `${pageHead('صندوق فروش', 'صف تسویه', 'سفارش‌های پرداخت در محل، دریافت وجه و ثبت روش پرداخت', '<button class="role-primary" id="new-order">سفارش جدید</button>')}
       <section class="role-metrics">
         ${metric('منتظر تسویه', num(pending.length), pending.length ? 'نیازمند اقدام' : 'صف خالی')}
         ${metric('آماده تحویل', num(ready.length), 'هماهنگ با آشپزخانه')}
@@ -823,7 +1348,7 @@
       const label = ({ dispatched: 'تحویل به پیک', picked_up: 'تحویل شد', done: 'تحویل میز', delivered: 'رسید به مهمان' })[next];
       return orderCard(order, `<button class="role-primary" data-cashier-status="${next}">${label}</button>`);
     }).join('');
-    main.innerHTML = `${pageHead('Handoff', 'تحویل سفارش', 'سفارش‌های آماده از آشپزخانه تا تحویل نهایی')}
+    main.innerHTML = `${pageHead('هماهنگی تحویل', 'تحویل سفارش', 'سفارش‌های آماده از آشپزخانه تا تحویل نهایی')}
       <section class="role-metrics">${metric('آماده', num(ready.filter((item) => item.status === 'ready').length))}${metric('در مسیر', num(ready.filter((item) => item.status === 'dispatched').length))}${metric('میانگین انتظار', `${num(ready.length ? Math.round(ready.reduce((s,o)=>s+ageMin(o.readyAt || o.createdAt),0)/ready.length) : 0)} دقیقه`)}${metric('کل صف', num(ready.length))}</section>
       <section class="role-section"><div class="role-section__head"><h2>صف تحویل</h2><span>قدیمی‌ترها در اولویت</span></div><div class="order-list">${cards || empty('سفارش آماده‌ای وجود ندارد.')}</div></section>`;
     main.querySelectorAll('[data-cashier-status]').forEach((button) => button.addEventListener('click', () => {
@@ -836,14 +1361,14 @@
     document.body.classList.remove('is-pos-station');
     const { session, totals } = state.data.drawer || {};
     if (!session) {
-      main.innerHTML = `${pageHead('Cash management', 'صندوق پول', 'شروع موجودی، ورود/خروج نقدی و تطبیق پایان شیفت')}
+      main.innerHTML = `${pageHead('مدیریت وجه نقد', 'صندوق پول', 'شروع موجودی، ورود/خروج نقدی و تطبیق پایان شیفت')}
         <section class="role-section role-section--8"><div class="role-section__head"><h2>باز کردن صندوق</h2><span>موجودی اول شیفت</span></div>
         <div class="field-grid"><label class="field"><span>مبلغ اولیه (تومان)</span><input id="drawer-opening" inputmode="numeric" value="0" /></label></div>
         <p>پس از باز شدن، فروش‌های نقدی به‌صورت خودکار در همین نشست ثبت می‌شوند.</p><button class="role-primary" id="drawer-open">باز کردن صندوق</button></section>`;
       document.getElementById('drawer-open').addEventListener('click', (event) => action(event.currentTarget, () => api('/api/cashier/drawer/open', { method: 'POST', body: JSON.stringify({ branchId: state.branchId, openingAmount: Number(document.getElementById('drawer-opening').value) || 0 }) }), 'صندوق پول باز شد.'));
       return;
     }
-    main.innerHTML = `${pageHead('Cash management', 'صندوق پول', 'تمام جابه‌جایی‌های نقدی این نشست قابل تطبیق است')}
+    main.innerHTML = `${pageHead('مدیریت وجه نقد', 'صندوق پول', 'تمام جابه‌جایی‌های نقدی این نشست قابل تطبیق است')}
       <div class="role-grid"><section class="role-section role-section--8"><div class="drawer-card"><span>نشست باز از ${time(session.openedAt)}</span><div class="drawer-card__amount"><span>موجودی مورد انتظار</span><strong>${money(totals.expected)}</strong></div>
       <div class="drawer-breakdown"><div><span>اول شیفت</span><b>${money(totals.opening)}</b></div><div><span>فروش نقدی</span><b>${money(totals.sales)}</b></div><div><span>ورود نقدی</span><b>${money(totals.payIn)}</b></div><div><span>خروج/بازپرداخت</span><b>${money(totals.payOut + totals.refunds)}</b></div></div></div></section>
       <section class="role-section role-section--4"><div class="role-section__head"><h2>عملیات صندوق</h2><span>ثبت ممیزی‌شده</span></div><div class="field-grid">
@@ -871,7 +1396,7 @@
 
   function waiterFloor() {
     const tables = state.data.floor.tables || [];
-    main.innerHTML = `${pageHead('Floor plan', 'نقشه سالن', 'اولویت پاسخ به مهمان، وضعیت میز و ثبت سریع سفارش', '<button class="role-primary" id="new-order">سفارش کنار میز</button>')}${waiterMetrics()}
+    main.innerHTML = `${pageHead('مدیریت سالن', 'نقشه سالن', 'اولویت پاسخ به مهمان، وضعیت میز و ثبت سریع سفارش', '<button class="role-primary" id="new-order">سفارش کنار میز</button>')}${waiterMetrics()}
       <div class="role-grid"><section class="role-section role-section--8"><div class="role-section__head"><h2>میزها</h2><span>${num(tables.length)} میز</span></div><div class="floor-grid">${tables.map((table) => `<button class="floor-table" data-table="${esc(table.id)}" data-state="${esc(table.state)}"><strong>${esc(table.label || `میز ${table.id}`)}</strong><small>${num(table.seats)} نفر · ${esc(table.zone || 'سالن')}</small><span>${esc(table.stateLabel)}</span></button>`).join('') || empty('میزی تعریف نشده است.')}</div></section>
       <section class="role-section role-section--4"><div class="role-section__head"><h2>فراخوان‌های مهمان</h2><span>به ترتیب زمان</span></div>${callsHtml()}</section></div>`;
     document.getElementById('new-order').addEventListener('click', () => showOrderComposer('waiter'));
@@ -898,14 +1423,14 @@
   }
 
   function waiterCalls() {
-    main.innerHTML = `${pageHead('Guest attention', 'فراخوان‌های مهمان', 'درخواست‌ها بر اساس زمان انتظار مرتب شده‌اند')}${waiterMetrics()}<section class="role-section"><div class="role-section__head"><h2>صف رسیدگی</h2><span>${num(state.data.calls.length)} فراخوان باز</span></div>${callsHtml()}</section>`;
+    main.innerHTML = `${pageHead('رسیدگی به مهمان', 'فراخوان‌های مهمان', 'درخواست‌ها بر اساس زمان انتظار مرتب شده‌اند')}${waiterMetrics()}<section class="role-section"><div class="role-section__head"><h2>صف رسیدگی</h2><span>${num(state.data.calls.length)} فراخوان باز</span></div>${callsHtml()}</section>`;
     wireCalls();
   }
 
   function waiterOrders() {
     const orders = (state.data.orders || []).filter((item) => item.fulfillment === 'dine_in' && !['done', 'cancelled'].includes(item.status));
     const cards = orders.map((order) => orderCard(order, order.status === 'ready' ? '<button class="role-primary" data-serve>تحویل به میز</button>' : '')).join('');
-    main.innerHTML = `${pageHead('Table service', 'سفارش‌های سالن', 'پیگیری سفارش از ثبت تا آماده‌شدن و تحویل به میز', '<button class="role-primary" id="new-order">سفارش جدید</button>')}${waiterMetrics()}<section class="role-section"><div class="role-section__head"><h2>سفارش‌های فعال</h2><span>میزهای من</span></div><div class="order-list">${cards || empty('سفارش فعالی در سالن نیست.')}</div></section>`;
+    main.innerHTML = `${pageHead('خدمت‌رسانی میز', 'سفارش‌های سالن', 'پیگیری سفارش از ثبت تا آماده‌شدن و تحویل به میز', '<button class="role-primary" id="new-order">سفارش جدید</button>')}${waiterMetrics()}<section class="role-section"><div class="role-section__head"><h2>سفارش‌های فعال</h2><span>میزهای من</span></div><div class="order-list">${cards || empty('سفارش فعالی در سالن نیست.')}</div></section>`;
     document.getElementById('new-order').addEventListener('click', () => showOrderComposer('waiter'));
     main.querySelectorAll('[data-serve]').forEach((button) => button.addEventListener('click', () => {
       const id = button.closest('[data-order-id]').dataset.orderId;
@@ -915,7 +1440,7 @@
 
   function waiterReservations() {
     const list = (state.data.reservations.reservations || []).filter((item) => !['cancelled', 'no_show'].includes(item.status)).slice(0, 80);
-    main.innerHTML = `${pageHead('Reservations', 'رزروهای سالن', 'مهمان‌های امروز، ساعت ورود و تعداد نفرات')}${waiterMetrics()}<section class="role-section"><div class="order-list">${list.map((item) => `<article class="order-card"><div class="order-card__top"><strong>${esc(item.name || item.phone)}</strong><span>${fmtDate(item.date)} · ${esc(item.time)}</span></div><div class="order-card__items">${num(item.partySize)} نفر ${item.tableNo ? `· میز ${esc(item.tableNo)}` : ''}</div><div class="order-card__bottom"><span>${esc(item.note || 'بدون یادداشت')}</span><b>${esc(({pending:'در انتظار',confirmed:'تأیید',seated:'نشسته'})[item.status] || item.status)}</b></div></article>`).join('') || empty('رزرو فعالی وجود ندارد.')}</div></section>`;
+    main.innerHTML = `${pageHead('برنامه مهمان‌ها', 'رزروهای سالن', 'مهمان‌های امروز، ساعت ورود و تعداد نفرات')}${waiterMetrics()}<section class="role-section"><div class="order-list">${list.map((item) => `<article class="order-card"><div class="order-card__top"><strong>${esc(item.name || item.phone)}</strong><span>${fmtDate(item.date)} · ${esc(item.time)}</span></div><div class="order-card__items">${num(item.partySize)} نفر ${item.tableNo ? `· میز ${esc(item.tableNo)}` : ''}</div><div class="order-card__bottom"><span>${esc(item.note || 'بدون یادداشت')}</span><b>${esc(({pending:'در انتظار',confirmed:'تأیید',seated:'نشسته'})[item.status] || item.status)}</b></div></article>`).join('') || empty('رزرو فعالی وجود ندارد.')}</div></section>`;
   }
 
   async function loadMenu() {
@@ -932,16 +1457,16 @@
     state.cart.clear();
     const tables = state.data.floor?.tables || [];
     const fulfillmentOptions = source === 'cashier' ? '<option value="dine_in">داخل مجموعه</option><option value="pickup">بیرون‌بر</option>' : '<option value="dine_in">داخل مجموعه</option>';
-    openDialog('POS', 'سفارش جدید', `<div class="field-grid" style="margin-bottom:12px"><label class="field"><span>نوع سفارش</span><select id="composer-fulfillment">${fulfillmentOptions}</select></label><label class="field"><span>میز</span><select id="composer-table"><option value="">انتخاب میز</option>${tables.map((table) => `<option value="${table.id}" ${String(table.id) === String(presetTable) ? 'selected' : ''}>${esc(table.label)}</option>`).join('')}</select></label><label class="field"><span>موبایل مهمان (اختیاری)</span><input id="composer-phone" inputmode="tel" /></label><label class="field"><span>یادداشت</span><input id="composer-note" maxlength="240" /></label></div>
-      <div class="composer"><section class="composer-menu"><input class="composer-search" id="composer-search" placeholder="جست‌وجوی آیتم…" /><div class="composer-items" id="composer-items"></div></section><aside class="composer-cart"><strong>سبد سفارش</strong><div class="cart-lines" id="cart-lines">${empty('آیتمی انتخاب نشده است.')}</div><div class="cart-total"><span>جمع</span><b id="cart-total">۰ تومان</b></div><button class="role-primary" id="composer-submit" style="width:100%">ثبت و ارسال سفارش</button></aside></div>`);
+    openDialog('صندوق فروش', 'سفارش جدید', `<div class="field-grid" style="margin-bottom:12px"><label class="field"><span>نوع سفارش</span><select id="composer-fulfillment">${fulfillmentOptions}</select></label><label class="field"><span>میز</span><select id="composer-table"><option value="">انتخاب میز</option>${tables.map((table) => `<option value="${table.id}" ${String(table.id) === String(presetTable) ? 'selected' : ''}>${esc(table.label)}</option>`).join('')}</select></label><label class="field"><span>موبایل مهمان (اختیاری)</span><input id="composer-phone" inputmode="tel" /></label><label class="field"><span>یادداشت</span><input id="composer-note" maxlength="240" /></label></div>
+      <div class="composer"><section class="composer-menu"><input class="composer-search" id="composer-search" placeholder="جست‌وجوی محصول…" /><div class="composer-items" id="composer-items"></div></section><aside class="composer-cart"><strong>سبد سفارش</strong><div class="cart-lines" id="cart-lines">${empty('محصولی انتخاب نشده است.')}</div><div class="cart-total"><span>جمع</span><b id="cart-total">۰ تومان</b></div><button class="role-primary" id="composer-submit" style="width:100%">ثبت و ارسال سفارش</button></aside></div>`);
     const paintItems = (query = '') => {
       const normalized = query.trim();
-      document.getElementById('composer-items').innerHTML = state.menuItems.filter((item) => !normalized || String(item.name || '').includes(normalized)).slice(0, 120).map((item) => `<button class="composer-item" data-menu-id="${item.id}">${item.img ? `<img src="${esc(item.img)}" alt="" loading="lazy" />` : '<span></span>'}<span><strong>${esc(item.name)}</strong><span>${money(item.price)}</span></span><b>+</b></button>`).join('') || empty('آیتمی پیدا نشد.');
+      document.getElementById('composer-items').innerHTML = state.menuItems.filter((item) => !normalized || String(item.name || '').includes(normalized)).slice(0, 120).map((item) => `<button class="composer-item" data-menu-id="${item.id}">${item.img ? `<img src="${esc(item.img)}" alt="" loading="lazy" />` : '<span></span>'}<span><strong>${esc(item.name)}</strong><span>${money(item.price)}</span></span><b>+</b></button>`).join('') || empty('محصولی پیدا نشد.');
       document.querySelectorAll('[data-menu-id]').forEach((button) => button.addEventListener('click', () => { const id = Number(button.dataset.menuId); state.cart.set(id, (state.cart.get(id) || 0) + 1); paintCart(); }));
     };
     const paintCart = () => {
       const lines = [...state.cart.entries()].map(([id, qty]) => ({ item: state.menuItems.find((entry) => Number(entry.id) === id), qty })).filter((line) => line.item);
-      document.getElementById('cart-lines').innerHTML = lines.map(({ item, qty }) => `<div class="cart-line"><div><strong>${esc(item.name)}</strong><small>${money(item.price * qty)}</small></div><div class="cart-line__qty"><button data-cart-delta="-1" data-cart-id="${item.id}">−</button><b>${num(qty)}</b><button data-cart-delta="1" data-cart-id="${item.id}">+</button></div></div>`).join('') || empty('آیتمی انتخاب نشده است.');
+      document.getElementById('cart-lines').innerHTML = lines.map(({ item, qty }) => `<div class="cart-line"><div><strong>${esc(item.name)}</strong><small>${money(item.price * qty)}</small></div><div class="cart-line__qty"><button data-cart-delta="-1" data-cart-id="${item.id}">−</button><b>${num(qty)}</b><button data-cart-delta="1" data-cart-id="${item.id}">+</button></div></div>`).join('') || empty('محصولی انتخاب نشده است.');
       document.getElementById('cart-total').textContent = money(lines.reduce((sum, line) => sum + Number(line.item.price || 0) * line.qty, 0));
       document.querySelectorAll('[data-cart-delta]').forEach((button) => button.addEventListener('click', () => { const id = Number(button.dataset.cartId); const next = (state.cart.get(id) || 0) + Number(button.dataset.cartDelta); if (next <= 0) state.cart.delete(id); else state.cart.set(id, next); paintCart(); }));
     };
@@ -952,7 +1477,7 @@
       const fulfillment = document.getElementById('composer-fulfillment').value;
       const tableNo = document.getElementById('composer-table').value;
       if (fulfillment === 'dine_in' && !tableNo) throw new Error('میز را انتخاب کنید.');
-      if (!state.cart.size) throw new Error('حداقل یک آیتم انتخاب کنید.');
+      if (!state.cart.size) throw new Error('حداقل یک محصول انتخاب کنید.');
       await api('/api/staff/orders', { method: 'POST', headers: { 'Idempotency-Key': `staff-${Date.now()}-${Math.random().toString(16).slice(2)}` }, body: JSON.stringify({ branchId: state.branchId, fulfillment, tableNo, phone: document.getElementById('composer-phone').value, note: document.getElementById('composer-note').value, paymentMethod: 'cashier', items: [...state.cart.entries()].map(([menuItemId, qty]) => ({ menuItemId, qty })) }) });
       dialog.close();
     }, 'سفارش ثبت و به جریان عملیات ارسال شد.'));
@@ -972,21 +1497,36 @@
   }
 
   function inventoryStatusLabel(status) {
-    return ({ available: 'عادی', reorder: 'نیازمند سفارش', negative: 'موجودی منفی', insufficient_data: 'داده ناکافی', posted: 'ثبت مالی شد', blocked: 'نیازمند حسابدار', pending: 'منتظر ثبت' })[status] || status || '—';
+    return ({ available: 'عادی', reorder: 'نیازمند سفارش', negative: 'موجودی منفی', insufficient_data: 'داده ناکافی', posted: 'ثبت مالی شد', blocked: 'نیازمند حسابدار', pending: 'منتظر ثبت', pending_approval: 'منتظر تأیید مالک', approved: 'تأییدشده', retired: 'نسخه قبلی', rejected: 'ردشده' })[status] || status || '—';
   }
 
   function kitchenInventoryPage() {
     const data = state.data.inventory || {};
     const items = data.items || [];
+    const menuItems = data.menuItems || [];
+    const recipeVersions = data.recipeVersions || [];
     const recipes = data.productionRecipes || [];
+    const receivablePurchaseOrders = data.receivablePurchaseOrders || [];
     const capacities = data.recipeCapacity || [];
     const operations = data.recentOperations || [];
     const summary = data.summary || {};
+    const today = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
     const itemOptions = items.map((item) => `<option value="${esc(item.id)}" data-unit="${esc(item.unit || '')}">${esc(item.name)} · ${num(item.availableQuantity)} ${esc(item.unit || '')}</option>`).join('');
+    const recipeIngredientOptions = items.map((item) => `<option value="${esc(item.id)}" data-unit="${esc(item.unit || '')}">${esc(item.name)} · واحد پایه ${esc(item.unit || 'تعریف نشده')}</option>`).join('');
+    const menuItemOptions = menuItems.map((item) => `<option value="${esc(item.id)}">${esc(item.name)}${item.category ? ` · ${esc(item.category)}` : ''}</option>`).join('');
     const recipeOptions = recipes.map((recipe) => `<option value="${esc(recipe.id)}" data-yield="${esc(recipe.defaultPlannedYield)}">${esc(recipe.name)}${recipe.version ? ` · نسخه ${esc(recipe.version)}` : ''}</option>`).join('');
-    main.innerHTML = `${pageHead('عملیات انبار', 'موجودی، ضایعات و تولید', 'شما فقط واقعیت فیزیکی را ثبت می‌کنید؛ حساب‌ها و مبلغ سند به‌صورت خودکار در حسابداری تعیین می‌شوند.')}
-      <div class="role-metrics">${metric('اقلام انبار', num(summary.items))}${metric('نیازمند سفارش', num(summary.lowStock), 'بر پایه نقطه سفارش')}${metric('منتظر ارزش‌گذاری', num(summary.unvaluedEvents), 'واقعیت فیزیکی ثبت شده')}${metric('استثناهای باز', num(summary.exceptions), 'برای بازبینی حسابدار')}</div>
+    const receiptOptions = receivablePurchaseOrders.flatMap((po) => (po.lines || []).map((line) => `<option value="${esc(po.id)}|${esc(line.id)}" data-max="${esc(line.remainingQuantity)}">${esc(po.number)} · ${esc(po.vendorName)} · ${esc(line.description)} · مانده ${num(line.remainingQuantity)} ${esc(line.unit || '')}</option>`)).join('');
+    main.innerHTML = `${pageHead('عملیات انبار', 'دریافت، موجودی، ضایعات و تولید', 'شما فقط واقعیت فیزیکی را ثبت می‌کنید؛ قیمت خرید، حساب‌ها و مبلغ سند در این پنل نمایش داده نمی‌شوند.')}
+      <div class="role-metrics">${metric('قابل دریافت', num(summary.receivablePurchaseOrderLines), 'فقط سفارش خرید تأییدشده')}${metric('اقلام انبار', num(summary.items))}${metric('نیازمند سفارش', num(summary.lowStock), 'بر پایه نقطه سفارش')}${metric('استثناهای باز', num(summary.exceptions), 'برای بازبینی حسابدار')}</div>
       <section class="inventory-actions" aria-label="ثبت عملیات انبار">
+        <details class="inventory-action" ${receiptOptions ? 'open' : 'data-disabled="true"'}><summary><b>دریافت کالا</b><span>${receiptOptions ? 'سفارش تأییدشده، مقدار و حواله' : 'ردیف تأییدشده‌ای برای دریافت وجود ندارد'}</span></summary>${receiptOptions ? `<form id="inventory-receipt-form" class="field-grid">
+          <label class="field field--full"><span>سفارش و ردیف کالا</span><select name="poLine" required><option value="">انتخاب ردیف قابل دریافت</option>${receiptOptions}</select></label>
+          <label class="field"><span>مقدار تحویل‌شده</span><input name="receivedQuantity" type="number" min="0.000001" step="any" required></label>
+          <label class="field"><span>شماره حواله تأمین‌کننده</span><input name="deliveryNoteNumber" maxlength="120"></label>
+          <label class="field"><span>تاریخ دریافت</span><input name="receivedDate" type="date" value="${today}" required></label>
+          <label class="field field--full"><span>یادداشت فیزیکی</span><input name="notes" maxlength="300" placeholder="مثلاً یک بسته آسیب‌دیده تحویل نشد"></label>
+          <button class="role-primary field--full" type="submit">ثبت رسید و افزایش موجودی</button>
+        </form>` : `<div class="inventory-action__empty">حسابدار باید سفارش خرید را ایجاد کند و مالک/مدیر آن را تأیید کند؛ انباردار قیمت یا حساب را تعیین نمی‌کند.</div>`}</details>
         <details class="inventory-action"><summary><b>ثبت ضایعات</b><span>کالا، مقدار و علت</span></summary><form id="inventory-waste-form" class="field-grid">
           <label class="field"><span>کالا</span><select name="itemId" required><option value="">انتخاب کالا</option>${itemOptions}</select></label>
           <label class="field"><span>مقدار</span><input name="quantity" type="number" min="0.000001" step="any" required></label>
@@ -999,29 +1539,105 @@
           <label class="field field--full"><span>یادداشت شمارش</span><input name="reason" maxlength="300" value="شمارش فیزیکی شیفت"></label>
           <button class="role-primary field--full" type="submit">ثبت شمارش و اختلاف</button>
         </form></details>
-        <details class="inventory-action" ${recipes.length ? '' : 'data-disabled="true"'}><summary><b>ثبت تولید بچ</b><span>${recipes.length ? 'مصرف مواد و تولید خروجی' : 'رسپی تولیدِ دارای کالای خروجی تنظیم نشده'}</span></summary>${recipes.length ? `<form id="inventory-production-form" class="field-grid">
-          <label class="field field--full"><span>رسپی تولید</span><select name="recipeId" required><option value="">انتخاب رسپی</option>${recipeOptions}</select></label>
+        <details class="inventory-action" ${recipes.length ? '' : 'data-disabled="true"'}><summary><b>ثبت مرحله تولید</b><span>${recipes.length ? 'مصرف مواد و ثبت محصول خروجی' : 'دستور تهیه تولید با کالای خروجی تنظیم نشده است'}</span></summary>${recipes.length ? `<form id="inventory-production-form" class="field-grid">
+          <label class="field field--full"><span>دستور تهیه تولید</span><select name="recipeId" required><option value="">انتخاب دستور تهیه</option>${recipeOptions}</select></label>
           <label class="field"><span>بازده برنامه‌ریزی‌شده</span><input name="plannedYield" type="number" min="0.000001" step="any" required></label>
           <label class="field"><span>خروجی واقعی</span><input name="actualYield" type="number" min="0" step="any" required></label>
-          <button class="role-primary field--full" type="submit">ثبت مصرف و خروجی بچ</button>
-        </form>` : `<div class="inventory-action__empty">مدیر باید برای رسپی آماده‌سازی، کالای خروجی انبار را تعریف کند؛ سیستم آن را حدس نمی‌زند.</div>`}</details>
+          <button class="role-primary field--full" type="submit">ثبت مصرف و محصول خروجی</button>
+        </form>` : `<div class="inventory-action__empty">مدیر باید کالای خروجی دستور آماده‌سازی را تعریف کند؛ سامانه آن را حدس نمی‌زند.</div>`}</details>
+        <details class="inventory-action inventory-action--wide" ${menuItemOptions && recipeIngredientOptions ? '' : 'data-disabled="true"'}><summary><b>نسخه جدید دستور تهیه فروش</b><span>${menuItemOptions && recipeIngredientOptions ? 'محصول واقعی منو، مواد و بازده؛ تأیید مستقل مالک' : 'ابتدا محصول منو و کالای انبار لازم است'}</span></summary>${menuItemOptions && recipeIngredientOptions ? `<form id="inventory-recipe-form" class="field-grid">
+          <label class="field"><span>محصول واقعی منو</span><select name="menuItemId" required><option value="">انتخاب محصول فروش</option>${menuItemOptions}</select></label>
+          <label class="field"><span>نام نسخه</span><input name="name" maxlength="180" placeholder="اگر خالی باشد، نام محصول استفاده می‌شود"></label>
+          <label class="field"><span>تاریخ شروع اثر</span><input name="effectiveFrom" type="date" value="${today}" required></label>
+          <label class="field"><span>تعداد خروجی / پرس</span><input name="yieldQuantity" type="number" min="0.000001" step="any" value="1" required></label>
+          <div class="recipe-builder field--full" data-recipe-lines data-item-options="${esc(recipeIngredientOptions)}">
+            <div class="recipe-builder__head"><div><b>مواد دستور تهیه</b><span>مقدار مصرفی، واحد پایه، مبنا و درصد بازده</span></div><button class="role-secondary" type="button" data-add-recipe-line>افزودن ماده</button></div>
+            <div class="recipe-builder__lines"></div>
+          </div>
+          <div class="inventory-action__notice field--full">آشپز/انباردار فقط واقعیت فیزیکی را پیشنهاد می‌کند؛ این نسخه تا تأیید مالک وارد بهای تمام‌شده فروش نمی‌شود و قیمت یا حساب مالی در این پنل نمایش داده نمی‌شود.</div>
+          <button class="role-primary field--full" type="submit">ارسال نسخه برای تأیید مالک</button>
+        </form>` : `<div class="inventory-action__empty">تا محصول واقعی منو و کالای انبار در همین شعبه وجود نداشته باشد، دستور تهیه ساخته نمی‌شود.</div>`}</details>
       </section>
       <div class="role-grid inventory-layout">
         <section class="role-section role-section--8"><div class="role-section__head"><h2>مانده قابل استفاده</h2><span>افتتاحیه + گردش‌های قطعی</span></div><div class="inventory-table" role="table">
           <div class="inventory-row inventory-row--head" role="row"><span>کالا</span><span>مانده</span><span>نقطه سفارش</span><span>وضعیت</span></div>
           ${items.map((item) => `<div class="inventory-row" role="row"><span><b>${esc(item.name)}</b><small>${esc(item.sku || item.id)}</small></span><strong>${item.availableQuantity == null ? '—' : `${num(item.availableQuantity)} ${esc(item.unit || '')}`}</strong><span>${item.reorderPoint == null ? 'تعریف نشده' : `${num(item.reorderPoint)} ${esc(item.unit || '')}`}</span><i data-status="${esc(item.status)}">${esc(inventoryStatusLabel(item.status))}</i></div>`).join('') || empty('کالای انباری برای این شعبه تعریف نشده است.')}
         </div></section>
-        <section class="role-section role-section--4"><div class="role-section__head"><h2>ظرفیت قابل تولید</h2><span>بر اساس رسپی و مانده فعلی</span></div><div class="inventory-capacity-list">${capacities.slice(0, 12).map((row) => `<article><div><b>${esc(row.name)}</b><small>${row.version ? `نسخه ${esc(row.version)}` : 'نسخه نامشخص'}</small></div><strong>${row.capacity == null ? '—' : num(row.capacity)}</strong><span>${row.status === 'available' ? `محدودکننده: ${esc(row.limitingIngredient?.name || '—')}` : 'رسپی یا واحد ناقص'}</span></article>`).join('') || empty('برای محاسبه ظرفیت، رسپی معتبر لازم است.')}</div></section>
-        <section class="role-section"><div class="role-section__head"><h2>آخرین عملیات</h2><span>اصلاح فقط با سند معکوس مدیر انجام می‌شود.</span></div><div class="inventory-operation-list">${operations.map((row) => `<article><div><b>${esc(inventoryStatusLabel(row.source === 'inventory.waste' ? 'ضایعات' : row.source === 'inventory.stock_count' ? 'شمارش' : row.source === 'inventory.production_batch' ? 'تولید بچ' : 'معکوس'))}</b><small>${fmtDate(row.occurredAt)} · ${time(row.occurredAt)}</small></div><span data-status="${esc(row.status)}">${esc(inventoryStatusLabel(row.status))}</span>${row.reason ? `<p>${esc(row.reason)}</p>` : ''}${row.issues?.length ? `<p class="is-warning">${num(row.issues.length)} هشدار برای بازبینی ثبت شد.</p>` : ''}</article>`).join('') || empty('هنوز عملیات V2 انبار ثبت نشده است.')}</div></section>
+        <section class="role-section role-section--4"><div class="role-section__head"><h2>ظرفیت قابل تولید</h2><span>بر اساس دستور تهیه و مانده فعلی</span></div><div class="inventory-capacity-list">${capacities.slice(0, 12).map((row) => `<article><div><b>${esc(row.name)}</b><small>${row.version ? `نسخه ${esc(row.version)}` : 'نسخه نامشخص'}</small></div><strong>${row.capacity == null ? '—' : num(row.capacity)}</strong><span>${row.status === 'available' ? `محدودکننده: ${esc(row.limitingIngredient?.name || '—')}` : 'دستور تهیه یا واحد ناقص'}</span></article>`).join('') || empty('برای محاسبه ظرفیت، دستور تهیه معتبر لازم است.')}</div></section>
+        <section class="role-section"><div class="role-section__head"><h2>آخرین عملیات</h2><span>اصلاح فقط با سند معکوس مدیر انجام می‌شود.</span></div><div class="inventory-operation-list">${operations.map((row) => `<article><div><b>${esc(inventoryStatusLabel(row.source === 'inventory.waste' ? 'ضایعات' : row.source === 'inventory.stock_count' ? 'شمارش' : row.source === 'inventory.production_batch' ? 'مرحله تولید' : row.source === 'purchase.goods_received' ? 'دریافت کالا' : 'معکوس'))}</b><small>${fmtDate(row.occurredAt)} · ${time(row.occurredAt)}</small></div><span data-status="${esc(row.status)}">${esc(inventoryStatusLabel(row.status))}</span>${row.reason ? `<p>${esc(row.reason)}</p>` : ''}${row.issues?.length ? `<p class="is-warning">${num(row.issues.length)} هشدار برای بازبینی ثبت شد.</p>` : ''}</article>`).join('') || empty('هنوز عملیات جدید انبار ثبت نشده است.')}</div></section>
+        <section class="role-section"><div class="role-section__head"><h2>نسخه‌های دستور تهیه فروش</h2><span>${num(summary.pendingRecipeVersions || 0)} منتظر تأیید · ${num(summary.approvedRecipeVersions || 0)} تأییدشده</span></div><div class="inventory-operation-list">${recipeVersions.map((row) => `<article><div><b>${esc(row.menuItemName || row.name)}</b><small>نسخه ${num(row.version)} · شروع ${fmtDate(row.effectiveFrom)} · ${num(row.ingredients?.length || 0)} ماده</small></div><span data-status="${esc(row.status)}">${esc(inventoryStatusLabel(row.status))}</span><p>${num(row.yieldQuantity)} پرس خروجی · ثبت‌کننده ${esc(row.createdBy || '—')}</p></article>`).join('') || empty('هنوز نسخهٔ دستور تهیه جدیدی ثبت نشده است.')}</div></section>
       </div>`;
     wireKitchenInventory();
   }
 
   function inventoryIdempotency(kind) {
     return `kitchen-inventory-${kind}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const standardUnits = [
+    { value: 'گرم', label: 'گرم (g)' },
+    { value: 'کیلوگرم', label: 'کیلوگرم (kg)' },
+    { value: 'میلی‌لیتر', label: 'میلی‌لیتر (ml)' },
+    { value: 'لیتر', label: 'لیتر (l)' },
+    { value: 'عدد', label: 'عدد (count)' },
+    { value: 'بسته', label: 'بسته' },
+    { value: 'بطری', label: 'بطری' },
+    { value: 'برگ', label: 'برگ' },
+    { value: 'قاشق', label: 'قاشق' },
+    { value: 'قالب', label: 'قالب' },
+  ];
+
+  function rolePanelUnitOptions(selectedUnit = '') {
+    return standardUnits.map((u) => {
+      const isSel = u.value === selectedUnit;
+      return `<option value="${esc(u.value)}"${isSel ? ' selected' : ''}>${esc(u.label)}</option>`;
+    }).join('');
   }
 
   function wireKitchenInventory() {
+    const recipeLines = main.querySelector('[data-recipe-lines] .recipe-builder__lines');
+    const recipeItemOptions = main.querySelector('[data-recipe-lines]')?.dataset.itemOptions || '';
+    const addRecipeLine = (initialData = {}) => {
+      if (!recipeLines) return;
+      const row = document.createElement('div');
+      row.className = 'recipe-builder__line';
+      const initialUnit = initialData.unit || 'کیلوگرم';
+      row.innerHTML = `<label class="field"><span>کالای انبار</span><select name="ingredientItemId" required><option value="">انتخاب ماده</option>${recipeItemOptions}</select></label><label class="field"><span>مقدار</span><input name="ingredientQuantity" type="number" min="0.000001" step="any" value="${initialData.quantity || ''}" required></label><label class="field"><span>واحد</span><select name="ingredientUnit">${rolePanelUnitOptions(initialUnit)}</select></label><label class="field"><span>مبنای مقدار</span><select name="ingredientBasis"><option value="raw"${initialData.quantityBasis === 'raw' ? ' selected' : ''}>خام قبل از پاک‌کردن</option><option value="usable"${initialData.quantityBasis === 'usable' ? ' selected' : ''}>قابل مصرف</option></select></label><label class="field"><span>بازده ماده (درصد)</span><input name="ingredientYield" type="number" min="0.01" max="100" step="0.01" value="${initialData.yieldPercent || 100}" required></label><button class="recipe-builder__remove" type="button" data-remove-recipe-line aria-label="حذف ماده">×</button>`;
+      recipeLines.appendChild(row);
+      const itemSelect = row.querySelector('select[name="ingredientItemId"]');
+      if (initialData.itemId) itemSelect.value = initialData.itemId;
+      itemSelect.addEventListener('change', (event) => {
+        const itemUnit = event.currentTarget.selectedOptions[0]?.dataset.unit;
+        const unitSelect = row.querySelector('select[name="ingredientUnit"]');
+        if (unitSelect && itemUnit) {
+          const match = [...unitSelect.options].find((opt) => opt.value === itemUnit || opt.value.includes(itemUnit) || itemUnit.includes(opt.value));
+          if (match) unitSelect.value = match.value;
+        }
+      });
+      row.querySelector('[data-remove-recipe-line]').addEventListener('click', () => { if (recipeLines.children.length > 1) row.remove(); });
+    };
+    main.querySelector('[data-add-recipe-line]')?.addEventListener('click', () => addRecipeLine());
+    if (recipeLines && recipeLines.children.length === 0) addRecipeLine();
+
+    // When menu item is changed: pre-fill existing recipe if already present
+    const recipeForm = main.querySelector('#inventory-recipe-form');
+    recipeForm?.querySelector('select[name="menuItemId"]')?.addEventListener('change', (event) => {
+      const selectedMenuItemId = event.currentTarget.value;
+      const allRecipes = [...(state.recipeVersions || []), ...(state.recipes || [])];
+      const existing = allRecipes.find((r) => String(r.menuItemId) === String(selectedMenuItemId));
+      if (existing) {
+        recipeForm.elements.name.value = existing.name || '';
+        recipeForm.elements.yieldQuantity.value = existing.yieldQuantity || existing.servings || 1;
+        if (recipeLines) {
+          recipeLines.innerHTML = '';
+          const ingList = Array.isArray(existing.ingredients) ? existing.ingredients : [];
+          if (ingList.length) {
+            ingList.forEach((ing) => addRecipeLine(ing));
+          } else {
+            addRecipeLine();
+          }
+        }
+      }
+    });
+
     const bind = (selector, endpoint, buildBody, success) => main.querySelector(selector)?.addEventListener('submit', async (event) => {
       event.preventDefault();
       const form = event.currentTarget;
@@ -1033,9 +1649,60 @@
         await api(endpoint, { method: 'POST', headers: { 'Idempotency-Key': inventoryIdempotency(endpoint.split('/').pop()) }, body: JSON.stringify(body) });
       }, success);
     });
+    main.querySelector('#inventory-receipt-form')?.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const form = event.currentTarget;
+      const button = form.querySelector('button[type="submit"]');
+      const values = Object.fromEntries(new FormData(form));
+      const [purchaseOrderId, purchaseOrderLineId] = String(values.poLine || '').split('|');
+      const receivedQuantity = Number(values.receivedQuantity);
+      const max = Number(form.elements.poLine.selectedOptions[0]?.dataset.max);
+      if (!purchaseOrderId || !purchaseOrderLineId || !Number.isFinite(receivedQuantity) || receivedQuantity <= 0) return showToast('سفارش، ردیف و مقدار دریافت را کامل کنید.', 'error');
+      if (Number.isFinite(max) && receivedQuantity > max) return showToast('مقدار دریافت از ماندهٔ سفارش بیشتر است.', 'error');
+      const receivedDate = window.ShamsiDatePicker?.getISOValue(form.elements.receivedDate) || form.elements.receivedDate.dataset.isoDate || values.receivedDate;
+      await action(button, async () => {
+        await api('/api/kitchen/inventory/goods-receipts', {
+          method: 'POST',
+          headers: { 'Idempotency-Key': inventoryIdempotency('goods-receipt') },
+          body: JSON.stringify({
+            branchId: state.branchId,
+            purchaseOrderId,
+            deliveryNoteNumber: values.deliveryNoteNumber,
+            receivedAt: `${receivedDate}T12:00:00.000Z`,
+            notes: values.notes,
+            lines: [{ purchaseOrderLineId, receivedQuantity }],
+          }),
+        });
+      }, 'دریافت کالا ثبت شد؛ موجودی فیزیکی و اثر خودکار حسابداری به‌روزرسانی شدند.');
+    });
     bind('#inventory-waste-form', '/api/kitchen/inventory/waste', (values, selected) => ({ itemId: values.itemId, quantity: Number(values.quantity), unit: selected?.dataset.unit, reason: values.reason }), 'ضایعات ثبت شد؛ اثر مالی یا مانع ارزش‌گذاری به حسابداری ارسال شد.');
     bind('#inventory-count-form', '/api/kitchen/inventory/stock-counts', (values, selected) => ({ itemId: values.itemId, countedQuantity: Number(values.countedQuantity), unit: selected?.dataset.unit, reason: values.reason }), 'شمارش فیزیکی و اختلاف آن ثبت شد.');
-    bind('#inventory-production-form', '/api/kitchen/inventory/production-batches', (values) => ({ recipeId: values.recipeId, plannedYield: Number(values.plannedYield), actualYield: Number(values.actualYield) }), 'بچ تولید و گردش مواد آن ثبت شد.');
+    bind('#inventory-production-form', '/api/kitchen/inventory/production-batches', (values) => ({ recipeId: values.recipeId, plannedYield: Number(values.plannedYield), actualYield: Number(values.actualYield) }), 'مرحله تولید و گردش مواد آن ثبت شد.');
+    main.querySelector('#inventory-recipe-form')?.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const form = event.currentTarget;
+      const button = form.querySelector('button[type="submit"]');
+      const rows = [...form.querySelectorAll('.recipe-builder__line')];
+      const ingredients = rows.map((row) => {
+        const select = row.querySelector('[name="ingredientItemId"]');
+        const unitSelect = row.querySelector('[name="ingredientUnit"]');
+        return {
+          itemId: select.value,
+          quantity: Number(row.querySelector('[name="ingredientQuantity"]').value),
+          unit: unitSelect ? unitSelect.value : (select.selectedOptions[0]?.dataset.unit || 'کیلوگرم'),
+          quantityBasis: row.querySelector('[name="ingredientBasis"]').value,
+          yieldPercent: Number(row.querySelector('[name="ingredientYield"]').value),
+        };
+      });
+      if (new Set(ingredients.map((row) => row.itemId)).size !== ingredients.length) return showToast('هر کالای انبار فقط یک‌بار می‌تواند در دستور تهیه باشد.', 'error');
+      const effectiveFrom = window.ShamsiDatePicker?.getISOValue(form.elements.effectiveFrom) || form.elements.effectiveFrom.dataset.isoDate || form.elements.effectiveFrom.value;
+      await action(button, async () => {
+        await api('/api/kitchen/inventory/recipe-versions', {
+          method: 'POST', headers: { 'Idempotency-Key': inventoryIdempotency('recipe-version') },
+          body: JSON.stringify({ branchId: state.branchId, menuItemId: form.elements.menuItemId.value, name: form.elements.name.value, effectiveFrom, yieldQuantity: Number(form.elements.yieldQuantity.value), ingredients }),
+        });
+      }, 'نسخهٔ دستور تهیه ثبت و برای تأیید مستقل مالک ارسال شد.');
+    });
     main.querySelector('#inventory-production-form select[name="recipeId"]')?.addEventListener('change', (event) => {
       const planned = event.currentTarget.selectedOptions[0]?.dataset.yield;
       if (planned) event.currentTarget.form.elements.plannedYield.value = planned;
@@ -1043,9 +1710,10 @@
   }
 
   const KDS_ALLERGENS = { gluten: 'گلوتن', dairy: 'لبنیات', egg: 'تخم‌مرغ', nuts: 'آجیل', peanut: 'بادام‌زمینی', soy: 'سویا', fish: 'ماهی', shellfish: 'صدف', sesame: 'کنجد' };
+  const kdsStationLabel = () => 'آشپزخانه یکپارچه';
 
   function saveKdsLocal() {
-    localStorage.setItem('westo_kds_station', JSON.stringify(state.kdsStation));
+    localStorage.setItem('westo_kds_station', JSON.stringify('kitchen'));
     localStorage.setItem('westo_kds_settings', JSON.stringify(state.kdsSettings));
   }
 
@@ -1110,7 +1778,6 @@
     return (state.data.kitchen?.tickets || []).filter((ticket) => {
       if (readyOnly ? ticket.column !== 'ready' : ticket.column === 'ready') return false;
       if (state.kdsFulfillment !== 'all' && ticket.fulfillment !== state.kdsFulfillment) return false;
-      if (state.kdsStation !== 'expo' && !(ticket.items || []).some((item) => item.station === state.kdsStation)) return false;
       if (state.kdsHighlightItem && !(ticket.items || []).some((item) => item.name === state.kdsHighlightItem && !item.completedAt)) return false;
       if (!query) return true;
       const haystack = [ticket.orderNo, ticket.tableNo, ticket.name, ticket.phone, ticket.note, ticket.kitchenNote, ...(ticket.items || []).map((item) => `${item.name} ${(item.modifiers || []).map((entry) => entry.name).join(' ')}`)].join(' ').toLocaleLowerCase('fa');
@@ -1120,8 +1787,6 @@
 
   function kdsItemMarkup(item, ticket) {
     const completed = !!item.completedAt;
-    const stationHidden = state.kdsStation !== 'expo' && item.station !== state.kdsStation;
-    if (stationHidden) return '';
     const modifiers = (item.modifiers || []).map((entry) => `<span>${esc(entry.name)}</span>`).join('');
     const allergens = (item.allergens || []).map((entry) => KDS_ALLERGENS[entry] || entry).join('، ');
     return `<button class="kds-item ${completed ? 'is-complete' : ''} ${Number(item.qty) > 1 ? 'is-multi' : ''}" type="button" data-kds-item="${esc(item.key)}" data-ticket-id="${ticket.id}" data-completed="${completed}" aria-label="${completed ? 'بازگردانی' : 'تکمیل'} ${esc(item.name)}">
@@ -1132,21 +1797,19 @@
   function kdsTicketMarkup(ticket, shortcut) {
     const settings = normalizeKdsSettings();
     const allDone = (ticket.items || []).length > 0 && (ticket.items || []).every((item) => item.completedAt);
-    const stationItems = state.kdsStation === 'expo' ? (ticket.items || []) : (ticket.items || []).filter((item) => item.station === state.kdsStation);
-    const stationDone = stationItems.length > 0 && stationItems.every((item) => item.completedAt);
+    const stationItems = ticket.items || [];
+    const selected = String(state.kdsSelectedTicketId || '') === String(ticket.id);
     const fulfillment = ticket.fulfillment === 'delivery' ? 'ارسال' : ticket.fulfillment === 'pickup' ? 'بیرون‌بر' : 'داخل مجموعه';
-    const location = ticket.tableNo ? `میز ${ticket.tableNo}` : ticket.fulfillment === 'delivery' ? 'ارسال با پیک' : 'تحویل کانتر';
+    const location = ticket.tableNo ? `میز ${ticket.tableNo}` : ticket.fulfillment === 'delivery' ? 'ارسال با پیک' : 'تحویل پیشخوان';
     const primary = ticket.column === 'ready'
       ? `<button class="kds-ticket__primary is-recall" type="button" data-kds-action="recall_ticket" data-ticket-id="${ticket.id}">بازگردانی به صف</button>`
       : ticket.column === 'new'
         ? `<button class="kds-ticket__primary" type="button" data-kds-action="start_ticket" data-ticket-id="${ticket.id}">شروع آماده‌سازی</button>`
-        : state.kdsStation === 'expo'
-          ? `<button class="kds-ticket__primary" type="button" data-kds-action="complete_ticket" data-ticket-id="${ticket.id}" ${allDone ? '' : 'disabled'}>${allDone ? 'آماده تحویل' : `منتظر ${num((ticket.items || []).filter((item) => !item.completedAt).length)} قلم`}</button>`
-          : `<button class="kds-ticket__primary" type="button" data-kds-action="complete_station" data-ticket-id="${ticket.id}" data-station="${esc(state.kdsStation)}" ${stationDone ? 'disabled' : ''}>${stationDone ? 'ایستگاه تکمیل شد' : `تکمیل ${num(stationItems.filter((item) => !item.completedAt).length)} قلم ایستگاه`}</button>`;
-    return `<article class="kds-ticket kds-ticket--${esc(ticket.fulfillment || 'pickup')} ${ticket.kds?.priority ? 'is-priority' : ''} ${ticket.kitchenNote ? 'needs-attention' : ''}" data-ticket-id="${ticket.id}" data-age-sec="${Number(ticket.ageSec) || 0}" data-rendered-at="${Date.now()}">
+        : `<button class="kds-ticket__primary" type="button" data-kds-action="complete_ticket" data-ticket-id="${ticket.id}" ${allDone ? '' : 'disabled'}>${allDone ? 'آماده تحویل' : `منتظر ${num(stationItems.filter((item) => !item.completedAt).length)} قلم`}</button>`;
+    return `<article class="kds-ticket kds-ticket--${esc(ticket.fulfillment || 'pickup')} ${ticket.kds?.priority ? 'is-priority' : ''} ${ticket.kitchenNote ? 'needs-attention' : ''} ${selected ? 'is-selected' : ''}" data-ticket-id="${ticket.id}" data-age-sec="${Number(ticket.ageSec) || 0}" data-rendered-at="${Date.now()}" tabindex="${selected ? '0' : '-1'}" aria-selected="${selected}">
       <header class="kds-ticket__head"><div><span class="kds-shortcut">${num(shortcut)}</span><div><b>${esc(location)}</b><small>${esc(ticket.orderNo || `#${ticket.id}`)}</small></div></div><div><span>${esc(fulfillment)}</span><time data-kds-age>${kdsAgeLabel(ticket.ageSec)}</time></div></header>
       <div class="kds-ticket__meta"><span>${ticket.column === 'new' ? 'جدید' : ticket.column === 'preparing' ? 'در حال آماده‌سازی' : 'آماده'}</span>${ticket.name ? `<b>${esc(ticket.name)}</b>` : ''}${ticket.kds?.priority ? '<strong>اولویت</strong>' : ''}</div>
-      <div class="kds-ticket__items">${(ticket.items || []).map((item) => kdsItemMarkup(item, ticket)).join('') || empty('آیتمی برای این ایستگاه نیست.')}</div>
+      <div class="kds-ticket__items">${(ticket.items || []).map((item) => kdsItemMarkup(item, ticket)).join('') || empty('غذایی برای این ایستگاه نیست.')}</div>
       ${ticket.note ? `<p class="kds-note"><b>یادداشت سفارش</b>${esc(ticket.note)}</p>` : ''}${ticket.kitchenNote ? `<p class="kds-note is-kitchen"><b>پیام آشپزخانه</b>${esc(ticket.kitchenNote)}</p>` : ''}
       <footer class="kds-ticket__footer"><button type="button" data-kds-priority data-ticket-id="${ticket.id}" aria-label="${ticket.kds?.priority ? 'برداشتن اولویت' : 'اولویت دادن'}">${ticket.kds?.priority ? '★' : '↑'}</button><button type="button" data-kds-note data-ticket-id="${ticket.id}" aria-label="یادداشت آشپزخانه">✎</button>${primary}</footer>
     </article>`;
@@ -1165,19 +1828,20 @@
     const pages = Math.max(1, Math.ceil(filtered.length / pageSize));
     state.kdsPage = Math.min(state.kdsPage, pages - 1);
     const visible = filtered.slice(state.kdsPage * pageSize, (state.kdsPage + 1) * pageSize);
-    const stations = data.stations || [];
     const average = Number(data.performance?.averagePrepSec || 0);
+    const openUnits = (data.tickets || []).filter((ticket) => ticket.column !== 'ready').reduce((sum, ticket) => sum + (ticket.items || []).filter((item) => !item.completedAt).reduce((count, item) => count + Math.max(1, Number(item.qty) || 1), 0), 0);
     main.innerHTML = `<section class="kds-shell is-${settings.layout} is-text-${settings.textSize}" style="--kds-columns:${kdsColumns()};--kds-rows:${settings.layout === 'rail' ? 1 : innerHeight >= 840 ? 3 : 2}">
-      <header class="kds-command"><div class="kds-command__summary"><span class="kds-live ${state.kdsConnected ? 'is-online' : ''}"><i></i>${state.kdsConnected ? 'زنده' : 'در حال اتصال'}</span><strong>${readyOnly ? 'آماده تحویل' : 'ریل آشپزخانه'}</strong><small>${num(filtered.length)} تیکت · میانگین ${average ? kdsAgeLabel(average) : 'بدون سابقه'}</small></div>
-        <div class="kds-stations" aria-label="فیلتر ایستگاه">${stations.map((station) => `<button type="button" data-kds-station="${esc(station.id)}" class="${state.kdsStation === station.id ? 'active' : ''}"><span>${esc(station.label)}</span><b>${num(station.count || 0)}</b></button>`).join('')}</div>
-        <div class="kds-command__actions"><label><span>⌕</span><input id="kds-search" value="${esc(state.kdsSearch)}" placeholder="سفارش، میز یا آیتم" /></label><button type="button" id="kds-all-day">All‑Day</button><button type="button" id="kds-availability">موجودی</button><button type="button" id="kds-settings">تنظیمات</button></div>
+      <header class="kds-command"><div class="kds-command__summary"><span class="kds-live ${state.kdsConnected ? 'is-online' : ''}"><i></i>${state.kdsConnected ? 'زنده' : 'در حال اتصال'}</span><strong>${readyOnly ? 'آماده تحویل' : 'صف آشپزخانه'}</strong><small>${num(filtered.length)} سفارش · میانگین ${average ? kdsAgeLabel(average) : 'بدون سابقه'}</small></div>
+        <div class="kds-unified-station" role="status" aria-label="صف یکپارچه آشپزخانه"><span class="kds-unified-station__icon">⌘</span><span><b>${kdsStationLabel()}</b><small>غذا · قهوه · نوشیدنی</small></span><strong>${num(openUnits)} قلم</strong></div>
+        <div class="kds-command__actions"><label><span>⌕</span><input id="kds-search" value="${esc(state.kdsSearch)}" placeholder="سفارش، میز یا غذا" /></label><button type="button" id="kds-all-day">شمارش کل</button><button type="button" id="kds-availability">موجودی</button><button type="button" id="kds-settings">تنظیمات</button></div>
       </header>
-      <div class="kds-subbar"><div class="kds-fulfillment">${[['all','همه'],['dine_in','سالن'],['pickup','بیرون‌بر'],['delivery','ارسال']].map(([id,label]) => `<button type="button" data-kds-fulfillment="${id}" class="${state.kdsFulfillment === id ? 'active' : ''}">${label}</button>`).join('')}</div><div class="kds-pressure"><span>جدید <b>${num(data.counts?.new || 0)}</b></span><span>در تولید <b>${num(data.counts?.preparing || 0)}</b></span><span>آماده <b>${num(data.counts?.ready || 0)}</b></span>${state.kdsHighlightItem ? `<button type="button" id="kds-clear-highlight">فیلتر: ${esc(state.kdsHighlightItem)} ×</button>` : ''}</div><div class="kds-pager"><button type="button" data-kds-page="-1" ${state.kdsPage <= 0 ? 'disabled' : ''}>→</button><span>${num(state.kdsPage + 1)} / ${num(pages)}</span><button type="button" data-kds-page="1" ${state.kdsPage >= pages - 1 ? 'disabled' : ''}>←</button></div></div>
-      <section class="kds-ticket-grid">${visible.map((ticket, index) => kdsTicketMarkup(ticket, index + 1)).join('') || `<div class="kds-empty"><b>${readyOnly ? 'تیکت آماده‌ای نیست' : 'صف آشپزخانه خالی است'}</b><span>تیکت جدید به‌صورت زنده اینجا ظاهر می‌شود.</span></div>`}</section>
-      <footer class="kds-shortcuts"><span><kbd>۱–۹</kbd> اکشن اصلی تیکت</span><span><kbd>R</kbd> تازه‌سازی</span><span><kbd>A</kbd> شمارش کل</span><span><kbd>Esc</kbd> بستن پنجره</span></footer>${kdsUndoMarkup()}
+      <div class="kds-subbar"><div class="kds-fulfillment">${[['all','همه'],['dine_in','سالن'],['pickup','بیرون‌بر'],['delivery','ارسال']].map(([id,label]) => `<button type="button" data-kds-fulfillment="${id}" class="${state.kdsFulfillment === id ? 'active' : ''}">${label}</button>`).join('')}</div><div class="kds-pressure"><span>جدید <b>${num(data.counts?.new || 0)}</b></span><span>در تولید <b>${num(data.counts?.preparing || 0)}</b></span><span>آماده <b>${num(data.counts?.ready || 0)}</b></span>${state.kdsHighlightItem ? `<button type="button" id="kds-clear-highlight">نمایش: ${esc(state.kdsHighlightItem)} ×</button>` : ''}</div><div class="kds-pager"><button type="button" data-kds-page="-1" ${state.kdsPage <= 0 ? 'disabled' : ''}>→</button><span>${num(state.kdsPage + 1)} / ${num(pages)}</span><button type="button" data-kds-page="1" ${state.kdsPage >= pages - 1 ? 'disabled' : ''}>←</button></div></div>
+      <section class="kds-ticket-grid">${visible.map((ticket, index) => kdsTicketMarkup(ticket, index + 1)).join('') || `<div class="kds-empty"><b>${readyOnly ? 'سفارش آماده‌ای نیست' : 'صف آشپزخانه خالی است'}</b><span>سفارش جدید به‌صورت زنده اینجا ظاهر می‌شود.</span></div>`}</section>
+      <footer class="kds-shortcuts"><span id="kds-order-entry" class="kds-order-entry" aria-live="polite" hidden></span><span><kbd>شماره + ۰</kbd> انتخاب سفارش</span><span><kbd>Enter / ۰ خالی</kbd> گام بعدی</span><span><kbd>↑↓</kbd> جابه‌جایی</span><span><kbd>Ins</kbd> اولویت</span><span><kbd>*</kbd> شمارش کل</span><button type="button" id="kds-keyboard-help">راهنمای نام‌پد</button></footer>${kdsUndoMarkup()}${state.kdsAllDayOpen ? kdsAllDayDrawerMarkup(data) : ''}
     </section>`;
     wireKitchen(readyOnly, visible);
     startKdsClock();
+    if (state.kdsAllDayOpen) wireKdsAllDayDrawer();
   }
 
   function startKdsClock() {
@@ -1223,17 +1887,56 @@
     }
   }
 
+  function kdsAllDaySources(item, data) {
+    const tickets = new Map((data?.tickets || []).map((ticket) => [String(ticket.id), ticket]));
+    const sourceMap = new Map();
+    (item.tickets || []).forEach((ticketId) => {
+      const ticket = tickets.get(String(ticketId));
+      if (!ticket) return;
+      const sourceItems = (ticket.items || []).filter((line) => line.name === item.name && line.station === item.station && !line.completedAt);
+      const qty = sourceItems.reduce((sum, line) => sum + Math.max(1, Number(line.qty) || 1), 0) || 1;
+      const key = String(ticket.id);
+      const current = sourceMap.get(key) || { ticket, qty: 0 };
+      current.qty += qty;
+      sourceMap.set(key, current);
+    });
+    return [...sourceMap.values()].sort((a, b) => String(a.ticket.orderNo || a.ticket.id).localeCompare(String(b.ticket.orderNo || b.ticket.id), 'fa'));
+  }
+
+  function kdsAllDayDrawerMarkup(data) {
+    const rows = data?.allDay || [];
+    const rowMarkup = rows.map((item) => {
+      const sources = kdsAllDaySources(item, data);
+      const sourceLabels = sources.map(({ ticket, qty }) => `${ticket.orderNo || `#${ticket.id}`}${ticket.tableNo ? ` · میز ${ticket.tableNo}` : ticket.fulfillment === 'delivery' ? ' · ارسال' : ''} · ${num(qty)} قلم`).join('، ');
+      return `<button class="kds-all-day-row" type="button" data-kds-highlight="${esc(item.name)}"><span class="kds-all-day-row__mark" aria-hidden="true"></span><span class="kds-all-day-row__body"><b>${esc(item.name)} <small>· ${num(item.qty)} قلم · ${num(sources.length || item.tickets?.length || 0)} سفارش</small></b><em>${sources.length ? `از سفارش‌ها: ${esc(sourceLabels)}` : 'منبع سفارش در صف جاری قابل مشاهده نیست.'}</em></span><strong>${num(item.qty)}</strong></button>`;
+    }).join('');
+    return `<div class="kds-all-day-drawer__scrim" data-kds-all-day-close="true"></div><aside class="kds-all-day-drawer" role="complementary" aria-label="شمارش کل آشپزخانه"><header class="kds-all-day-drawer__head"><div><span class="kds-all-day-drawer__icon">▦</span><span><b>شمارش کل</b><small>همهٔ غذا، قهوه و نوشیدنی</small></span></div><button type="button" data-kds-all-day-close="true" aria-label="بستن شمارش کل">×</button></header><div class="kds-all-day-drawer__section"><div class="kds-all-day-drawer__section-head"><b>اقلام موجود در سفارش‌ها</b></div><div class="kds-all-day-list">${rowMarkup || empty('در صف جاری قلم بازی وجود ندارد.')}</div></div></aside>`;
+  }
+
+  function wireKdsAllDayDrawer() {
+    main.querySelectorAll('[data-kds-all-day-close]').forEach((control) => control.addEventListener('click', closeKdsAllDay));
+    main.querySelectorAll('[data-kds-highlight]').forEach((button) => button.addEventListener('click', () => { state.kdsHighlightItem = button.dataset.kdsHighlight; state.kdsPage = 0; closeKdsAllDay(); kitchenBoard(false); }));
+  }
+
   function openKdsAllDay() {
-    const station = state.kdsStation;
-    const rows = (state.data.kitchen?.allDay || []).filter((item) => station === 'expo' || item.station === station);
-    openDialog('Kitchen production', 'شمارش کل آیتم‌ها', `<div class="kds-all-day"><div class="kds-all-day__head"><span>آیتم</span><span>تعداد باز</span></div>${rows.map((item) => `<button type="button" data-kds-highlight="${esc(item.name)}"><span><b>${esc(item.name)}</b><small>${esc(({hot:'خط گرم',cold:'خط سرد',bar:'بار'})[item.station] || item.station)} · ${num(item.tickets.length)} تیکت</small></span><strong>${num(item.qty)}</strong></button>`).join('') || empty('آیتم بازی برای این ایستگاه نیست.')}</div>`);
-    dialogBody.querySelectorAll('[data-kds-highlight]').forEach((button) => button.addEventListener('click', () => { state.kdsHighlightItem = button.dataset.kdsHighlight; state.kdsPage = 0; dialog.close(); kitchenBoard(false); }));
+    state.kdsAllDayOpen = true;
+    kitchenBoard(state.activeView === 'ready');
+  }
+
+  function closeKdsAllDay() {
+    state.kdsAllDayOpen = false;
+    main.querySelector('.kds-all-day-drawer__scrim')?.remove();
+    main.querySelector('.kds-all-day-drawer')?.remove();
+  }
+
+  function toggleKdsAllDay() {
+    if (state.kdsAllDayOpen) closeKdsAllDay();
+    else openKdsAllDay();
   }
 
   function openKdsAvailability() {
-    const station = state.kdsStation;
-    const rows = (state.data.kitchen?.availability || []).filter((item) => station === 'expo' || item.station === station);
-    openDialog('86 & availability', 'موجودی فوری منو', `<label class="kds-dialog-search"><span>⌕</span><input id="kds-availability-search" placeholder="جست‌وجوی آیتم" /></label><div class="kds-availability-list">${rows.map((item) => `<button type="button" data-kds-availability-id="${item.id}" data-available="${item.available}"><span><b>${esc(item.name)}</b><small>${esc(item.categoryName)}</small></span><strong>${item.available ? 'موجود' : 'ناموجود'}</strong></button>`).join('')}</div>`);
+    const rows = state.data.kitchen?.availability || [];
+    openDialog('دسترسی منو', 'موجودی فوری منو', `<label class="kds-dialog-search"><span>⌕</span><input id="kds-availability-search" placeholder="جست‌وجوی غذا" /></label><div class="kds-availability-list">${rows.map((item) => `<button type="button" data-kds-availability-id="${item.id}" data-available="${item.available}"><span><b>${esc(item.name)}</b><small>${esc(item.categoryName)}</small></span><strong>${item.available ? 'موجود' : 'ناموجود'}</strong></button>`).join('')}</div>`);
     const filter = () => { const q = document.getElementById('kds-availability-search').value.trim(); dialogBody.querySelectorAll('[data-kds-availability-id]').forEach((button) => { button.hidden = q && !button.innerText.includes(q); }); };
     document.getElementById('kds-availability-search').addEventListener('input', filter);
     dialogBody.querySelectorAll('[data-kds-availability-id]').forEach((button) => button.addEventListener('click', async () => {
@@ -1250,7 +1953,7 @@
 
   function openKdsSettings() {
     const settings = normalizeKdsSettings();
-    openDialog('Device profile', 'تنظیمات این نمایشگر', `<div class="kds-settings-grid"><label><span>چیدمان</span><select id="kds-setting-layout"><option value="tile" ${settings.layout === 'tile' ? 'selected' : ''}>Tile Fill · بیشترین تیکت</option><option value="rail" ${settings.layout === 'rail' ? 'selected' : ''}>Flex Rail · تیکت بلند</option></select></label><label><span>تعداد ستون</span><select id="kds-setting-columns">${[3,4,5,6].map((value) => `<option value="${value}" ${settings.columns === value ? 'selected' : ''}>${num(value)} ستون</option>`).join('')}</select></label><label><span>اندازه متن</span><select id="kds-setting-text"><option value="normal" ${settings.textSize === 'normal' ? 'selected' : ''}>استاندارد</option><option value="large" ${settings.textSize === 'large' ? 'selected' : ''}>درشت</option></select></label><label><span>هشدار زرد (دقیقه)</span><input id="kds-setting-warn" type="number" min="1" max="60" value="${settings.warnMinutes}" /></label><label><span>هشدار قرمز (دقیقه)</span><input id="kds-setting-late" type="number" min="2" max="120" value="${settings.lateMinutes}" /></label><label class="kds-setting-toggle"><span>صدای تیکت جدید</span><input id="kds-setting-sound" type="checkbox" ${settings.sound ? 'checked' : ''} /></label></div><button class="role-primary" id="kds-settings-save" type="button" style="width:100%;margin-top:14px">ذخیره برای این نمایشگر</button>`);
+    openDialog('تنظیمات نمایشگر', 'تنظیمات این نمایشگر', `<div class="kds-settings-grid"><label><span>چیدمان</span><select id="kds-setting-layout"><option value="tile" ${settings.layout === 'tile' ? 'selected' : ''}>چیدمان فشرده · بیشترین سفارش</option><option value="rail" ${settings.layout === 'rail' ? 'selected' : ''}>چیدمان نواری · سفارش بلند</option></select></label><label><span>تعداد ستون</span><select id="kds-setting-columns">${[3,4,5,6].map((value) => `<option value="${value}" ${settings.columns === value ? 'selected' : ''}>${num(value)} ستون</option>`).join('')}</select></label><label><span>اندازه متن</span><select id="kds-setting-text"><option value="normal" ${settings.textSize === 'normal' ? 'selected' : ''}>استاندارد</option><option value="large" ${settings.textSize === 'large' ? 'selected' : ''}>درشت</option></select></label><label><span>هشدار زرد (دقیقه)</span><input id="kds-setting-warn" type="number" min="1" max="60" value="${settings.warnMinutes}" /></label><label><span>هشدار قرمز (دقیقه)</span><input id="kds-setting-late" type="number" min="2" max="120" value="${settings.lateMinutes}" /></label><label class="kds-setting-toggle"><span>صدای سفارش جدید</span><input id="kds-setting-sound" type="checkbox" ${settings.sound ? 'checked' : ''} /></label></div><button class="role-primary" id="kds-settings-save" type="button" style="width:100%;margin-top:14px">ذخیره برای این نمایشگر</button>`);
     document.getElementById('kds-settings-save').addEventListener('click', () => {
       state.kdsSettings = { layout: document.getElementById('kds-setting-layout').value, columns: Number(document.getElementById('kds-setting-columns').value), textSize: document.getElementById('kds-setting-text').value, warnMinutes: Number(document.getElementById('kds-setting-warn').value), lateMinutes: Number(document.getElementById('kds-setting-late').value), sound: document.getElementById('kds-setting-sound').checked };
       normalizeKdsSettings(); saveKdsLocal(); state.kdsPage = 0; dialog.close(); kitchenBoard(state.activeView === 'ready'); showToast('پروفایل این نمایشگر ذخیره شد.');
@@ -1258,44 +1961,203 @@
   }
 
   function openKdsNote(ticket) {
-    openDialog('Kitchen communication', 'یادداشت و درخواست هماهنگی', `<label class="field field--full"><span>پیامی که صندوق و سالن در سفارش می‌بینند</span><textarea id="kds-note-input" maxlength="240" rows="5" placeholder="مثلاً: آلرژی نیازمند تأیید، شماره پیجر اشتباه، جایگزینی دورچین…">${esc(ticket.kitchenNote || '')}</textarea></label><button class="role-primary" type="button" id="kds-note-save" style="width:100%;margin-top:12px">ثبت پیام روی سفارش</button>`);
+    openDialog('هماهنگی آشپزخانه', 'یادداشت و درخواست هماهنگی', `<label class="field field--full"><span>پیامی که صندوق و سالن در سفارش می‌بینند</span><textarea id="kds-note-input" maxlength="240" rows="5" placeholder="مثلاً: آلرژی نیازمند تأیید، شماره پیجر اشتباه، جایگزینی دورچین…">${esc(ticket.kitchenNote || '')}</textarea></label><button class="role-primary" type="button" id="kds-note-save" style="width:100%;margin-top:12px">ثبت پیام روی سفارش</button>`);
     document.getElementById('kds-note-save').addEventListener('click', (event) => runKdsAction(event.currentTarget, ticket.id, { action: 'note', note: document.getElementById('kds-note-input').value }, 'پیام آشپزخانه ثبت شد.').then(() => dialog.close()));
   }
 
+  function kdsTicketElements() {
+    return [...main.querySelectorAll('.kds-ticket')];
+  }
+
+  function setKdsSelection(ticketOrId, focus = true) {
+    const id = typeof ticketOrId === 'object' ? ticketOrId?.dataset?.ticketId : ticketOrId;
+    state.kdsSelectedTicketId = id == null ? null : String(id);
+    const tickets = kdsTicketElements();
+    tickets.forEach((ticket) => {
+      const selected = String(ticket.dataset.ticketId) === String(state.kdsSelectedTicketId || '');
+      ticket.classList.toggle('is-selected', selected);
+      ticket.setAttribute('aria-selected', String(selected));
+      ticket.tabIndex = selected ? 0 : -1;
+    });
+    const selected = tickets.find((ticket) => String(ticket.dataset.ticketId) === String(state.kdsSelectedTicketId || ''));
+    if (selected && focus) {
+      selected.focus({ preventScroll: true });
+      selected.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    }
+    return selected;
+  }
+
+  function selectKdsTicket(number) {
+    const ticket = kdsTicketElements()[Number(number) - 1];
+    if (!ticket) { showToast(`سفارش شمارهٔ ${num(number)} در این صفحه وجود ندارد.`); return null; }
+    return setKdsSelection(ticket);
+  }
+
+  function paintKdsOrderEntry() {
+    const target = document.getElementById('kds-order-entry');
+    if (!target) return;
+    const value = String(state.kdsOrderEntry || '');
+    target.hidden = !value;
+    target.textContent = value ? `ورودی سفارش: ${num(value)} · صفر برای تأیید` : '';
+  }
+
+  function clearKdsOrderEntry() {
+    clearTimeout(state.kdsOrderEntryTimer);
+    state.kdsOrderEntryTimer = null;
+    state.kdsOrderEntry = '';
+    paintKdsOrderEntry();
+  }
+
+  function commitKdsOrderEntry(value) {
+    const number = Number(value);
+    clearKdsOrderEntry();
+    if (!Number.isSafeInteger(number) || number < 1) {
+      showToast('شمارهٔ سفارش معتبر نیست.');
+      return null;
+    }
+    return selectKdsTicket(number);
+  }
+
+  function acceptKdsOrderDigit(digit) {
+    const current = String(state.kdsOrderEntry || '');
+    if (digit === '0' && !current) { runSelectedKdsPrimary(); return; }
+    if (digit !== '0') {
+      clearTimeout(state.kdsOrderEntryTimer);
+      state.kdsOrderEntryTimer = null;
+      if (current.length >= 3) { showToast('شمارهٔ سفارش بیش از سه رقم نمی‌تواند باشد.'); return; }
+      state.kdsOrderEntry = `${current}${digit}`;
+      paintKdsOrderEntry();
+      return;
+    }
+    const candidate = Number(`${current}0`);
+    if (Number.isSafeInteger(candidate) && candidate <= kdsTicketElements().length && !current.endsWith('0')) {
+      state.kdsOrderEntry = `${current}0`;
+      clearTimeout(state.kdsOrderEntryTimer);
+      state.kdsOrderEntryTimer = setTimeout(() => commitKdsOrderEntry(current), 900);
+      paintKdsOrderEntry();
+      return;
+    }
+    commitKdsOrderEntry(current);
+  }
+
+  function moveKdsSelection(step) {
+    const tickets = kdsTicketElements();
+    if (!tickets.length) return null;
+    const currentIndex = tickets.findIndex((ticket) => String(ticket.dataset.ticketId) === String(state.kdsSelectedTicketId || ''));
+    const nextIndex = currentIndex < 0 ? (step < 0 ? tickets.length - 1 : 0) : Math.max(0, Math.min(tickets.length - 1, currentIndex + step));
+    return setKdsSelection(tickets[nextIndex]);
+  }
+
+  function changeKdsPage(step) {
+    const button = main.querySelector(`[data-kds-page="${step}"]:not(:disabled)`);
+    if (!button) return false;
+    state.kdsSelectedTicketId = null;
+    button.click();
+    requestAnimationFrame(() => selectKdsTicket(1));
+    return true;
+  }
+
+  function selectedKdsAction(selector) {
+    const ticket = kdsTicketElements().find((entry) => String(entry.dataset.ticketId) === String(state.kdsSelectedTicketId || '')) || kdsTicketElements()[0];
+    const control = ticket?.querySelector(selector);
+    if (!control) { showToast('ابتدا یک سفارش را انتخاب کنید.'); return null; }
+    return control;
+  }
+
+  function runSelectedKdsPrimary() {
+    const ticket = kdsTicketElements().find((entry) => String(entry.dataset.ticketId) === String(state.kdsSelectedTicketId || '')) || kdsTicketElements()[0];
+    const ticketAction = ticket?.querySelector('[data-kds-action]');
+    // In a unified kitchen queue, Enter/0 is a repeatable hands-free workflow:
+    // start the order, complete its next unfinished line, then release it.
+    // This means the operator never needs a mouse just to mark each line.
+    if (ticketAction?.dataset.kdsAction === 'complete_ticket') {
+      const nextItem = ticket.querySelector('[data-kds-item][data-completed="false"]');
+      if (nextItem) { nextItem.click(); return; }
+    }
+    const action = selectedKdsAction('[data-kds-action]:not(:disabled)');
+    if (!action) {
+      if (ticket?.querySelector('[data-kds-action]:disabled')) showToast('برای آماده‌تحویل شدن، همهٔ اقلام سفارش را تکمیل کنید.');
+      return;
+    }
+    action.click();
+  }
+
+  function clearKdsSearchAndHighlight() {
+    state.kdsSearch = '';
+    state.kdsHighlightItem = '';
+    state.kdsPage = 0;
+    kitchenBoard(state.activeView === 'ready');
+  }
+
+  function openKdsKeyboardHelp() {
+    const rows = [
+      ['Num Lock', 'حالت عددی نام‌پد'], ['۱–۹', 'شروع ورود شمارهٔ سفارش'], ['شماره + ۰', 'تأیید شماره؛ مثال ۱،۲،۰ یعنی سفارش ۱۲'],
+      ['۰ خالی / Enter', 'گام بعدی سفارش انتخاب‌شده'], ['Tab / ↑↓', 'سفارش قبلی یا بعدی'], ['Home / End', 'اولین یا آخرین سفارش صفحه'],
+      ['PageUp / PageDown', 'صفحهٔ قبل یا بعد'], ['Backspace / Delete', 'پاک‌کردن جست‌وجو و انتخاب'], ['Ins', 'اولویت سفارش'],
+      ['. / Delete', 'بازگردانی آخرین عملیات / پاک‌کردن جست‌وجو'], ['/', 'به‌روزرسانی صف'], ['*', 'شمارش کل سفارش‌ها'], ['− / +', 'آماده‌تحویل / صف اصلی'],
+    ];
+    openDialog('کار با نمایشگر آشپزخانه', 'راهنمای کامل نام‌پد Genius', `<p class="kds-keyboard-intro">برای سفارش‌های دو رقمی، رقم‌ها را پشت‌سرهم بزنید و در پایان صفر را بزنید؛ مثلاً ۱،۲،۰ سفارش ۱۲ را انتخاب می‌کند.</p><div class="kds-keyboard-help">${rows.map(([key, action]) => `<div><kbd>${esc(key)}</kbd><span>${esc(action)}</span></div>`).join('')}</div>`);
+  }
+
   function wireKitchen(readyOnly, visible) {
-    main.querySelectorAll('[data-kds-station]').forEach((button) => button.addEventListener('click', () => { state.kdsStation = button.dataset.kdsStation; state.kdsPage = 0; state.kdsHighlightItem = ''; saveKdsLocal(); kitchenBoard(readyOnly); }));
     main.querySelectorAll('[data-kds-fulfillment]').forEach((button) => button.addEventListener('click', () => { state.kdsFulfillment = button.dataset.kdsFulfillment; state.kdsPage = 0; kitchenBoard(readyOnly); }));
     main.querySelectorAll('[data-kds-page]').forEach((button) => button.addEventListener('click', () => { state.kdsPage += Number(button.dataset.kdsPage); kitchenBoard(readyOnly); }));
     document.getElementById('kds-all-day')?.addEventListener('click', openKdsAllDay);
     document.getElementById('kds-availability')?.addEventListener('click', openKdsAvailability);
     document.getElementById('kds-settings')?.addEventListener('click', openKdsSettings);
+    document.getElementById('kds-keyboard-help')?.addEventListener('click', openKdsKeyboardHelp);
     document.getElementById('kds-clear-highlight')?.addEventListener('click', () => { state.kdsHighlightItem = ''; kitchenBoard(readyOnly); });
     const search = document.getElementById('kds-search');
     let searchTimer = null;
     search?.addEventListener('input', () => { state.kdsSearch = search.value; clearTimeout(searchTimer); searchTimer = setTimeout(() => { state.kdsPage = 0; kitchenBoard(readyOnly); document.getElementById('kds-search')?.focus(); }, 180); });
     main.querySelectorAll('[data-kds-item]').forEach((button) => button.addEventListener('click', () => {
+      setKdsSelection(button.closest('.kds-ticket'), false);
       const completed = button.dataset.completed === 'true';
-      runKdsAction(button, button.dataset.ticketId, { action: completed ? 'undo_item' : 'complete_item', lineKey: button.dataset.kdsItem }, completed ? 'آیتم به صف برگشت.' : 'آیتم تکمیل شد.', completed ? null : { label: 'آیتم تکمیل شد؛ اشتباه بود؟', payload: { action: 'undo_item', lineKey: button.dataset.kdsItem } });
+      runKdsAction(button, button.dataset.ticketId, { action: completed ? 'undo_item' : 'complete_item', lineKey: button.dataset.kdsItem }, completed ? 'غذا به صف برگشت.' : 'غذا تکمیل شد.', completed ? null : { label: 'غذا تکمیل شد؛ اشتباه بود؟', payload: { action: 'undo_item', lineKey: button.dataset.kdsItem } });
     }));
     main.querySelectorAll('[data-kds-action]').forEach((button) => button.addEventListener('click', () => {
+      setKdsSelection(button.closest('.kds-ticket'), false);
       const actionName = button.dataset.kdsAction;
       const payload = { action: actionName };
       if (actionName === 'complete_station') payload.station = button.dataset.station;
-      runKdsAction(button, button.dataset.ticketId, payload, actionName === 'start_ticket' ? 'آماده‌سازی شروع شد.' : actionName === 'recall_ticket' ? 'تیکت به صف برگشت.' : actionName === 'complete_station' ? 'کار این ایستگاه تکمیل شد.' : 'سفارش آماده تحویل است.', actionName === 'complete_ticket' ? { label: 'تیکت آماده شد؛ اشتباه بود؟', payload: { action: 'recall_ticket' } } : null);
+      runKdsAction(button, button.dataset.ticketId, payload, actionName === 'start_ticket' ? 'آماده‌سازی شروع شد.' : actionName === 'recall_ticket' ? 'سفارش به صف برگشت.' : actionName === 'complete_station' ? 'کار این ایستگاه تکمیل شد.' : 'سفارش آماده تحویل است.', actionName === 'complete_ticket' ? { label: 'سفارش آماده شد؛ اشتباه بود؟', payload: { action: 'recall_ticket' } } : null);
     }));
-    main.querySelectorAll('[data-kds-priority]').forEach((button) => button.addEventListener('click', () => { const ticket = visible.find((entry) => String(entry.id) === String(button.dataset.ticketId)); runKdsAction(button, button.dataset.ticketId, { action: 'prioritize', priority: !ticket?.kds?.priority }, ticket?.kds?.priority ? 'اولویت برداشته شد.' : 'تیکت به ابتدای صف منتقل شد.', ticket?.kds?.priority ? null : { label: 'تیکت اولویت گرفت.', payload: { action: 'prioritize', priority: false } }); }));
+    main.querySelectorAll('[data-kds-priority]').forEach((button) => button.addEventListener('click', () => { const ticket = visible.find((entry) => String(entry.id) === String(button.dataset.ticketId)); setKdsSelection(button.closest('.kds-ticket'), false); runKdsAction(button, button.dataset.ticketId, { action: 'prioritize', priority: !ticket?.kds?.priority }, ticket?.kds?.priority ? 'اولویت برداشته شد.' : 'سفارش به ابتدای صف منتقل شد.', ticket?.kds?.priority ? null : { label: 'سفارش اولویت گرفت.', payload: { action: 'prioritize', priority: false } }); }));
     main.querySelectorAll('[data-kds-note]').forEach((button) => button.addEventListener('click', () => { const ticket = visible.find((entry) => String(entry.id) === String(button.dataset.ticketId)); if (ticket) openKdsNote(ticket); }));
     document.getElementById('kds-undo-action')?.addEventListener('click', async (event) => { const undo = state.kdsUndo; if (!undo) return; clearTimeout(state.kdsUndoTimer); state.kdsUndo = null; await runKdsAction(event.currentTarget, undo.orderId, undo.payload, 'عملیات بازگردانده شد.'); });
   }
 
   function handleKdsShortcut(event) {
-    if (role !== 'kitchen' || state.activeView === 'inventory' || dialog.open || /INPUT|TEXTAREA|SELECT/.test(event.target?.tagName || '')) return;
-    if (/^[1-9]$/.test(event.key)) {
-      const ticket = main.querySelectorAll('.kds-ticket')[Number(event.key) - 1];
-      const actionButton = ticket?.querySelector('[data-kds-action]:not(:disabled)');
-      if (actionButton && !state.kdsPendingTickets.has(String(actionButton.dataset.ticketId))) { event.preventDefault(); actionButton.click(); }
-    } else if (event.key.toLowerCase() === 'r') { event.preventDefault(); render(); }
-    else if (event.key.toLowerCase() === 'a') { event.preventDefault(); openKdsAllDay(); }
+    if (role !== 'kitchen' || state.activeView === 'inventory') return;
+    if (event.key === 'Escape' && dialog.open) { event.preventDefault(); dialog.close(); return; }
+    if (dialog.open || /INPUT|TEXTAREA|SELECT/.test(event.target?.tagName || '') || event.target?.isContentEditable) return;
+    const code = String(event.code || '');
+    const key = String(event.key || '');
+    if (code === 'NumpadMultiply' || key === '*') { event.preventDefault(); toggleKdsAllDay(); return; }
+    if (event.target?.closest?.('button, a') && event.key !== 'Escape') return;
+    const latinKey = key.replace(/[۰-۹]/g, (char) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(char)));
+    const digit = /^Numpad([0-9])$/.exec(code) || /^Digit([0-9])$/.exec(code);
+    const physicalDigit = digit && /^[0-9]$/.test(latinKey);
+    const actionKey = ['Enter', 'NumpadEnter', 'Numpad0', 'NumpadAdd', 'NumpadSubtract', 'NumpadMultiply', 'NumpadDivide', 'NumpadDecimal', 'Insert', 'Delete'].includes(code);
+    if (event.repeat && actionKey) return;
+    if (physicalDigit) { event.preventDefault(); acceptKdsOrderDigit(digit[1]); return; }
+    if ((code === 'Numpad0' && key === '0') || code === 'NumpadEnter' || (key === 'Enter' && !event.shiftKey)) { event.preventDefault(); runSelectedKdsPrimary(); return; }
+    if (code === 'NumpadDecimal' && key !== 'Delete') { event.preventDefault(); const undoButton = document.getElementById('kds-undo-action'); if (undoButton) undoButton.click(); else showToast('عملیات قابل بازگردانی وجود ندارد.'); return; }
+    if ((code === 'Numpad0' && key === 'Insert') || key === 'Insert') { event.preventDefault(); selectedKdsAction('[data-kds-priority]')?.click(); return; }
+    if (code === 'NumpadDecimal' && key === 'Delete') { event.preventDefault(); clearKdsSearchAndHighlight(); return; }
+    if (code === 'Numpad7' && key === 'Home' || key === 'Home') { event.preventDefault(); selectKdsTicket(1); return; }
+    if (code === 'Numpad1' && key === 'End' || key === 'End') { event.preventDefault(); const tickets = kdsTicketElements(); if (tickets.length) setKdsSelection(tickets[tickets.length - 1]); return; }
+    if (key === 'ArrowUp' || key === 'ArrowLeft') { event.preventDefault(); key === 'ArrowLeft' ? changeKdsPage(-1) : moveKdsSelection(-1); return; }
+    if (key === 'ArrowDown' || key === 'ArrowRight') { event.preventDefault(); key === 'ArrowRight' ? changeKdsPage(1) : moveKdsSelection(1); return; }
+    if (key === 'PageUp') { event.preventDefault(); changeKdsPage(-1); return; }
+    if (key === 'PageDown') { event.preventDefault(); changeKdsPage(1); return; }
+    if (key === 'Tab') { event.preventDefault(); moveKdsSelection(event.shiftKey ? -1 : 1); return; }
+    if (key === 'Backspace' || key === 'Delete' || key === 'Clear') { event.preventDefault(); clearKdsSearchAndHighlight(); return; }
+    if (code === 'NumpadDivide' || key === 'r' || key === 'R') { event.preventDefault(); render(); return; }
+    if (key === 'a' || key === 'A' || code === 'Calculator') { event.preventDefault(); toggleKdsAllDay(); return; }
+    if (code === 'NumpadSubtract' || key === '-') { event.preventDefault(); state.activeView = 'ready'; paintNav(); render(); return; }
+    if (code === 'NumpadAdd' || key === '+') { event.preventDefault(); state.activeView = 'board'; paintNav(); render(); return; }
+    if (code === 'NumLock') { state.kdsNumLock = key === 'NumLock' ? !state.kdsNumLock : null; showToast(state.kdsNumLock === false ? 'حالت حرکتی نام‌پد فعال شد.' : 'حالت عددی نام‌پد فعال شد.'); }
   }
 
   async function render() {

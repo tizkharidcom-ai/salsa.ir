@@ -320,16 +320,23 @@
 
       const i18n = () => window.westoI18n;
       const tr = (key, vars) => (i18n()?.t ? i18n().t(key, vars) : key);
+      const localizedAdminCopy = (key, value) => {
+        const clean = typeof value === 'string' ? value.trim() : '';
+        if (key === 'entrance.subtitle' && i18n()?.lang === 'fa' && /^cafe\s*&\s*restaurant$/i.test(clean)) return tr('eg.subtitleEn');
+        return clean;
+      };
       const entranceAdminCopy = (key, fallback) => {
         const value = window.__WESTO_CONTENT__?.content?.[key];
-        return typeof value === 'string' && value.trim() ? value.trim() : fallback;
+        const localized = localizedAdminCopy(key, value);
+        return localized || fallback;
       };
       const applyGateAdminCopy = () => {
         if (!loaderWrapper) return;
         $$('[data-admin-content]', loaderWrapper).forEach((el) => {
           const key = el.getAttribute('data-admin-content');
           const value = key ? window.__WESTO_CONTENT__?.content?.[key] : '';
-          if (typeof value === 'string' && value.trim()) el.textContent = value.trim();
+          const localized = localizedAdminCopy(key, value);
+          if (localized) el.textContent = localized;
         });
       };
       const entranceCtaCopy = () => entranceAdminCopy('entrance.cta', tr('eg.enterWesto'));
