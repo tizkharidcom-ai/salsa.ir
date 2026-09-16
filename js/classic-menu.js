@@ -401,7 +401,7 @@
             'اختر منتجاً لعرض التفاصيل ومسببات الحساسية وإضافته إلى الطلب.',
           );
     }
-    els.meta.textContent = `${list.length.toLocaleString(localeTag())} ${t3('آیتم', 'items', 'عنصر')}`;
+    els.meta.textContent = `${list.length.toLocaleString(localeTag())} ${t3('غذا', 'items', 'عنصر')}`;
   }
 
   function cardPriceMarkup(price) {

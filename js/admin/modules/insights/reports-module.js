@@ -22,7 +22,7 @@
             <h1>بازدید و آمار مهمانان</h1>
             <p class="lead">رهگیری بازدید صفحات منو — مشابه آمار بازدید در سامانه‌های منوی دیجیتال.</p>
             <div class="cards">
-              <div class="card"><div class="num">${fmtNum(data.total)}</div><div class="lbl">بازدید ${data.days} روز</div></div>
+              <div class="card"><div class="num">${fmtNum(data.total)}</div><div class="lbl">بازدید ${fmtNum(data.days || 7)} روز</div></div>
               <div class="card"><div class="num">${fmtNum(data.sessions)}</div><div class="lbl">نشست یکتا</div></div>
               <div class="card"><div class="num">${fmtNum((data.topPaths || [])[0]?.count || 0)}</div><div class="lbl">بیشترین مسیر</div></div>
             </div>
@@ -54,18 +54,18 @@
           setActiveTab('reports');
           const stats = await api(`/api/admin/stats${branchQs()}`);
           main.innerHTML = `
-            <div class="ops-page-head"><div><p class="eyebrow">گزارش عملیاتی فروش</p><h1>گزارش فروش</h1><p class="lead">فروش و رتبه‌بندی آیتم‌ها${currentBranch() ? ` برای شعبه ${esc(currentBranch().name)}` : ''}. برای تطبیق روش پرداخت، صندوق و دفتر مالی از حسابداری استفاده کنید.</p></div><a class="btn btn-sm btn-ghost" href="${financeWorkspaceHref('sales_bank')}">تطبیق با صندوق و دفتر مالی</a></div>
+            <div class="ops-page-head"><div><p class="eyebrow">گزارش عملیاتی فروش</p><h1>گزارش فروش</h1><p class="lead">فروش و رتبه‌بندی محصولات${currentBranch() ? ` برای شعبه ${esc(currentBranch().name)}` : ''}. برای تطبیق روش پرداخت، صندوق و دفتر مالی از حسابداری استفاده کنید.</p></div><a class="btn btn-sm btn-ghost" href="${financeWorkspaceHref('sales_bank')}">تطبیق با صندوق و دفتر مالی</a></div>
             <div class="cards">
               <div class="card accent"><div class="num">${fmtMoney(stats.revenue)}</div><div class="lbl">جمع کل فروش</div></div>
               <div class="card"><div class="num">${fmtMoney(stats.revenueWeek)}</div><div class="lbl">هفته جاری</div></div>
               <div class="card"><div class="num">${fmtNum(stats.orders)}</div><div class="lbl">تعداد سفارش</div></div>
             </div>
             <div class="section-box">
-              <h2>رتبه‌بندی آیتم‌ها</h2>
+              <h2>رتبه‌بندی محصولات</h2>
               <table class="tbl"><thead><tr><th>#</th><th>نام</th><th>تعداد</th><th>درآمد</th><th>سهم</th></tr></thead><tbody>
                 ${(stats.topItems || []).map((item, index) => {
                   const share = stats.revenue ? Math.round((item.revenue / stats.revenue) * 100) : 0;
-                  return `<tr><td>${index + 1}</td><td>${esc(item.name)}</td><td>${fmtNum(item.qty)}</td><td>${fmtMoney(item.revenue)}</td><td>${share}٪</td></tr>`;
+                  return `<tr><td>${fmtNum(index + 1)}</td><td>${esc(item.name)}</td><td>${fmtNum(item.qty)}</td><td>${fmtMoney(item.revenue)}</td><td>${fmtNum(share)}٪</td></tr>`;
                 }).join('') || '<tr><td colspan="5">داده‌ای نیست</td></tr>'}
               </tbody></table>
             </div>`;

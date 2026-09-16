@@ -421,3 +421,42 @@
   #westo-entrance.has-eg-promo .eg-status-meta,
   #westo-entrance.has-eg-promo .eg-status-loc { display: none !important; }
 }
+
+/* Entrance promo geometry reconciliation.
+   Keep the banner controls attached to the visual deck so they never consume
+   a grid row or collide with the primary CTA at short desktop heights. The
+   brand tagline keeps a stable readable measure and is centered in its copy
+   column at every breakpoint. */
+#westo-entrance .eg-promo__pagination {
+  position: absolute !important;
+  inset-inline: 0 !important;
+  inset-block-end: 8px !important;
+  z-index: 40 !important;
+  width: max-content !important;
+  max-width: calc(100% - 24px) !important;
+  min-height: 16px !important;
+  margin: 0 auto !important;
+  padding: 3px 8px !important;
+  gap: 7px !important;
+  border: 1px solid rgba(255,255,255,.18) !important;
+  border-radius: 999px !important;
+  background: rgba(3,13,16,.46) !important;
+  box-shadow: 0 4px 14px rgba(0,0,0,.18), inset 0 1px 0 rgba(255,255,255,.10) !important;
+  -webkit-backdrop-filter: blur(10px) saturate(130%) !important;
+  backdrop-filter: blur(10px) saturate(130%) !important;
+  pointer-events: auto !important;
+}
+
+html[data-theme='light'] #westo-entrance .eg-promo__pagination {
+  border-color: rgba(32,67,64,.16) !important;
+  background: rgba(249,252,249,.72) !important;
+  box-shadow: 0 4px 14px rgba(47,67,62,.12), inset 0 1px 0 rgba(255,255,255,.84) !important;
+}
+
+#westo-entrance .eg-tagline {
+  width: min(100%, 24rem) !important;
+  max-width: 24rem !important;
+  margin-inline: auto !important;
+  text-align: center !important;
+  box-sizing: border-box !important;
+}

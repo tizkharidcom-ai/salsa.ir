@@ -25,7 +25,7 @@ body.is-kitchen-workspace {
   min-height: 0;
   padding: 8px;
   display: grid;
-  grid-template-rows: 58px auto 42px minmax(0, 1fr);
+  grid-template-rows: 58px 42px minmax(0, 1fr);
   gap: 7px;
   overflow: hidden;
 }
@@ -269,7 +269,7 @@ body.is-kitchen-workspace {
 }
 
 @media (max-width: 700px) {
-  .is-kitchen-workspace .role-app { padding: 5px; grid-template-rows: 47px auto 38px minmax(0,1fr); gap: 4px; }
+  .is-kitchen-workspace .role-app { padding: 5px; grid-template-rows: 47px 38px minmax(0, 1fr); gap: 4px; }
   .is-kitchen-workspace .role-header { height: 47px; padding: 4px 7px; border-radius: 10px; }
   .is-kitchen-workspace .role-brand { min-width: 78px; }
   .is-kitchen-workspace .role-brand img { width: 78px; height: 28px; }

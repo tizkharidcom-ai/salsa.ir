@@ -33,7 +33,8 @@
   const qrContext = () => {
     const params = new URLSearchParams(location.search);
     const tableNo = normalizeDigits(params.get('table') || '').replace(/\D/g, '').slice(0, 20);
-    const branchId = Number(params.get('branch') || params.get('branchId') || 0) || null;
+    const rawBranch = normalizeDigits(params.get('branch') || params.get('branchId') || '').replace(/\D/g, '');
+    const branchId = rawBranch ? Number(rawBranch) : null;
     return { tableNo, branchId };
   };
 
@@ -337,21 +338,21 @@
       ].filter(Boolean).join('، ');
 
       return `
-        <label class="checkout-addr-option" style="display:flex; align-items:flex-start; gap:0.5rem; background:rgba(255,255,255,0.04); border:1px solid ${isDef ? '#10b981' : 'rgba(255,255,255,0.1)'}; border-radius:0.5rem; padding:0.5rem; cursor:pointer;">
+        <label class="checkout-addr-option ${isDef ? 'is-default' : ''}">
           <input type="radio" name="selected_checkout_addr" value="${esc(addr.id)}" ${isDef ? 'checked' : ''} style="margin-top:0.2rem;" />
           <div style="flex:1; font-size:0.78rem;">
             <div style="display:flex; justify-content:space-between; align-items:center;">
-              <b style="color:#fff;">${esc(addr.title || '📍 نشانی')}</b>
+              <b class="checkout-addr-title">${esc(addr.title || '📍 نشانی')}</b>
               ${addr.isDefault ? '<span class="pill" style="font-size:0.65rem; background:#10b981; color:#fff; padding:0 0.35rem;">پیش‌فرض</span>' : ''}
             </div>
-            <div style="color:var(--text-muted); margin-top:0.15rem; line-height:1.35;">${esc(fullAddr)}</div>
+            <div class="checkout-addr-full" style="margin-top:0.15rem; line-height:1.35;">${esc(fullAddr)}</div>
           </div>
         </label>
       `;
     }).join('') + `
-      <label class="checkout-addr-option" style="display:flex; align-items:center; gap:0.5rem; background:rgba(255,255,255,0.02); border:1px dashed rgba(255,255,255,0.15); border-radius:0.5rem; padding:0.45rem 0.5rem; cursor:pointer;">
+      <label class="checkout-addr-option is-custom">
         <input type="radio" name="selected_checkout_addr" value="custom" style="margin-top:0;" />
-        <span style="font-size:0.75rem; color:var(--text-muted);">✍️ آدرس جدید یا دستی (وارد کردن در کادر زیر)</span>
+        <span class="checkout-addr-custom-text" style="font-size:0.75rem;">✍️ آدرس جدید یا دستی (وارد کردن در کادر زیر)</span>
       </label>
     `;
 

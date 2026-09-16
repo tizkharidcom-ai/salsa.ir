@@ -9,7 +9,10 @@ const { publicContentPayload } = require('../server/server');
 
 const ROOT = path.resolve(__dirname, '..');
 const output = path.join(ROOT, 'js', 'content-bootstrap.static.js');
-const payload = publicContentPayload();
+// The hosted public app needs the catalogue even when live inventory is not
+// available in the static build environment. Checkout submission still goes
+// through the authoritative order validation path.
+const payload = publicContentPayload({ includeUnavailable: true });
 const json = JSON.stringify(payload)
   .replace(/</g, '\\u003c')
   .replace(/\u2028/g, '\\u2028')

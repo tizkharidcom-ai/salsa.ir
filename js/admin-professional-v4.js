@@ -7,25 +7,6 @@
   const topbar = document.querySelector('.admin-topbar');
   if (!body?.classList.contains('admin-app') || !main || !sidebar || !topbar) return;
 
-  const GUIDE = {
-    dashboard: ['دیدن وضعیت همین لحظه مجموعه', 'اول هشدارهای تأخیر و موجودی را بررسی کنید', 'از کارت‌های خلاصه برای رفتن به عملیات استفاده کنید'],
-    orders: ['رسیدگی به سفارش‌ها تا تحویل نهایی', 'از قدیمی‌ترین سفارش باز شروع کنید', 'دکمه پررنگ هر کارت، اقدام پیشنهادی مرحله بعد است'],
-    kitchen: ['مدیریت صف آماده‌سازی آشپزخانه', 'سفارش‌های قرمز/قدیمی را جلوتر رسیدگی کنید', 'قبل از تکمیل، آیتم‌ها و یادداشت مشتری را یک‌بار مرور کنید'],
-    reservations: ['کنترل رزروها و ظرفیت شیفت', 'رزرو نزدیک‌تر و اسلات شلوغ‌تر را اول ببینید', 'ظرفیت زمانی را قبل از تأیید رزروهای بزرگ بررسی کنید'],
-    delivery: ['کنترل پیک، محدوده و وضعیت پرداخت', 'ابتدا پرداخت‌های معلق و ارسال‌های دیرکرده را ببینید', 'تغییر قیمت یا ETA را قبل از ذخیره دوباره مرور کنید'],
-    menu: ['ویرایش منوی قابل‌نمایش به مهمان', 'نام، قیمت، تصویر و موجودبودن را کنترل کنید', 'بعد از تغییر بزرگ، پیش‌نمایش سایت را باز کنید'],
-    prices: ['ویرایش سریع قیمت‌های فعلی', 'با جست‌وجو آیتم را محدود کنید', 'تغییر گروهی را قبل از ثبت نهایی دوباره بررسی کنید'],
-    inventory: ['جلوگیری از فروش آیتم کم‌موجود یا تمام‌شده', 'صفرها و موجودی کم را اول اصلاح کنید', 'موجودی نامحدود را فقط برای آیتم‌های واقعاً بدون محدودیت بگذارید'],
-    products: ['کنترل دسته‌ها و ترتیب نمایش', 'دسته‌های خالی یا مخفی را مشخص کنید', 'ترتیب دسته مستقیماً تجربه منوی مهمان را تغییر می‌دهد'],
-    promotions: ['مدیریت تخفیف‌های فعلی', 'تاریخ، فعال‌بودن و شرایط تخفیف را بررسی کنید', 'قبل از فعال‌سازی، بازه زمانی را کنترل کنید'],
-    promoSlides: ['مدیریت Promo Deck صفحه ورود از یک منبع', 'برای نمایش: اسلاید باید «منتشرشده» و «فعال» باشد', 'Promo Deck آزاد داخل بخش تجربه‌ی صفحه ورود نمایش داده می‌شود'],
-    tables: ['مدیریت میزها و QR', 'شماره، ظرفیت و وضعیت میز را بررسی کنید', 'قبل از چاپ QR، مقصد آن را تست کنید'],
-    analytics: ['دیدن رفتار بازدیدکنندگان', 'اول بازه زمانی را مشخص کنید', 'اعداد را با روند مقایسه کنید، نه فقط مقدار لحظه‌ای'],
-    reports: ['بررسی فروش و عملکرد', 'بازه زمانی و شعبه را قبل از نتیجه‌گیری چک کنید', 'گزارش فروش را با وضعیت پرداخت تطبیق دهید'],
-    users: ['مدیریت نقش و دسترسی کاربران', 'کمترین دسترسی لازم را بدهید', 'دسترسی Owner را فقط برای مدیر اصلی نگه دارید'],
-    settings: ['تنظیمات حساس سیستم', 'قبل از ذخیره، مقادیر را دوباره مرور کنید', 'تغییرات حساس را در ساعات کم‌ترافیک انجام دهید'],
-  };
-
   const tabName = () => document.querySelector('.admin-nav-item[data-tab].active')?.dataset.tab || 'dashboard';
   const text = (value) => String(value || '').replace(/\s+/g, ' ').trim();
 
@@ -85,53 +66,22 @@
   }
 
   function installTopbarTools() {
-    if (!document.getElementById('admin-refresh-trigger')) {
-      const refresh = document.createElement('button');
-      refresh.type = 'button';
-      refresh.id = 'admin-refresh-trigger';
-      refresh.className = 'admin-refresh-trigger';
-      refresh.title = 'تازه‌سازی بخش فعال (Alt+R)';
-      refresh.innerHTML = '<span class="admin-refresh-icon" aria-hidden="true">↻</span><span>تازه‌سازی</span>';
-      document.getElementById('admin-command-trigger')?.insertAdjacentElement('beforebegin', refresh);
-      refresh.addEventListener('click', async () => {
-        const active = document.querySelector('.admin-nav-item[data-tab].active');
-        if (!active) return;
-        refresh.classList.add('is-spinning');
-        active.click();
-        setTimeout(() => refresh.classList.remove('is-spinning'), 700);
-      });
-    }
     if (!document.getElementById('admin-connection-state')) {
       const state = document.createElement('span');
       state.id = 'admin-connection-state';
       state.className = 'admin-connection-state';
-      state.textContent = navigator.onLine ? 'متصل' : 'آفلاین';
-      topbar.appendChild(state);
-      const sync = () => { body.classList.toggle('admin-offline', !navigator.onLine); state.textContent = navigator.onLine ? 'متصل' : 'آفلاین'; };
+      document.getElementById('admin-user-chip')?.appendChild(state);
+    }
+    const state = document.getElementById('admin-connection-state');
+    if (state) {
+      const sync = () => {
+        const online = navigator.onLine;
+        body.classList.toggle('admin-offline', !online);
+        state.textContent = online ? 'متصل' : 'آفلاین';
+        state.setAttribute('aria-label', online ? 'متصل' : 'آفلاین');
+      };
       addEventListener('online', sync); addEventListener('offline', sync); sync();
     }
-  }
-
-  function installGuide() {
-    if (document.getElementById('admin-workspace-guide')) return;
-    const guide = document.createElement('div');
-    guide.id = 'admin-workspace-guide';
-    guide.className = 'admin-workspace-guide';
-    guide.setAttribute('aria-live', 'polite');
-    topbar.insertAdjacentElement('afterend', guide);
-    updateGuide();
-  }
-
-  function updateGuide() {
-    const guide = document.getElementById('admin-workspace-guide');
-    if (!guide) return;
-    const tab = tabName();
-    const fallbackTitle = text(document.getElementById('topbar-title')?.textContent) || 'این بخش';
-    const data = GUIDE[tab] || [`مدیریت ${fallbackTitle}`, 'از اولین کنترل بالای صفحه شروع کنید', 'برای جلوگیری از خطا، تغییرات مهم را قبل از ذخیره دوباره مرور کنید'];
-    guide.innerHTML = `
-      <div class="admin-workspace-guide__cell"><small>هدف این صفحه</small><strong>${data[0]}</strong></div>
-      <div class="admin-workspace-guide__cell is-primary"><small>شروع پیشنهادی</small><strong>${data[1]}</strong></div>
-      <div class="admin-workspace-guide__cell"><small>نکته عملیاتی</small><strong>${data[2]}</strong></div>`;
   }
 
   function persistFilters(root = main) {
@@ -181,7 +131,9 @@
       if (el.dataset.adminValidityBound) return;
       el.dataset.adminValidityBound = '1';
       const sync = () => {
-        const invalid = typeof el.checkValidity === 'function' && !el.checkValidity();
+        // Reading validity avoids re-triggering the native `invalid` event from
+        // inside its own handler, which otherwise causes a recursive stack overflow.
+        const invalid = Boolean(el.validity && !el.validity.valid);
         el.classList.toggle('is-invalid', invalid);
         if (!invalid) el.removeAttribute('aria-invalid'); else el.setAttribute('aria-invalid', 'true');
       };
@@ -195,7 +147,6 @@
   }
 
   function enhanceWorkspace() {
-    updateGuide();
     persistFilters();
     enhanceTables();
     enhanceFields();
@@ -210,9 +161,6 @@
         const search = [...main.querySelectorAll('input[type="search"]')].find((el) => !el.disabled && el.offsetParent !== null) || document.getElementById('admin-nav-search');
         if (search) { event.preventDefault(); search.focus(); search.select?.(); }
       }
-      if (event.altKey && event.key.toLowerCase() === 'r') {
-        event.preventDefault(); document.getElementById('admin-refresh-trigger')?.click();
-      }
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 's') {
         if (typing && target.tagName === 'TEXTAREA') return;
         const saves = [...main.querySelectorAll('button')].filter((btn) => !btn.disabled && btn.offsetParent !== null && /^ذخیره/.test(text(btn.textContent)));
@@ -224,12 +172,9 @@
   installNavIcons();
   installSidebarSearch();
   installTopbarTools();
-  installGuide();
   installKeyboard();
   enhanceWorkspace();
 
   const observer = new MutationObserver(() => requestAnimationFrame(enhanceWorkspace));
   observer.observe(main, { childList:true, subtree:true });
-  const navObserver = new MutationObserver(updateGuide);
-  sidebar.querySelectorAll('.admin-nav-item[data-tab]').forEach((item) => navObserver.observe(item, { attributes:true, attributeFilter:['class','aria-current'] }));
 })();

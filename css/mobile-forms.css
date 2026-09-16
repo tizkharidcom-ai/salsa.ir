@@ -19,6 +19,45 @@
   .qty-modal input {
     font-size: 16px !important;
   }
+/* Apple Squircle Form Controls & Continuous Curvature */
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]),
+textarea,
+select,
+.table-drawer .field input,
+.cm-search-panel input,
+.field input,
+.otp-boxes input,
+.qty-modal input {
+  border-radius: 12px;
+  corner-shape: squircle;
+}
+
+input[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 6px;
+  corner-shape: squircle;
+  border: 1.5px solid rgba(255, 255, 255, 0.25);
+  background: rgba(255, 255, 255, 0.06);
+  vertical-align: middle;
+  cursor: pointer;
+  display: inline-grid;
+  place-content: center;
+  transition: all 0.16s cubic-bezier(0.16, 1, 0.3, 1);
+}
+input[type="checkbox"]:checked {
+  background: #78d0d8 !important;
+  border-color: #78d0d8 !important;
+}
+input[type="checkbox"]:checked::after {
+  content: "";
+  width: 5px;
+  height: 9px;
+  border: solid #0a1a1c;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg) translate(-0.5px, -1px);
 }
 
 /* Standalone PWA polish */

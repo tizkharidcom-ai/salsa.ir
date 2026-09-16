@@ -290,7 +290,7 @@
     'checkout.successKicker': { fa: 'سفارش ثبت شد', en: 'Order placed', ar: 'تم تسجيل الطلب' },
     'checkout.pendingPayment': { fa: 'در انتظار پرداخت', en: 'Awaiting payment', ar: 'بانتظار الدفع' },
     'checkout.sandboxConfirm': { fa: 'تکمیل پرداخت آزمایشی', en: 'Complete sandbox payment', ar: 'إكمال الدفع التجريبي' },
-    'checkout.emptyCategory': { fa: 'در این دسته آیتم فعالی وجود ندارد.', en: 'No active items in this category.', ar: 'لا توجد عناصر متاحة في هذه الفئة.' },
+    'checkout.emptyCategory': { fa: 'در این دسته محصول فعالی وجود ندارد.', en: 'No active items in this category.', ar: 'لا توجد عناصر متاحة في هذه الفئة.' },
     'checkout.addItem': { fa: 'افزودن {name}', en: 'Add {name}', ar: 'أضف {name}' },
     'checkout.emptyCart': { fa: 'سبد شما هنوز خالی است.', en: 'Your cart is empty.', ar: 'سلتك فارغة.' },
     'checkout.qtyUnit': { fa: 'عدد', en: 'qty', ar: 'عدد' },

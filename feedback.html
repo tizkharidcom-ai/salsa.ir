@@ -153,6 +153,9 @@
       transform: scale(1.06);
       box-shadow: 0 4px 14px rgba(120, 208, 216, 0.35);
     }
+    html[data-theme='light'] .emoji-btn.is-active {
+      box-shadow: 0 4px 14px rgba(15, 118, 110, 0.25);
+    }
     .emoji-btn.is-active .emoji-pic {
       transform: scale(1.15);
     }
@@ -182,6 +185,9 @@
       outline: none;
       border-color: var(--fb-accent);
       box-shadow: 0 0 0 3px rgba(120, 208, 216, 0.2);
+    }
+    html[data-theme='light'] .fb-input:focus {
+      box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.18);
     }
     textarea.fb-input {
       resize: none;

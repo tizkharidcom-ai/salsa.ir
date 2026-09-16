@@ -12,7 +12,11 @@
   --p-danger: #ff7676;
   --p-ok: #7dd87d;
   --p-warn: #e8a85a;
-  --p-radius: 14px;
+  --p-radius: 18px;
+  --p-radius-sm: 8px;
+  --p-radius-md: 12px;
+  --p-radius-lg: 18px;
+  --p-radius-xl: 24px;
   --p-sidebar: 268px;
 }
 
@@ -62,6 +66,7 @@ body.panel-body {
     );
   border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: var(--wg-r-panel, var(--p-radius));
+  corner-shape: squircle;
   padding: 2.25rem 2rem;
   -webkit-backdrop-filter: blur(var(--wg-blur-panel, 18px)) saturate(1.15);
   backdrop-filter: blur(var(--wg-blur-panel, 18px)) saturate(1.15);
@@ -110,7 +115,8 @@ body.panel-body {
   background: rgba(255, 255, 255, 0.06);
   border: 1px solid rgba(255, 255, 255, 0.12);
   color: var(--p-text);
-  border-radius: 10px;
+  border-radius: 12px;
+  corner-shape: squircle;
   padding: 0.8rem 0.9rem;
   font-family: inherit;
   font-size: 1rem;
@@ -139,7 +145,8 @@ body.panel-body {
   background: var(--wg-chip-bg, linear-gradient(160deg, rgba(255,255,255,0.18), rgba(12,10,9,0.42)));
   color: #fff;
   border: 1px solid rgba(255, 255, 255, 0.13);
-  border-radius: var(--wg-r-chip, 0.9rem);
+  border-radius: var(--wg-r-chip, 12px);
+  corner-shape: squircle;
   padding: 0.9rem 1.5rem;
   font-family: inherit;
   font-size: 1rem;
@@ -150,6 +157,53 @@ body.panel-body {
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.24),
     inset 0 -1px 0 rgba(0, 0, 0, 0.22);
+
+/* Apple Squircle Checkbox Primitives (iOS Superellipse) */
+input[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 17px;
+  height: 17px;
+  min-width: 17px;
+  min-height: 17px;
+  margin: 0;
+  vertical-align: middle;
+  border: 1.5px solid rgba(255, 255, 255, 0.25);
+  border-radius: 6px;
+  corner-shape: squircle;
+  background-color: rgba(255, 255, 255, 0.06);
+  cursor: pointer;
+  display: inline-grid;
+  place-content: center;
+  position: relative;
+  transition: all 0.16s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+}
+input[type="checkbox"]:hover:not(:disabled) {
+  border-color: var(--p-accent, #78d0d8);
+  box-shadow: 0 0 0 2px rgba(120, 208, 216, 0.18);
+}
+input[type="checkbox"]:focus-visible {
+  outline: none;
+  border-color: var(--p-accent, #78d0d8);
+  box-shadow: 0 0 0 3px rgba(120, 208, 216, 0.28);
+}
+input[type="checkbox"]:checked {
+  background-color: var(--p-accent, #78d0d8) !important;
+  border-color: var(--p-accent, #78d0d8) !important;
+}
+input[type="checkbox"]:checked::after {
+  content: "";
+  width: 5px;
+  height: 9px;
+  border: solid var(--p-accent-ink, #0a1a1c);
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg) translate(-0.5px, -1px);
+}
+input[type="checkbox"]:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
   transition:
     background 0.2s ease,
     border-color 0.2s ease,
@@ -229,7 +283,10 @@ body.panel-body {
   color: var(--p-text);
   outline: none;
 }
-.otp-boxes input:focus { border-color: #666; }
+.otp-boxes input:focus {
+  border-color: #78d0d8;
+  box-shadow: 0 0 0 3px rgba(120, 208, 216, 0.25);
+}
 
 .auth-foot {
   margin-top: 1.5rem;
@@ -381,6 +438,7 @@ body.panel-body {
     );
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: var(--p-radius);
+  corner-shape: squircle;
   padding: 1.1rem 1.15rem;
   position: relative;
   overflow: hidden;
@@ -1339,10 +1397,13 @@ html[data-theme='light'] .otp-boxes input:focus {
   border-color: rgba(42, 122, 134, 0.55);
   box-shadow: 0 0 0 1px rgba(42, 122, 134, 0.35);
 }
+html[data-theme='light'] .auth-logo {
+  filter: brightness(0) saturate(100%) invert(10%);
+}
 html[data-theme='light'] .auth-sub,
 html[data-theme='light'] .auth-foot,
 html[data-theme='light'] .hint {
-  color: rgba(26, 23, 20, 0.62);
+  color: #4a453e;
 }
 html[data-theme='light'] .auth-title,
 html[data-theme='light'] .reserve-brand h1,
@@ -1953,3 +2014,15 @@ body.panel-body .field-group-label {
   font-weight: 600;
 }
 body.panel-body .btn.btn-sm { min-height: 44px; }
+
+.admin-tracking-code {
+  display: inline-block;
+  color: var(--p-text, #fff);
+  background: rgba(255, 255, 255, 0.08);
+}
+html[data-theme='light'] .admin-tracking-code {
+  color: #1a2327 !important;
+  background: rgba(12, 85, 92, 0.08) !important;
+  border: 1px solid rgba(12, 85, 92, 0.18) !important;
+}
+

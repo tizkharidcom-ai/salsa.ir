@@ -291,7 +291,7 @@ html[data-theme='light'] .shamsi-wheel-stage::after {
   -webkit-backface-visibility: hidden;
 }
 html[data-theme='light'] .shamsi-wheel-item {
-  color: #64748b;
+  color: #475569;
 }
 
 .shamsi-wheel-item.is-selected {

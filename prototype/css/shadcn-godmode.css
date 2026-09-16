@@ -1,0 +1,866 @@
+/*
+ * GODMODE visual system
+ *
+ * A vanilla CSS translation of the shadcn/ui design contract: semantic
+ * surface tokens, restrained borders, one radius scale, visible focus rings,
+ * and predictable composition primitives. It is intentionally framework-free
+ * so the existing prototype routes and interaction code remain intact.
+ */
+
+:root {
+  color-scheme: light;
+
+  /* A neutral scale with a deliberate surface ladder. Every route consumes
+   * these roles instead of choosing a page-specific white, gray, or black. */
+  --background: #f8fafc;
+  --foreground: #0f172a;
+  --card: #ffffff;
+  --card-foreground: #0f172a;
+  --popover: #ffffff;
+  --popover-foreground: #0f172a;
+  --surface-0: #f8fafc;
+  --surface-1: #ffffff;
+  --surface-2: #f1f5f9;
+  --surface-3: #e2e8f0;
+  --primary: #1d4ed8;
+  --primary-hover: #1e40af;
+  --primary-foreground: #ffffff;
+  --secondary: #f1f5f9;
+  --secondary-foreground: #1e293b;
+  --muted: #f1f5f9;
+  --muted-foreground: #475569;
+  --accent: #e2e8f0;
+  --accent-foreground: #1e293b;
+  --destructive: #b91c1c;
+  --destructive-foreground: #ffffff;
+  --destructive-text: #991b1b;
+  --destructive-surface: #fef2f2;
+  --destructive-border: #fca5a5;
+  --success: #15803d;
+  --success-foreground: #ffffff;
+  --success-text: #166534;
+  --success-surface: #f0fdf4;
+  --success-border: #86efac;
+  --warning: #b45309;
+  --warning-foreground: #ffffff;
+  --warning-text: #92400e;
+  --warning-surface: #fffbeb;
+  --warning-border: #fcd34d;
+  --info: #1d4ed8;
+  --info-foreground: #ffffff;
+  --info-text: #1e40af;
+  --info-surface: #eff6ff;
+  --info-border: #93c5fd;
+  --border: #cbd5e1;
+  --border-subtle: #e2e8f0;
+  --border-strong: #94a3b8;
+  --input: #94a3b8;
+  --ring: #2563eb;
+  --ring-offset: #ffffff;
+  --sidebar: #0f172a;
+  --sidebar-foreground: #f8fafc;
+  --sidebar-primary: #93c5fd;
+  --sidebar-primary-foreground: #0f172a;
+  --sidebar-accent: #1e293b;
+  --sidebar-accent-foreground: #f8fafc;
+  --sidebar-border: #334155;
+  --sidebar-ring: #60a5fa;
+  /* Apple Squircle Continuous Curvature Scale (iOS / macOS HIG Superellipse) */
+  --radius: 0.875rem;
+  --shad-radius-xs: 0.375rem; /* 6px - Apple Checkboxes & Micro Chips */
+  --shad-radius-sm: 0.5rem;   /* 8px - Sub-cards & Badges */
+  --shad-radius-md: 0.75rem;  /* 12px - Inputs, Textareas, Selects & Buttons */
+  --shad-radius-lg: 1.125rem; /* 18px - Cards, Dossiers, Panels & Table Wrappers */
+  --shad-radius-xl: 1.5rem;   /* 24px - Modals, Dialog Sheets & Drawers */
+  --shad-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
+  --shad-shadow-hover: 0 8px 24px rgba(15, 23, 42, 0.1);
+  --gm-header-height: 56px;
+  --gm-canvas: var(--background);
+  --gm-surface: var(--card);
+  --gm-sidebar: var(--sidebar);
+  --gm-sidebar-soft: var(--surface-2);
+  --gm-sidebar-text: var(--sidebar-foreground);
+  --gm-sidebar-muted: var(--muted-foreground);
+  --gm-ink: var(--foreground);
+  --gm-muted: var(--muted-foreground);
+  --gm-border: var(--border);
+  --gm-border-strong: var(--border-strong);
+  --gm-accent: var(--primary);
+  --gm-accent-hover: var(--primary-hover);
+  --gm-accent-soft: var(--info-surface);
+  --gm-shadow: var(--shad-shadow);
+
+  /* Compatibility aliases for older route fragments. */
+  --bg-canvas: var(--background);
+  --bg-subtle: var(--surface-2);
+  --bg-surface: var(--card);
+  --bg-surface-elevated: var(--popover);
+  --bg-surface-hover: var(--accent);
+  --bg-surface-subtle: var(--surface-0);
+  --text-primary: var(--foreground);
+  --text-secondary: var(--muted-foreground);
+  --text-tertiary: #64748b;
+  --text-inverse: #ffffff;
+  --accent-cyan: var(--primary);
+  --accent-cyan-hover: var(--primary-hover);
+  --accent-cyan-subtle: var(--info-surface);
+  --state-success: var(--success);
+  --state-success-subtle: var(--success-surface);
+  --state-warning: var(--warning);
+  --state-warning-subtle: var(--warning-surface);
+  --state-danger: var(--destructive);
+  --state-danger-subtle: var(--destructive-surface);
+  --state-info: var(--info);
+  --state-info-subtle: var(--info-surface);
+  --border-default: var(--border);
+  --border-focus: var(--ring);
+}
+
+[data-theme="dark"] {
+  color-scheme: dark;
+  --background: #0b1120;
+  --foreground: #f8fafc;
+  --card: #111827;
+  --card-foreground: #f8fafc;
+  --popover: #172033;
+  --popover-foreground: #f8fafc;
+  --surface-0: #0b1120;
+  --surface-1: #111827;
+  --surface-2: #172033;
+  --surface-3: #1e293b;
+  --primary: #60a5fa;
+  --primary-hover: #93c5fd;
+  --primary-foreground: #0f172a;
+  --secondary: #1e293b;
+  --secondary-foreground: #e2e8f0;
+  --muted: #172033;
+  --muted-foreground: #cbd5e1;
+  --accent: #263449;
+  --accent-foreground: #f8fafc;
+  --destructive: #f87171;
+  --destructive-foreground: #2b0b0b;
+  --destructive-text: #fecaca;
+  --destructive-surface: #2b0b0b;
+  --destructive-border: #b91c1c;
+  --success: #4ade80;
+  --success-foreground: #052e16;
+  --success-text: #bbf7d0;
+  --success-surface: #12351f;
+  --success-border: #166534;
+  --warning: #fbbf24;
+  --warning-foreground: #271506;
+  --warning-text: #fde68a;
+  --warning-surface: #271506;
+  --warning-border: #b45309;
+  --info: #60a5fa;
+  --info-foreground: #172554;
+  --info-text: #bfdbfe;
+  --info-surface: #172554;
+  --info-border: #2563eb;
+  --border: #334155;
+  --border-subtle: #1e293b;
+  --border-strong: #64748b;
+  --input: #475569;
+  --ring: #60a5fa;
+  --ring-offset: #0b1120;
+  --sidebar: #070b14;
+  --sidebar-foreground: #f8fafc;
+  --sidebar-primary: #bfdbfe;
+  --sidebar-primary-foreground: #0f172a;
+  --sidebar-accent: #172033;
+  --sidebar-accent-foreground: #f8fafc;
+  --sidebar-border: #263449;
+  --sidebar-ring: #93c5fd;
+  --shad-shadow: 0 1px 2px rgba(0, 0, 0, 0.32), 0 8px 24px rgba(0, 0, 0, 0.22);
+  --shad-shadow-hover: 0 12px 28px rgba(0, 0, 0, 0.34);
+  --gm-accent-soft: var(--info-surface);
+  --text-tertiary: #94a3b8;
+}
+
+*, *::before, *::after { border-color: var(--border); }
+
+html,
+body {
+  background: var(--background);
+  overflow-x: clip;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  text-rendering: optimizeLegibility;
+}
+
+a { color: var(--gm-accent); }
+
+:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--ring) !important;
+  outline-offset: 2px;
+}
+
+.sr-only {
+  width: 1px !important;
+  max-width: 1px !important;
+  height: 1px !important;
+  max-height: 1px !important;
+  margin: -1px !important;
+}
+
+/* App shell */
+.app-layout { background: var(--background); }
+.app-header,
+.top-header {
+  height: var(--gm-header-height);
+  background: color-mix(in srgb, var(--card) 94%, transparent);
+  border-bottom: 1px solid var(--border);
+  box-shadow: none;
+  backdrop-filter: blur(14px);
+}
+
+html,
+body,
+button,
+input,
+select,
+textarea {
+  color-scheme: inherit;
+}
+
+.brand-badge {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--shad-radius-md);
+  background: var(--primary);
+  box-shadow: none;
+}
+
+.brand-name { color: var(--foreground); font-weight: 750; }
+.brand-subtitle { color: var(--muted-foreground); }
+.header-command-trigger {
+  min-height: 36px;
+  border-radius: var(--shad-radius-md);
+  border-color: var(--border);
+  background: var(--muted);
+  box-shadow: none;
+}
+.header-command-trigger:hover { background: var(--accent); border-color: var(--input); box-shadow: none; }
+.command-trigger-kbd { background: var(--card); border-color: var(--border); box-shadow: none; }
+.header-env-badge { color: var(--success-text); background: var(--success-surface); border-color: var(--success-border); }
+.activity-bell-btn { border-color: var(--border); border-radius: var(--shad-radius-md); background: var(--card); }
+.header-user-avatar { border-radius: var(--shad-radius-md); background: var(--primary); color: var(--primary-foreground); }
+.theme-modal-btn {
+  display: inline-flex !important;
+  color: var(--muted-foreground);
+  background: transparent;
+  border-color: transparent;
+}
+.theme-modal-btn:hover { color: var(--foreground); background: var(--accent); border-color: var(--border); }
+
+.app-sidebar,
+.sidebar {
+  background: var(--sidebar);
+  color: var(--sidebar-foreground);
+  border-left: 1px solid var(--sidebar-border);
+}
+.nav-group-title { border-radius: var(--shad-radius-md); }
+.nav-group-title:hover,
+.nav-group.is-active-group .nav-group-title { background: var(--sidebar-accent); }
+.nav-item { border-radius: var(--shad-radius-sm); }
+.nav-item.active { color: var(--sidebar-foreground); background: color-mix(in srgb, var(--sidebar-primary) 18%, transparent); border-right-color: var(--sidebar-primary); }
+.nav-item:hover { background: var(--sidebar-accent); }
+.dossier-section-intro {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .75rem;
+  flex-wrap: wrap;
+  margin: 0 0 1rem;
+  padding: .75rem 1rem;
+  color: var(--muted-foreground);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--shad-radius-md);
+}
+.dossier-section-intro strong { color: var(--foreground); }
+
+/* Page orientation */
+.app-main,
+.main-wrapper {
+  background: var(--background);
+  background-image: none;
+}
+.page-header {
+  min-height: 84px;
+  padding: 1rem 1.15rem;
+  border: 1px solid var(--border) !important;
+  border-radius: var(--shad-radius-lg);
+  background: var(--card);
+  box-shadow: var(--shad-shadow);
+}
+.page-title-group h1,
+.page-title { color: var(--foreground) !important; font-size: clamp(1.15rem, 1.4vw, 1.4rem) !important; letter-spacing: -.018em; }
+.breadcrumb-nav { color: var(--muted-foreground); }
+.breadcrumb-link, .breadcrumb-current { color: var(--muted-foreground); }
+.breadcrumb-section { color: var(--gm-accent); }
+
+/* Core shadcn-like primitives */
+.btn {
+  min-height: 36px;
+  border-radius: var(--shad-radius-md);
+  corner-shape: squircle;
+  font-weight: 650;
+  box-shadow: none !important;
+  transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease, transform 140ms ease;
+}
+.btn-primary { color: var(--primary-foreground) !important; background: var(--primary) !important; border-color: var(--primary) !important; }
+.btn-primary:hover { background: var(--primary-hover) !important; border-color: var(--primary-hover) !important; }
+.btn-secondary,
+.btn-outline-cyan,
+.btn-subtle { color: var(--secondary-foreground); background: var(--secondary); border-color: var(--border); }
+.btn-secondary:hover, .btn-outline-cyan:hover, .btn-subtle:hover { background: var(--accent); border-color: var(--input); }
+.btn-ghost { color: var(--muted-foreground); background: transparent; border-color: transparent; }
+.btn-ghost:hover { color: var(--foreground); background: var(--accent); }
+.btn-danger { color: var(--destructive-text); background: transparent; border-color: var(--destructive-border); }
+.btn-danger:hover { color: var(--destructive-text); background: var(--destructive-surface); }
+
+.card,
+.surface-panel,
+.table-wrapper,
+.table-container,
+.table-responsive,
+.dossier-panel,
+.settings-section,
+.wizard-card,
+.gm11-panel,
+.feature-item-card,
+.plan-tier-card,
+.reconciliation-details-card,
+.restaurant-be-card,
+.sim-formula-card,
+.sim-override-card,
+.health-calendar-card,
+.health-inspector-box,
+.data-quality-detail-card {
+  border: 1px solid var(--border) !important;
+  border-radius: var(--shad-radius-lg) !important;
+  corner-shape: squircle;
+  background: var(--card) !important;
+  color: var(--card-foreground);
+  box-shadow: var(--shad-shadow);
+}
+.card:hover,
+.feature-item-card:hover,
+.plan-tier-card:hover { transform: none; box-shadow: var(--shad-shadow-hover); border-color: var(--input) !important; }
+.card-header,
+.settings-section-header { border-bottom-color: var(--border); }
+.card-title,
+.section-title,
+.settings-section-title { color: var(--foreground); }
+.card-subtitle,
+.settings-section-desc,
+.form-helper-text,
+.form-hint { color: var(--muted-foreground); }
+
+.badge { border-radius: 999px; font-weight: 650; }
+.badge-neutral { color: var(--muted-foreground); background: var(--muted); border-color: var(--border); }
+.badge-primary, .badge-cyan { color: var(--info-text); background: var(--info-surface); border-color: var(--info-border); }
+.badge-emerald, .badge-success { color: var(--success-text); background: var(--success-surface); border-color: var(--success-border); }
+.badge-warning { color: var(--warning-text); background: var(--warning-surface); border-color: var(--warning-border); }
+.badge-danger { color: var(--destructive-text); background: var(--destructive-surface); border-color: var(--destructive-border); }
+
+/* Data surfaces */
+.table-wrapper,
+.table-container,
+.table-responsive { overflow: auto; border-radius: var(--shad-radius-lg); corner-shape: squircle; }
+.table-toolbar,
+.table-filters,
+.table-pagination,
+.bulk-actions-bar,
+.table-bulk-actions-bar {
+  background: var(--card);
+  border-color: var(--border);
+}
+.table-toolbar { min-height: 54px; padding: .65rem .8rem; }
+.data-table { color: var(--foreground); font-size: .78rem; }
+.data-table th { color: var(--muted-foreground); background: var(--muted); border-bottom-color: var(--border); font-size: .68rem; }
+.data-table td { border-bottom-color: var(--border); }
+.data-table tbody tr:hover { background: var(--accent); }
+.data-table a { color: var(--gm-accent); }
+
+.form-control,
+.form-input,
+.form-select,
+input[type="text"], input[type="search"], input[type="email"], input[type="number"], input[type="password"], select, textarea {
+  min-height: 38px;
+  color: var(--foreground);
+  background: var(--card);
+  border: 1px solid var(--input);
+  border-radius: var(--shad-radius-md);
+  corner-shape: squircle;
+}
+.form-control::placeholder,
+.form-input::placeholder,
+input::placeholder,
+textarea::placeholder { color: var(--muted-foreground); }
+.form-control:focus, .form-input:focus, .form-select:focus, input:focus, select:focus, textarea:focus {
+  border-color: var(--ring);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--ring) 28%, transparent);
+}
+.form-label { color: var(--foreground); font-weight: 650; }
+.form-error-summary { border-color: var(--destructive-border); background: var(--destructive-surface); color: var(--destructive-text); border-radius: var(--shad-radius-md); corner-shape: squircle; }
+
+/* Apple Squircle Checkbox Primitives (iOS Superellipse) */
+input[type="checkbox"],
+.form-checkbox,
+.data-table input[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 17px;
+  height: 17px;
+  min-width: 17px;
+  min-height: 17px;
+  margin: 0;
+  vertical-align: middle;
+  border: 1.5px solid var(--border-strong, #94a3b8);
+  border-radius: var(--shad-radius-xs, 6px);
+  corner-shape: squircle;
+  background-color: var(--card, #ffffff);
+  cursor: pointer;
+  display: inline-grid;
+  place-content: center;
+  position: relative;
+  transition: all 0.16s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+input[type="checkbox"]:hover:not(:disabled) {
+  border-color: var(--primary, #1d4ed8);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary, #1d4ed8) 18%, transparent);
+}
+input[type="checkbox"]:focus-visible {
+  outline: none;
+  border-color: var(--ring, #2563eb);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ring, #2563eb) 28%, transparent);
+}
+input[type="checkbox"]:checked {
+  background-color: var(--primary, #1d4ed8) !important;
+  border-color: var(--primary, #1d4ed8) !important;
+}
+input[type="checkbox"]:checked::after {
+  content: "";
+  width: 5px;
+  height: 9px;
+  border: solid #ffffff;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg) translate(-0.5px, -1px);
+}
+input[type="checkbox"]:indeterminate {
+  background-color: var(--primary, #1d4ed8);
+  border-color: var(--primary, #1d4ed8);
+}
+input[type="checkbox"]:indeterminate::after {
+  content: "";
+  width: 8px;
+  height: 2px;
+  background-color: #ffffff;
+  border-radius: 1px;
+}
+input[type="checkbox"]:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  background-color: var(--muted, #f1f5f9);
+}
+
+/* Tabs, segmented navigation, and filters */
+.tabs,
+.subtabs,
+.page-tabs,
+.tenant-tabs,
+.hub-tabs-bar,
+.nav-tabs,
+.gm11-tabs-nav {
+  gap: .2rem;
+  padding: .25rem;
+  background: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: var(--shad-radius-md);
+}
+.tab-btn,
+.subtab-btn,
+.page-tab,
+.tenant-tab,
+.hub-tab,
+.dossier-tab-btn,
+.gm11-tab-btn,
+.tab-link {
+  min-height: 34px;
+  padding: .4rem .7rem;
+  color: var(--muted-foreground);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--shad-radius-sm);
+  box-shadow: none;
+}
+.tab-btn:hover,
+.subtab-btn:hover,
+.page-tab:hover,
+.tenant-tab:hover,
+.hub-tab:hover,
+.dossier-tab-btn:hover,
+.gm11-tab-btn:hover,
+.tab-link:hover { color: var(--foreground); background: var(--accent); }
+.tab-btn.active,
+.subtab-btn.active,
+.page-tab.active,
+.tenant-tab.active,
+.hub-tab.active,
+.dossier-tab-btn.active,
+.gm11-tab-btn.active,
+.tab-link.active,
+.tab-link[aria-selected="true"] {
+  color: var(--foreground);
+  background: var(--card);
+  border-color: var(--border);
+  box-shadow: var(--shad-shadow);
+}
+.filter-chip { border-radius: 999px; background: var(--muted); border-color: var(--border); }
+.filter-chip.active { color: var(--info-text); background: var(--info-surface); border-color: var(--info-border); }
+
+/* Dialogs, drawers, overlays, and status messaging */
+.modal-backdrop,
+.drawer-backdrop { background: rgba(9, 9, 11, .52); backdrop-filter: blur(2px); }
+.drawer[aria-hidden="true"] { display: none !important; }
+.drawer.open { display: flex !important; }
+.modal,
+.drawer,
+.drawer-panel,
+.popover,
+.dropdown-menu {
+  color: var(--popover-foreground);
+  background: var(--popover);
+  border: 1px solid var(--border);
+  border-radius: var(--shad-radius-xl);
+  corner-shape: squircle;
+  box-shadow: 0 16px 45px rgba(24,24,27,.16);
+}
+.modal-header,
+.drawer-header { border-bottom-color: var(--border); }
+.alert,
+.alert-primary,
+.alert-info,
+.alert-warning,
+.alert-danger { border-radius: var(--shad-radius-md); corner-shape: squircle; border-width: 1px; box-shadow: none; }
+.empty-state,
+.empty-state-compact,
+.sim-empty-state { border: 1px dashed var(--border); border-radius: var(--shad-radius-lg); corner-shape: squircle; background: var(--muted); color: var(--muted-foreground); }
+
+/* The GM-02 dashboard follows the same contract without inheriting cards. */
+.gm02-operator-dashboard,
+.gm02-dashboard-heading,
+.gm02-dashboard-panel,
+.gm02-dashboard-kpi { border-color: var(--border); }
+.gm02-dashboard-heading,
+.gm02-dashboard-panel,
+.gm02-dashboard-kpi { background: var(--card); box-shadow: var(--shad-shadow); }
+.gm02-dashboard-heading { border-top: 1px solid var(--border); border-radius: var(--shad-radius-lg); }
+.gm02-dashboard-kpi { border-right-width: 2px; border-radius: var(--shad-radius-md); }
+.gm02-dashboard-kpi:hover { box-shadow: var(--shad-shadow-hover); }
+.gm02-dashboard-panel-head { border-bottom-color: var(--border); }
+.gm02-dashboard-list-row { border-bottom-color: var(--border); }
+.gm02-dashboard-list-row:hover { background: var(--accent); }
+
+.gm-start-panel {
+  border: 1px solid var(--border);
+  border-radius: var(--shad-radius-lg);
+  background: var(--card);
+  color: var(--card-foreground);
+  box-shadow: var(--shad-shadow);
+}
+.gm-start-heading h2,
+.gm-start-heading p { color: var(--foreground); }
+.gm-start-heading p { color: var(--muted-foreground); }
+.gm-task-link { color: var(--foreground); background: var(--muted); border-color: var(--border); }
+.gm-task-link span { color: var(--muted-foreground); }
+
+/* Final normalization: older route fragments keep their markup, but every
+ * visible surface still resolves to the same shadcn semantic contract. */
+:where(
+  .app-main .surface-subtle,
+  .app-main .kv-item,
+  .app-main .metric-card,
+  .app-main .stat-card,
+  .app-main .plan-tier-price-box,
+  .app-main .cell-mono,
+  .app-main .invoice-id-code,
+  .app-main .payment-ref-code,
+  .app-main .operator-next-step,
+  .app-main .flagship-card,
+  .app-main .operator-next-step-icon
+) {
+  color: var(--card-foreground);
+  background: var(--muted) !important;
+  border-color: var(--border) !important;
+  box-shadow: none;
+}
+
+:where(
+  .app-main .flagship-card,
+  .app-main .operator-next-step-icon
+) {
+  background: var(--accent) !important;
+  color: var(--accent-foreground);
+}
+
+.app-main .featured-icon,
+.app-main .featured-icon-primary,
+.app-main .badge-group-pill,
+.app-main .stat-badge {
+  border-color: var(--border);
+  box-shadow: none;
+}
+
+.app-main .filter-chip.active,
+.app-main .badge-primary,
+.app-main .badge-cyan,
+.app-main .badge-scope-global,
+.app-main .badge-scope-tenant {
+  color: var(--info-text);
+  background: var(--info-surface);
+  border-color: var(--info-border);
+}
+
+.app-main .btn-warning {
+  color: var(--warning-foreground);
+  background: var(--warning);
+  border-color: var(--warning);
+}
+
+.app-main .btn-warning:hover {
+  background: color-mix(in srgb, var(--warning) 86%, var(--foreground));
+  border-color: color-mix(in srgb, var(--warning) 86%, var(--foreground));
+}
+
+.app-main .toggle-switch-btn.on {
+  color: var(--success-foreground);
+  background: var(--success);
+  border-color: var(--success);
+}
+
+/* State surfaces always pair a readable text role with their background. */
+.app-main .status-success,
+.app-main .state-success,
+.app-main .pill-success,
+.app-main .badge-success,
+.app-main .badge-emerald {
+  color: var(--success-text);
+  background: var(--success-surface);
+  border-color: var(--success-border);
+}
+
+.app-main .status-warning,
+.app-main .state-warning,
+.app-main .pill-warning,
+.app-main .badge-warning {
+  color: var(--warning-text);
+  background: var(--warning-surface);
+  border-color: var(--warning-border);
+}
+
+.app-main .status-danger,
+.app-main .state-danger,
+.app-main .pill-danger,
+.app-main .badge-danger {
+  color: var(--destructive-text);
+  background: var(--destructive-surface);
+  border-color: var(--destructive-border);
+}
+
+/* Toasts sit above both light and dark canvases; keep their message readable
+ * instead of inheriting the legacy white-on-white treatment. */
+.toast-container .toast {
+  color: var(--card-foreground);
+  background: var(--card);
+  border-color: var(--border);
+}
+
+.toast-container .toast > div {
+  color: inherit;
+}
+
+.toast-container .toast.toast-info {
+  color: var(--info);
+  background: color-mix(in srgb, var(--info) 10%, var(--card));
+  border-color: color-mix(in srgb, var(--info) 32%, var(--border));
+}
+
+.toast-container .toast.toast-success {
+  color: var(--success);
+  background: color-mix(in srgb, var(--success) 10%, var(--card));
+  border-color: color-mix(in srgb, var(--success) 32%, var(--border));
+}
+
+.toast-container .toast.toast-warning {
+  color: var(--warning);
+  background: color-mix(in srgb, var(--warning) 12%, var(--card));
+  border-color: color-mix(in srgb, var(--warning) 36%, var(--border));
+}
+
+.toast-container .toast.toast-error,
+.toast-container .toast.toast-danger {
+  color: var(--destructive);
+  background: color-mix(in srgb, var(--destructive) 10%, var(--card));
+  border-color: color-mix(in srgb, var(--destructive) 32%, var(--border));
+}
+
+/* GM-03 owns customer creation; keep its one primary action in the page
+ * header instead of duplicating it in the sidebar navigation. */
+.app-main .gm03-page .header-actions {
+  display: flex !important;
+  align-items: center;
+  gap: .45rem;
+}
+
+/* Legacy customer tools render inside the selected dossier. Their standalone
+ * page chrome and provenance strips would duplicate the dossier hierarchy. */
+.dossier-embedded-view > .page-header,
+.dossier-embedded-view > .data-quality-strip,
+.dossier-embedded-view > [id^="data-freshness-bar-"] {
+  display: none !important;
+}
+
+/* Keep the desktop shell anchored to the viewport while the active workspace
+ * scrolls.  `overflow-x: hidden` on the legacy grid made `.app-layout` an
+ * unintended scroll container, so the sticky header and rail drifted away
+ * when a long customer table was scrolled. */
+@media (min-width: 769px) {
+  .app-layout {
+    overflow: clip;
+  }
+
+  .app-sidebar,
+  .sidebar {
+    position: sticky;
+    top: calc(var(--gm-banner-height) + var(--gm-header-height));
+    height: calc(100dvh - var(--gm-banner-height) - var(--gm-header-height));
+    max-height: calc(100dvh - var(--gm-banner-height) - var(--gm-header-height));
+    align-self: start;
+  }
+}
+
+.app-main .data-state-pill,
+.app-main .data-state-dot,
+.app-main .status-dot,
+.app-main .subsystem-dot {
+  border-color: currentColor;
+}
+
+@media (max-width: 920px) {
+  .app-main, .main-wrapper { padding-inline: 1rem; }
+  .page-header { min-height: 76px; }
+  .grid-cols-4, .grid-4 { grid-template-columns: repeat(2, minmax(0,1fr)) !important; }
+  .grid-cols-3, .grid-3 { grid-template-columns: repeat(2, minmax(0,1fr)) !important; }
+}
+
+@media (max-width: 640px) {
+  .app-main, .main-wrapper { padding: .8rem .7rem 2rem; }
+  .page-header { min-height: 68px; padding: .85rem; }
+  .grid-cols-4, .grid-4, .grid-cols-3, .grid-3, .grid-cols-2, .grid-2 { grid-template-columns: 1fr !important; }
+  .table-toolbar { align-items: stretch; flex-direction: column; }
+  .tabs, .subtabs, .page-tabs, .tenant-tabs, .hub-tabs-bar, .nav-tabs, .gm11-tabs-nav { overflow-x: auto; max-width: 100%; }
+  .tab-btn, .subtab-btn, .page-tab, .tenant-tab, .hub-tab, .dossier-tab-btn, .gm11-tab-btn, .tab-link { flex: 0 0 auto; }
+  .theme-btn-label { display: none; }
+}
+
+/* The legacy workspace stylesheet still contains a few higher-specificity
+ * dark selectors. Rebind those surfaces to the same semantic ladder so a
+ * route cannot switch palettes halfway through a modal, table, or form. */
+[data-theme="dark"] .app-header,
+[data-theme="dark"] .top-header,
+[data-theme="dark"] .card,
+[data-theme="dark"] .stat-card,
+[data-theme="dark"] .table-wrapper,
+[data-theme="dark"] .surface-panel,
+[data-theme="dark"] .table-toolbar,
+[data-theme="dark"] .modal,
+[data-theme="dark"] .modal-header,
+[data-theme="dark"] .modal-body,
+[data-theme="dark"] .drawer,
+[data-theme="dark"] .drawer-header {
+  background: var(--card) !important;
+  color: var(--card-foreground) !important;
+  border-color: var(--border) !important;
+}
+
+[data-theme="dark"] .modal-footer,
+[data-theme="dark"] .drawer-footer {
+  background: var(--surface-2) !important;
+  color: var(--card-foreground) !important;
+  border-color: var(--border) !important;
+}
+
+[data-theme="dark"] .table th,
+[data-theme="dark"] .data-table th {
+  background: var(--surface-2) !important;
+  color: var(--muted-foreground) !important;
+  border-color: var(--border) !important;
+}
+
+[data-theme="dark"] .table td,
+[data-theme="dark"] .data-table td {
+  color: var(--card-foreground) !important;
+  border-color: var(--border) !important;
+}
+
+[data-theme="dark"] .form-control,
+[data-theme="dark"] .form-input,
+[data-theme="dark"] .form-select,
+[data-theme="dark"] input[type="text"],
+[data-theme="dark"] input[type="search"],
+[data-theme="dark"] input[type="email"],
+[data-theme="dark"] input[type="number"],
+[data-theme="dark"] select,
+[data-theme="dark"] textarea {
+  background: var(--surface-2) !important;
+  color: var(--foreground) !important;
+  border-color: var(--input) !important;
+}
+
+[data-theme="dark"] .btn-secondary,
+[data-theme="dark"] .filter-chip,
+[data-theme="dark"] .subsystem-block {
+  background: var(--secondary) !important;
+  color: var(--secondary-foreground) !important;
+  border-color: var(--border) !important;
+}
+
+@media (prefers-contrast: more) {
+  :root,
+  [data-theme="dark"] {
+    --border: var(--border-strong);
+    --input: var(--border-strong);
+    --muted-foreground: var(--foreground);
+  }
+
+  .btn,
+  .form-control,
+  .form-input,
+  .form-select,
+  input,
+  select,
+  textarea,
+  .tab-btn,
+  .tab-link {
+    border-width: 2px;
+  }
+}
+
+@media (forced-colors: active) {
+  *, *::before, *::after { forced-color-adjust: auto; }
+  :where(a, button, input, select, textarea, [tabindex]):focus-visible {
+    outline: 2px solid CanvasText !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; }
+}

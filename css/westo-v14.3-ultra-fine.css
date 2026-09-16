@@ -1228,6 +1228,11 @@ html.is-standalone {
     pointer-events:none !important;
   }
 
+  html[data-theme='light']:not(.is-dish-boards) .hud .icon-scroll_wrapper {
+    color: #1a2327 !important;
+    opacity: .72 !important;
+  }
+
   html:not(.is-dish-boards) .hud_left-bottom .icon-scroll_wrapper {
     left:max(5px,env(safe-area-inset-left,0px)) !important;
     right:auto !important;

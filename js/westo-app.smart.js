@@ -9,6 +9,8 @@
 
   const FA_DIGITS = '۰۱۲۳۴۵۶۷۸۹';
   const GROUP_SEPARATOR = '٫';
+  const MONEY_FIELD_PATTERN = /(amount|price|cost|fee|salary|rent|payroll|utility|utilities|sales|variable|balance|wallet|topup|charge|revenue|profit|capital|deposit|withdraw|payment|purchase|commission|packaging|minorder|minspend|maximum|minimum|مبلغ|قیمت|هزینه|بها|کارمزد|حقوق|اجاره|فروش|درآمد|سود|سرمایه|موجودی|شارژ|خرید|دریافت|پرداخت|تخفیف|مالیات|ارزش)/i;
+  const NON_MONEY_FIELD_PATTERN = /(quantity|qty|count|headcount|party|points|percent|percentage|vatpercent|duration|days|hours|minutes|month|year|port|priority|stock|reorder|yield|تعداد|مقدار|نفر|امتیاز|درصد|زمان|روز|ساعت|ماه|سال|پورت|اولویت|موجودی اولیه|نقطه سفارش|بازده)/i;
 
   function toFaDigits(value) {
     return String(value ?? '').replace(/[0-9]/g, (digit) => FA_DIGITS[Number(digit)]);
@@ -19,11 +21,92 @@
     let normalized = String(value ?? '')
       .replace(/[۰-۹]/g, (digit) => String(FA_DIGITS.indexOf(digit)))
       .replace(/[٠-٩]/g, (digit) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(digit)))
+      .replace(/تومان|ریال/g, '')
       .replace(/[٬,]/g, '')
       .trim();
     if (/^-?\d{1,3}(?:٫\d{3})+$/.test(normalized)) normalized = normalized.replace(/٫/g, '');
     else normalized = normalized.replace('٫', '.');
     return Number(normalized);
+  }
+
+  function formatMoneyInput(value) {
+    if (value === null || value === undefined || String(value).trim() === '') return '';
+    const normalized = String(value)
+      .replace(/[۰-۹]/g, (digit) => String(FA_DIGITS.indexOf(digit)))
+      .replace(/[٠-٩]/g, (digit) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(digit)))
+      .replace(/[^0-9-]/g, '');
+    if (!normalized || normalized === '-') return normalized;
+    const sign = normalized.startsWith('-') ? '-' : '';
+    const digits = normalized.replace(/-/g, '').replace(/^0+(?=\d)/, '') || '0';
+    return toFaDigits(Number(`${sign}${digits}`).toLocaleString('en-US'))
+      .replace(/,/g, GROUP_SEPARATOR);
+  }
+
+  function isMoneyInput(input) {
+    if (!input || input.nodeType !== 1 || input.tagName !== 'INPUT') return false;
+    if (input.dataset.moneyInput === 'true') return true;
+    if (input.dataset.moneyInput === 'false' || input.type === 'date' || input.type === 'time' || input.type === 'tel') return false;
+    // The Shamsi picker upgrades native date inputs to text inputs. Keep its
+    // Persian date display (slashes) out of money grouping, even when the
+    // surrounding label contains words such as «سود» or «هزینه».
+    if (input.dataset.nativeDateType || input.dataset.shamsiPicker !== undefined || input.classList.contains('shamsi-date-input')) return false;
+    const label = input.closest('label')?.textContent || '';
+    const identity = [input.name, input.id, input.className].filter(Boolean).join(' ');
+    if (/(vendor|supplier|seller|customer|person|spender|receiver|طرف حساب|فروشنده|تأمین‌کننده|تحویل‌گیرنده)/i.test(identity)) return false;
+    const source = [identity, input.getAttribute('data-price'), input.getAttribute('data-me-price'), input.placeholder, input.getAttribute('aria-label'), label].filter(Boolean).join(' ');
+    return MONEY_FIELD_PATTERN.test(source) && !NON_MONEY_FIELD_PATTERN.test(source);
+  }
+
+  function formatMoneyInputNode(input) {
+    if (!isMoneyInput(input)) return;
+    input.dataset.moneyInput = 'true';
+    input.setAttribute('inputmode', 'numeric');
+    if (input.type === 'number') input.type = 'text';
+    if (input.value) input.value = formatMoneyInput(input.value);
+    if (input.dataset.moneyBound === 'true') return;
+    input.dataset.moneyBound = 'true';
+    input.addEventListener('input', () => {
+      const before = input.value;
+      const caret = input.selectionStart ?? before.length;
+      const digitsBeforeCaret = before.slice(0, caret).replace(/[^0-9۰-۹٠-٩]/g, '').length;
+      const formatted = formatMoneyInput(before);
+      // React-controlled fields must see an ASCII value in their onChange handler;
+      // the microtask restores the Persian presentation after that handler runs.
+      input.value = before.trim() ? String(toNumber(before) || 0) : '';
+      queueMicrotask(() => { input.value = formatted; });
+      if (document.activeElement === input) {
+        let position = 0;
+        let seen = 0;
+        while (position < formatted.length && seen < digitsBeforeCaret) {
+          if (/[0-9۰-۹٠-٩]/.test(formatted[position])) seen += 1;
+          position += 1;
+        }
+        try { input.setSelectionRange(position, position); } catch {}
+      }
+    });
+    input.addEventListener('blur', () => { input.value = formatMoneyInput(input.value); });
+  }
+
+  function bindMoneyInputs(root = document) {
+    if (!root?.querySelectorAll) return;
+    if (root.matches?.('input')) formatMoneyInputNode(root);
+    root.querySelectorAll('input').forEach(formatMoneyInputNode);
+  }
+
+  function installMoneyInputBinding() {
+    if (typeof document === 'undefined' || document.documentElement.dataset.westoMoneyBinding === 'true') return;
+    document.documentElement.dataset.westoMoneyBinding = 'true';
+    bindMoneyInputs(document);
+    new MutationObserver((records) => records.forEach((record) => record.addedNodes.forEach((node) => {
+      if (node.nodeType === 1) bindMoneyInputs(node);
+    }))).observe(document.documentElement, { childList: true, subtree: true });
+    document.addEventListener('formdata', (event) => {
+      const form = event.target;
+      if (!form?.elements) return;
+      [...form.elements].filter(isMoneyInput).forEach((input) => {
+        if (input.name) event.formData.set(input.name, String(toNumber(input.value) || 0));
+      });
+    });
   }
 
   function isPersianLocale(locale) {
@@ -55,9 +138,16 @@
   global.WestoPersianFormat = Object.freeze({
     number: formatNumber,
     amount: formatAmount,
+    parse: toNumber,
+    formatMoneyInput,
+    bindMoneyInputs,
     toFaDigits,
     groupSeparator: GROUP_SEPARATOR,
   });
+  if (typeof document !== 'undefined') {
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', installMoneyInputBinding, { once: true });
+    else installMoneyInputBinding();
+  }
 }(typeof window !== 'undefined' ? window : typeof global !== 'undefined' ? global : {}));
 
 ;/* ===== END js/persian-format.js ===== */
@@ -355,7 +445,7 @@
     'checkout.successKicker': { fa: 'سفارش ثبت شد', en: 'Order placed', ar: 'تم تسجيل الطلب' },
     'checkout.pendingPayment': { fa: 'در انتظار پرداخت', en: 'Awaiting payment', ar: 'بانتظار الدفع' },
     'checkout.sandboxConfirm': { fa: 'تکمیل پرداخت آزمایشی', en: 'Complete sandbox payment', ar: 'إكمال الدفع التجريبي' },
-    'checkout.emptyCategory': { fa: 'در این دسته آیتم فعالی وجود ندارد.', en: 'No active items in this category.', ar: 'لا توجد عناصر متاحة في هذه الفئة.' },
+    'checkout.emptyCategory': { fa: 'در این دسته محصول فعالی وجود ندارد.', en: 'No active items in this category.', ar: 'لا توجد عناصر متاحة في هذه الفئة.' },
     'checkout.addItem': { fa: 'افزودن {name}', en: 'Add {name}', ar: 'أضف {name}' },
     'checkout.emptyCart': { fa: 'سبد شما هنوز خالی است.', en: 'Your cart is empty.', ar: 'سلتك فارغة.' },
     'checkout.qtyUnit': { fa: 'عدد', en: 'qty', ar: 'عدد' },
@@ -7540,8 +7630,10 @@
     callWaiterBtn.addEventListener('click', async () => {
       const msg = $('#order-msg');
       const params = new URLSearchParams(location.search);
-      const tableNo = (($('#order-table') || {}).value || '').trim() || params.get('table') || '';
-      const branchId = Number(params.get('branch') || params.get('branchId') || 0) || undefined;
+      const rawTable = normalizeDigits((($('#order-table') || {}).value || '').trim() || params.get('table') || '');
+      const tableNo = rawTable.trim();
+      const rawBranch = normalizeDigits(params.get('branch') || params.get('branchId') || '').replace(/\D/g, '');
+      const branchId = rawBranch ? Number(rawBranch) : undefined;
       if (!tableNo) {
         if (msg) {
           msg.textContent = tr('cart.needTable');
@@ -7562,6 +7654,7 @@
           msg.textContent = tr('cart.waiterOk');
           msg.className = 'msg ok';
         }
+        window.dispatchEvent(new CustomEvent('westo:waiter-called', { detail: { tableNo, callId: d.call?.id } }));
       } catch (e) {
         if (msg) {
           msg.textContent = e.message || tr('cart.waiterFail');
@@ -7571,6 +7664,7 @@
         callWaiterBtn.disabled = false;
       }
     });
+
   }
 
   // Prefill table from QR link ?table=
@@ -7578,6 +7672,242 @@
   if (tableFromQr && $('#order-table') && !$('#order-table').value) {
     $('#order-table').value = tableFromQr;
   }
+
+  function initFloatingWaiterCall() {
+    const params = new URLSearchParams(location.search);
+    const rawTable = normalizeDigits(params.get('table') || params.get('t') || (($('#order-table') || {}).value || '')).trim();
+    if (rawTable) {
+      try { sessionStorage.setItem('westo_active_table', rawTable); } catch(e) {}
+    }
+    const savedTable = (() => {
+      try { return sessionStorage.getItem('westo_active_table') || ''; } catch(e) { return ''; }
+    })();
+    const tableNo = rawTable || savedTable;
+    if (!tableNo) return; // Only show floating call button when table is known from QR
+
+    const rawBranch = normalizeDigits(params.get('branch') || params.get('branchId') || '').replace(/\D/g, '');
+    const branchId = rawBranch ? Number(rawBranch) : undefined;
+
+    if ($('#westo-call-fab-wrap')) return;
+
+    const fabWrap = document.createElement('div');
+    fabWrap.id = 'westo-call-fab-wrap';
+    fabWrap.className = 'westo-call-fab-wrap';
+    fabWrap.innerHTML = `
+      <button type="button" id="westo-call-fab" class="westo-call-fab" aria-label="فراخوان گارسون" title="فراخوان گارسون برای میز ${tableNo}">
+        <span class="fab-icon">🛎️</span>
+        <span class="fab-text">فراخوان گارسون</span>
+        <span class="fab-table-badge">میز ${tableNo}</span>
+      </button>`;
+    document.body.appendChild(fabWrap);
+
+    const modal = document.createElement('div');
+    modal.id = 'westo-call-modal';
+    modal.className = 'westo-call-modal';
+    modal.hidden = true;
+    modal.innerHTML = `
+      <div class="westo-call-sheet" role="dialog" aria-modal="true" aria-labelledby="westo-call-sheet-title">
+        <div class="westo-call-sheet__head">
+          <div class="sheet-title-group">
+            <span class="sheet-icon">🛎️</span>
+            <div>
+              <h3 id="westo-call-sheet-title">فراخوان گارسون</h3>
+              <p>شماره میز شما: <b>${tableNo}</b></p>
+            </div>
+          </div>
+          <button type="button" class="sheet-close-btn" id="westo-call-sheet-close" aria-label="بستن">✕</button>
+        </div>
+
+        <div class="westo-call-presets" id="westo-call-presets">
+          <button type="button" class="call-preset-btn active" data-note="حضور گارسون در کنار میز">
+            <span class="p-icon">🙋‍♂️</span>
+            <span class="p-title">حضور گارسون</span>
+            <small>درخواست حضور گارسون در کنار میز</small>
+          </button>
+          <button type="button" class="call-preset-btn" data-note="درخواست صورت‌حساب و فاکتور">
+            <span class="p-icon">🧾</span>
+            <span class="p-title">صورت‌حساب / فاکتور</span>
+            <small>تسویه و آوردن دستگاه کارتخوان</small>
+          </button>
+          <button type="button" class="call-preset-btn" data-note="درخواست قاشق و چنگال، دستمال یا لیوان">
+            <span class="p-icon">🍴</span>
+            <span class="p-title">سرویس و ملزومات</span>
+            <small>قاشق، چنگال، دستمال، لیوان، آب</small>
+          </button>
+          <button type="button" class="call-preset-btn" data-note="سفارش مجدد و مشاوره درباره منو">
+            <span class="p-icon">💬</span>
+            <span class="p-title">سفارش مجدد / راهنمایی</span>
+            <small>مشاوره آیتم‌ها یا ثبت سفارش تکمیلی</small>
+          </button>
+        </div>
+
+        <div class="westo-call-note-field">
+          <label for="westo-call-custom-note">توضیح اختیاری برای گارسون</label>
+          <input id="westo-call-custom-note" type="text" placeholder="مثلاً: دو لیوان آب یخ لطفاً…" maxlength="100" />
+        </div>
+
+        <div class="westo-call-actions">
+          <button type="button" class="westo-call-submit-btn" id="westo-call-submit">
+            <span>ارسال فراخوان گارسون</span>
+            <span>🔔</span>
+          </button>
+        </div>
+      </div>`;
+    document.body.appendChild(modal);
+
+    const fab = $('#westo-call-fab');
+    const closeBtn = $('#westo-call-sheet-close');
+    const submitBtn = $('#westo-call-submit');
+    const noteInput = $('#westo-call-custom-note');
+    let selectedNote = 'حضور گارسون در کنار میز';
+    let activeCallId = null;
+    let cooldownTimer = null;
+
+    modal.querySelectorAll('.call-preset-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        modal.querySelectorAll('.call-preset-btn').forEach((b) => b.classList.remove('active'));
+        btn.classList.add('active');
+        selectedNote = btn.dataset.note || 'حضور گارسون در کنار میز';
+      });
+    });
+
+    const openModal = () => {
+      if (fab.classList.contains('is-calling')) return;
+      modal.hidden = false;
+      if (noteInput) noteInput.value = '';
+    };
+
+    const closeModal = () => {
+      modal.hidden = true;
+    };
+
+    fab.addEventListener('click', (e) => {
+      if (e.target.closest('.fab-cancel-btn')) return;
+      openModal();
+    });
+
+    closeBtn.addEventListener('click', closeModal);
+    modal.addEventListener('click', (e) => {
+      if (e.target === modal) closeModal();
+    });
+
+    const setCallingState = (callId, initialRemaining = 60) => {
+      activeCallId = callId;
+      fab.classList.add('is-calling');
+      let remaining = Math.max(1, Math.min(60, initialRemaining));
+      try {
+        sessionStorage.setItem('westo_active_call', JSON.stringify({
+          tableNo,
+          callId,
+          startedAt: Date.now() - (60 - remaining) * 1000
+        }));
+      } catch(e) {}
+
+      const updateFabText = (sec) => {
+        const textEl = fab.querySelector('.fab-text');
+        if (textEl) textEl.textContent = `گارسون در راه است (${sec}ث)`;
+      };
+
+      fab.innerHTML = `
+        <span class="fab-icon">✓</span>
+        <span class="fab-text">گارسون در راه است (${remaining}ث)</span>
+        <button type="button" class="fab-cancel-btn" title="انصراف از درخواست">انصراف</button>
+      `;
+
+      if (cooldownTimer) clearInterval(cooldownTimer);
+      cooldownTimer = setInterval(() => {
+        remaining--;
+        if (remaining > 0) {
+          updateFabText(remaining);
+        } else {
+          clearInterval(cooldownTimer);
+          resetCallingState();
+        }
+      }, 1000);
+
+      const bindCancel = () => {
+        const cancelBtn = fab.querySelector('.fab-cancel-btn');
+        if (cancelBtn) {
+          cancelBtn.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            try {
+              await fetch('/api/call-waiter/cancel', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ tableNo, callId: activeCallId })
+              });
+            } catch(err) {}
+            clearInterval(cooldownTimer);
+            resetCallingState();
+          });
+        }
+      };
+      bindCancel();
+    };
+
+    const resetCallingState = () => {
+      try { sessionStorage.removeItem('westo_active_call'); } catch(e) {}
+      fab.classList.remove('is-calling');
+      activeCallId = null;
+      fab.innerHTML = `
+        <span class="fab-icon">🛎️</span>
+        <span class="fab-text">فراخوان گارسون</span>
+        <span class="fab-table-badge">میز ${tableNo}</span>
+      `;
+    };
+
+    // Restore active cooldown across page navigation or refresh
+    try {
+      const savedCall = JSON.parse(sessionStorage.getItem('westo_active_call') || 'null');
+      if (savedCall && savedCall.startedAt) {
+        const elapsed = Math.floor((Date.now() - savedCall.startedAt) / 1000);
+        if (elapsed < 60) {
+          setCallingState(savedCall.callId, 60 - elapsed);
+        } else {
+          sessionStorage.removeItem('westo_active_call');
+        }
+      }
+    } catch(e) {}
+
+    // Listen to calls initiated from other UI parts (e.g. cart checkout drawer)
+    window.addEventListener('westo:waiter-called', (e) => {
+      if (e.detail?.callId) {
+        setCallingState(e.detail.callId);
+      }
+    });
+
+
+    submitBtn.addEventListener('click', async () => {
+      const customNote = (noteInput?.value || '').trim();
+      const finalNote = customNote ? `${selectedNote}: ${customNote}` : selectedNote;
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'در حال ارسال…';
+
+      try {
+        const res = await fetch('/api/call-waiter', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ tableNo, note: finalNote, branchId })
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || 'خطا در برقراری ارتباط');
+        closeModal();
+        setCallingState(data.call?.id);
+      } catch (err) {
+        alert(err.message || 'ثبت فراخوان با خطا مواجه شد. لطفاً دوباره تلاش کنید.');
+      } finally {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = `<span>ارسال فراخوان گارسون</span> <span>🔔</span>`;
+      }
+    });
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initFloatingWaiterCall);
+  } else {
+    initFloatingWaiterCall();
+  }
+
 
   const phoneInput = $('#order-phone');
   if (phoneInput) {
@@ -7622,7 +7952,8 @@
       submitBtn.textContent = tr('cart.submitting');
       try {
         const params = new URLSearchParams(location.search);
-        const branchId = Number(params.get('branch') || params.get('branchId') || 0) || undefined;
+        const rawBranch = normalizeDigits(params.get('branch') || params.get('branchId') || '').replace(/\D/g, '');
+        const branchId = rawBranch ? Number(rawBranch) : undefined;
         const r = await fetch('/api/orders', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },

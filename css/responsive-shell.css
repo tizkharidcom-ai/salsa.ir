@@ -199,6 +199,9 @@ a.navbar_link,
     font-size: clamp(0.62rem, 2.6vw, 0.78rem);
     color: rgba(236, 232, 226, 0.62);
   }
+  html[data-theme='light'] .menu-exp__peek {
+    color: #374151 !important;
+  }
   .menu-exp__peek.is-prev {
     left: 2.5vw;
   }

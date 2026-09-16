@@ -504,9 +504,10 @@ body.classic-menu {
 }
 
 .cm-chip.is-on {
-  border-color: rgba(120, 208, 216, 0.45);
-  color: var(--cm-ink);
-  background: var(--wg-chip-bg-hover, rgba(255, 255, 255, 0.14));
+  border-color: rgba(120, 208, 216, 0.55);
+  color: #78d0d8;
+  background: rgba(120, 208, 216, 0.16);
+  font-weight: 700;
 }
 
 .cm-drawer__link {
@@ -1011,8 +1012,9 @@ html[data-theme='light'] .cm-stock {
 html[data-theme='light'] .cm-oos {
   color: rgba(160, 60, 50, 0.9);
 }
-html[data-theme='light'] .cm-search input::placeholder {
-  color: rgba(26, 23, 20, 0.4);
+html[data-theme='light'] .cm-search input::placeholder,
+html[data-theme='light'] .cm-search-panel input::placeholder {
+  color: rgba(26, 23, 20, 0.65);
 }
 
 /* ---- Pass3 stage5: classic qty/chips/empty/toast ---- */
@@ -1027,12 +1029,13 @@ html[data-theme='light'] .cm-qty span {
 html[data-theme='light'] .cm-chip {
   background: rgba(26, 23, 20, 0.05);
   border-color: rgba(26, 23, 20, 0.12);
-  color: rgba(26, 23, 20, 0.62);
+  color: rgba(26, 23, 20, 0.68);
 }
 html[data-theme='light'] .cm-chip.is-on {
-  background: rgba(26, 23, 20, 0.1);
-  border-color: rgba(42, 122, 134, 0.45);
-  color: rgba(26, 23, 20, 0.94);
+  background: rgba(42, 122, 134, 0.14);
+  border-color: rgba(42, 122, 134, 0.55);
+  color: #0c555c;
+  font-weight: 750;
 }
 html[data-theme='light'] .cm-empty,
 html[data-theme='light'] .cm-section-label,

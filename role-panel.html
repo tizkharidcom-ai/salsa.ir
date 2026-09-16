@@ -9,13 +9,14 @@
   <title>پنل عملیاتی وستو</title>
   <link rel="icon" type="image/png" href="assets/images/6a1d9bb2854e5557fe84e7d1_westo-fav-dark.png" />
   <link rel="stylesheet" href="css/vazir-system.css?v=font1" />
-  <link rel="stylesheet" href="css/role-panel.css?v=persianUx10-usb" />
+  <link rel="stylesheet" href="css/role-panel.css?v=persianUx11-no-preview-banner&waitlist-reception-v2" />
   <link rel="stylesheet" href="css/kitchen-kds.css?v=kdsSquare10-order-entry" />
+  <link rel="stylesheet" href="css/waiter-floor-plan.css?v=archFloorPlan-v12-item-preferences" />
   <link rel="stylesheet" href="css/shamsi-datepicker.css?v=shamsi2-20260825" />
   <script src="js/shamsi-core.js?v=shamsi1"></script>
   <script src="js/shamsi-datepicker.js?v=shamsi2-20260825"></script>
-  <script src="js/persian-format.js?v=persianNumbers1"></script>
-  <script src="js/role-panel.js?v=persianUx26-sequential-order-entry" defer></script>
+  <script src="js/persian-format.js?v=persianNumbers3-safe-fields"></script>
+  <script src="js/role-panel.js?v=persianUx40-item-preferences&waitlist-reception-v2" defer></script>
 </head>
 <body class="role-body">
   <a class="skip-link" href="#role-main">رفتن به محتوای اصلی</a>
@@ -23,9 +24,10 @@
     <header class="role-header">
       <div class="role-brand">
         <img src="assets/images/brand/westo-fa-wordmark-dark.png" alt="وستو" />
-        <div><span id="role-eyebrow">فضای کاری</span><strong id="role-title">در حال بارگذاری…</strong></div>
+        <div><span id="role-eyebrow">فضای کاری</span><h1 id="role-title">در حال بارگذاری…</h1></div>
       </div>
       <div class="role-header__actions">
+        <div class="role-header__context" id="role-header-context" hidden></div>
         <label class="role-branch"><span>شعبه</span><select id="role-branch-select" aria-label="انتخاب شعبه"></select></label>
         <button class="role-shift" id="role-shift" type="button">شروع شیفت</button>
         <a class="role-manager-back" id="role-manager-back" href="/admin" hidden>بازگشت به مدیریت</a>
@@ -33,11 +35,6 @@
         <button class="role-user" id="role-user" type="button" aria-label="اطلاعات کاربر"></button>
       </div>
     </header>
-
-    <div class="role-preview-banner" id="role-preview-banner" hidden>
-      <span>حالت پیش‌نمایش مدیر</span>
-      <p>این صفحه دقیقاً با دامنه دید نقش انتخاب‌شده نمایش داده می‌شود؛ مجوز اصلی حساب مدیر تغییر نکرده است.</p>
-    </div>
 
     <nav class="role-nav" id="role-nav" aria-label="بخش‌های فضای کاری"></nav>
     <main class="role-main" id="role-main" tabindex="-1">

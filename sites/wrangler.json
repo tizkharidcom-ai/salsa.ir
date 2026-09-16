@@ -1,0 +1,21 @@
+{
+  "name": "westo-v12",
+  "compatibility_date": "2026-05-15",
+  "compatibility_flags": ["nodejs_compat"],
+  "main": "index.js",
+  "no_bundle": true,
+  "rules": [
+    {
+      "type": "ESModule",
+      "globs": ["**/*.js", "**/*.mjs"]
+    }
+  ],
+  "assets": {
+    "directory": "../client",
+    "binding": "ASSETS",
+    "not_found_handling": "none"
+  },
+  "observability": {
+    "enabled": true
+  }
+}

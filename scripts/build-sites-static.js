@@ -9,11 +9,12 @@ const { execFileSync } = require('child_process');
 
 const ROOT = path.resolve(__dirname, '..');
 const DIST = path.join(ROOT, 'dist');
-// Sites binds public assets from the build root. Keep the worker isolated in
-// dist/server while every page, stylesheet, image, and generated snapshot is
-// staged directly beneath dist so env.ASSETS can resolve its original URLs.
-const STATIC = DIST;
+// Sites exposes files staged in dist/client through env.ASSETS. Keep the
+// worker isolated in dist/server and preserve every public URL beneath the
+// static root so requests such as /index.html and /assets/... resolve.
+const STATIC = path.join(DIST, 'client');
 const WORKER_SOURCE = path.join(ROOT, 'sites', 'public-worker.js');
+const WRANGLER_SOURCE = path.join(ROOT, 'sites', 'wrangler.json');
 
 function reset(directory) {
   fs.rmSync(directory, { recursive: true, force: true });
@@ -43,5 +44,6 @@ for (const file of ['manifest.webmanifest', 'sw.js']) copy(file);
 const workerOutput = path.join(DIST, 'server', 'index.js');
 fs.mkdirSync(path.dirname(workerOutput), { recursive: true });
 fs.copyFileSync(WORKER_SOURCE, workerOutput);
+fs.copyFileSync(WRANGLER_SOURCE, path.join(DIST, 'server', 'wrangler.json'));
 
 console.log(`Sites static package staged in ${path.relative(ROOT, DIST)}`);

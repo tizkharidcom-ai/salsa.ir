@@ -1161,17 +1161,69 @@ html[data-theme='light'] .benefits_nav.is-menu-rail .benefits_icon-wrapper.w--cu
 #westo-entrance .eg-chip-icon.is-active {
   border-radius: 999px !important;
 }
+html[data-theme='light'] #westo-entrance .eg-dock__btn,
+html[data-theme='light'] .entrance-gate .eg-dock__btn {
+  color: #1a2327 !important;
+}
+html[data-theme='light'] #westo-entrance .eg-dock__label,
+html[data-theme='light'] .entrance-gate .eg-dock__label,
+html[data-theme='light'] .eg-dock__label {
+  color: #1a2327 !important;
+  font-weight: 750 !important;
+}
+html[data-theme='light'] #westo-entrance .eg-dock__btn svg,
+html[data-theme='light'] .entrance-gate .eg-dock__btn svg,
+html[data-theme='light'] .eg-dock__btn svg {
+  color: #1a2327 !important;
+  stroke: #1a2327 !important;
+}
+html[data-theme='light'] #westo-entrance .eg-dock__btn+.eg-dock__btn::before,
+html[data-theme='light'] .entrance-gate .eg-dock__btn+.eg-dock__btn::before {
+  background: rgba(26, 35, 39, 0.18) !important;
+}
+html[data-theme='light'] #westo-entrance .eg-dock__btn:hover,
+html[data-theme='light'] #westo-entrance .eg-dock__btn:focus-visible {
+  color: #0c555c !important;
+}
+html[data-theme='light'] #westo-entrance .eg-dock__btn:hover .eg-dock__label,
+html[data-theme='light'] #westo-entrance .eg-dock__btn:focus-visible .eg-dock__label {
+  color: #0c555c !important;
+}
+html[data-theme='light'] #westo-entrance .eg-dock__btn:hover svg,
+html[data-theme='light'] #westo-entrance .eg-dock__btn:focus-visible svg {
+  color: #0c555c !important;
+  stroke: #0c555c !important;
+}
 html[data-theme='light'] #westo-entrance .eg-dock__btn.is-active,
 html[data-theme='light'] #westo-entrance .eg-chip-icon.is-active {
   background: linear-gradient(145deg, rgba(255,255,255,.78), rgba(226,248,248,.34)) !important;
   border-color: rgba(28,191,201,.24) !important;
-  color: #117f88 !important;
+  color: #0c555c !important;
   box-shadow: inset 0 1px 0 rgba(255,255,255,.98), 0 7px 18px rgba(45,80,79,.10), 0 0 0 1px rgba(28,191,201,.07) !important;
 }
 html[data-theme='light'] #westo-entrance .eg-dock__btn.is-active .eg-dock__label,
 html[data-theme='light'] #westo-entrance .eg-chip-icon.is-active .eg-dock__label {
-  color: rgba(17,93,99,.78) !important;
+  color: #0c555c !important;
+  font-weight: 800 !important;
 }
+html[data-theme='light'] #westo-entrance .eg-dock__btn.is-active svg,
+html[data-theme='light'] #westo-entrance .eg-chip-icon.is-active svg {
+  color: #0c555c !important;
+  stroke: #0c555c !important;
+}
+html[data-theme='light'] #westo-entrance .eg-sheet {
+  background: #ffffff !important;
+  border-color: rgba(26,35,39,.18) !important;
+  color: #111416 !important;
+}
+html[data-theme='light'] #westo-entrance .eg-sheet-title { color: #111416 !important; }
+html[data-theme='light'] #westo-entrance .eg-sheet-close { color: #111416 !important; }
+html[data-theme='light'] #westo-entrance .eg-nav-link { color: #1a2327 !important; font-weight: 600 !important; }
+html[data-theme='light'] #westo-entrance .eg-nav-link:hover { color: #0c555c !important; }
+html[data-theme='light'] #westo-entrance .eg-tab { color: #374151 !important; }
+html[data-theme='light'] #westo-entrance .eg-tab.is-active { color: #0c555c !important; font-weight: 800 !important; }
+html[data-theme='light'] #westo-entrance .eg-contact { color: #1a2327 !important; }
+html[data-theme='light'] #westo-entrance .eg-contact a { color: #0c555c !important; }
 /* Preserve a segmented dock silhouette without hard square focus/active tiles. */
 #westo-entrance .eg-dock__btn:focus:not(:focus-visible),
 #westo-entrance .eg-chip-icon:focus:not(:focus-visible) { outline: none !important; }

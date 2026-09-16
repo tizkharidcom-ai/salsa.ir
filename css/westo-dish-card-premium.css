@@ -13,6 +13,7 @@ html.is-dish-boards #westo-dish-card.is-shared-dish-card {
   background: linear-gradient(180deg, var(--dish-card-bg-top), var(--dish-card-bg-bottom)) !important;
   border: 1px solid var(--dish-card-line) !important;
   border-radius: 28px !important;
+  corner-shape: squircle;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.025) !important;
   -webkit-backdrop-filter: blur(8px) !important;
   backdrop-filter: blur(8px) !important;
@@ -657,15 +658,32 @@ html[data-theme='light'].is-dish-boards #westo-dish-card.is-shared-dish-card {
 }
 
 html[data-theme='light'].is-dish-boards #westo-dish-card .subhead_text:has([data-menu-price]) {
-  color: rgba(20, 27, 28, 0.88) !important;
-  border-color: rgba(15, 25, 27, 0.14) !important;
-  background: rgba(255, 255, 255, 0.46) !important;
+  color: #141b1c !important;
+  border-color: rgba(15, 25, 27, 0.18) !important;
+  background: rgba(255, 255, 255, 0.85) !important;
+  box-shadow: 0 2px 8px rgba(15, 25, 27, 0.06) !important;
 }
 
 html[data-theme='light'].is-dish-boards #westo-dish-card .dish-favorite-button {
   color: rgba(20, 27, 28, 0.82) !important;
   border-color: rgba(15, 25, 27, 0.16) !important;
   background: rgba(255, 255, 255, 0.32) !important;
+}
+
+html[data-theme='light'].is-dish-boards #westo-dish-card .menu-allergen,
+html[data-theme='light'].is-dish-boards #westo-dish-card .menu-allergen__head {
+  color: #374151 !important;
+}
+html[data-theme='light'].is-dish-boards #westo-dish-card .menu-allergen__head strong {
+  color: #1a2327 !important;
+}
+html[data-theme='light'].is-dish-boards #westo-dish-card .menu-allergen__chip {
+  color: #1a2327 !important;
+  border-color: rgba(26, 35, 39, 0.22) !important;
+  background: rgba(255, 255, 255, 0.85) !important;
+}
+html[data-theme='light'].is-dish-boards #westo-dish-card .menu-allergen__chip svg {
+  color: #0c555c !important;
 }
 
 @media (prefers-reduced-motion: reduce) {

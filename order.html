@@ -23,7 +23,7 @@
   <link rel="stylesheet" href="css/checkout.css?v=logic10" />
   <script src="js/theme.js?v=stable1" defer></script>
   <script src="js/i18n.js?v=logic10-persian2" defer></script>
-  <script src="js/persian-format.js?v=persianNumbers1"></script>
+  <script src="js/persian-format.js?v=persianNumbers3-safe-fields"></script>
   <script src="js/checkout.js?v=logic10-persianNumbers" defer></script>
   <link rel="stylesheet" href="css/vazir-system.css?v=font1" />
   <link rel="stylesheet" href="css/westo-production-v11.css?v=prod11" />
@@ -67,9 +67,9 @@
           <label><span data-i18n="checkout.branch">شعبه</span><select id="checkout-branch" required></select></label>
           <label id="checkout-table-wrap"><span data-i18n="cart.tableNo">شماره میز</span><input id="checkout-table" inputmode="numeric" autocomplete="off" data-i18n-placeholder="checkout.ph.table" placeholder="مثلاً ۸" /></label>
           <label id="checkout-zone-wrap" hidden><span data-i18n="checkout.deliveryZone">محدوده ارسال</span><select id="checkout-zone"></select></label>
-          <div id="checkout-saved-addresses-wrap" hidden style="background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:0.75rem; padding:0.65rem 0.75rem; margin-bottom:0.6rem;">
+          <div id="checkout-saved-addresses-wrap" class="checkout-saved-addresses-wrap" hidden>
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.45rem;">
-              <span style="font-size:0.78rem; font-weight:700; color:#fff;">📍 ارسال به کدام آدرس انجام شود؟</span>
+              <span class="checkout-addr-heading" style="font-size:0.78rem; font-weight:700;">📍 ارسال به کدام آدرس انجام شود؟</span>
               <button type="button" class="btn btn-sm btn-ghost" id="checkout-add-addr-btn" style="font-size:0.72rem; color:#10b981; padding:0.15rem 0.45rem;">+ افزودن آدرس جدید</button>
             </div>
             <div id="checkout-addresses-list" style="display:flex; flex-direction:column; gap:0.4rem;"></div>
@@ -90,7 +90,7 @@
         <div style="font-size:2.5rem; margin-bottom:0.4rem;">🎉</div>
         <p class="eyebrow" data-i18n="checkout.successKicker" style="color:#10b981; font-weight:700;">سفارش شما با موفقیت ثبت شد</p>
         <h2 id="checkout-success-title" data-i18n="checkout.pendingPayment" style="font-size:1.15rem; margin:0.35rem 0 0.5rem 0;">ثبت سفارش نهایی شد</h2>
-        <div id="checkout-order-badge" style="display:inline-block; font-size:1.1rem; font-weight:900; background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.15); border-radius:0.5rem; padding:0.35rem 1rem; margin-bottom:0.75rem; letter-spacing:1px; color:#fff;" class="ltr"></div>
+        <div id="checkout-order-badge" class="ltr"></div>
         <p id="checkout-success-body" style="font-size:0.85rem; color:var(--text-muted); line-height:1.5; margin-bottom:1rem;"></p>
         
         <div style="display:flex; flex-direction:column; gap:0.5rem; max-width:320px; margin:0 auto;">
@@ -108,7 +108,7 @@
       
       <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid rgba(255,255,255,0.12); padding-bottom:0.4rem; margin-bottom:0.45rem;">
         <h3 id="address-modal-title">📍 افزودن نشانی جدید</h3>
-        <button type="button" class="btn btn-sm btn-ghost" id="close-address-modal-btn" style="padding:0.15rem 0.5rem; font-size:0.75rem; border-color:rgba(255,255,255,0.2);">✕ بستن</button>
+        <button type="button" class="btn btn-sm btn-ghost" id="close-address-modal-btn" style="padding:0.15rem 0.5rem; font-size:0.75rem;">✕ بستن</button>
       </div>
 
       <input type="hidden" id="modal-addr-id" value="" />

@@ -55,12 +55,16 @@ async function privateNavigation(request) {
     // Never reuse an HTTP-cache entry for authenticated pages. This keeps the
     // HTML fingerprint in lockstep with the current admin assets and prevents
     // an old panel shell from surviving a release.
-    return await fetch(request, { cache: 'no-store' });
+    return await fetch(request, { cache: 'no-store' }).catch(() => fetch(request.url, { cache: 'no-store' })).catch(() => fetch(request));
   } catch (_) {
-    return new Response(`<!doctype html><html lang="fa" dir="rtl"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>مرکز فرمان وستو</title><body><main><h1>اتصال به مرکز فرمان برقرار نیست</h1><p>برای حفظ امنیت و تازگی اطلاعات، نسخهٔ قدیمی پنل نمایش داده نمی‌شود.</p><button type="button" onclick="location.reload()">تلاش دوباره</button></main></body></html>`, {
-      status: 503,
-      headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' },
-    });
+    try {
+      return await fetch(request.url).catch(() => fetch(request));
+    } catch (_net) {
+      return new Response(`<!doctype html><html lang="fa" dir="rtl"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>مرکز فرمان وستو</title><body><main><h1>اتصال به مرکز فرمان برقرار نیست</h1><p>برای حفظ امنیت و تازگی اطلاعات، نسخهٔ قدیمی پنل نمایش داده نمی‌شود.</p><button type="button" onclick="location.reload()">تلاش دوباره</button></main></body></html>`, {
+        status: 503,
+        headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' },
+      });
+    }
   }
 }
 

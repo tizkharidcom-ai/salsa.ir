@@ -32,8 +32,8 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="WESTO" />
   <meta name="application-name" content="WESTO" />
-  <link rel="manifest" href="/manifest.webmanifest?v=release14uf1d28-webp-only" />
-  <script src="js/pwa-bootstrap.js?v=release14uf1d28-webp-only" defer></script>
+  <link rel="manifest" href="/manifest.webmanifest?v=release14uf1d29-promo-geometry" />
+  <script src="js/pwa-bootstrap.js?v=release14uf1d29-promo-geometry" defer></script>
 
 
 <link rel="apple-touch-icon" href="/assets/icons/apple-touch-icon.png?v=brandCyan2" />
@@ -400,16 +400,16 @@
       var link = document.createElement('link');
       link.rel = 'preload';
       link.as = 'script';
-      link.href = 'js/content-bootstrap.static.js?v=release14uf1d28-webp-only';
+      link.href = 'js/content-bootstrap.static.js?v=menu-foundation-v2';
       link.fetchPriority = 'high';
       document.head.appendChild(link);
     })();
   </script>
   <link rel="preload" href="/api/content-bootstrap.js" as="script" fetchpriority="high" />
-  <link rel="preload" href="js/westo-app.smart.js?v=release14uf1d28-webp-only" as="script" fetchpriority="high" />
+  <link rel="preload" href="js/westo-app.smart.js?v=release14uf1d29-promo-geometry" as="script" fetchpriority="high" />
   <link rel="preload" href="assets/fonts/Vazirmatn-Variable.woff2" as="font" type="font/woff2" crossorigin fetchpriority="high" />
-  <link rel="stylesheet" href="css/westo-critical.smart.css?v=release14uf1d28-webp-only" fetchpriority="high" />
-  <script src="js/westo-smart-loader.js?v=release14uf1d28-webp-only" defer fetchpriority="high"></script>
+  <link rel="stylesheet" href="css/westo-critical.smart.css?v=release14uf1d29-promo-geometry" fetchpriority="high" />
+  <script src="js/westo-smart-loader.js?v=release14uf1d29-promo-geometry" defer fetchpriority="high"></script>
 <style data-westo-inline="westo-progress">
 /* Shared neon progress — navbar scroll + entrance CTA boot bar */
 
@@ -1697,7 +1697,7 @@ html[data-perf-tier='economy'] .entrance-gate .eg-card {
     </div>
     <div></div>
     <div id="sib-container" class="sib-container--large sib-container--vertical">
-      <form id="sib-form" method="POST" action="https://13bac9db.sibforms.com/serve/MUIFAM2Gu4Q7_KyMJRelkrFi9jaArKzepI1OLdvV93mF9i3zeEnx0GTGsjXu92MMkKWAg_EOVQmPjovsgQuvAsDx7GCBcppiBgtzhBQJmG_Azc1EPuBSHD75oCx6kOSuc9cf-6SlCNqZK3Nf1pIpaSVfYKuD95Ol_23vW4taY0QsnAlXj-PiTQB2VdHTgItl4Xc01HywOu72pD9UKQ==" data-type="subscription">
+      <form id="sib-form" method="POST" action="/api/newsletter" data-type="subscription">
         <div>
           <div class="sib-form-block margin-bottom margin-medium">
             <p class="heading-style-h2 text-align-center">به ما بپیوندید</p>
@@ -1872,7 +1872,7 @@ html[data-perf-tier='economy'] .entrance-gate .eg-card {
     </header>
     <div id="table-view-cart" class="table-drawer__body table-drawer__body--cart">
       <div id="table-lines" class="table-lines"></div>
-      <p id="table-empty" class="table-empty">تیبل خالی است<br/><span class="table-empty__hint">از منو غذا اضافه کنید</span></p>
+      <p id="table-empty" class="table-empty">سبد سفارش میز خالی است<br/><span class="table-empty__hint">از منو غذا اضافه کنید</span></p>
       <div class="table-cart-foot">
         <div class="table-total-row"><span data-i18n="cart.total">جمع</span><strong id="table-total">۰ تومان</strong></div>
         <button type="button" id="table-checkout-btn" class="btn" data-i18n="cart.continue" disabled>ادامه</button>

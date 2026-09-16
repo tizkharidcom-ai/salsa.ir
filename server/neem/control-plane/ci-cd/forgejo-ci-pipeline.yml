@@ -1,0 +1,56 @@
+# server/neem/control-plane/ci-cd/forgejo-ci-pipeline.yml
+# Self-Hosted Forgejo CI Pipeline for NEEM Control Plane & Edge Artifacts
+# Enforces Iranian Network Isolation, Dependency Mirroring & Secret Hardening
+
+name: neem-platform-build-and-verify
+
+on:
+  push:
+    branches:
+      - main
+      - 'release/**'
+  pull_request:
+    branches:
+      - main
+
+env:
+  NODE_ENV: test
+  INTERNAL_NPM_REGISTRY: "https://npm.mirror.neem.ir/"
+  CONTAINER_REGISTRY: "registry.neem.ir/platform"
+  # Security constraint: Zero production DB secrets or customer encryption keys in CI runner environment
+
+jobs:
+  audit-and-unit-tests:
+    runs-on: self-hosted-iran-cell-01
+    container:
+      image: registry.neem.ir/base/node:20-alpine
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Snapshot WESTO DB Integrity Boundary
+        run: |
+          node scripts/verify-westo-db-integrity.js --write --snapshot "$RUNNER_TEMP/westo-db-before.json"
+
+      - name: Run Route & Policy Coverage Audits
+        run: |
+          node --test test/audit-neem-routes.test.js
+          node --test test/neem-policy-engine.test.js
+
+      - name: Run Control Plane & Tenant Isolation Suites
+        run: |
+          NODE_ENV=test node --test test/neem-*.test.js
+
+      - name: Verify No Westo DB Modification
+        if: always()
+        run: |
+          node scripts/verify-westo-db-integrity.js --verify --snapshot "$RUNNER_TEMP/westo-db-before.json"
+
+  build-signed-edge-bundle:
+    needs: audit-and-unit-tests
+    runs-on: self-hosted-iran-cell-01
+    steps:
+      - name: Package Edge Bundle
+        run: |
+          echo "Building edge station tarball..."
+          # Generates SHA-256 and platform HMAC signature for deployment

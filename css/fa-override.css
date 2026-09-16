@@ -48,6 +48,9 @@ html.is-dish-boards section.is-benefits .dish-board-media.is-empty-media {
   object-fit: contain;
   object-position: center;
 }
+html[data-theme='light'] .navbar_logo {
+  filter: brightness(0) saturate(100%) invert(10%);
+}
 .auth-logo {
   height: 48px !important;
   width: auto !important;
@@ -1155,8 +1158,22 @@ html[data-theme='light'] .section.is-faq .heading-style-custom-2 {
   color: rgba(26, 23, 20, 0.94) !important;
 }
 html[data-theme='light'] .section.is-faq .faq_answer,
-html[data-theme='light'] .section.is-faq .faq_answer p {
-  color: rgba(26, 23, 20, 0.72) !important;
+html[data-theme='light'] .section.is-faq .faq_answer p,
+html[data-theme='light'] .section.is-faq .faq_answer *,
+html[data-theme='light'] .section.is-faq .faq_answer .text-size-medium {
+  color: #263238 !important;
+  line-height: 1.7 !important;
+}
+html[data-theme='light'] .legal_link-item {
+  color: #263238 !important;
+  font-weight: 600 !important;
+}
+html[data-theme='light'] .legal_link-item.w--current {
+  color: #0c555c !important;
+  font-weight: 800 !important;
+}
+html[data-theme='light'] .legal_link-item:hover {
+  color: #0c555c !important;
 }
 html[data-theme='light'] #newsletter #sib-container,
 html[data-theme='light'] #newsletter .sib-form {

@@ -9,6 +9,10 @@
   if (window.WestoResources && window.WestoSmartLoad) return;
 
   const VERSION = 'release14uf1d28-webp-only';
+  // The static bootstrap is immutable-cached. Bump this independently when
+  // the public menu catalogue changes so a recovered/offline menu cannot keep
+  // serving an older catalogue after a data foundation refresh.
+  const STATIC_BOOTSTRAP_VERSION = 'menu-foundation-v2';
   const now = () => performance.now();
   const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection || null;  const coarse = Boolean(window.matchMedia?.('(pointer: coarse)')?.matches);
   const lowMemory = Number(navigator.deviceMemory || 8) <= 4;
@@ -1078,7 +1082,7 @@
   async function loadContentBootstrap() {
     if (window.__WESTO_CONTENT__) return window.__WESTO_CONTENT__;
 
-    const staticSource = `js/content-bootstrap.static.js?v=${VERSION}`;
+    const staticSource = `js/content-bootstrap.static.js?v=${STATIC_BOOTSTRAP_VERSION}`;
     const localFile = location.protocol === 'file:';
 
     if (localFile) {

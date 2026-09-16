@@ -1,0 +1,326 @@
+/**
+ * prototype/css/tokens.css
+ * 
+ * NEEM GODMODE Design Tokens & Core Variables.
+ * Persian RTL Native, Ultra-Crisp Dark Palette, Local Variable Typography.
+ */
+
+@font-face {
+  font-family: 'Vazirmatn';
+  src: url('../assets/fonts/Vazirmatn-Variable.woff2') format('woff2-variations'),
+       url('../assets/fonts/Vazirmatn-Variable.woff2') format('woff2');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'GeistMono';
+  src: url('../assets/fonts/GeistMono.woff2') format('woff2');
+  font-weight: 400 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  /* ==========================================================================
+     Google Cloud Platform / Material 3 Enterprise Palette (Google Cloud Console)
+     ========================================================================== */
+  --bg-canvas: #f8f9fa;                 /* Google Cloud light canvas */
+  --bg-subtle: #f1f3f4;                 /* Google Cloud neutral gray 100 */
+  --bg-surface: #ffffff;                /* Pure crisp white surface */
+  --bg-surface-elevated: #ffffff;
+  --bg-surface-hover: #f1f3f4;
+  --bg-surface-subtle: #f8f9fa;
+  --bg-surface-subtle-hover: #f1f3f4;
+  --bg-glass: rgba(255, 255, 255, 0.96);
+  --bg-glass-card: rgba(255, 255, 255, 0.98);
+
+  /* Typography & Content Colors */
+  --text-primary: #202124;              /* Google Gray 900 for high legibility */
+  --text-secondary: #5f6368;            /* Google Gray 700 */
+  --text-tertiary: #80868b;             /* Google Gray 600 */
+  --text-inverse: #ffffff;
+
+  /* Accent & Action Colors (Google Cloud Blue Primary) */
+  --accent-cyan: #1a73e8;               /* Google Blue 600 */
+  --accent-cyan-hover: #1557d0;         /* Google Blue 700 */
+  --accent-cyan-subtle: #e8f0fe;        /* Google Blue 50 */
+  --accent-blue: #1a73e8;
+  --accent-blue-hover: #1557d0;
+
+  /* State Colors */
+  --state-success: #1e8e3e;             /* Google Green */
+  --state-success-subtle: #e6f4ea;      /* Google Green 50 */
+  --state-warning: #f9ab00;             /* Google Amber */
+  --state-warning-subtle: #fef7e0;      /* Google Amber 50 */
+  --state-danger: #d93025;              /* Google Red */
+  --state-danger-subtle: #fce8e6;       /* Google Red 50 */
+  --state-info: #1a73e8;                /* Google Blue */
+  --state-info-subtle: #e8f0fe;         /* Google Blue 50 */
+  --state-neutral: #5f6368;
+  --state-neutral-subtle: #f1f3f4;
+
+  /* Telemetry Lifecycle Variables */
+  --status-live: #1e8e3e;
+  --status-live-subtle: #ecfdf5;
+  --status-live-border: #a7f3d0;
+  --status-stale: #d97706;
+  --status-stale-subtle: #fffbeb;
+  --status-stale-border: #fde68a;
+  --status-loading: #0284c7;
+  --status-loading-subtle: #f0f9ff;
+  --status-loading-border: #bae6fd;
+  --status-empty: #64748b;
+  --status-empty-subtle: #f1f5f9;
+  --status-empty-border: #e2e8f0;
+  --status-failed: #e11d48;
+  --status-failed-subtle: #fff1f2;
+  --status-failed-border: #fecdd3;
+
+  /* Telemetry Dimension Tokens (WCAG AA) */
+  --telemetry-completeness: #0284c7;
+  --telemetry-freshness: #059669;
+  --telemetry-validity: #2563eb;
+  --telemetry-consistency: #7c3aed;
+
+  /* Untitled UI Neutral Gray System */
+  --gray-25: #fcfcfd;
+  --gray-50: #f8fafc;
+  --gray-100: #f1f5f9;
+  --gray-200: #eaecf0;
+  --gray-300: #d0d5dd;
+  --gray-400: #98a2b3;
+  --gray-500: #667085;
+  --gray-600: #475467;
+  --gray-700: #344054;
+  --gray-800: #1d2939;
+  --gray-900: #0f172a;
+
+  /* Focus Rings (Untitled UI 4px High-Trust Glow) */
+  --focus-ring: 0 0 0 4px rgba(2, 132, 199, 0.14);
+  --focus-ring-error: 0 0 0 4px rgba(225, 29, 72, 0.14);
+
+  /* Borders & Dividers */
+  --border-subtle: #f1f5f9;
+  --border-default: #eaecf0;            /* 1px low-contrast Gray-200 / Slate-200 */
+  --border-focus: #0284c7;
+  --border-success: #a7f3d0;
+  --border-danger: #fecdd3;
+  --border-warning: #fde68a;
+
+  /* Compatibility Aliases */
+  --color-slate-200: #e2e8f0;
+  --color-slate-300: #cbd5e1;
+  --color-slate-400: #94a3b8;
+  --color-slate-500: #64748b;
+  --color-primary-400: #38bdf8;
+  --color-primary-500: #0ea5e9;
+  --color-primary-600: #0284c7;
+  --color-success: #059669;
+  --color-warning: #d97706;
+  --color-danger: #e11d48;
+  --color-info: #0284c7;
+  --color-border: #eaecf0;
+  --color-surface-card: #ffffff;
+  --color-surface-ground: #f8fafc;
+
+  /* Typography Scale */
+  --font-sans: 'Vazirmatn', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'GeistMono', 'Vazirmatn', monospace;
+  
+  --font-size-xs: 0.75rem;    /* 12px */
+  --font-size-sm: 0.844rem;   /* 13.5px */
+  --font-size-base: 0.938rem; /* 15px */
+  --font-size-md: 1.063rem;   /* 17px */
+  --font-size-lg: 1.25rem;    /* 20px */
+  --font-size-xl: 1.5rem;     /* 24px */
+  --font-size-2xl: 1.875rem;  /* 30px */
+
+  /* Spacing Scale (4/8 rhythm) */
+  --spacing-1: 0.25rem;
+  --spacing-2: 0.5rem;
+  --spacing-3: 0.75rem;
+  --spacing-4: 1rem;
+  --spacing-5: 1.25rem;
+  --spacing-6: 1.5rem;
+  --spacing-8: 2rem;
+  --spacing-10: 2.5rem;
+  --spacing-12: 3rem;
+  
+  /* Apple Squircle Continuous Curvature Radii (iOS / macOS HIG Superellipse) */
+  --radius-xs: 6px;           /* iOS micro-tags & checkboxes */
+  --radius-sm: 8px;           /* Sub-cards & compact chips */
+  --radius-md: 12px;          /* Inputs, selects, and standard buttons */
+  --radius-lg: 16px;          /* Inner panels & compact cards */
+  --radius-xl: 20px;          /* Primary cards & stat widgets */
+  --radius-2xl: 26px;         /* Modals, sheets & dialogs */
+  --radius-full: 9999px;      /* Pill capsules */
+
+  /* Dedicated Component Squircle Tokens */
+  --radius-squircle-checkbox: 6px;
+  --radius-squircle-input: 12px;
+  --radius-squircle-button: 12px;
+  --radius-squircle-card: 18px;
+  --radius-squircle-modal: 24px;
+  --radius-squircle-drawer: 24px;
+  --radius-squircle-badge: 9999px;
+
+  /* Elevation Shadows (Restrained 1-2px Untitled UI Micro-Shadows) */
+  --shadow-xs: 0 1px 2px rgba(16, 24, 40, 0.05);
+  --shadow-sm: 0 1px 3px rgba(16, 24, 40, 0.06), 0 1px 2px rgba(16, 24, 40, 0.04);
+  --shadow-md: 0 4px 8px -2px rgba(16, 24, 40, 0.08), 0 2px 4px -2px rgba(16, 24, 40, 0.04);
+  --shadow-lg: 0 12px 16px -4px rgba(16, 24, 40, 0.08), 0 4px 6px -2px rgba(16, 24, 40, 0.03);
+  --shadow-glow: 0 0 0 4px rgba(2, 132, 199, 0.12);
+  --shadow-glow-rose: 0 0 0 4px rgba(225, 29, 72, 0.12);
+
+  /* Transitions */
+  --transition-fast: 140ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-normal: 200ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-smooth: 280ms cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* Layout Dimensions (GODMODE.MD §20.2) */
+  --sidebar-width: 264px;
+  --sidebar-collapsed-width: 72px;
+  --drawer-width: clamp(560px, 45vw, 720px);
+
+  /* Z-Index Layers */
+  --z-header: 40;
+  --z-sidebar: 50;
+  --z-drawer: 80;
+  --z-modal-backdrop: 90;
+  --z-modal: 100;
+  --z-toast: 110;
+}
+
+/* ==========================================================================
+   Preserved Dark Theme Variables (Zero Regression for dark mode)
+   ========================================================================== */
+[data-theme="dark"] {
+  --bg-canvas: #202124;                 /* Google Cloud Dark Canvas */
+  --bg-subtle: #292a2d;                 /* Google Cloud Dark Surface Level 1 */
+  --bg-surface: #202124;                /* Google Cloud Dark Surface */
+  --bg-surface-elevated: #292a2d;
+  --bg-surface-hover: #35363a;          /* Google Cloud Dark Hover */
+  --bg-surface-subtle: rgba(255, 255, 255, 0.04);
+  --bg-surface-subtle-hover: rgba(255, 255, 255, 0.08);
+  --bg-glass: rgba(32, 33, 36, 0.92);
+  --bg-glass-card: rgba(41, 42, 45, 0.9);
+
+  --text-primary: #e8eaed;              /* Google Dark Text Primary */
+  --text-secondary: #9aa0a6;            /* Google Dark Text Secondary */
+  --text-tertiary: #80868b;             /* Google Dark Text Muted */
+  --text-inverse: #202124;
+
+  --accent-cyan: #8ab4f8;               /* Google Blue 300 */
+  --accent-cyan-hover: #aecbfa;
+  --accent-cyan-subtle: rgba(138, 180, 248, 0.15);
+
+  --state-success: #81c995;             /* Google Green Dark */
+  --state-success-subtle: rgba(129, 201, 149, 0.15);
+  --state-warning: #fdd663;             /* Google Amber Dark */
+  --state-warning-subtle: rgba(253, 214, 99, 0.15);
+  --state-danger: #f28b82;              /* Google Red Dark */
+  --state-danger-subtle: rgba(242, 139, 130, 0.15);
+  --state-info: #8ab4f8;                /* Google Blue Dark */
+  --state-info-subtle: rgba(138, 180, 248, 0.15);
+
+  /* 5-State Telemetry Lifecycle Variables (Dark Mode) */
+  --status-live: #10b981;
+  --status-live-subtle: rgba(16, 185, 129, 0.14);
+  --status-live-border: rgba(16, 185, 129, 0.3);
+  --status-stale: #f59e0b;
+  --status-stale-subtle: rgba(245, 158, 11, 0.14);
+  --status-stale-border: rgba(245, 158, 11, 0.3);
+  --status-loading: #38bdf8;
+  --status-loading-subtle: rgba(56, 189, 248, 0.14);
+  --status-loading-border: rgba(56, 189, 248, 0.3);
+  --status-empty: #94a3b8;
+  --status-empty-subtle: rgba(148, 163, 184, 0.14);
+  --status-empty-border: rgba(148, 163, 184, 0.3);
+  --status-failed: #f43f5e;
+  --status-failed-subtle: rgba(244, 63, 94, 0.14);
+  --status-failed-border: rgba(244, 63, 94, 0.3);
+
+  /* 4-Dimensional Telemetry Dimension Tokens (Dark Mode) */
+  --telemetry-completeness: #38bdf8;
+  --telemetry-freshness: #10b981;
+  --telemetry-validity: #60a5fa;
+  --telemetry-consistency: #c084fc;
+
+  /* Untitled UI Neutral Gray System (Dark Mode) */
+  --gray-25: #0b0f19;
+  --gray-50: #0d121f;
+  --gray-100: #121929;
+  --gray-200: #1a233a;
+  --gray-300: #222d4a;
+  --gray-400: #64748b;
+  --gray-500: #94a3b8;
+  --gray-600: #cbd5e1;
+  --gray-700: #e2e8f0;
+  --gray-800: #f1f5f9;
+  --gray-900: #f8fafc;
+
+  /* Focus Rings (Dark Mode) */
+  --focus-ring: 0 0 0 4px rgba(56, 189, 248, 0.2);
+  --focus-ring-error: 0 0 0 4px rgba(244, 63, 94, 0.2);
+
+  --border-subtle: rgba(255, 255, 255, 0.08);
+  --border-default: rgba(255, 255, 255, 0.14);
+  --border-focus: #38bdf8;
+
+  --color-slate-200: #e2e8f0;
+  --color-slate-300: #cbd5e1;
+  --color-slate-400: #94a3b8;
+  --color-slate-500: #64748b;
+  --color-border: rgba(255, 255, 255, 0.12);
+  --color-surface-card: #161f33;
+  --color-surface-ground: #0b0f19;
+
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.35);
+  --shadow-md: 0 4px 12px -2px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 12px 28px -4px rgba(0, 0, 0, 0.65);
+}
+
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body {
+  width: 100%;
+  min-height: 100vh;
+  background-color: var(--bg-canvas);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 16px;
+  line-height: 1.6;
+  direction: rtl;
+  text-align: right;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+button, input, select, textarea {
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+}
+
+/* Scrollbar Styling */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: var(--bg-canvas);
+}
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: var(--radius-full);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+

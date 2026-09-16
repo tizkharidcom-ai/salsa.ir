@@ -47,15 +47,15 @@
 .admin-app .field input:hover,.admin-app .field textarea:hover,.admin-app .field select:hover { border-color:color-mix(in srgb,var(--p-text-dim) 45%,transparent); }
 .admin-app .field input:focus,.admin-app .field textarea:focus,.admin-app .field select:focus { border-color:var(--admin-focus); box-shadow:0 0 0 3px color-mix(in srgb,var(--p-accent) 13%,transparent); background:rgba(255,255,255,.065); }
 .admin-app input:invalid:not(:placeholder-shown) { border-color:color-mix(in srgb,var(--p-danger) 58%,transparent); }
-.admin-app .btn { min-height:2.55rem; padding:.62rem 1rem; border-radius:.75rem; font-size:.88rem; -webkit-backdrop-filter:none; backdrop-filter:none; transform:none; }
+.admin-app .btn { min-height:2.55rem; padding:.62rem 1rem; border-radius:.75rem; corner-shape: squircle; font-size:.88rem; -webkit-backdrop-filter:none; backdrop-filter:none; transform:none; }
 .admin-app .btn:hover:not(:disabled) { transform:none; }
 .admin-app .btn:active:not(:disabled) { transform:translateY(1px); }
 .admin-app .btn.btn-danger { background:rgba(255,118,118,.08); color:#ff9b9b; border-color:rgba(255,118,118,.24); box-shadow:none; }
 .admin-app .btn.btn-danger:hover:not(:disabled) { background:rgba(255,118,118,.14); border-color:rgba(255,118,118,.42); }
 .admin-app .cards { gap:.7rem; margin-bottom:1rem; }
-.admin-app .card { padding:.95rem 1rem; border-radius:.9rem; background:linear-gradient(150deg,rgba(255,255,255,.065),rgba(255,255,255,.018)); -webkit-backdrop-filter:none; backdrop-filter:none; }
+.admin-app .card { padding:.95rem 1rem; border-radius:1.125rem; corner-shape: squircle; background:linear-gradient(150deg,rgba(255,255,255,.065),rgba(255,255,255,.018)); -webkit-backdrop-filter:none; backdrop-filter:none; }
 .admin-app .card .num { font-variant-numeric:tabular-nums; }
-.admin-app .table-scroll { width:100%; overflow:auto; overscroll-behavior-inline:contain; border:1px solid var(--admin-line); border-radius:.85rem; background:rgba(255,255,255,.012); }
+.admin-app .table-scroll { width:100%; overflow:auto; overscroll-behavior-inline:contain; border:1px solid var(--admin-line); border-radius:1.125rem; corner-shape: squircle; background:rgba(255,255,255,.012); }
 .admin-app .table-scroll > .tbl { margin:0; min-width:42rem; border:0; }
 .admin-app .tbl { font-variant-numeric:tabular-nums; }
 .admin-app .tbl thead { position:sticky; top:0; z-index:1; background:color-mix(in srgb,var(--p-surface) 94%,transparent); }

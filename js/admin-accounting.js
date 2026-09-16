@@ -5,13 +5,18 @@
 (() => {
   'use strict';
 
-  const WORKSPACES = [
-    { id: 'workbench', label: 'کارتابل حسابدار', navLabel: 'کارهای امروز', hint: 'هشدارها و ثبت‌های لازم', icon: '✓', endpoint: 'workbench' },
-    { id: 'sales_bank', label: 'فروش، صندوق و بانک', navLabel: 'فروش و صندوق', hint: 'فروش، کارتخوان و بانک', icon: '﷼', endpoint: 'sales-cash-bank' },
-    { id: 'purchases', label: 'خرید، هزینه و پرداختنی', navLabel: 'خرید و هزینه', hint: 'فاکتور و پرداخت تأمین‌کننده', icon: '↗', endpoint: 'purchases-payables' },
-    { id: 'costing', label: 'بهای تمام‌شده و انبار', navLabel: 'موجودی و هزینه', hint: 'انبار و بهای تمام‌شده', icon: '∑', endpoint: 'costing-inventory' },
-    { id: 'ledger_close', label: 'دفاتر، گزارش‌ها و پایان دوره', navLabel: 'گزارش‌ها', hint: 'دفتر، تراز و بستن دوره', icon: '≡', endpoint: 'ledger-close' },
-  ];
+  // The executable model is loaded before this script. Fail closed if it is
+  // missing instead of maintaining a second, potentially divergent menu.
+  const WORKSPACES = Array.isArray(window.WestoFinanceUiModel?.workspaces)
+    ? window.WestoFinanceUiModel.workspaces
+    : [];
+  const STATUS_COPY = window.WestoFinanceUiModel?.statusCopy || Object.freeze({
+    empty: 'هنوز فعالیتی ثبت نشده است',
+    insufficientData: 'داده کافی برای محاسبه وجود ندارد',
+    needsAction: 'نیازمند اقدام',
+    awaitingApproval: 'در انتظار تأیید',
+    informational: 'فقط برای اطلاع',
+  });
   const REVIEW_TENDERS = Object.freeze([
     { id: 'cash', label: 'نقد' },
     { id: 'card', label: 'کارتخوان' },
@@ -22,8 +27,13 @@
     { id: 'credit', label: 'اعتباری' },
     { id: 'gift_card', label: 'کارت هدیه' },
   ]);
-  const state = { workspace: 'workbench', operation: 'journal', query: {}, payload: null, meta: null, loading: false, pages: {}, request: null };
+  const state = { workspace: 'workbench', operation: 'journal', query: {}, payload: null, meta: null, loading: false, pages: {}, serverPages: { events: 1, migration: 1, uncaptured: 1, journals: 1, approvals: 1 }, request: null, focusRecordId: null };
   let root = null;
+  let accessContext = { hasCapability: () => false, currentUser: () => null, branchCount: () => 0 };
+
+  const can = (capability) => accessContext.hasCapability?.(capability) === true;
+  const actorPhone = () => String(accessContext.currentUser?.()?.phone || '');
+  const currentRole = () => String(accessContext.currentUser?.()?.role || '').toLowerCase();
 
   const esc = (value) => String(value ?? '').replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
   const fa = (value) => window.WestoPersianFormat?.number(value, { locale: 'fa-IR' }) ?? Number(value || 0).toLocaleString('fa-IR');
@@ -75,6 +85,7 @@
     net_salary: 'خالص حقوق کارکنان', social_security: 'بیمه پرداختنی', payroll_tax: 'مالیات حقوق', other_deductions: 'سایر کسورات',
     available: 'قابل محاسبه', insufficient_data: 'داده ناکافی', partial_coverage: 'پوشش ناقص', critical: 'فوری', warning: 'هشدار', normal: 'عادی',
     balanced: 'تراز', unbalanced: 'نامتوازن', rule_based: 'قاعده‌محور', snapshot_backed: 'مبتنی بر ثبت لحظه فروش', movement_backed: 'مبتنی بر گردش انبار', partial_valuation: 'ارزش‌گذاری ناقص',
+    empty_period: 'بدون فعالیت', no_activity: 'بدون فعالیت', ready: 'آماده', partial: 'پوشش ناقص', insufficient: 'داده کافی نیست', incomplete: 'ناقص', positive: 'سود', negative: 'زیان', check_passed: 'کنترل موفق', check_failed: 'کنترل ناموفق',
     net_sales: 'فروش خالص قطعی', variable_cost: 'هزینه متغیر قطعی', fixed_cost: 'هزینه ثابت قطعی', fixed_cost_commitments: 'تعهد ثابت فعال',
   }[value] || value || 'نامشخص');
   const severity = (value) => value === 'critical' ? 'danger' : value === 'warning' ? 'warning' : 'neutral';
@@ -161,7 +172,7 @@
       'purchase.supplier_payment': 'پرداخت تأمین‌کننده',
       'inventory.waste': 'ضایعات انبار',
       'inventory.stock_count': 'شمارش انبار',
-      'inventory.production_batch': 'تولید بچ',
+      'inventory.production_batch': 'تولید دسته‌ای',
       depreciation: 'استهلاک دارایی',
       payroll: 'حقوق و دستمزد',
       opening_balance: 'مانده افتتاحیه',
@@ -209,18 +220,16 @@
     return friendlyValue(gate.value);
   }
 
-  function quickGuide(title, steps) {
-    return `<section class="fin-quick-guide" aria-label="راهنمای کوتاه ${esc(title)}"><div class="fin-quick-guide__title"><strong>${esc(title)}</strong><span>مسیر پیشنهادی کار</span></div>${steps.map((step, index) => `<div class="fin-quick-step"><b>${fa(index + 1)}</b><span><strong>${esc(step.title)}</strong><small>${esc(step.detail)}</small></span></div>`).join('')}</section>`;
-  }
-
-  function technicalDetail(labelText, value) {
-    return `<details class="fin-technical"><summary>جزئیات فنی</summary><div><span>${esc(labelText)}</span><code>${esc(value)}</code></div></details>`;
-  }
-
   function readLocationQuery(extra = '') {
     const params = new URLSearchParams(location.search);
     const supplied = new URLSearchParams(String(extra || '').replace(/^\?/, ''));
-    supplied.forEach((value, key) => { if (!params.has(key)) params.set(key, value); });
+    // The admin shell passes the canonical branch scope on every mount. When
+    // a user changes branch, location.search can still contain the previous
+    // branch until the shell renders again, so the supplied scope must win;
+    // otherwise Finance silently reloads the old branch.
+    supplied.forEach((value, key) => {
+      if (key === 'branchId' || !params.has(key)) params.set(key, value);
+    });
     state.workspace = WORKSPACES.some((item) => item.id === params.get('financeWorkspace')) ? params.get('financeWorkspace') : 'workbench';
     state.operation = ['journal', 'events', 'approvals', 'periods'].includes(params.get('financeOperation')) ? params.get('financeOperation') : 'journal';
     state.query = {
@@ -244,9 +253,19 @@
   function requestQuery() {
     const params = new URLSearchParams();
     if (state.query.branchId) params.set('branchId', state.query.branchId);
-    if (state.query.from) params.set('from', `${state.query.from}T00:00:00`);
-    if (state.query.to) params.set('to', `${state.query.to}T23:59:59.999`);
+    // Keep calendar filters date-only. The Finance V2 backend owns the
+    // Tehran-local day boundary contract; sending a timezone-less timestamp
+    // here would make the result depend on the host/server timezone.
+    if (state.query.from) params.set('from', state.query.from);
+    if (state.query.to) params.set('to', state.query.to);
     if (state.query.page > 1) params.set('page', String(state.query.page));
+    if (state.workspace === 'workbench') {
+      params.set('eventPage', String(state.serverPages.events || 1));
+      params.set('migrationPage', String(state.serverPages.migration || 1));
+      params.set('uncapturedPage', String(state.serverPages.uncaptured || 1));
+      params.set('journalPage', String(state.serverPages.journals || 1));
+      params.set('approvalPage', String(state.serverPages.approvals || 1));
+    }
     params.set('pageSize', '25');
     return params.toString();
   }
@@ -296,7 +315,8 @@
   }
 
   function metric(title, value, detail, tone = '') {
-    return `<article class="fin-metric ${tone}"><span>${esc(title)}</span><strong>${value}</strong><small>${esc(detail)}</small></article>`;
+    const tonePill = tone === 'danger' ? '<span class="fin-metric-pill danger">مغایرت</span>' : tone === 'success' ? '<span class="fin-metric-pill success">تراز</span>' : '';
+    return `<article class="fin-metric ${tone}"><div class="fin-metric-header"><span>${esc(title)}</span>${tonePill}</div><strong class="fin-metric-value">${value}</strong><small class="fin-metric-detail">${esc(detail)}</small></article>`;
   }
 
   function empty(message) {
@@ -323,23 +343,37 @@
       </div>`;
   }
 
-  function metadata() {
-    if (!state.meta) return '';
-    const period = [state.meta.from, state.meta.to].filter(Boolean).map((item) => window.ShamsiCore
-      ? window.ShamsiCore.formatShamsiDate(item)
-      : new Date(item).toLocaleDateString('fa-IR-u-ca-persian')).join(' تا ') || 'تمام تاریخچه';
-    return `<div class="fin-meta"><span>آخرین به‌روزرسانی: ${dateTime(state.meta.calculatedAt || state.meta.generatedAt)}</span><span>بازه: ${esc(period)}</span><span>شعبه: ${esc(state.meta.branchId || 'همه')}</span><span>نمایش مبالغ: تومان</span><span>دفتر مالی: ${esc(sourceValueLabel(state.meta.source))}</span></div>`;
+  function paginationControls(id, pagination, server = false) {
+    const current = Math.max(1, Number(pagination?.page) || 1);
+    const pages = Math.max(1, Number(pagination?.pages) || 1);
+    const total = Math.max(0, Number(pagination?.total) || 0);
+    if (total <= Number(pagination?.pageSize || 25) && pages <= 1) return '';
+    const pageAttr = server === 'workbench' ? 'data-fin-workbench-page' : server ? 'data-fin-server-page' : 'data-fin-page';
+    const pageScope = server === 'workbench' ? ` data-fin-page-scope="${esc(id)}"` : '';
+    return `<div class="fin-pagination" aria-label="صفحه‌بندی ${esc(id)}">
+      <span>${fa(total)} رکورد · صفحه ${fa(current)} از ${fa(pages)}</span>
+      <div><button type="button" ${pageAttr}="${esc(id)}"${pageScope} data-page="${current - 1}" ${current <= 1 ? 'disabled' : ''}>قبلی</button><button type="button" ${pageAttr}="${esc(id)}"${pageScope} data-page="${current + 1}" ${current >= pages ? 'disabled' : ''}>بعدی</button></div>
+    </div>`;
   }
 
   function renderShell() {
     root.innerHTML = `
-      <section class="finance-v2" aria-labelledby="fin-title">
+      <section class="finance-v2" data-display-mode="simple" aria-labelledby="fin-title">
         <header class="fin-header">
-          <div><p class="fin-eyebrow">مدیریت مالی شعبه</p><h1 id="fin-title">مالی و حسابداری</h1><p>کارهای روزانه، گزارش‌ها و کنترل‌های مالی در یکجا.</p></div>
-          <div class="fin-header-status"><span class="fin-dot"></span><span><b>آماده انتشار نیست</b><small>تا رفع مغایرت‌ها و تکمیل کنترل‌ها</small></span></div>
+          <div><p class="fin-eyebrow">مدیریت مالی</p><h1 id="fin-title">حسابداری</h1><p>کارهای روزانه، گزارش‌ها و کنترل‌های مالی در یکجا.</p></div>
+          <div class="fin-scope" data-fin-scope aria-label="محدودهٔ نمایش مالی"><span data-fin-period>بازه: تمام تاریخچه</span></div>
+          <aside class="fin-header-status" data-fin-connection-state="loading" role="status" aria-live="polite">
+            <span class="fin-dot" aria-hidden="true"></span><span><b>در حال بررسی داده‌ها</b><small>اتصال به دفتر مالی در حال بررسی است.</small></span>
+          </aside>
         </header>
         <div class="fin-toolbar">
           <label class="fin-search"><span>جست‌وجو در مالی</span><input id="fin-global-search" type="search" placeholder="شماره سفارش، سند یا تأمین‌کننده" autocomplete="off"><div id="fin-search-results" class="fin-search-results" hidden></div></label>
+          <div class="fin-presets" role="group" aria-label="فیلتر سریع تاریخ">
+            <button type="button" class="fin-preset-btn ${!state.query.from && !state.query.to ? 'is-active' : ''}" data-fin-preset="all">همه</button>
+            <button type="button" class="fin-preset-btn ${state.query.from === localIsoDate() && state.query.to === localIsoDate() ? 'is-active' : ''}" data-fin-preset="today">امروز</button>
+            <button type="button" class="fin-preset-btn" data-fin-preset="7d">۷ روز</button>
+            <button type="button" class="fin-preset-btn" data-fin-preset="30d">۳۰ روز</button>
+          </div>
           <button class="fin-btn secondary fin-filter-toggle" id="fin-filter-toggle" type="button" aria-expanded="false" aria-controls="fin-date-controls">تغییر بازهٔ زمانی</button>
           <div class="fin-date-controls" id="fin-date-controls">
             <label>از<input id="fin-from" type="date" value="${esc(state.query.from)}"></label>
@@ -350,8 +384,7 @@
         <nav class="fin-workspace-nav" aria-label="فضاهای کاری مالی">
           ${WORKSPACES.map((item) => `<button type="button" data-fin-workspace="${item.id}" class="${item.id === state.workspace ? 'active' : ''}" aria-current="${item.id === state.workspace ? 'page' : 'false'}" title="${esc(item.label)}"><b aria-hidden="true">${item.icon}</b><span><strong>${esc(item.navLabel || item.label)}</strong><small>${esc(item.hint || '')}</small></span></button>`).join('')}
         </nav>
-        <div id="fin-metadata"></div>
-        <main id="fin-workspace-content" tabindex="-1"></main>
+        <div id="fin-workspace-content" role="region" aria-labelledby="fin-title" aria-live="polite" tabindex="-1"></div>
       </section>`;
     bindShell();
   }
@@ -359,6 +392,33 @@
   function bindShell() {
     root.querySelectorAll('[data-fin-workspace]').forEach((button) => button.addEventListener('click', () => {
       state.workspace = button.dataset.finWorkspace;
+      state.pages = {};
+      state.serverPages = { events: 1, migration: 1, uncaptured: 1, journals: 1, approvals: 1 };
+      state.query.page = 1;
+      persistQuery();
+      renderShell();
+      loadWorkspace();
+    }));
+    root.querySelectorAll('[data-fin-preset]').forEach((btn) => btn.addEventListener('click', () => {
+      const preset = btn.dataset.finPreset;
+      const today = localIsoDate();
+      if (preset === 'all') {
+        state.query.from = '';
+        state.query.to = '';
+      } else if (preset === 'today') {
+        state.query.from = today;
+        state.query.to = today;
+      } else if (preset === '7d') {
+        const d = new Date();
+        d.setDate(d.getDate() - 7);
+        state.query.from = d.toISOString().slice(0, 10);
+        state.query.to = today;
+      } else if (preset === '30d') {
+        const d = new Date();
+        d.setDate(d.getDate() - 30);
+        state.query.from = d.toISOString().slice(0, 10);
+        state.query.to = today;
+      }
       state.pages = {};
       state.query.page = 1;
       persistQuery();
@@ -407,15 +467,18 @@
     target.hidden = false;
     target.innerHTML = '<span class="fin-search-wait">در حال جست‌وجو…</span>';
     try {
-      const query = new URLSearchParams({ q: term });
+      const query = new URLSearchParams({ q: term, pageSize: '25' });
       if (state.query.branchId) query.set('branchId', state.query.branchId);
+      if (state.query.from) query.set('from', state.query.from);
+      if (state.query.to) query.set('to', state.query.to);
       const result = await api(`/api/admin/v2/finance/search?${query}`);
-      target.innerHTML = result.data.length ? result.data.map((item) => `<button type="button" data-fin-search-workspace="${esc(item.kind === 'order' ? 'sales_bank' : item.kind === 'vendor' ? 'purchases' : 'ledger_close')}" aria-label="مشاهده ${esc(item.label)} در بخش مرتبط"><span><strong>${esc(item.label)}</strong><small>${esc(label(item.kind))} · ${money(item.amountIrr)}</small></span><em>مشاهده</em></button>`).join('') : '<span class="fin-search-wait">نتیجه‌ای پیدا نشد.</span>';
+      target.innerHTML = result.data.length ? result.data.map((item) => `<button type="button" data-fin-search-workspace="${esc(item.kind === 'order' ? 'sales_bank' : item.kind === 'vendor' ? 'purchases' : 'ledger_close')}" data-fin-search-id="${esc(item.id)}" data-fin-search-page="${esc(item.targetPage || 1)}" aria-label="مشاهده ${esc(item.label)} در بخش مرتبط"><span><strong>${esc(item.label)}</strong><small>${esc(label(item.kind))} · ${money(item.amountIrr)}</small></span><em>مشاهده</em></button>`).join('') : '<span class="fin-search-wait">نتیجه‌ای پیدا نشد.</span>';
       target.querySelectorAll('[data-fin-search-workspace]').forEach((button) => button.addEventListener('click', () => {
         state.workspace = button.dataset.finSearchWorkspace;
         state.operation = 'journal';
         state.pages = {};
-        state.query.page = 1;
+        state.query.page = Math.max(1, Number(button.dataset.finSearchPage) || 1);
+        state.focusRecordId = button.dataset.finSearchId || null;
         persistQuery();
         closeSearch();
         renderShell();
@@ -433,22 +496,59 @@
 
   async function loadWorkspace() {
     const content = root.querySelector('#fin-workspace-content');
-    const meta = root.querySelector('#fin-metadata');
     const config = WORKSPACES.find((item) => item.id === state.workspace) || WORKSPACES[0];
+    if (!config) {
+      setFinanceConnectionState('error', 'مدل مالی بارگذاری نشد', 'صفحه را تازه‌سازی کنید یا با پشتیبانی تماس بگیرید.');
+      content.innerHTML = '<div class="fin-error" role="alert"><span>!</span><div><strong>فضای مالی آماده نیست</strong><p>تعریف مسیرهای حسابداری بارگذاری نشد.</p></div><button type="button" id="fin-retry">تلاش دوباره</button></div>';
+      content.querySelector('#fin-retry')?.addEventListener('click', () => location.reload());
+      return;
+    }
     if (state.request) state.request.abort();
     state.request = new AbortController();
+    setFinanceConnectionState('loading', 'در حال بررسی داده‌ها', 'اتصال به دفتر مالی در حال بررسی است.');
     content.innerHTML = '<div class="fin-loading"><span></span><strong>در حال دریافت دادهٔ تأییدشده…</strong></div>';
-    meta.innerHTML = '';
     try {
       const query = requestQuery();
       const result = await api(`/api/admin/v2/finance/${config.endpoint}${query ? `?${query}` : ''}`, { signal: state.request.signal });
       state.payload = result.data;
       state.meta = result.meta;
-      meta.innerHTML = metadata();
+      setFinanceScope(result.data?.currentPeriod || result.data?.selectedPeriod || null);
+      setFinanceConnectionState('ready', 'دادهٔ مالی آماده است', 'اطلاعات این بخش از دفتر مالی دریافت شد.');
       renderWorkspace();
+      focusSearchedRecord();
     } catch (error) {
-      if (error.name !== 'AbortError') renderError(error);
+      if (error.name !== 'AbortError') {
+        setFinanceConnectionState('error', 'دادهٔ مالی در دسترس نیست', error.message || 'پاسخ قابل استفاده‌ای دریافت نشد.');
+        renderError(error);
+      }
     }
+  }
+
+  function setFinanceConnectionState(stateName, title, detail) {
+    const status = root?.querySelector('[data-fin-connection-state]');
+    if (!status) return;
+    status.dataset.finConnectionState = stateName;
+    const strong = status.querySelector('b');
+    const small = status.querySelector('small');
+    if (strong) strong.textContent = title;
+    if (small) small.textContent = detail;
+  }
+
+  function setFinanceScope(period = null) {
+    const scope = root?.querySelector('[data-fin-scope]');
+    if (!scope) return;
+    const range = [state.query.from, state.query.to].filter(Boolean).map((item) => window.ShamsiCore?.formatShamsiDate(item) || item).join(' تا ') || 'تمام تاریخچه';
+    const periodStateLabel = period && ['open', 'reopened'].includes(String(period.status || ''))
+      ? 'دورهٔ فعال'
+      : period && ['soft_closed', 'closed'].includes(String(period.status || ''))
+        ? 'دورهٔ جاری برای مشاهده'
+        : 'دورهٔ جاری';
+    const periodLabel = period
+      ? `${periodStateLabel}: ${dateOnly(period.startDate)} تا ${dateOnly(period.endDate)} · ${label(period.status)}`
+      : `بازه: ${range}`;
+    const branch = accessContext.branchCount?.() > 1 && state.query.branchId ? ` · شعبهٔ ${fa(state.query.branchId)}` : '';
+    const target = scope.querySelector('[data-fin-period]');
+    if (target) target.textContent = `${periodLabel}${branch}`;
   }
 
   function renderError(error) {
@@ -464,7 +564,105 @@
     bindContent();
   }
 
+  // Finance V2 keeps the whole workspace read-only for roles that can inspect
+  // financial data but cannot perform a given mutation.  The API remains the
+  // final authority, while this client-side gate prevents an accountant from
+  // filling a purchase form that the server would reject (and makes the
+  // separation of duties visible before submission).
+  function applyCapabilityGates() {
+    const capabilityLabels = {
+      'finance.events.manage': 'مدیریت رویدادهای مالی',
+      'finance.journal.create': 'ثبت و ارسال سند حسابداری',
+      'finance.journal.post': 'ثبت سند معکوس',
+      'finance.reconcile': 'تطبیق صندوق و بانک',
+      'finance.payables.manage': 'مدیریت خرید و پرداختنی',
+      'finance.settings.manage': 'مدیریت تنظیمات مالی',
+    };
+    const formRules = [
+      ['#fin-settlement-form', 'finance.reconcile'],
+      ['#fin-bank-line-form', 'finance.reconcile'],
+      ['#fin-refund-form', 'finance.events.manage'],
+      ['#fin-po-form', 'finance.payables.manage'],
+      ['#fin-invoice-form', 'finance.payables.manage'],
+      ['#fin-supplier-payment-form', 'finance.payables.manage'],
+      ['#fin-cost-commitment-form', 'finance.payables.manage'],
+      ['#fin-cost-accrual-form', 'finance.payables.manage'],
+      ['#fin-cost-payment-form', 'finance.payables.manage'],
+      ['#fin-journal-form', 'finance.journal.create'],
+      ['#fin-fixed-asset-form', 'finance.journal.create'],
+      ['#fin-depreciation-form', 'finance.journal.create'],
+      ['#fin-payroll-run-form', 'finance.journal.create'],
+      ['#fin-payroll-payment-form', 'finance.journal.create'],
+      ['#fin-opening-balance-form', 'finance.journal.create'],
+      ['#fin-break-even-plan-form', 'finance.payables.manage'],
+    ];
+    const buttonRules = [
+      ['[data-fin-capture-order]', 'finance.events.manage'],
+      ['[data-fin-retry-ready-cogs]', 'finance.events.manage'],
+      ['[data-fin-resolve-event]', 'finance.events.manage'],
+      ['[data-fin-classify-legacy]', 'finance.events.manage'],
+      ['[data-fin-legacy-decision]', 'finance.events.manage'],
+      ['[data-fin-legacy-request]', 'finance.journal.create'],
+      ['[data-fin-bank-match]', 'finance.reconcile'],
+      ['[data-fin-submit-po]', 'finance.payables.manage'],
+      ['[data-fin-request-match-review]', 'finance.payables.manage'],
+      ['[data-fin-supplier-payment-request]', 'finance.payables.manage'],
+      ['[data-fin-deactivate-cost]', 'finance.payables.manage'],
+      ['[data-fin-reverse-opening]', 'finance.journal.post'],
+      ['[data-fin-cutover-request]', 'finance.settings.manage'],
+      ['[data-fin-submit-journal]', 'finance.journal.create'],
+    ];
+    const addNotice = (host, capability) => {
+      if (!host || can(capability) || host.dataset.finCapabilityBlocked === 'true') return;
+      host.dataset.finCapabilityBlocked = 'true';
+      const notice = document.createElement('div');
+      notice.className = 'fin-note warning fin-capability-block';
+      notice.setAttribute('role', 'status');
+      notice.innerHTML = `<strong>این عملیات برای سطح دسترسی فعلی فعال نیست</strong><span>${esc(capabilityLabels[capability] || capability)} فقط توسط کاربر مجاز انجام می‌شود؛ این صفحه در حالت مشاهده باقی می‌ماند.</span>`;
+      host.insertBefore(notice, host.firstChild);
+    };
+    formRules.forEach(([selector, capability]) => {
+      const form = root.querySelector(selector);
+      if (!form || can(capability)) return;
+      form.hidden = true;
+      addNotice(form.closest('details') || form.parentElement || form, capability);
+    });
+    buttonRules.forEach(([selector, capability]) => {
+      root.querySelectorAll(selector).forEach((button) => {
+        if (can(capability)) return;
+        button.hidden = true;
+        addNotice(button.closest('details') || button.parentElement || button, capability);
+      });
+    });
+  }
+
+  function focusSearchedRecord() {
+    if (!state.focusRecordId) return;
+    const recordId = state.focusRecordId;
+    state.focusRecordId = null;
+    window.requestAnimationFrame(() => {
+      const target = root.querySelector(`[data-fin-record-id="${CSS.escape(String(recordId))}"]`);
+      if (!target) return;
+      target.classList.add('fin-search-target');
+      target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      target.focus({ preventScroll: true });
+      window.setTimeout(() => target.classList.remove('fin-search-target'), 3000);
+    });
+  }
+
   function bindContent() {
+    root.querySelectorAll('a[href^="#"]').forEach((link) => link.addEventListener('click', (event) => {
+      const targetId = link.getAttribute('href');
+      if (!targetId || targetId === '#') return;
+      const target = root.querySelector(targetId);
+      if (target) {
+        event.preventDefault();
+        const details = target.closest('details');
+        if (details) details.open = true;
+        target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        target.querySelector('input:not([type="hidden"]), button, select, [tabindex]')?.focus();
+      }
+    }));
     root.querySelectorAll('[data-fin-goto]').forEach((button) => button.addEventListener('click', () => {
       state.workspace = button.dataset.finGoto;
       persistQuery(); renderShell(); loadWorkspace();
@@ -477,7 +675,59 @@
       state.query.page = Number(button.dataset.page) || 1;
       loadWorkspace();
     }));
+    root.querySelectorAll('[data-fin-order-chain]').forEach((button) => button.addEventListener('click', async () => {
+      const feedback = root.querySelector('#fin-operation-feedback');
+      if (!feedback) return;
+      button.disabled = true;
+      try {
+        const query = state.query.branchId ? `?branchId=${encodeURIComponent(state.query.branchId)}` : '';
+        const result = await api(`/api/admin/v2/finance/orders/${encodeURIComponent(button.dataset.finOrderChain)}\/chain${query}`);
+        const chain = result.data || {};
+        const issueText = (chain.issues || []).map((issue) => esc(issue.message || label(issue.code))).join('، ') || 'مورد باز وجود ندارد.';
+        feedback.innerHTML = `<div class="fin-note ${chain.status === 'complete' ? 'success' : 'warning'}" role="status"><strong>زنجیرهٔ سفارش ${esc(chain.order?.orderNo || chain.order?.id || button.dataset.finOrderChain)}</strong><span>وضعیت: ${esc(chain.statusLabel || label(chain.status))} · تطبیق پرداخت: ${esc(label(chain.reconciliationStatus || 'نامشخص'))}</span>${chain.issues?.length ? `<small>موارد نیازمند اقدام: ${issueText}</small>` : '<small>فروش، پرداخت، بهای تمام‌شده و برگشت وجه بررسی شد.</small>'}</div>`;
+        feedback.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      } catch (error) { operationError(error); }
+      finally { button.disabled = false; }
+    }));
+    root.querySelectorAll('[data-fin-workbench-page]').forEach((button) => button.addEventListener('click', () => {
+      const scope = button.dataset.finPageScope;
+      if (!['events', 'migration', 'uncaptured', 'journals', 'approvals'].includes(scope)) return;
+      state.serverPages[scope] = Number(button.dataset.page) || 1;
+      loadWorkspace();
+    }));
     root.querySelectorAll('[data-fin-export]').forEach((button) => button.addEventListener('click', () => exportCurrent(button.dataset.finExport)));
+    root.querySelectorAll('[data-fin-copy-receiving-handoff]').forEach((button) => button.addEventListener('click', async () => {
+      if (button.dataset.finCopyPending === '1') return;
+      const text = button.dataset.finCopyReceivingHandoff || '';
+      if (!text) return;
+      button.dataset.finCopyPending = '1';
+      try {
+        if (navigator.clipboard?.writeText) {
+          await navigator.clipboard.writeText(text);
+        } else {
+          const input = document.createElement('textarea');
+          input.value = text;
+          input.setAttribute('readonly', '');
+          input.style.position = 'fixed'; input.style.opacity = '0';
+          document.body.appendChild(input);
+          input.select();
+          const copied = document.execCommand('copy');
+          input.remove();
+          if (!copied) throw new Error('clipboard_unavailable');
+        }
+        button.textContent = 'کپی شد';
+        button.setAttribute('aria-label', 'ارجاع دریافت کالا کپی شد');
+        toast('شناسه سفارش و ردیف برای آشپز/انباردار کپی شد.', 'success');
+        window.setTimeout(() => {
+          button.textContent = 'کپی ارجاع';
+          button.setAttribute('aria-label', 'کپی ارجاع دریافت کالا');
+          delete button.dataset.finCopyPending;
+        }, 1800);
+      } catch (_) {
+        delete button.dataset.finCopyPending;
+        operationError({ code: 'receiving_handoff_copy_failed', message: 'کپی ارجاع انجام نشد؛ شناسه‌ها را از همین ردیف بردارید.' });
+      }
+    }));
     root.querySelector('[data-fin-cutover-request]')?.addEventListener('click', async (event) => {
       const button = event.currentTarget;
       if (!window.confirm('درخواست انتقال این شعبه برای تأیید مستقل ارسال شود؟ فعال‌سازی نهایی فقط پس از محاسبه دوباره همه گیت‌ها انجام می‌شود.')) return;
@@ -488,19 +738,26 @@
     });
     root.querySelectorAll('[data-fin-operation]').forEach((button) => button.addEventListener('click', () => {
       state.operation = button.dataset.finOperation;
+      state.query.page = 1;
       persistQuery();
       renderWorkspace();
+      const specialistArea = root.querySelector('#fin-specialist-operations');
+      if (specialistArea) specialistArea.open = true;
       root.querySelector('#fin-operations')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }));
     bindOperationActions();
     bindBreakEvenPlanning();
     bindBreakEvenPreview();
+    applyCapabilityGates();
   }
 
   function breakEvenPlanAmounts(plan) {
     const assumptions = Array.isArray(plan?.assumptions) ? plan.assumptions : [];
     const byCategory = (code) => assumptions.filter((row) => String(row.categoryCode || row.category || '') === code)
-      .reduce((sum, row) => sum + Number(row.amountIrr || 0), 0);
+      // Persisted plans use monthlyAmountIrr; amountIrr is kept for legacy
+      // planning snapshots. Reading only amountIrr silently reset every saved
+      // plan back to zero when the costing workspace was reopened.
+      .reduce((sum, row) => sum + Number(row.monthlyAmountIrr ?? row.amountIrr ?? 0), 0);
     const payroll = assumptions.find((row) => String(row.categoryCode || row.category || '') === 'payroll') || null;
     const classified = new Set(['rent', 'payroll', 'utilities']);
     return {
@@ -509,7 +766,7 @@
       utilitiesToman: Math.round(byCategory('utilities') / 10),
       otherFixedToman: Math.round(assumptions
         .filter((row) => !classified.has(String(row.categoryCode || row.category || '')))
-        .reduce((sum, row) => sum + Number(row.amountIrr || 0), 0) / 10),
+        .reduce((sum, row) => sum + Number(row.monthlyAmountIrr ?? row.amountIrr ?? 0), 0) / 10),
       payrollHeadcount: Number.isSafeInteger(Number(payroll?.headcount)) ? Number(payroll.headcount) : 10,
       payrollSalaryToman: Number.isSafeInteger(Number(payroll?.salaryPerPersonIrr))
         ? Math.round(Number(payroll.salaryPerPersonIrr) / 10)
@@ -550,7 +807,7 @@
       const payrollToman = payrollHeadcount * payrollSalaryToman;
       const amounts = [rentToman, payrollHeadcount, payrollSalaryToman, utilitiesToman, otherFixedToman, payrollToman];
       if (!deadlineConfirmed) {
-        return operationError({ code: 'break_even_plan_deadline_confirmation_required', message: 'پیش از ذخیره، ددلاین واقعی سوددهی را تعیین و تأیید کنید.' });
+        return operationError({ code: 'break_even_plan_deadline_confirmation_required', message: 'پیش از ذخیره، ددلاین واقعی سوددهی را تعیین و تأیید کنید.' }, '#fin-break-even-feedback');
       }
       if (!startDate || !deadlineDate || !Number.isSafeInteger(rentToman) || rentToman < 0
         || !Number.isSafeInteger(payrollHeadcount) || payrollHeadcount < 0 || payrollHeadcount > 10000
@@ -560,7 +817,7 @@
         || !Number.isSafeInteger(payrollToman) || payrollToman < 0
         || amounts.some((amount) => amount > Number.MAX_SAFE_INTEGER / 10)
         || rentToman + payrollToman + utilitiesToman + otherFixedToman <= 0) {
-        return operationError({ code: 'break_even_plan_input_invalid', message: 'تاریخ و مبالغ پایه را با عدد صحیح و نامنفی وارد کنید؛ جمع هزینهٔ ثابت باید بزرگ‌تر از صفر باشد.' });
+        return operationError({ code: 'break_even_plan_input_invalid', message: 'تاریخ و مبالغ پایه را با عدد صحیح و نامنفی وارد کنید؛ جمع هزینهٔ ثابت باید بزرگ‌تر از صفر باشد.' }, '#fin-break-even-feedback');
       }
       const assumptions = [
         { id: 'planning-rent-monthly', name: 'اجاره ماهانه مغازه', categoryId: 'facility-rent', categoryCode: 'rent', categoryName: 'اجاره محل', monthlyAmountIrr: rentToman * 10 },
@@ -579,7 +836,7 @@
           assumptions,
         }, button);
         await refreshAfterMutation('مبنای برنامه‌ای ذخیره شد؛ این داده وارد دفتر واقعی نشده است.');
-      } catch (error) { operationError(error); }
+      } catch (error) { operationError(error, '#fin-break-even-feedback'); }
     });
   }
 
@@ -687,25 +944,43 @@
   }
 
   function bindOperationActions() {
-    root.querySelector('#fin-settlement-form')?.addEventListener('submit', async (event) => {
+    const settlementForm = root.querySelector('#fin-settlement-form');
+    const updateSettlementNet = () => {
+      if (!settlementForm) return;
+      const selected = [...settlementForm.querySelector('[name="paymentIds"]')?.selectedOptions || []];
+      const grossIrr = selected.reduce((sum, option) => sum + asciiNumber(option.dataset.amountIrr || 0), 0);
+      const feeToman = asciiNumber(settlementForm.elements.feeToman?.value || 0);
+      const output = settlementForm.querySelector('[data-fin-settlement-net]');
+      if (!output) return;
+      if (!selected.length || !Number.isSafeInteger(feeToman) || feeToman < 0 || feeToman * 10 > grossIrr) {
+        output.textContent = selected.length && feeToman * 10 > grossIrr ? 'کارمزد از ناخالص بیشتر است' : 'پس از انتخاب پرداخت‌ها محاسبه می‌شود';
+        output.dataset.valueIrr = '';
+        return;
+      }
+      output.dataset.valueIrr = String(grossIrr - feeToman * 10);
+      output.textContent = money(grossIrr - feeToman * 10);
+    };
+    settlementForm?.querySelector('[name="paymentIds"]')?.addEventListener('change', updateSettlementNet);
+    settlementForm?.elements.feeToman?.addEventListener('input', updateSettlementNet);
+    updateSettlementNet();
+    settlementForm?.addEventListener('submit', async (event) => {
       event.preventDefault();
       const form = event.currentTarget;
       const formData = new FormData(form);
       const values = Object.fromEntries(formData);
       const paymentIds = formData.getAll('paymentIds').map(String).filter(Boolean);
       const feeToman = asciiNumber(values.feeToman);
-      const bankAmountToman = asciiNumber(values.bankAmountToman);
       const settledAt = window.ShamsiDatePicker?.getISOValue(form.elements.settledAt) || form.elements.settledAt.dataset.isoDate || values.settledAt;
-      if (!paymentIds.length) return operationError({ code: 'settlement_payments_required', message: 'حداقل یک پرداخت داخل بچ انتخاب کنید.' });
-      if (![feeToman, bankAmountToman].every((value) => Number.isSafeInteger(value) && value >= 0 && value <= Number.MAX_SAFE_INTEGER / 10)) return operationError({ code: 'settlement_amount_invalid', message: 'کارمزد و خالص واریزی باید عدد صحیح نامنفی باشند.' });
+      if (!paymentIds.length) return operationError({ code: 'settlement_payments_required', message: 'حداقل یک پرداخت داخل دسته انتخاب کنید.' });
+      if (!Number.isSafeInteger(feeToman) || feeToman < 0 || feeToman > Number.MAX_SAFE_INTEGER / 10) return operationError({ code: 'settlement_amount_invalid', message: 'کارمزد باید عدد صحیح نامنفی باشد.' });
       try {
         await mutation('/api/admin/v2/finance/reconciliation/settlements', {
           branchId: Number(state.query.branchId) || 1, paymentIds, psp: values.psp,
           terminalId: values.terminalId, batchNo: values.batchNo, feeIrr: feeToman * 10,
-          bankAmountIrr: bankAmountToman * 10, bankReference: values.bankReference,
+          bankReference: values.bankReference,
           settledAt: `${settledAt}T12:00:00.000Z`,
         }, form.querySelector('button[type="submit"]'));
-        await refreshAfterMutation('بچ تسویه با پرداخت‌ها و سند دفتر تطبیق شد.');
+        await refreshAfterMutation('دسته تسویه با پرداخت‌ها و سند دفتر تطبیق شد.');
       } catch (error) {
         const target = root.querySelector('#fin-settlement-feedback');
         if (target) target.innerHTML = `<div class="fin-note warning" role="alert"><strong>تسویه ثبت نشد</strong><span>${esc(error.message)} · کد: ${esc(error.code || 'unknown')}</span></div>`;
@@ -973,16 +1248,45 @@
       const startDate = window.ShamsiDatePicker?.getISOValue(form.elements.startDate) || form.elements.startDate.dataset.isoDate || values.startDate;
       const endDate = window.ShamsiDatePicker?.getISOValue(form.elements.endDate) || form.elements.endDate.dataset.isoDate || values.endDate;
       try {
-        await mutation('/api/admin/v2/finance/fiscal-periods', { name: values.name, startDate, endDate }, submit);
+        await mutation('/api/admin/v2/finance/fiscal-periods', {
+          name: values.name,
+          startDate,
+          endDate,
+          branchId: Number(state.query.branchId) || 1,
+        }, submit);
         await refreshAfterMutation('دورهٔ مالی جدید ایجاد شد.');
       } catch (error) { operationError(error); }
     });
 
-    root.querySelectorAll('[data-fin-close-period]').forEach((button) => button.addEventListener('click', async () => {
-      if (!window.confirm('دوره به‌صورت مقدماتی بسته شود؟ ثبت‌های جدید تا بازگشایی کنترل‌شده متوقف می‌شوند.')) return;
+    root.querySelectorAll('[data-fin-reopen-form]').forEach((form) => form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const target = event.currentTarget;
+      const button = target.querySelector('button[type="submit"]');
+      const reason = String(new FormData(target).get('reason') || '').trim();
+      if (reason.length < 3) {
+        operationError({ code: 'period_reopen_reason_required', message: 'علت بازگشایی را حداقل در سه نویسه وارد کنید.' });
+        return;
+      }
       try {
-        await mutation(`/api/admin/v2/finance/fiscal-periods/${encodeURIComponent(button.dataset.finClosePeriod)}/close`, { preliminary: true }, button);
-        await refreshAfterMutation('دوره به‌صورت مقدماتی بسته شد.');
+        await mutation(`/api/admin/v2/finance/fiscal-periods/${encodeURIComponent(target.dataset.finReopenPeriod)}/reopen-request`, {
+          branchId: Number(state.query.branchId) || 1,
+          reason,
+        }, button);
+        await refreshAfterMutation('درخواست بازگشایی ثبت شد؛ تصمیم باید توسط مدیر یا مالک مستقل انجام شود.');
+      } catch (error) { operationError(error); }
+    }));
+
+    root.querySelectorAll('[data-fin-close-period]').forEach((button) => button.addEventListener('click', async () => {
+      const preliminary = button.dataset.finCloseMode !== 'final';
+      const prompt = preliminary
+        ? 'دوره به‌صورت مقدماتی بسته شود؟ ثبت‌های جدید تا بازگشایی کنترل‌شده متوقف می‌شوند.'
+        : 'دوره به‌صورت نهایی بسته شود؟ این اقدام پس از عبور همهٔ کنترل‌ها قابل بازگشت مستقیم نیست.';
+      if (!window.confirm(prompt)) return;
+      try {
+        await mutation(`/api/admin/v2/finance/fiscal-periods/${encodeURIComponent(button.dataset.finClosePeriod)}/close`, {
+          preliminary, branchId: Number(state.query.branchId) || undefined,
+        }, button);
+        await refreshAfterMutation(preliminary ? 'دوره به‌صورت مقدماتی بسته شد.' : 'دوره به‌صورت نهایی بسته شد.');
       } catch (error) { operationError(error); }
     }));
 
@@ -1293,37 +1597,74 @@
 
   function renderWorkbench(data) {
     const actions = data.actions || [];
-    const readiness = data.shadowReadiness || { status: 'NO_GO', gates: [], completeOrders: 0, operatingDays: 0 };
-    const rollout = data.rollout || { status: 'shadow', cutoverActive: false, pending: null, policy: {} };
+    const operations = data.operations || {};
+    const counters = operations.counters || {};
+    const metrics = data.metrics || {};
+    const awaitingApproval = actions.filter((action) => action.operation === 'approvals' || action.id === 'pending-approvals');
+    const needsAction = actions.filter((action) => !awaitingApproval.includes(action));
+    const activity = Boolean(
+      Number(metrics.paidOrders || 0) > 0
+      || Number(metrics.operationalSalesIrr || 0) !== 0
+      || Number(metrics.ledgerSalesIrr || 0) !== 0
+      || Number(metrics.blockedEvents || 0) > 0
+      || Number(metrics.pendingApprovals || 0) > 0
+      || Object.values(counters).some((value) => Number(value || 0) > 0)
+      || (operations.events || []).length
+      || (operations.journalDrafts || []).length
+      || (operations.approvals || []).length
+      || (operations.uncapturedOrders || []).length
+      || Number(operations.legacyArchivePagination?.total || operations.legacyArchive?.length || 0) > 0
+    );
+    // Workbench actions are intentionally loaded across the selected history
+    // (the backend does not apply the date filter to the top-level action
+    // queue).  A fixed "today" heading therefore overstates freshness and
+    // can make an old unresolved item look like a new task.  Keep the label
+    // truthful to the scope shown in the header.
+    // The top-level action queue intentionally remains all-history so an old
+    // unresolved item cannot disappear behind a date filter.  Make that
+    // distinction explicit instead of implying that the queue itself is
+    // period-scoped.
+    const workbenchScope = 'همهٔ کارهای باز';
+    const workbenchScopeDetail = state.query.from || state.query.to
+      ? 'شاخص‌ها و جزئیات این صفحه برای بازهٔ انتخاب‌شده‌اند؛ صف کارها همهٔ موارد باز را نگه می‌دارد.'
+      : 'همهٔ موارد باز که باید پیگیری شوند؛ برای محدودکردن شاخص‌ها، بازه را انتخاب کنید.';
+    const information = activity ? [
+      Number.isFinite(Number(metrics.paidOrders)) ? { label: 'سفارش‌های پرداخت‌شده', value: fa(metrics.paidOrders), detail: 'منبع: سفارش‌های عملیاتی' } : null,
+      metrics.operationalSalesIrr != null ? { label: 'فروش عملیاتی', value: money(metrics.operationalSalesIrr), detail: 'منبع: سفارش‌های پرداخت‌شده' } : null,
+      metrics.ledgerSalesIrr != null ? { label: 'ثبت قطعی دفتر', value: money(metrics.ledgerSalesIrr), detail: 'منبع: اسناد قطعی دفتر مالی' } : null,
+    ].filter(Boolean) : [];
+    const renderQueueAction = (action, index) => {
+      // Inventory/recipe blockers are owned by the costing workspace. They
+      // must not fall through to the journal tab, which cannot resolve a
+      // physical stock or cost-data issue.
+      const workspace = action.workspace || (action.operation === 'inventory' ? 'costing' : null);
+      const requiredCapability = String(action.requiredCapability || 'finance.view');
+      const actionable = can(requiredCapability);
+      const audienceHint = action.audience === 'manager_owner' && !actionable
+        ? 'فقط مشاهده؛ تصمیم با مدیر یا مالک است'
+        : actionable ? (workspace ? 'رفتن به بخش مرتبط' : 'بازکردن اقدام در ابزار حسابدار') : 'مجوز اقدام برای نقش فعلی صادر نشده است';
+      return `<button type="button" class="fin-queue-action" aria-label="${esc(action.label)}" data-fin-required-capability="${esc(requiredCapability)}" data-fin-actionable="${actionable ? 'true' : 'false'}" ${workspace ? `data-fin-goto="${esc(workspace)}"` : `data-fin-operation="${esc(action.operation || 'journal')}"`}><span>${fa(index + 1)}</span><strong>${esc(action.label)}</strong><small>${audienceHint}</small><i class="fin-action-arrow" aria-hidden="true">←</i></button>`;
+    };
+    const renderQueue = (id, title, description, items, tone, emptyMessage, countLabel = 'مورد') => `<section class="fin-work-queue ${tone}" data-fin-queue="${id}" aria-labelledby="fin-queue-${id}"><div class="fin-work-queue-head"><div><h3 id="fin-queue-${id}">${esc(title)}</h3><p>${esc(description)}</p></div><span class="fin-queue-count" aria-label="${fa(items.length)} ${esc(countLabel)}">${fa(items.length)} <small>${esc(countLabel)}</small></span></div>${items.length ? `<div class="fin-queue-items">${items.map((item, index) => item.label ? renderQueueAction(item, index) : `<div class="fin-queue-info"><strong>${esc(item.value)}</strong><span>${esc(item.label)}</span><small>${esc(item.detail)}</small></div>`).join('')}</div>` : `<div class="fin-queue-empty"><span class="fin-empty-icon" aria-hidden="true">✓</span><span>${esc(emptyMessage)}</span></div>`}</section>`;
     return `
-      <section class="fin-section-head"><div><h2>کارتابل حسابدار</h2><p>اول کارهای امروز را انجام دهید؛ جزئیات تخصصی در ادامه قرار دارد.</p></div>${statusBadge(data.status)}</section>
-      ${quickGuide('مسیر سادهٔ کار', [
-        { title: 'هشدارها را ببینید', detail: 'اول مانع‌های قرمز و داده‌های ناقص را بررسی کنید.' },
-        { title: 'اقدام روز را انجام دهید', detail: 'فرم مرتبط را باز کنید و مدرک لازم را ثبت کنید.' },
-        { title: 'تطبیق را کنترل کنید', detail: 'اختلاف فروش، صندوق و دفتر باید توضیح‌پذیر باشد.' },
-      ])}
-      <section class="fin-panel fin-actions"><div class="fin-panel-title"><div><h3>کارهای امروز</h3><p>از یکی از موارد زیر شروع کنید.</p></div></div>
-        ${actions.length ? `<div class="fin-action-grid">${actions.map((action, index) => `<button type="button" ${action.workspace ? `data-fin-goto="${esc(action.workspace)}"` : `data-fin-operation="${esc(action.operation || 'journal')}"`}><span>${fa(index + 1)}</span><strong>${esc(action.label)}</strong><small>${action.workspace ? 'رفتن به فضای کاری مرتبط' : 'انجام عملیات در همین کارتابل'}</small></button>`).join('')}</div>` : '<div class="fin-ok-state">مورد فوریِ قابل‌اقدامی ثبت نشده است.</div>'}
+      <section class="fin-section-head"><div><h2>کارتابل حسابدار</h2><p>اول ${workbenchScope} را انجام دهید؛ جزئیات تخصصی در ادامه قرار دارد.</p></div></section>
+      <section class="fin-panel fin-actions" aria-labelledby="fin-today-title"><div class="fin-panel-title"><div><h3 id="fin-today-title">${workbenchScope}</h3><p>${workbenchScopeDetail} هر مورد علت روشن و مسیر مستقیم دارد؛ جزئیات فنی در ابزار تکمیلی است.</p></div></div>
+        <div class="fin-work-queues">
+          ${renderQueue('needs-action', STATUS_COPY.needsAction, 'مواردی که باید بررسی یا اصلاح شوند.', needsAction, 'needs-action', 'موردی برای اقدام فوری ثبت نشده است.', 'اقدام')}
+          ${renderQueue('awaiting-approval', STATUS_COPY.awaitingApproval, 'درخواست‌هایی که تصمیم مستقل مدیر یا مالک می‌خواهند.', awaitingApproval, 'awaiting', 'درخواستی منتظر تصمیم نیست.', 'درخواست')}
+          ${renderQueue('informational', STATUS_COPY.informational, 'اطلاعات واقعی برای تصمیم‌گیری؛ بدون ایجاد اقدام ساختگی.', information, 'informational', 'اطلاعاتی برای این بازه ثبت نشده است.', 'شاخص')}
+          ${!activity && !actions.length ? renderQueue('no-activity', STATUS_COPY.empty, 'این وضعیت با خطا فرق دارد؛ هنوز فعالیت مالی در این بازه ثبت نشده است.', [], 'empty', 'هنوز فعالیتی ثبت نشده است؛ مورد فوریِ قابل‌اقدامی ثبت نشده است.', 'فعالیت') : ''}
+        </div>
       </section>
-      ${renderOperations(data.operations || {})}
-      <section class="fin-panel"><div class="fin-panel-title"><div><h3>وضعیت در یک نگاه</h3><p>چهار عدد اصلی برای تصمیم امروز.</p></div></div><div class="fin-metrics">
+      <details class="fin-advanced fin-specialist-area" id="fin-specialist-operations"><summary><span><strong>ابزارهای تکمیلی حسابدار و مدیر</strong><small>ثبت سند، رفع مغایرت، تأییدها و مدیریت دوره؛ فقط هنگام نیاز باز کنید.</small></span><em>جزئیات حرفه‌ای</em></summary>
+        ${renderOperations(operations)}
+      </details>
+      <section class="fin-panel"><div class="fin-panel-title"><div><h3>وضعیت در یک نگاه</h3><p>چهار عدد اصلی بر پایهٔ دادهٔ واقعی دفتر و عملیات.</p></div></div><div class="fin-metrics">
         ${metric('فروش عملیاتی', money(data.metrics.operationalSalesIrr), `${fa(data.metrics.paidOrders)} سفارش · منبع: سفارش‌ها`)}
         ${metric('فروش ثبت‌شده در دفتر جدید', money(data.metrics.ledgerSalesIrr), 'منبع: اسناد قطعی دفتر مالی جدید')}
         ${metric('اختلاف توضیح‌نشده', money(data.metrics.unexplainedDifferenceIrr), 'باید پیش از انتقال نهایی صفر شود', data.metrics.unexplainedDifferenceIrr ? 'danger' : 'success')}
         ${metric('رویداد مسدود', fa(data.metrics.blockedEvents), 'روش پرداخت، دوره یا قاعدهٔ ثبت', data.metrics.blockedEvents ? 'danger' : '')}
-      </div></section>
-      <section class="fin-panel"><div class="fin-panel-title"><div><h3>آمادگی انتقال به دفتر مالی اصلی</h3><p>حداقل ۷ روز و ۱۰۰ سفارش کامل لازم است؛ انتقال فقط پس از بررسی مستقل انجام می‌شود.</p></div>${statusBadge(readiness.status, readiness.status === 'READY_FOR_CUTOVER_REVIEW' ? 'success' : 'danger')}</div>
-        <div class="fin-metrics">
-          ${metric('سفارش کامل', fa(readiness.completeOrders), 'پرداخت + سند فروش + بهای تمام‌شده قطعی')}
-          ${metric('روز عملیاتی کامل', fa(readiness.operatingDays), 'روز متمایز با سفارش کامل')}
-        </div>
-        <div class="fin-issue-list">${(readiness.gates || []).map((gate) => `<article class="${gate.passed ? 'success' : 'danger'}"><div>${statusBadge(gate.passed ? 'عبور کرده' : 'مانع', gate.passed ? 'success' : 'danger')}<strong>${esc(gateLabel(gate.id))}</strong></div><p>${esc(gateValue(gate))}</p>${technicalDetail('شناسه کنترل', gate.id)}</article>`).join('')}</div>
-        <div class="fin-note ${rollout.cutoverActive ? 'success' : readiness.status === 'READY_FOR_CUTOVER_REVIEW' ? '' : 'warning'}"><strong>وضعیت مرجع مالی شعبه: ${esc(label(rollout.status))}</strong><span>${rollout.cutoverActive ? 'پایگاه داده اصلی مالی این شعبه فعال است و بازگشت به فایل‌های قدیمی مجاز نیست.' : rollout.pending ? 'درخواست انتقال منتظر تأیید شخص مستقل است؛ هنگام تأیید همه کنترل‌ها دوباره محاسبه می‌شوند.' : 'درخواست فقط پس از عبور همه کنترل‌ها قابل ثبت است.'}</span>${!rollout.cutoverActive && !rollout.pending ? `<button class="fin-btn primary" type="button" data-fin-cutover-request ${readiness.status !== 'READY_FOR_CUTOVER_REVIEW' ? 'disabled' : ''}>ارسال درخواست انتقال شعبه</button>` : ''}</div>
-      </section>
-      <section class="fin-panel"><div class="fin-panel-title"><div><h3>هشدارهای کیفیت داده</h3><p>هیچ خطا یا نبود داده‌ای با رقم نمایشی جایگزین نمی‌شود.</p></div><span>${fa(data.issues?.length || 0)} مورد</span></div>
-        ${(data.issues || []).length ? `<div class="fin-issue-list">${data.issues.map((issue) => `<article class="${severity(issue.severity)}"><div>${statusBadge(issue.severity, severity(issue.severity))}<strong>${esc(issueLabel(issue.code, issue.title))}</strong></div><p>${fa(issue.count)} رکورد${issue.amountIrr == null ? '' : ` · ${money(issue.amountIrr)}`}</p>${technicalDetail('شناسه هشدار', issue.code)}</article>`).join('')}</div>` : '<div class="fin-ok-state">هشدار کیفیت داده‌ای در محدودهٔ انتخاب‌شده وجود ندارد.</div>'}
-      </section>
-      <details class="fin-advanced fin-source-details"><summary>منبع محاسبه ارقام</summary><dl class="fin-source-list">${Object.entries(data.sources || {}).map(([key, value]) => `<div><dt>${esc(sourceKeyLabel(key))}</dt><dd>${esc(sourceValueLabel(value))}</dd></div>`).join('')}</dl></details>`;
+      </div></section>`;
   }
 
   function operationTabs() {
@@ -1361,6 +1702,7 @@
   function renderJournalOperations(operations) {
     const today = localIsoDate();
     const drafts = operations.journalDrafts || [];
+    const draftsPagination = operations.journalDraftsPagination || { page: 1, pageSize: 25, total: drafts.length, pages: 1 };
     return `<div class="fin-operation-layout">
       <form id="fin-journal-form" class="fin-form" autocomplete="off">
         <div class="fin-form-title"><div><strong>سند دستی متوازن</strong><small>مبلغ را تومان وارد کنید؛ هنگام ثبت به ریال صحیح تبدیل می‌شود.</small></div>${statusBadge('draft', 'neutral')}</div>
@@ -1376,20 +1718,24 @@
       </form>
       <div class="fin-operation-list"><div class="fin-subhead"><strong>پیش‌نویس‌ها و منتظرهای اخیر</strong><span>${fa(drafts.length)} مورد</span></div>
         ${drafts.length ? drafts.map((row) => `<article><div><strong>${esc(row.number)}</strong><small>${esc(row.description)} · ${dateTime(row.date)}</small></div><div>${statusBadge(row.status)}<b>${money(row.debitIrr)}</b>${row.status === 'draft' ? `<button class="fin-btn secondary" type="button" data-fin-submit-journal="${esc(row.id)}">ارسال برای تأیید</button>` : ''}</div></article>`).join('') : empty('سند باز یا منتظر تأییدی وجود ندارد.')}
+        ${paginationControls('journals', draftsPagination, 'workbench')}
       </div>
     </div>`;
   }
 
   function renderEventOperations(operations) {
     const orders = operations.uncapturedOrders || [];
+    const ordersPagination = operations.uncapturedOrdersPagination || { page: 1, pageSize: 25, total: orders.length, pages: 1 };
     const events = operations.events || [];
+    const eventsPagination = operations.eventsPagination || { page: 1, pageSize: 25, total: events.length, pages: 1 };
     const blockedCogsEvents = Number(operations.counters?.blockedCogsEvents || 0);
-    const retryReadyCogs = blockedCogsEvents > 0 ? `<div class="fin-note warning"><strong>${fa(blockedCogsEvents)} بهای تمام‌شدهٔ سفارش منتظر دادهٔ کامل است</strong><span>پس از تکمیل دستور تهیه و قیمت مواد، فقط سفارش‌های قابل محاسبه دوباره بررسی می‌شوند.</span><div class="fin-inline-action"><a class="fin-btn secondary" href="/admin/kitchen?view=inventory">تکمیل دستور تهیه و موجودی</a><button class="fin-btn primary" type="button" data-fin-retry-ready-cogs>بازآزمایی موارد آماده</button></div></div>` : '';
+    const retryReadyCogs = blockedCogsEvents > 0 ? `<div class="fin-note warning"><strong>${fa(blockedCogsEvents)} بهای تمام‌شدهٔ سفارش منتظر دادهٔ کامل است</strong><span>پس از تکمیل دستور تهیه و قیمت مواد، فقط سفارش‌های قابل محاسبه دوباره بررسی می‌شوند.</span><div class="fin-inline-action"><a class="fin-btn secondary" href="/admin/kitchen?view=inventory&branchId=${encodeURIComponent(state.query.branchId || 1)}">تکمیل دستور تهیه و موجودی</a><button class="fin-btn primary" type="button" data-fin-retry-ready-cogs>بازآزمایی موارد آماده</button></div></div>` : '';
     return `<div class="fin-grid-2">
       <div class="fin-operation-list"><div class="fin-subhead"><strong>سفارش پرداخت‌شده بدون رویداد مالی</strong><span>${fa(orders.length)} مورد</span></div>
         ${orders.length ? orders.map((row) => `<article><div><strong>${esc(row.orderNo || row.id)}</strong><small>${dateTime(row.createdAt)} · ${money(row.amountIrr)}</small></div><div>${statusBadge(row.tenderKnown ? 'روش پرداخت معتبر' : 'روش پرداخت نامشخص', row.tenderKnown ? 'success' : 'danger')}<button class="fin-btn secondary" type="button" data-fin-capture-order="${esc(row.id)}">${row.tenderKnown ? 'ثبت مالی' : 'ایجاد پرونده بررسی'}</button></div></article>`).join('') : empty('سفارش جاافتاده‌ای در محدودهٔ انتخاب‌شده نیست.')}
+        ${paginationControls('uncaptured', ordersPagination, 'workbench')}
       </div>
-      <div class="fin-operation-list">${retryReadyCogs}<div class="fin-subhead"><strong>رویدادهای نیازمند رفع مانع</strong><span>${fa(events.length)} مورد</span></div>
+      <div class="fin-operation-list">${retryReadyCogs}<div class="fin-subhead"><strong>رویدادهای نیازمند رفع مانع</strong><span>${fa(eventsPagination.total)} مورد</span></div>
         ${events.length ? events.map((row) => {
           const inventoryEvent = ['inventory.waste', 'inventory.stock_count', 'inventory.production_batch'].includes(row.source);
           const cogsEvent = row.source === 'order.cogs';
@@ -1406,15 +1752,17 @@
               ? `<span class="fin-badge success">استفاده از روش پرداخت ثبت‌شده در منبع</span>`
             : inventoryEvent ? '' : `<input data-fin-event-account="${esc(row.id)}" inputmode="numeric" placeholder="حساب مقابل" aria-label="کد حساب مقابل">`;
           const actionLabel = inventoryEvent ? 'ارزش‌گذاری با قیمت معتبر و ثبت' : row.source === 'order.paid' && !hasReliableTender ? 'ثبت پس از بررسی مدرک' : 'رفع مانع و ثبت';
-          const cogsGuide = cogsEvent ? '<div class="fin-inline-action"><span class="fin-badge warning">نیازمند دستور تهیه، قیمت و موجودی معتبر</span><a class="fin-btn secondary" href="/admin/kitchen?view=inventory">تکمیل دستور تهیه</a></div>' : '';
+          const cogsGuide = cogsEvent ? `<div class="fin-inline-action"><span class="fin-badge warning">نیازمند دستور تهیه، قیمت و موجودی معتبر</span><a class="fin-btn secondary" href="/admin/kitchen?view=inventory&branchId=${encodeURIComponent(state.query.branchId || 1)}">تکمیل دستور تهیه</a></div>` : '';
           return `<article class="stack"><div><strong>${esc(financeSourceLabel(row.source))} · مرجع ${esc(row.sourceId)}</strong><small>${esc(issueText)} · ${money(row.amountIrr)}</small></div>${supported ? `<div class="fin-inline-action">${control}<button class="fin-btn secondary" type="button" data-fin-resolve-event="${esc(row.id)}" data-fin-source="${esc(row.source)}" data-fin-amount-irr="${esc(row.amountIrr)}">${actionLabel}</button></div>` : cogsGuide || `<span class="fin-badge warning">نیازمند بررسی دستی است</span>`}</article>`;
         }).join('') : empty('رویداد مسدود یا منتظر پردازشی وجود ندارد.')}
+        ${paginationControls('events', eventsPagination, 'workbench')}
       </div>
     </div>${renderMigrationOperations(operations)}`;
   }
 
   function renderMigrationOperations(operations) {
     const rows = operations.legacyArchive || [];
+    const archivePagination = operations.legacyArchivePagination || { page: 1, pageSize: 25, total: rows.length, pages: 1 };
     const summary = operations.legacyArchiveSummary || { total: 0, byTrust: {}, byDecision: {} };
     const migration = operations.migrationReadiness || { status: 'incomplete', expectedRecords: 0, archivedRecords: 0, missingArchiveRecords: 0, archiveSnapshotMismatches: 0, newUnscopedRecords: 0, unresolvedRecords: 0, baseline: null };
     const trustTone = (value) => value === 'quarantined' ? 'danger' : value === 'inferred_needs_approval' ? 'warning' : 'success';
@@ -1433,38 +1781,64 @@
             ? `<div class="fin-inline-action">${statusBadge(row.backfillStatus || 'not_requested', row.backfillStatus === 'posted' ? 'success' : 'warning')}<button class="fin-btn secondary" type="button" data-fin-legacy-preview="${esc(row.id)}">پیش‌نمایش سند</button>${!['pending_approval', 'posted', 'reversed'].includes(row.backfillStatus) ? `<button class="fin-btn primary" type="button" data-fin-legacy-request="${esc(row.id)}">ارسال سند برای تأیید مستقل</button>` : ''}</div>` : '';
           return `<article class="stack"><div><strong>${esc(legacySourceLabel(row.sourceTable))} · مرجع ${esc(row.sourceId)}</strong><small>${esc(label(row.reason))}${row.amountIrr == null ? '' : ` · ${money(row.amountIrr)}`}${row.decidedBy ? ` · تصمیم‌گیر: ${esc(row.decidedBy)}` : ''}</small></div><div class="fin-inline-action">${statusBadge(row.trustStatus, trustTone(row.trustStatus))}${statusBadge(row.decision, row.decision === 'approved_for_backfill' ? 'success' : 'neutral')}<select data-fin-legacy-choice="${esc(row.id)}" aria-label="تصمیم مهاجرت">${choices}</select><input data-fin-legacy-evidence="${esc(row.id)}" maxlength="160" placeholder="مرجع مدرک (برای بازسازی الزامی)"><input data-fin-legacy-note="${esc(row.id)}" maxlength="500" required placeholder="علت تصمیم"><button class="fin-btn secondary" type="button" data-fin-legacy-decision="${esc(row.id)}">ثبت تصمیم</button></div>${tenderReview}${backfillActions}</article>`;
         }).join('') : empty('هنوز اسکن مهاجرت اجرا نشده است.')}
+        ${paginationControls('migration', archivePagination, 'workbench')}
       </div>
     </details>`;
   }
 
   function renderApprovalOperations(operations) {
     const approvals = operations.approvals || [];
+    const approvalsPagination = operations.approvalsPagination || { page: 1, pageSize: 25, total: approvals.length, pages: 1 };
+    const currentActor = actorPhone();
     return `<div class="fin-operation-list"><div class="fin-subhead"><strong>صف تأیید مستقل</strong><span>ایجادکننده نمی‌تواند درخواست خودش را تأیید کند.</span></div>
-      ${approvals.length ? approvals.map((row) => `<article class="stack"><div><strong>${esc(label(row.operation))}</strong><small>${esc(label(row.entityType))} · ${money(row.amountIrr)} · ایجاد: ${dateTime(row.createdAt)}</small></div><div class="fin-inline-action"><input data-fin-approval-comment="${esc(row.id)}" placeholder="یادداشت تصمیم" maxlength="300"><button class="fin-btn secondary" type="button" data-fin-approval-id="${esc(row.id)}" data-fin-approval-decision="rejected">رد</button><button class="fin-btn primary" type="button" data-fin-approval-id="${esc(row.id)}" data-fin-approval-decision="approved">تأیید</button></div></article>`).join('') : empty('درخواستی منتظر تأیید مالک یا مدیر مالی نیست.')}
+      ${approvals.length ? approvals.map((row) => {
+        const selfRequested = Boolean(currentActor && String(row.createdBy || row.requestedBy || '') === currentActor);
+        const canDecide = can('finance.approve') && !selfRequested;
+        const action = canDecide
+          ? `<div class="fin-inline-action"><input data-fin-approval-comment="${esc(row.id)}" placeholder="یادداشت تصمیم" maxlength="300"><button class="fin-btn secondary" type="button" data-fin-approval-id="${esc(row.id)}" data-fin-approval-decision="rejected">رد</button><button class="fin-btn primary" type="button" data-fin-approval-id="${esc(row.id)}" data-fin-approval-decision="approved">تأیید</button></div>`
+          : `<div class="fin-note warning"><strong>${selfRequested ? 'نیازمند تصمیم شخص مستقل' : 'فقط مشاهده'}</strong><span>${selfRequested ? 'این درخواست توسط شما ایجاد شده و تأیید یا رد آن باید توسط مالک/مدیر دیگری انجام شود.' : 'نقش فعلی مجوز تصمیم‌گیری مالی ندارد.'}</span></div>`;
+        return `<article class="stack"><div><strong>${esc(label(row.operation))}</strong><small>${esc(label(row.entityType))} · ${money(row.amountIrr)} · ایجاد: ${dateTime(row.createdAt)}</small></div>${action}</article>`;
+      }).join('') : empty('درخواستی منتظر تأیید مالک یا مدیر مالی نیست.')}
+      ${paginationControls('approvals', approvalsPagination, 'workbench')}
     </div>`;
   }
 
   function renderPeriodOperations(operations) {
     const periods = operations.periods || [];
     const current = operations.currentPeriod;
+    const canFinalClose = can('finance.period.close') && ['owner', 'manager'].includes(currentRole());
+    const canRequestReopen = can('finance.period.reopen');
+    const pendingReopen = new Set((operations.approvals || [])
+      .filter((approval) => approval.status === 'pending' && approval.operation === 'reopen_fiscal_period' && approval.entityType === 'fiscal_period')
+      .map((approval) => String(approval.entityId)));
+    const periodActions = (period) => {
+      const closeActions = `${can('finance.period.close') && operations.periodSource === 'finance_v2' && ['open', 'reopened'].includes(period.status) ? `<button class="fin-btn secondary" type="button" data-fin-close-period="${esc(period.id)}" data-fin-close-mode="preliminary">بستن مقدماتی</button>` : ''}${canFinalClose && operations.periodSource === 'finance_v2' && period.status === 'soft_closed' ? `<button class="fin-btn primary" type="button" data-fin-close-period="${esc(period.id)}" data-fin-close-mode="final">بستن نهایی</button>` : ''}`;
+      if (!['closed', 'soft_closed'].includes(period.status) || operations.periodSource !== 'finance_v2') return closeActions;
+      if (pendingReopen.has(String(period.id))) return `${closeActions}<span class="fin-badge warning">درخواست بازگشایی منتظر تأیید مستقل</span>`;
+      if (!canRequestReopen) return `${closeActions}<span class="fin-badge neutral">درخواست بازگشایی فقط برای مدیر/مالک</span>`;
+      return `${closeActions}<details class="fin-period-reopen"><summary class="fin-btn secondary">درخواست بازگشایی</summary><form class="fin-inline-form" data-fin-reopen-form data-fin-reopen-period="${esc(period.id)}" autocomplete="off"><label class="fin-field"><span>علت بازگشایی</span><input name="reason" required minlength="3" maxlength="300" placeholder="مثلاً ثبت سند جاافتاده"></label><button class="fin-btn primary" type="submit">ارسال درخواست مستقل</button></form></details>`;
+    };
     return `<div class="fin-operation-layout">
-      <form id="fin-period-form" class="fin-form" autocomplete="off">
+      ${can('finance.settings.manage') ? `<form id="fin-period-form" class="fin-form" autocomplete="off">
         <div class="fin-form-title span-2"><div><strong>تعریف دورهٔ مالی جدید</strong><small>دوره‌ها باید بدون فاصله و هم‌پوشانی باشند.</small></div>${statusBadge(operations.periodSource === 'finance_v2' ? 'سامانه جدید' : 'قدیمی؛ فقط خواندنی', 'neutral')}</div>
         <label class="fin-field span-2"><span>نام دوره</span><input name="name" required maxlength="120" placeholder="مثلاً شهریور ۱۴۰۵"></label>
         <label class="fin-field"><span>شروع دوره</span><input name="startDate" type="date" required></label>
         <label class="fin-field"><span>پایان دوره</span><input name="endDate" type="date" required></label>
         <button class="fin-btn primary span-2" type="submit">ایجاد دوره</button>
-      </form>
+      </form>` : '<div class="fin-note warning"><strong>تعریف دوره فقط خواندنی است</strong><span>نقش فعلی مجوز تنظیمات مالی و ایجاد دورهٔ جدید ندارد.</span></div>'}
       <div class="fin-operation-list"><div class="fin-subhead"><strong>دوره‌ها</strong><span>${fa(periods.length)} مورد</span></div>
         ${operations.periodSource !== 'finance_v2' ? '<div class="fin-note warning"><strong>دوره‌های فعلی فقط خواندنی‌اند</strong><span>برای عملیات بستن، دوره باید یک‌بار در سامانه جدید تعریف و کنترل شود.</span></div>' : ''}
-        ${periods.length ? periods.map((row) => `<article><div><strong>${esc(row.name || row.id)}</strong><small>${dateOnly(row.startDate)} تا ${dateOnly(row.endDate)}</small></div><div>${statusBadge(row.status)}${operations.periodSource === 'finance_v2' && ['open', 'reopened'].includes(row.status) ? `<button class="fin-btn secondary" type="button" data-fin-close-period="${esc(row.id)}">بستن مقدماتی</button>` : ''}</div></article>`).join('') : empty('دورهٔ مالی ثبت نشده است؛ بدون دوره امکان پست سند وجود ندارد.')}
+        ${periods.length ? periods.map((row) => `<article><div><strong>${esc(row.name || row.id)}</strong><small>${dateOnly(row.startDate)} تا ${dateOnly(row.endDate)}</small></div><div>${statusBadge(row.status)}${periodActions(row)}</div></article>`).join('') : empty('دورهٔ مالی ثبت نشده است؛ بدون دوره امکان پست سند وجود ندارد.')}
         ${current ? `<div class="fin-note"><strong>دورهٔ جاری: ${esc(current.name || current.id)}</strong><span>وضعیت ${esc(label(current.status))}</span></div>` : '<div class="fin-note warning"><strong>دورهٔ جاری یافت نشد</strong><span>این وضعیت مانع ثبت قطعی سند است.</span></div>'}
       </div>
     </div>`;
   }
 
   function renderSales(data) {
-    const summary = data.summary;
+    const summary = data.summary || { operational: {}, ledger: {}, reconciliation: {} };
+    const operational = summary.operational || {};
+    const ledger = summary.ledger || {};
+    const reconciliation = summary.reconciliation || {};
     const refundablePayments = data.refundablePayments || [];
     const refunds = data.refunds || [];
     const unmatchedPayments = data.reconciliation?.unmatchedPayments || [];
@@ -1473,22 +1847,48 @@
     const bankStatementLines = data.reconciliation?.bankStatementLines || [];
     const bankCandidates = data.reconciliation?.bankCandidates || [];
     const unmatchedBankLines = bankStatementLines.filter((row) => row.status === 'unmatched');
+    const settlementPagination = { page: Math.max(1, Number(state.pages.settlements) || 1), pageSize: 25, total: settlementsV2.length, pages: Math.max(1, Math.ceil(settlementsV2.length / 25)) };
+    const settlementPage = Math.min(settlementPagination.page, settlementPagination.pages);
+    const visibleSettlements = settlementsV2.slice((settlementPage - 1) * settlementPagination.pageSize, settlementPage * settlementPagination.pageSize);
+    const bankPagination = { page: Math.max(1, Number(state.pages.bankLines) || 1), pageSize: 25, total: bankStatementLines.length, pages: Math.max(1, Math.ceil(bankStatementLines.length / 25)) };
+    const bankPage = Math.min(bankPagination.page, bankPagination.pages);
+    const visibleBankLines = bankStatementLines.slice((bankPage - 1) * bankPagination.pageSize, bankPage * bankPagination.pageSize);
+    const refundPagination = { page: Math.max(1, Number(state.pages.refunds) || 1), pageSize: 25, total: refunds.length, pages: Math.max(1, Math.ceil(refunds.length / 25)) };
+    const refundPage = Math.min(refundPagination.page, refundPagination.pages);
+    const visibleRefunds = refunds.slice((refundPage - 1) * refundPagination.pageSize, refundPage * refundPagination.pageSize);
     const today = localIsoDate();
+    const hasSalesActivity = Number(operational.paidOrders || 0) > 0
+      || Number(ledger.postedEntries || 0) > 0
+      || (data.cashSessions || []).length > 0
+      || (data.tenders || []).length > 0
+      || refunds.length > 0
+      || (data.reconciliation?.unmatchedPayments || []).length > 0
+      || (data.reconciliation?.bankStatementLines || []).length > 0;
+    const salesValue = (value) => hasSalesActivity ? money(value) : STATUS_COPY.empty;
+    const salesDetail = hasSalesActivity ? null : STATUS_COPY.empty;
+    const cashSessionStatus = { open: 'باز', closed: 'بسته', awaiting_count: 'در انتظار شمارش', balanced: 'تطبیق‌شده', difference: 'دارای اختلاف' };
     return `
-      <section class="fin-section-head"><div><h2>فروش، صندوق و بانک</h2><p>سفارش، روش پرداخت، نشست صندوق و تسویه در یک نمای قابل تطبیق.</p></div><div class="fin-head-actions"><a class="fin-btn secondary" href="/admin/cashier?view=drawer">رفتن به پنل صندوق</a><button class="fin-btn secondary" type="button" data-fin-export="sales">دریافت فایل گزارش</button></div></section>
-      ${quickGuide('مسیر کنترل فروش و بانک', [
-        { title: 'فروش و روش پرداخت', detail: 'فروش خالص و سهم نقد، کارت و درگاه را کنترل کنید.' },
-        { title: 'تسویه کارت و درگاه', detail: 'مبلغ ناخالص، کارمزد و خالص واریزی را تطبیق دهید.' },
-        { title: 'گردش بانک و دفتر', detail: 'مدرک بانک را به سند قطعی هم‌مبلغ متصل کنید.' },
-      ])}
-      <div class="fin-metrics">
-        ${metric('فروش خالص عملیاتی', money(summary.operational.salesIrr), `${fa(summary.operational.paidOrders)} سفارش · برگشت ${money(summary.operational.refundsIrr)}`)}
-        ${metric('فروش ثبت‌شده در دفتر جدید', money(summary.ledger.salesIrr), `${fa(summary.ledger.postedEntries)} سند قطعی`)}
-        ${metric('اختلاف عملیات و دفتر', money(summary.reconciliation.salesDifferenceIrr), summary.reconciliation.salesDifferenceIrr ? 'نیازمند تطبیق' : 'تطبیق کامل', summary.reconciliation.salesDifferenceIrr ? 'danger' : 'success')}
-        ${metric('نشست صندوق', fa(data.cashSessions?.length || 0), 'منبع: نشست‌های عملیاتی صندوق')}
+      <section class="fin-section-head"><div><h2>فروش، صندوق و بانک</h2><p>سفارش، روش پرداخت، نشست صندوق و تسویه در یک نمای قابل تطبیق.</p></div><div class="fin-head-actions">${can('cash.manage') ? `<a class="fin-btn secondary" href="/admin/cashier?view=drawer&branchId=${encodeURIComponent(state.query.branchId || 1)}">رفتن به پنل صندوق</a>` : '<span class="fin-note warning fin-cash-handoff" data-fin-cash-handoff role="status"><strong>نیازمند صندوق‌دار</strong><span>بازکردن و بستن نشست صندوق در پنل صندوق انجام می‌شود؛ این نقش فقط گزارش و تطبیق را می‌بیند.</span></span>'}<button class="fin-btn secondary" type="button" data-fin-export="sales" title="خروجی فقط از صفحهٔ جاری">دریافت CSV صفحهٔ جاری</button></div></section>
+      <div class="fin-metrics" data-fin-sales-summary data-fin-activity-state="${hasSalesActivity ? 'active' : 'empty'}">
+        ${metric('فروش خالص عملیاتی', salesValue(operational.salesIrr), salesDetail || `${fa(operational.paidOrders)} سفارش · برگشت ${money(operational.refundsIrr)}`)}
+        ${metric('فروش ثبت‌شده در دفتر جدید', salesValue(ledger.salesIrr), salesDetail || `${fa(ledger.postedEntries)} سند قطعی`)}
+        ${metric('اختلاف عملیات و دفتر', hasSalesActivity ? money(reconciliation.salesDifferenceIrr) : STATUS_COPY.empty, hasSalesActivity ? (reconciliation.salesDifferenceIrr ? 'نیازمند تطبیق' : 'بدون اختلاف ثبت‌شده') : 'هنوز فعالیتی برای تطبیق ثبت نشده است', hasSalesActivity ? (reconciliation.salesDifferenceIrr ? 'danger' : 'success') : '')}
+        ${metric('نشست صندوق', hasSalesActivity ? fa(data.cashSessions?.length || 0) : STATUS_COPY.empty, hasSalesActivity ? 'منبع: نشست‌های عملیاتی صندوق' : STATUS_COPY.empty)}
       </div>
+      ${!hasSalesActivity ? `<div class="fin-empty fin-no-activity" data-fin-no-activity><strong>${esc(STATUS_COPY.empty)}</strong><span>پس از ثبت نخستین سفارش یا نشست صندوق، فروش و دریافت وجه از همین‌جا قابل تطبیق است.</span></div>` : ''}
+      <div class="fin-flow fin-sales-chain" data-fin-sales-chain aria-label="زنجیرهٔ فروش تا بانک">
+        <span data-fin-chain-step="sale">فروش ثبت‌شده</span><b>←</b><span data-fin-chain-step="payment">وجه دریافت‌شده</span><b>←</b><span data-fin-chain-step="cash">نشست صندوق</span><b>←</b><span data-fin-chain-step="bank">تسویه و واریز بانک</span>
+      </div>
+      <section class="fin-panel fin-cash-cycle" data-fin-cash-cycle><div class="fin-panel-title"><div><h3>چرخهٔ صندوق</h3><p>باز یا بسته‌بودن نشست و اختلاف شمارش از دادهٔ واقعی صندوق خوانده می‌شود.</p></div></div>
+        ${(data.cashSessions || []).length ? `<div class="fin-cash-session-list">${data.cashSessions.map((session) => `<article data-fin-cash-session="${esc(session.id)}"><div><strong>${session.status === 'open' ? 'نشست باز' : 'نشست بسته'} · ${esc(session.id)}</strong><small>شروع ${dateTime(session.openedAt)}${session.closedAt ? ` · پایان ${dateTime(session.closedAt)}` : ''}</small></div><div><span class="fin-badge ${session.reconciliationStatus === 'difference' ? 'warning' : session.reconciliationStatus === 'balanced' ? 'success' : 'neutral'}">${esc(cashSessionStatus[session.reconciliationStatus] || 'وضعیت مشخص نیست')}</span><b>${session.expectedAmountIrr == null ? STATUS_COPY.insufficientData : `موجودی مورد انتظار ${money(session.expectedAmountIrr)}`}</b></div>${session.varianceIrr == null ? '' : `<small class="fin-cash-variance">اختلاف شمارش: ${money(session.varianceIrr)}</small>`}</article>`).join('')}</div>` : empty(STATUS_COPY.empty)}</section>
       <div class="fin-grid-2">
-        <section class="fin-panel"><div class="fin-panel-title"><div><h3>روش‌های پرداخت</h3><p>فقط بر پایه روش پرداخت ثبت‌شده؛ بدون عدد جایگزین</p></div></div>${(data.tenders || []).length ? `<div class="fin-tender-list">${data.tenders.map((row) => `<div><span>${esc(label(row.tender))}</span><strong>${money(row.amountIrr)}</strong></div>`).join('')}</div>` : empty('روش پرداخت قابل اتکایی ثبت نشده است.')}</section>
+        <section class="fin-panel"><div class="fin-panel-title"><div><h3>روش‌های پرداخت</h3><p>فقط بر پایه روش پرداخت ثبت‌شده؛ بدون عدد جایگزین</p></div></div>${(data.tenders || []).length ? (() => {
+          const totalTender = (data.tenders || []).reduce((acc, row) => acc + Math.max(0, Number(row.amountIrr || 0)), 0);
+          return `<div class="fin-tender-list">${data.tenders.map((row) => {
+            const pct = totalTender > 0 ? Math.round((Number(row.amountIrr || 0) / totalTender) * 100) : 0;
+            return `<div><span>${esc(label(row.tender))}${pct > 0 ? ` <small class="fin-tender-pct">${fa(pct)}٪</small>` : ''}</span><strong>${money(row.amountIrr)}</strong></div>`;
+          }).join('')}</div>`;
+        })() : empty(hasSalesActivity ? 'روش پرداخت قابل اتکایی در این بازه ثبت نشده است.' : STATUS_COPY.empty)}</section>
         <section class="fin-panel"><div class="fin-panel-title"><div><h3>وضعیت تسویه</h3><p>هر شرکت پرداخت، پایانه و شماره تسویه باید یکتا باشد</p></div></div>${data.settlementDuplicates?.length ? `<div class="fin-issue-list">${data.settlementDuplicates.map((row) => `<article class="danger"><strong>${esc(row.key)}</strong><p>${fa(row.count)} رکورد تکراری</p></article>`).join('')}</div>` : '<div class="fin-ok-state">شماره تسویهٔ تکراری در دادهٔ خوانده‌شده دیده نشد.</div>'}</section>
       </div>
       <section class="fin-panel fin-operations"><div class="fin-panel-title"><div><h3>عملیات فروش و بانک</h3><p>کارهای کم‌تکرار به‌صورت مرحله‌ای باز می‌شوند تا صفحه روزمره شلوغ نشود.</p></div><span>کنترل‌شده</span></div>
@@ -1496,18 +1896,19 @@
       <details class="fin-action-details" ${unmatchedPayments.length ? 'open' : ''}><summary><span><strong>تطبیق تسویه کارتخوان و درگاه</strong><small>پرداخت‌ها ← ناخالص بچ ← کارمزد ← خالص بانک</small></span><em>${fa(unmatchedPayments.length)} پرداخت منتظر</em></summary><div id="fin-settlement-feedback"></div>
         <div class="fin-operation-layout">
           <form id="fin-settlement-form" class="fin-form" autocomplete="off">
-            <label class="fin-field span-2"><span>پرداخت‌های داخل بچ</span><select name="paymentIds" multiple size="5" required>${unmatchedPayments.map((item) => `<option value="${esc(item.paymentId)}">${esc(item.details?.orderNo || `سفارش ${item.orderId}`)} · ${esc(label(item.payment?.tender))} · ${money(item.amountIrr)}</option>`).join('')}</select></label>
+            <label class="fin-field span-2"><span>پرداخت‌های داخل دسته</span><select name="paymentIds" multiple size="5" required>${unmatchedPayments.map((item) => `<option value="${esc(item.paymentId)}" data-amount-irr="${esc(item.amountIrr)}">${esc(item.details?.orderNo || `سفارش ${item.orderId}`)} · ${esc(label(item.payment?.tender))} · ${money(item.amountIrr)}</option>`).join('')}</select></label>
             <label class="fin-field"><span>شرکت پرداخت یا درگاه</span><input name="psp" required maxlength="120" placeholder="مثلاً به‌پرداخت"></label>
             <label class="fin-field"><span>شناسه پایانه</span><input name="terminalId" required maxlength="120"></label>
-            <label class="fin-field"><span>شماره بچ</span><input name="batchNo" required maxlength="120"></label>
+            <label class="fin-field"><span>شماره دسته تسویه</span><input name="batchNo" required maxlength="120"></label>
             <label class="fin-field"><span>تاریخ تسویه</span><input name="settledAt" type="date" value="${today}" required></label>
             <label class="fin-field"><span>کارمزد (تومان)</span><input name="feeToman" inputmode="numeric" value="0" required></label>
-            <label class="fin-field"><span>خالص واریزی بانک (تومان)</span><input name="bankAmountToman" inputmode="numeric" required></label>
+            <div class="fin-derived-amount fin-field"><span>خالص واریزی بانک</span><output data-fin-settlement-net aria-live="polite">پس از انتخاب پرداخت‌ها محاسبه می‌شود</output><small>ناخالص پرداخت‌ها منهای کارمزد؛ این مبلغ توسط سامانه محاسبه و دوباره کنترل می‌شود.</small></div>
             <label class="fin-field span-2"><span>شناسه واریز بانک</span><input name="bankReference" maxlength="160"></label>
             <button class="fin-btn primary span-2" type="submit" ${unmatchedPayments.length ? '' : 'disabled'}>کنترل، تطبیق و ثبت سند تسویه</button>
           </form>
           <div class="fin-operation-list"><div class="fin-subhead"><strong>تسویه‌های ثبت‌شده</strong><span>${fa(settlementsV2.length)} مورد</span></div>
-            ${settlementsV2.length ? settlementsV2.slice(0, 25).map((row) => `<article><div><strong>${esc(row.psp)} / ${esc(row.batchNo)}</strong><small>${dateTime(row.createdAt)} · بانک ${esc(row.bankReference || 'بدون شناسه')}</small></div><div>${statusBadge(row.status)}<b>${money(row.amountIrr)}</b></div></article>`).join('') : empty('تسویه‌ای در دفتر مالی جدید ثبت نشده است.')}
+            ${settlementsV2.length ? visibleSettlements.map((row) => `<article><div><strong>${esc(row.psp)} / ${esc(row.batchNo)}</strong><small>${dateTime(row.createdAt)} · بانک ${esc(row.bankReference || 'بدون شناسه')}</small></div><div>${statusBadge(row.status)}<b>${money(row.amountIrr)}</b></div></article>`).join('') : empty('تسویه‌ای در دفتر مالی جدید ثبت نشده است.')}
+            ${paginationControls('settlements', settlementPagination)}
           </div>
         </div>
       </details>
@@ -1524,12 +1925,13 @@
             <button class="fin-btn primary span-2" type="submit" ${bankAccounts.length ? '' : 'disabled'}>ثبت در صف تطبیق</button>
           </form>
           <div class="fin-operation-list"><div class="fin-subhead"><strong>گردش‌های بانکی</strong><span>${fa(bankStatementLines.length)} مورد</span></div>
-            ${bankStatementLines.length ? bankStatementLines.slice(0, 25).map((row) => {
+            ${bankStatementLines.length ? visibleBankLines.map((row) => {
               const exactCandidates = bankCandidates.filter((candidate) => candidate.accountCode === row.details?.bankAccountCode && candidate.direction === row.details?.direction && Number(candidate.amountIrr) === Number(row.amountIrr));
               return `<article class="stack"><div><strong>${esc(row.bankReference)}</strong><small>${dateTime(row.details?.occurredAt)} · ${esc(label(row.details?.direction))} · حساب ${esc(row.details?.bankAccountCode)}</small></div><div>${statusBadge(row.status)}<b>${money(row.amountIrr)}</b></div>
                 ${row.status === 'unmatched' ? `<div class="fin-inline-action"><select data-fin-bank-candidate="${esc(row.id)}" aria-label="سند دفتر برای ${esc(row.bankReference)}"><option value="">${exactCandidates.length ? 'سند قطعی هم‌مبلغ را انتخاب کنید' : 'سند قطعی دقیق یافت نشد'}</option>${exactCandidates.map((candidate) => `<option value="${esc(candidate.journalEntryId)}">${esc(candidate.journalNumber)} · ${dateTime(candidate.occurredAt)} · ${esc(candidate.description)}</option>`).join('')}</select><button class="fin-btn secondary" type="button" data-fin-bank-match="${esc(row.id)}" ${exactCandidates.length ? '' : 'disabled'}>تطبیق دقیق</button></div>` : `<small>سند ${esc(row.matchedJournal?.number || row.details?.matchedJournalNumber || row.journalEntryId)} · تطبیق‌دهنده ${esc(row.matchedBy || 'ثبت نشده')}</small>`}
               </article>`;
             }).join('') : empty('گردش صورت‌حساب بانک ثبت نشده است؛ بدون مدرک بانک، وضعیت تطبیق ادعا نمی‌شود.')}
+            ${paginationControls('bankLines', bankPagination)}
           </div>
         </div>
       </details>
@@ -1548,27 +1950,67 @@
             <button class="fin-btn primary span-2" type="submit" ${refundablePayments.length ? '' : 'disabled'}>ارسال برای تأیید مالک</button>
           </form>
           <div class="fin-operation-list"><div class="fin-subhead"><strong>درخواست‌های اخیر</strong><span>${fa(refunds.length)} مورد</span></div>
-            ${refunds.length ? refunds.slice(0, 25).map((row) => `<article><div><strong>${esc(row.reason)}</strong><small>سفارش ${esc(row.orderId)} · ${dateTime(row.refundDate)}</small></div><div>${statusBadge(row.status)}<b>${money(row.amountIrr)}</b></div></article>`).join('') : empty('درخواست برگشت وجه‌ای در این محدوده ثبت نشده است.')}
+            ${refunds.length ? visibleRefunds.map((row) => `<article><div><strong>${esc(row.reason)}</strong><small>سفارش ${esc(row.orderId)} · ${dateTime(row.refundDate)}</small></div><div>${statusBadge(row.status)}<b>${money(row.amountIrr)}</b></div></article>`).join('') : empty('درخواست برگشت وجه‌ای در این محدوده ثبت نشده است.')}
+            ${paginationControls('refunds', refundPagination)}
           </div>
         </div>
       </details>
       </div></section>
       <section class="fin-panel"><div class="fin-panel-title"><div><h3>سفارش‌ها و وضعیت ثبت مالی</h3><p>فیلتر مشترک تاریخ و شعبه اعمال شده است.</p></div></div>
         ${table('sales-orders', [
-          { label: 'سفارش', render: (row) => `<strong>${esc(row.orderNo || row.id)}</strong>` },
-          { label: 'تاریخ', render: (row) => dateTime(row.createdAt) },
+          { label: 'سفارش', render: (row) => `<strong class="fin-record-anchor" data-fin-record-id="${esc(row.id)}" tabindex="-1">${esc(row.orderNo || row.id)}</strong>` },
+          { label: 'تاریخ حسابداری', render: (row) => `<strong>${dateTime(row.accountingDate || row.paidAt || row.createdAt)}</strong><small class="fin-cell-note">ایجاد سفارش: ${dateTime(row.createdAt)}</small>` },
           { label: 'روش پرداخت', render: (row) => row.tenders?.length ? row.tenders.map((item) => statusBadge(label(item), 'neutral')).join(' ') : statusBadge('نامشخص', 'danger') },
           { label: 'مبلغ', render: (row) => `<strong>${money(row.amountIrr)}</strong>` },
           { label: 'ثبت مالی', render: (row) => statusBadge(row.financeStatus) },
+          { label: 'زنجیره', render: (row) => `<button class="fin-btn secondary" type="button" data-fin-order-chain="${esc(row.id)}">جزئیات کامل</button>` },
         ], data.orders, 'سفارش پرداخت‌شده‌ای در این محدوده وجود ندارد.', data.pagination)}
       </section>`;
   }
 
   function renderPurchases(data) {
     const v2 = data.v2 || { purchaseOrders: [], goodsReceipts: [], vendorInvoices: [], supplierPayments: [] };
+    const supplierPayments = [...(v2.supplierPayments || [])].sort((a, b) => new Date(b.paymentDate || b.createdAt) - new Date(a.paymentDate || a.createdAt));
+    const operatingExpenses = [...(v2.operatingExpenses || [])].sort((a, b) => new Date(b.date || b.createdAt) - new Date(a.date || a.createdAt));
+    const hasPurchaseActivity = Boolean(
+      (v2.purchaseOrders || []).length || (v2.goodsReceipts || []).length || (v2.vendorInvoices || []).length || supplierPayments.length
+      || (v2.costCommitments || []).length || (v2.costAccruals || []).length || operatingExpenses.length
+      || (data.purchaseOrders || []).length || (data.goodsReceipts || []).length || (data.bills || []).length || (data.expenses || []).length,
+    );
+    const activityCount = (value) => hasPurchaseActivity ? fa(value || 0) : STATUS_COPY.empty;
+    const activityMoney = (value) => hasPurchaseActivity ? money(value || 0) : STATUS_COPY.empty;
     const today = localIsoDate();
-    const receivablePoLineCount = (v2.purchaseOrders || []).reduce((sum, po) => sum + (['approved', 'partially_received'].includes(po.status)
-      ? (po.lines || []).filter((line) => Number(line.receivedQuantity || 0) < Number(line.quantity || 0)).length : 0), 0);
+    const receivablePurchaseLines = (v2.purchaseOrders || []).flatMap((po) => {
+      if (!['approved', 'partially_received'].includes(String(po.status || ''))) return [];
+      return (po.lines || []).map((line) => ({
+        po,
+        line,
+        remainingQuantity: Math.max(0, Number(line.quantity || 0) - Number(line.receivedQuantity || 0)),
+      })).filter((row) => row.remainingQuantity > 1e-9);
+    });
+    const receivablePoLineCount = receivablePurchaseLines.length;
+    const receivingHandoffText = ({ po, line, remainingQuantity }) => [
+      `دریافت کالا · سفارش ${po.number || po.id}`,
+      `شناسه سفارش: ${po.id}`,
+      `شناسه ردیف: ${line.id}`,
+      `کالا: ${line.description || line.itemId || 'ثبت نشده'}`,
+      `مانده: ${remainingQuantity} ${line.unit || ''}`,
+      `شعبه: ${state.query.branchId || 1}`,
+    ].join(' | ');
+    const operationalReceivingLink = `/admin/kitchen?view=inventory&branchId=${encodeURIComponent(state.query.branchId || 1)}`;
+    const receivingHandoff = !can('inventory.receiving')
+      ? `<section class="fin-note warning fin-receiving-handoff" id="fin-receiving-handoff" data-fin-receiving-handoff role="status">
+          <strong>نیازمند آشپز/انباردار</strong>
+          <span>حسابدار فقط صف دریافت را پیگیری می‌کند؛ ثبت رسید کالا و تغییر موجودی در ایستگاه عملیاتی انجام می‌شود.</span>
+          ${receivablePurchaseLines.length ? `<div class="fin-receiving-handoff-list">${receivablePurchaseLines.map((row) => {
+            const reference = receivingHandoffText(row);
+            return `<article class="fin-receiving-handoff-row" data-fin-receiving-handoff-row data-fin-handoff-order-id="${esc(row.po.id)}" data-fin-handoff-line-id="${esc(row.line.id)}">
+              <div><strong>سفارش ${esc(row.po.number || row.po.id)}</strong><small>شناسه سفارش: ${esc(row.po.id)} · شناسه ردیف: ${esc(row.line.id)}</small><small>${esc(row.line.description || row.line.itemId || 'کالا')} · مانده ${fa(row.remainingQuantity)} ${esc(row.line.unit || '')}</small></div>
+              <div class="fin-inline-action"><a class="fin-btn secondary" href="#fin-receiving-handoff" aria-label="بازکردن پرونده دریافت سفارش ${esc(row.po.number || row.po.id)}">پرونده مالی</a><button class="fin-btn secondary" type="button" data-fin-copy-receiving-handoff="${esc(reference)}">کپی ارجاع</button></div>
+            </article>`;
+          }).join('')}</div>` : '<small>در حال حاضر ردیف بازِ قابل دریافت وجود ندارد.</small>'}
+        </section>`
+      : '';
     const invoicedByReceiptLine = new Map();
     (v2.vendorInvoices || []).filter((invoice) => !['match_rejected', 'cancelled'].includes(invoice.status)).forEach((invoice) => (invoice.lines || []).forEach((line) => {
       invoicedByReceiptLine.set(String(line.goodsReceiptLineId), Number(invoicedByReceiptLine.get(String(line.goodsReceiptLineId)) || 0) + Number(line.invoicedQuantity || 0));
@@ -1596,19 +2038,15 @@
       <button class="fin-icon-btn" type="button" data-fin-remove-invoice-row aria-label="حذف ردیف فاکتور">×</button>
     </div>`;
     return `
-      <section class="fin-section-head"><div><h2>خرید، هزینه و پرداختنی</h2><p>سفارش خرید ← رسید کالا ← فاکتور ← تطبیق سه‌سویه ← پرداخت</p></div><button class="fin-btn secondary" type="button" data-fin-export="payables">دریافت فایل گزارش</button></section>
-      ${quickGuide('مسیر ثبت خرید', [
-        { title: 'سفارش خرید', detail: 'تأمین‌کننده، مقدار و قیمت مورد انتظار را ثبت کنید.' },
-        { title: 'دریافت و فاکتور', detail: 'انبار مقدار واقعی را می‌زند؛ حسابدار فاکتور را تطبیق می‌دهد.' },
-        { title: 'تأیید و پرداخت', detail: 'فقط فاکتور تطبیق‌شده برای تأیید مالک ارسال می‌شود.' },
-      ])}
-      <div class="fin-metrics">
-        ${metric('سفارش خرید جدید', fa(data.summary.v2PurchaseOrders), 'از پیش‌نویس تا دریافت')}
-        ${metric('فاکتور باز جدید', fa(data.summary.v2OpenInvoices), `${fa(data.summary.matchExceptions)} اختلاف تطبیق`, data.summary.matchExceptions ? 'danger' : '')}
-        ${metric('پرداختنی قابل اتکا', money(data.summary.v2PayableIrr), 'فقط فاکتورهای ثبت‌شده در سامانه جدید')}
-        ${metric('پرداخت منتظر تأیید', fa(data.summary.pendingSupplierPayments), 'خروج وجه فقط پس از تأیید مالک', data.summary.pendingSupplierPayments ? 'warning' : '')}
+      <section class="fin-section-head"><div><h2>خرید، هزینه و پرداختنی</h2><p>سفارش خرید ← رسید کالا ← فاکتور ← تطبیق سه‌سویه ← پرداخت</p></div><button class="fin-btn secondary" type="button" data-fin-export="payables" title="خروجی فقط از صفحهٔ جاری">دریافت CSV صفحهٔ جاری</button></section>
+      <div class="fin-metrics" data-fin-purchases-summary data-fin-activity-state="${hasPurchaseActivity ? 'active' : 'empty'}">
+        ${metric('سفارش خرید جدید', activityCount(data.summary.v2PurchaseOrders), 'از پیش‌نویس تا دریافت')}
+        ${metric('فاکتور باز جدید', activityCount(data.summary.v2OpenInvoices), hasPurchaseActivity ? `${fa(data.summary.matchExceptions || 0)} اختلاف تطبیق` : STATUS_COPY.empty, data.summary.matchExceptions ? 'danger' : '')}
+        ${metric('پرداختنی قابل اتکا', activityMoney(data.summary.v2PayableIrr), 'فقط فاکتورهای ثبت‌شده در سامانه جدید')}
+        ${metric('پرداخت منتظر تأیید', activityCount(data.summary.pendingSupplierPayments), 'خروج وجه فقط پس از تأیید مالک', data.summary.pendingSupplierPayments ? 'warning' : '')}
       </div>
-      <div class="fin-flow"><span>${fa(v2.purchaseOrders?.length || 0)} سفارش خرید</span><b>←</b><span>${fa(v2.goodsReceipts?.length || 0)} رسید کالا</span><b>←</b><span>${fa(v2.vendorInvoices?.length || 0)} فاکتور و تطبیق</span><b>←</b><span>${fa(v2.supplierPayments?.length || 0)} درخواست پرداخت</span></div>
+      <div class="fin-flow" data-fin-purchase-chain aria-label="زنجیره خرید و پرداخت"><span>${activityCount(v2.purchaseOrders?.length)} سفارش خرید</span><b>←</b><span>${activityCount(v2.goodsReceipts?.length)} رسید کالا</span><b>←</b><span>${activityCount(v2.vendorInvoices?.length)} فاکتور و تطبیق</span><b>←</b><span>${activityCount(supplierPayments.length)} درخواست پرداخت</span></div>
+      ${hasPurchaseActivity ? '' : `<div class="fin-note" data-fin-no-activity><strong>${STATUS_COPY.empty}</strong><span>برای شروع، یک سفارش خرید یا هزینهٔ واقعی ثبت کنید؛ در این حالت هیچ بدهی یا مبلغ ساختگی نمایش داده نمی‌شود.</span></div>`}
       <section class="fin-panel fin-operations"><div class="fin-panel-title"><div><h3>میز عملیات خرید و پرداختنی</h3><p>هر مرحله فقط دادهٔ لازم همان کار را می‌گیرد؛ مبلغ در صفحه تومان و در ذخیره‌سازی ریال است.</p></div><span>عملیاتی</span></div><div id="fin-operation-feedback"></div>
         <div class="fin-procurement-stack">
           <details class="fin-advanced" open><summary>۱. ایجاد سفارش خرید</summary>
@@ -1623,9 +2061,11 @@
               <button class="fin-btn primary span-2" type="submit" ${(data.inventoryItems || []).length ? '' : 'disabled'}>ثبت سفارش خرید چندردیفی</button>
             </form>
           </details>
-          <details class="fin-advanced"><summary>۲. دریافت فیزیکی کالا (${fa(receivablePoLineCount)} ردیف قابل دریافت)</summary>
+          <details class="fin-advanced" id="fin-receiving-step"${!can('inventory.receiving') ? ' open' : ''}><summary>۲. دریافت فیزیکی کالا (${fa(receivablePoLineCount)} ردیف قابل دریافت)</summary>
             <div class="fin-note"><strong>تفکیک وظایف</strong><span>ثبت مقدار تحویل‌شده در پنل آشپزخانه/انبار انجام می‌شود؛ آن پنل قیمت خرید و کد حساب را نمایش نمی‌دهد. پس از ثبت، رسید، موجودی و حساب کالای فاکتورنشده خودکار به همین پرونده برمی‌گردند.</span></div>
-            <a class="fin-btn secondary" href="/admin/kitchen?view=inventory">رفتن به پنل دریافت کالا</a>
+            ${can('inventory.receiving')
+              ? `<a class="fin-btn secondary" href="${operationalReceivingLink}">رفتن به پنل دریافت کالا</a>`
+              : receivingHandoff}
           </details>
           <details class="fin-advanced"><summary>۳. ثبت فاکتور و تطبیق سه‌سویه (${fa(availableReceiptLines.length)} رسید)</summary>
             <form id="fin-invoice-form" class="fin-form fin-procurement-form" autocomplete="off">
@@ -1700,6 +2140,18 @@
           </div>
         </div>
       </section>
+      <section class="fin-grid-2 fin-purchase-followup" data-fin-purchase-followup>
+        <section class="fin-panel"><div class="fin-panel-title"><div><h3>پیگیری پرداخت تأمین‌کننده</h3><p>هر درخواست تا تأیید و خروج واقعی وجه قابل پیگیری است.</p></div><span>${activityCount(supplierPayments.length)} مورد</span></div>
+          <div class="fin-operation-list" data-fin-purchase-payments>${supplierPayments.length ? supplierPayments.map((row) => {
+            const invoice = (v2.vendorInvoices || []).find((item) => item.id === row.vendorInvoiceId);
+            const tone = row.status === 'paid' ? 'success' : ['rejected', 'reversed'].includes(row.status) ? 'danger' : 'warning';
+            return `<article><div><strong>${esc(invoice?.invoiceNumber || row.vendorInvoiceId || 'فاکتور')}</strong><small>${dateTime(row.paymentDate || row.createdAt)} · ${esc(label(row.paymentMethod))}${row.reference ? ` · مرجع ${esc(row.reference)}` : ''}</small></div><div>${statusBadge(row.status, tone)}<b>${money(row.amountIrr)}</b></div></article>`;
+          }).join('') : empty('هنوز درخواست پرداخت تأمین‌کننده‌ای ثبت نشده است.')}</div>
+        </section>
+        <section class="fin-panel"><div class="fin-panel-title"><div><h3>هزینه‌های عملیاتی ثبت‌شده</h3><p>ثبت هزینه، تأیید و اثر قطعی آن را در همین پرونده دنبال کنید.</p></div><span>${activityCount(operatingExpenses.length)} مورد</span></div>
+          <div class="fin-operation-list" data-fin-operating-expenses>${operatingExpenses.length ? operatingExpenses.map((row) => `<article><div><strong>${esc(row.subject || row.description || 'هزینهٔ عملیاتی')}</strong><small>${dateTime(row.date || row.createdAt)} · ${esc(row.category || 'سایر')}${row.reference ? ` · مرجع ${esc(row.reference)}` : ''}</small></div><div>${statusBadge(row.status, row.status === 'posted' ? 'success' : row.status === 'rejected' ? 'danger' : 'warning')}<b>${money(row.amountIrr)}</b></div></article>`).join('') : empty('هنوز هزینهٔ عملیاتی ثبت نشده است.')}</div>
+        </section>
+      </section>
       <section class="fin-panel"><div class="fin-panel-title"><div><h3>زنجیره خرید جدید</h3><p>وضعیت و اقدام بعدی هر پرونده</p></div></div>
         ${table('v2-purchase-orders', [
           { label: 'شماره', render: (row) => `<strong>${esc(row.number)}</strong>` },
@@ -1724,7 +2176,7 @@
       <div class="fin-note warning"><strong>دادهٔ قدیمی فقط برای بررسی است</strong><span>${fa(data.purchaseOrders?.length || 0)} سفارش خرید، ${fa(data.goodsReceipts?.length || 0)} رسید و ${fa(data.bills?.length || 0)} فاکتور تاریخی وارد دفتر مالی جدید نشده‌اند؛ حذف یا تبدیل کور انجام نمی‌شود.</span></div>
       <details class="fin-advanced"><summary>تأمین‌کنندگان و مانده‌های تاریخی</summary><section class="fin-legacy-table">
         ${table('vendors', [
-          { label: 'تأمین‌کننده', render: (row) => `<strong>${esc(row.nameFa || row.name || row.id)}</strong>` },
+          { label: 'تأمین‌کننده', render: (row) => `<strong class="fin-record-anchor" data-fin-record-id="${esc(row.id)}" tabindex="-1">${esc(row.nameFa || row.name || row.id)}</strong>` },
           { label: 'دسته', render: (row) => esc(row.category || 'ثبت نشده') },
           { label: 'مهلت', render: (row) => row.termsDays == null ? 'ثبت نشده' : `${fa(row.termsDays)} روز` },
           { label: 'ماندهٔ تاریخی', render: (row) => money(Number(row.balance || 0) * 10) },
@@ -1753,25 +2205,22 @@
     const sourceReady = Boolean(usableContribution);
     const planDeadlineConfirmed = breakEvenPlan.deadline?.isConfirmed === true;
     const recipeCoverageQueue = data.recipeCoverageQueue || [];
+    const recipeApprovalReviewQueue = data.recipeApprovalReviewQueue || [];
     const qualitySummary = data.summary || {};
     const recipeReady = Number(qualitySummary.recipes || 0) > 0
       && Number(qualitySummary.invalidCostItems || 0) === 0
       && Number(qualitySummary.unversionedRecipes || 0) === 0
+      && Number(qualitySummary.recipeApprovalAuditMissing || 0) === 0
       && recipeCoverageQueue.length === 0;
     const coverageIssueLabel = (code) => ({
       recipe_missing: 'دستور تهیهٔ مؤثر ندارد', recipe_line_invalid: 'ردیف دستور تهیه نامعتبر است', ingredient_item_missing: 'ماده به انبار وصل نیست',
       ingredient_quantity_invalid: 'مقدار ماده نامعتبر', unit_conversion_missing: 'تبدیل واحد ناقص', unit_dimension_mismatch: 'واحد ناسازگار',
     })[code] || label(code);
     return `
-      <section class="fin-section-head"><div><h2>بهای تمام‌شده و انبار</h2><p>واقعیت عملیاتی در آشپزخانه و انبار ثبت می‌شود؛ اینجا اثر مالی و مغایرت دیده می‌شود.</p></div><button class="fin-btn secondary" type="button" data-fin-export="costing">دریافت فایل گزارش</button></section>
-      ${quickGuide('مسیر کنترل هزینه مواد', [
-        { title: 'پوشش دستور تهیه', detail: 'محصولات فروخته‌شده بدون دستور تهیهٔ معتبر را پیدا کنید.' },
-        { title: 'قیمت و موجودی', detail: 'قیمت معتبر مواد و گردش واقعی انبار را کنترل کنید.' },
-        { title: 'سود و سفارش', detail: 'سود هر محصول و زمان سفارش مواد را بررسی کنید.' },
-      ])}
+      <section class="fin-section-head"><div><h2>بهای تمام‌شده و انبار</h2><p>واقعیت عملیاتی در آشپزخانه و انبار ثبت می‌شود؛ اینجا اثر مالی و مغایرت دیده می‌شود.</p></div><button class="fin-btn secondary" type="button" data-fin-export="costing" title="خروجی فقط از صفحهٔ جاری">دریافت CSV صفحهٔ جاری</button></section>
       <div class="fin-metrics">
         ${metric('اقلام انبار', fa(data.summary.inventoryItems), 'منبع: اقلام ثبت‌شده انبار')}
-        ${metric('دستور تهیه', fa(data.summary.recipes), `${fa(data.summary.unversionedRecipes)} بدون نسخه`, data.summary.unversionedRecipes ? 'warning' : '')}
+        ${metric('دستور تهیه', fa(data.summary.recipes), `${fa(data.summary.unversionedRecipes)} بدون نسخه · ${fa(data.summary.recipeApprovalAuditMissing || 0)} بدون تأیید مستقل`, data.summary.unversionedRecipes || data.summary.recipeApprovalAuditMissing ? 'warning' : '')}
         ${metric('گردش جدید انبار', fa(data.summary.shadowMovements), 'فروش، ضایعات، شمارش و تولید')}
         ${metric('ضایعات قدیمی', fa(data.summary.wasteEvents), 'فقط برای بررسی؛ ثبت جدید در پنل آشپزخانه')}
       </div>
@@ -1784,7 +2233,7 @@
         <div class="fin-break-even-readiness" aria-label="آمادگی محاسبهٔ سودآوری">
           <article class="${planDeadlineConfirmed ? 'success' : 'warning'}"><span>۱</span><div><strong>هزینه و ددلاین</strong><small>${planDeadlineConfirmed ? 'ددلاین واقعی برنامه تأیید شده است.' : 'مبالغ پایه آماده‌اند؛ ددلاین پیشنهادی را پیش از ذخیره تأیید کنید.'}</small></div><a href="#fin-break-even-plan-form">تکمیل برنامه</a></article>
           <article class="${sourceReady ? 'success' : 'warning'}"><span>۲</span><div><strong>فروش و بهای مواد</strong><small>${sourceReady ? `${esc(usableContribution.source?.label || 'منبع هم‌مبنا')} · ${fa(usableContribution.rowCount || 0)} روز یا ردیف قابل محاسبه` : 'فروش خالص و بهای موادِ همان فروش باید هر دو ثبت شوند.'}</small></div><a href="/admin?financeWorkspace=sales_bank&branchId=${encodeURIComponent(state.query.branchId || 1)}#accounting">بررسی فروش</a></article>
-          <article class="${recipeReady ? 'success' : 'warning'}"><span>۳</span><div><strong>دستور تهیه و انبار</strong><small>${recipeReady ? 'دستورهای تهیهٔ لازم نسخه‌دار و قیمت مواد معتبر است.' : `${fa(qualitySummary.recipes || 0)} دستور تهیه · ${fa(qualitySummary.invalidCostItems || 0)} قیمت نامعتبر · ${fa(recipeCoverageQueue.length)} شکاف فروش`}</small></div><a href="/admin/kitchen?view=inventory">تکمیل دستور تهیه</a></article>
+          <article class="${recipeReady ? 'success' : 'warning'}"><span>۳</span><div><strong>دستور تهیه و انبار</strong><small>${recipeReady ? 'دستورهای تهیهٔ لازم نسخه‌دار، قیمت‌گذاری‌شده و دارای تأیید مستقل‌اند.' : `${fa(qualitySummary.recipes || 0)} دستور تهیه · ${fa(qualitySummary.invalidCostItems || 0)} قیمت نامعتبر · ${fa(qualitySummary.recipeApprovalAuditMissing || 0)} بدون تأیید مستقل · ${fa(recipeCoverageQueue.length)} شکاف فروش`}</small></div><a href="/admin/kitchen?view=inventory&branchId=${encodeURIComponent(state.query.branchId || 1)}">تکمیل دستور تهیه</a></article>
         </div>
         <div id="fin-break-even-chart" class="fin-break-even-chart-slot" aria-live="polite"></div>
         <div class="fin-result-grid">
@@ -1805,15 +2254,26 @@
             <label class="fin-field"><span>حقوق هر نفر در ماه (تومان)</span><input name="payrollSalaryToman" inputmode="numeric" value="${esc(breakEvenAmounts.payrollSalaryToman)}" required></label>
             <label class="fin-field"><span>آب، برق و گاز ماهانه (تومان)</span><input name="utilitiesToman" inputmode="numeric" value="${esc(breakEvenAmounts.utilitiesToman)}" required></label>
             <label class="fin-field"><span>سایر هزینهٔ ثابت ماهانه (تومان)</span><input name="otherFixedToman" inputmode="numeric" value="${esc(breakEvenAmounts.otherFixedToman)}" required></label>
+            <div id="fin-break-even-feedback" class="span-all"></div>
             <button class="fin-btn primary" type="submit">ذخیره و محاسبهٔ مسیر سوددهی</button>
           </form>
           <div class="fin-note"><strong>مرز داده‌ها</strong><span>اجارهٔ ۸۰۰ میلیون، حقوق ۱۰ نفر × ۴۵ میلیون و اشتراک‌های ۳۰ میلیون تومان به‌عنوان مبنای قابل‌ویرایش آماده‌اند. ددلاین پیش‌فرض فقط پیشنهادی است و تا تأیید شما ذخیره نمی‌شود. تا وقتی تعهد یا سند واقعی نسازید، این مبالغ در دفتر کل و هزینهٔ واقعی وارد نمی‌شوند.</span></div>
         </div></details>
       </section>
       <section class="fin-panel"><div class="fin-panel-title"><div><h3>کیفیت دادهٔ هزینه</h3><p>پیش‌نیاز گزارش سودآوری منو</p></div></div>
-        <div class="fin-check-grid"><article class="${data.summary.invalidCostItems ? 'danger' : 'success'}"><strong>قیمت نامعتبر مواد</strong><span>${fa(data.summary.invalidCostItems)}</span></article><article class="${data.summary.unversionedRecipes ? 'warning' : 'success'}"><strong>دستور تهیه بدون نسخه</strong><span>${fa(data.summary.unversionedRecipes)}</span></article></div>
+        <div class="fin-check-grid"><article class="${data.summary.invalidCostItems ? 'danger' : 'success'}"><strong>قیمت نامعتبر مواد</strong><span>${fa(data.summary.invalidCostItems)}</span></article><article class="${data.summary.unversionedRecipes ? 'warning' : 'success'}"><strong>دستور تهیه بدون نسخه</strong><span>${fa(data.summary.unversionedRecipes)}</span></article><article class="${data.summary.recipeApprovalAuditMissing ? 'danger' : 'success'}"><strong>بدون زنجیرهٔ تأیید مستقل</strong><span>${fa(data.summary.recipeApprovalAuditMissing || 0)}</span></article></div>
       </section>
-      <section class="fin-panel"><div class="fin-panel-title"><div><h3>شکاف پوشش دستور تهیهٔ فروش</h3><p>صف اقدام بر پایه خطوط فروش پرداخت‌شده؛ حسابدار مشکل را می‌بیند و آشپز/انباردار مقدار واقعی مواد را پیشنهاد می‌کند.</p></div><a class="fin-btn secondary" href="/admin/kitchen?view=inventory">رفتن به دستورهای تهیه</a></div>
+      <section class="fin-panel"><div class="fin-panel-title"><div><h3>صف بازبینی تأیید دستورهای تهیه</h3><p>نسخهٔ ساختاریِ بدون approval مستقل برای COGS رسمی معتبر نیست؛ این صفحه فقط شواهد را نشان می‌دهد و وضعیت را خودکار تغییر نمی‌دهد.</p></div><a class="fin-btn secondary" href="/admin?financeWorkspace=workbench&branchId=${encodeURIComponent(state.query.branchId || 1)}#accounting">بازگشت به کارتابل</a></div>
+        ${table('recipe-approval-review', [
+          { label: 'محصول منو', render: (row) => `<strong>${esc(row.menuItemName || 'محصول نامشخص')}</strong><small>${esc(row.menuItemId || row.id)}</small>` },
+          { label: 'نسخه و شعبه', render: (row) => `${esc(row.version == null ? '—' : String(row.version))} · ${row.branchId == null ? 'عمومی' : esc(String(row.branchId))}` },
+          { label: 'وضعیت', render: (row) => statusBadge(row.status || 'نامشخص', 'danger') },
+          { label: 'شواهد ناقص', render: (row) => (row.missingEvidence || []).map((code) => esc(({ approved_by: 'تأییدکننده', approved_at: 'زمان تأیید', approval_record: 'رکورد approval', approval_entity: 'نوع موجودیت', approval_entity_id: 'شناسه موجودیت', approval_operation: 'عملیات approval', approval_decision: 'تصمیم نهایی' })[code] || code)).join('، ') || '—' },
+          { label: 'اقدام مجاز', render: () => statusBadge('بازبینی آشپز/مدیر ← تأیید مستقل', 'warning') },
+        ], recipeApprovalReviewQueue, 'همهٔ نسخه‌های مؤثر دستور تهیه زنجیرهٔ تأیید مستقل معتبر دارند.')}
+        ${recipeApprovalReviewQueue.length ? '<div class="fin-note warning"><strong>تا تعیین تکلیف، COGS رسمی متوقف است</strong><span>ایجاد نسخهٔ شعبه‌ای و تأیید آن باید از workflow آشپزخانه و مدیر/مالک مستقل انجام شود؛ approvedBy یا approval صوری قابل قبول نیست.</span></div>' : ''}
+      </section>
+      <section class="fin-panel"><div class="fin-panel-title"><div><h3>شکاف پوشش دستور تهیهٔ فروش</h3><p>صف اقدام بر پایه خطوط فروش پرداخت‌شده؛ حسابدار مشکل را می‌بیند و آشپز/انباردار مقدار واقعی مواد را پیشنهاد می‌کند.</p></div><a class="fin-btn secondary" href="/admin/kitchen?view=inventory&branchId=${encodeURIComponent(state.query.branchId || 1)}">رفتن به دستورهای تهیه</a></div>
         ${table('recipe-coverage-queue', [
           { label: 'محصول واقعی منو', render: (row) => `<strong>${esc(row.menuItemName)}</strong><small>${esc(row.menuItemId || 'شناسه نامشخص')}</small>` },
           { label: 'خط فروش خارج از پوشش', render: (row) => `<strong>${fa(row.affectedSaleLines)}</strong>` },
@@ -1852,7 +2312,7 @@
           { label: 'سفارش خرید ورودی معتبر', render: (row) => row.projectedInboundQuantity ? `<strong>${fa(Math.round(row.projectedInboundQuantity * 100) / 100)} ${esc(row.unit)}</strong><small>${fa(row.inboundSchedule?.length || 0)} سفارش تأییدشده</small>` : 'ندارد' },
           { label: 'روز باقی‌مانده', render: (row) => row.daysRemaining == null ? `بیش از ${fa(row.forecastHorizonDays || 365)} روز` : `<strong>${fa(row.daysRemaining)}</strong>` },
           { label: 'تاریخ احتمالی اتمام', render: (row) => !row.forecastDate ? 'در افق پیش‌بینی رخ نمی‌دهد' : window.ShamsiCore ? window.ShamsiCore.formatShamsiDate(row.forecastDate) : esc(row.forecastDate) },
-          { label: 'اقدام سفارش', render: (row) => row.actionStatus === 'monitor' ? statusBadge('فعلاً کافی', 'success') : row.actionStatus === 'lead_time_missing' ? statusBadge('زمان تأمین ثبت نشده', 'warning') : `${statusBadge(row.actionStatus === 'order_now' ? 'سفارش امروز' : 'زمان‌بندی‌شده', row.actionStatus === 'order_now' ? 'danger' : 'success')}<small>${row.reorderByDate ? ` تا ${window.ShamsiCore ? window.ShamsiCore.formatShamsiDate(row.reorderByDate) : esc(row.reorderByDate)} · ${fa(row.suggestedOrderQuantity)} ${esc(row.unit)}` : ''}</small>` },
+          { label: 'اقدام سفارش', render: (row) => row.actionStatus === 'monitor' ? statusBadge(row.confidence === 'high' ? 'فعلاً کافی' : 'پایش؛ اطمینان ناکافی', row.confidence === 'high' ? 'success' : 'warning') : row.actionStatus === 'lead_time_missing' ? statusBadge('زمان تأمین ثبت نشده', 'warning') : `${statusBadge(row.actionStatus === 'order_now' ? 'سفارش امروز' : 'زمان‌بندی‌شده', row.actionStatus === 'order_now' ? 'danger' : row.confidence === 'high' ? 'success' : 'warning')}<small>${row.reorderByDate ? ` تا ${window.ShamsiCore ? window.ShamsiCore.formatShamsiDate(row.reorderByDate) : esc(row.reorderByDate)} · ${fa(row.suggestedOrderQuantity)} ${esc(row.unit)}` : ''}</small>` },
           { label: 'اطمینان', render: (row) => `${statusBadge(row.confidence === 'high' ? 'بالا' : row.confidence === 'medium' ? 'متوسط' : 'پایین', row.confidence === 'high' ? 'success' : row.confidence === 'medium' ? 'warning' : 'neutral')}<small>${row.backtestWapePercent == null ? 'تاریخچه کافی برای آزمون دقت نیست' : `خطای آزمون دقت: ${fa(row.backtestWapePercent)}٪`}</small>` },
           { label: 'اولویت', render: (row) => statusBadge(row.urgency, row.urgency === 'critical' ? 'danger' : row.urgency === 'warning' ? 'warning' : 'success') },
         ], stockoutActions, 'ماده‌ای با مصرف روزانهٔ قابل اتکا یافت نشد.')}
@@ -1928,22 +2388,84 @@
     const payablePayrollRuns = payrollRuns.filter((run) => ['posted', 'partially_paid'].includes(run.status));
     const payrollLiabilityIrr = payrollRuns.filter((run) => ['posted', 'partially_paid', 'paid'].includes(run.status)).reduce((sum, run) => sum + Object.values(run.liabilities || {}).reduce((part, amount) => part + Number(amount || 0), 0), 0);
     const payrollPaidIrr = payrollRuns.reduce((sum, run) => sum + Object.values(run.paidByLiability || {}).reduce((part, amount) => part + Number(amount || 0), 0), 0);
+    const snapshot = data.snapshot || {};
+    const operational = snapshot.operational || {};
+    const reconciliation = snapshot.reconciliation || {};
+    const reportingState = data.reportingState || {};
+    const hasFinancialActivity = reportingState.hasActivity != null
+      ? reportingState.hasActivity === true
+      : Number(operational.paidOrders || 0) > 0 || Number(data.entries?.length || 0) > 0;
+    const hasSalesActivity = Number(operational.paidOrders || 0) > 0 || Number(pnl.controls?.expectedSaleEvents || 0) > 0;
+    const reportCard = (title, value, detail, status, tone = '') => `<article class="fin-report-card ${tone}" data-report-status="${esc(status)}"><div class="fin-report-card__head"><span>${esc(title)}</span>${statusBadge(status, tone || undefined)}</div><strong>${value}</strong><small>${esc(detail)}</small></article>`;
+    const salesReport = !hasSalesActivity
+      ? { value: 'بدون فعالیت', detail: STATUS_COPY.empty, status: 'empty_period', tone: 'neutral' }
+      : Number(reconciliation.salesDifferenceIrr || 0) === 0
+        ? { value: money(operational.salesIrr), detail: 'فروش عملیاتی با دفتر مالی تطبیق دارد', status: 'available', tone: 'success' }
+        : { value: money(Math.abs(Number(reconciliation.salesDifferenceIrr || 0))), detail: 'اختلاف فروش و دفتر؛ بررسی لازم است', status: 'partial', tone: 'warning' };
+    const expenseIrr = pnl.status === 'available' ? Number(pnl.cogsIrr || 0) + Number(pnl.operatingExpenseIrr || 0) : null;
+    const expenseReport = !hasFinancialActivity
+      ? { value: 'بدون فعالیت', detail: STATUS_COPY.empty, status: 'empty_period', tone: 'neutral' }
+      : expenseIrr == null
+        ? { value: STATUS_COPY.insufficientData, detail: 'بهای تمام‌شده یا هزینهٔ قطعی کامل نیست', status: 'insufficient', tone: 'warning' }
+        : { value: money(expenseIrr), detail: 'بهای تمام‌شده و هزینه‌های عملیاتی قطعی', status: 'available', tone: 'success' };
+    const profitReport = !hasFinancialActivity
+      ? { value: 'بدون فعالیت', detail: STATUS_COPY.empty, status: 'empty_period', tone: 'neutral' }
+      : pnl.status === 'available'
+        ? { value: money(pnl.netProfitIrr), detail: pnl.netProfitIrr < 0 ? 'زیان قطعی از دفتر مالی' : 'سود قطعی از دفتر مالی', status: pnl.netProfitIrr < 0 ? 'negative' : 'positive', tone: pnl.netProfitIrr < 0 ? 'danger' : 'success' }
+        : { value: STATUS_COPY.insufficientData, detail: 'تا تکمیل فروش، بهای تمام‌شده و هزینه‌ها رقم رسمی ساخته نمی‌شود', status: 'incomplete', tone: 'warning' };
+    const passedChecks = checks.filter((item) => item.passed).length;
+    const closeReport = checks.length && passedChecks === checks.length
+      ? { value: `${fa(passedChecks)} از ${fa(checks.length)}`, detail: 'همهٔ کنترل‌ها عبور کرده‌اند؛ دوره آمادهٔ بستن است', status: 'ready', tone: 'success' }
+      : checks.length
+        ? { value: `${fa(passedChecks)} از ${fa(checks.length)}`, detail: `${fa(checks.length - passedChecks)} کنترل نیازمند اقدام است`, status: 'check_failed', tone: 'danger' }
+        : { value: STATUS_COPY.insufficientData, detail: 'چک‌لیست بستن دوره از دفتر مالی دریافت نشد', status: 'insufficient', tone: 'warning' };
+    const periodId = data.selectedPeriod?.id || '';
+    const finalCloseAllowed = can('finance.period.close') && ['owner', 'manager'].includes(currentRole())
+      && data.periodSource === 'finance_v2' && Boolean(periodId)
+      && ['open', 'reopened', 'soft_closed'].includes(data.selectedPeriod?.status)
+      && checks.length > 0 && checks.every((item) => item.passed);
+    const preliminaryCloseAllowed = can('finance.period.close') && data.periodSource === 'finance_v2'
+      && Boolean(periodId) && ['open', 'reopened'].includes(data.selectedPeriod?.status);
+    const checklistActions = {
+      'balanced-ledger': ['مشاهدهٔ گزارش‌ها', 'ledger_close'],
+      'sales-reconciled': ['بررسی فروش و بانک', 'sales_bank'],
+      'events-clear': ['بازکردن کارتابل', 'workbench'],
+      'period-open': ['مشاهدهٔ دورهٔ مالی', 'workbench'],
+      'duplicates-clear': ['بازکردن کارتابل', 'workbench'],
+      'approvals-clear': ['مشاهدهٔ تأییدها', 'workbench'],
+      'reports-reliable': ['بررسی مواد و بهای تمام‌شده', 'costing'],
+    };
+    const checklistAction = (id, passed) => {
+      if (passed || !checklistActions[id]) return '';
+      const [text, workspace] = checklistActions[id];
+      return `<button class="fin-btn secondary fin-check-action" type="button" data-fin-goto="${workspace}">${text}</button>`;
+    };
     return `
-      <section class="fin-section-head"><div><h2>گزارش‌ها و بستن دوره</h2><p>گزارش‌ها از اسناد قطعی ساخته می‌شوند؛ برای بستن دوره ابتدا هشدارها را برطرف کنید.</p></div><button class="fin-btn secondary" type="button" data-fin-export="ledger">دریافت فایل گزارش</button></section>
-      ${quickGuide('مسیر پایان دوره', [
-        { title: 'رفع مغایرت‌ها', detail: 'اختلاف فروش، صندوق، بانک و رویدادهای مسدود را صفر کنید.' },
-        { title: 'کنترل دفاتر', detail: 'تراز آزمایشی و صورت‌های مالی را بررسی کنید.' },
-        { title: 'بستن دوره', detail: 'پس از عبور همه کنترل‌ها دوره را مقدماتی ببندید.' },
-      ])}
+      <section class="fin-section-head"><div><h2>گزارش‌ها و بستن دوره</h2><p>چهار نتیجهٔ اصلی را سریع ببینید؛ گزارش‌ها از اسناد قطعی ساخته می‌شوند و جزئیات حرفه‌ای فقط هنگام نیاز باز می‌شود.</p></div><button class="fin-btn secondary" type="button" data-fin-export="ledger" title="خروجی فقط از صفحهٔ جاری">دریافت CSV صفحهٔ جاری</button></section>
+      <section class="fin-report-summary" aria-label="خلاصهٔ گزارش‌های مالی">
+        ${reportCard('فروش و تطبیق', salesReport.value, salesReport.detail, salesReport.status, salesReport.tone)}
+        ${reportCard('هزینه‌ها', expenseReport.value, expenseReport.detail, expenseReport.status, expenseReport.tone)}
+        ${reportCard('سود و زیان', profitReport.value, profitReport.detail, profitReport.status, profitReport.tone)}
+        ${reportCard('وضعیت بستن دوره', closeReport.value, closeReport.detail, closeReport.status, closeReport.tone)}
+      </section>
+      <section class="fin-panel fin-close-summary" aria-labelledby="fin-close-summary-title"><div class="fin-panel-title"><div><h3 id="fin-close-summary-title">کنترل‌های بستن دوره</h3><p>هر مورد ناموفق یک علت ساده و مسیر مستقیم برای اصلاح دارد.</p></div><span>${fa(passedChecks)} از ${fa(checks.length)} کنترل</span></div>
+        <div class="fin-check-list fin-check-list--summary">${checks.map((item) => `<article class="${item.passed ? 'passed' : 'failed'}"><span>${item.passed ? '✓' : '!'}</span><div><strong>${esc(item.label)}</strong>${item.passed ? '<small>کنترل عبور کرده است</small>' : '<small>برای ادامه، اقدام پیشنهادی را انجام دهید.</small>'}</div>${checklistAction(item.id, item.passed)}${statusBadge(item.passed ? 'passed' : 'failed')}</article>`).join('')}</div>
+        <div class="fin-inline-action fin-close-actions">
+          ${preliminaryCloseAllowed ? `<button type="button" class="fin-btn secondary" data-fin-close-period="${esc(periodId)}" data-fin-close-mode="preliminary">بستن مقدماتی دوره</button>` : ''}
+          ${finalCloseAllowed ? `<button type="button" class="fin-btn primary" data-fin-close-period="${esc(periodId)}" data-fin-close-mode="final">بستن نهایی دوره</button>` : ''}
+          ${!preliminaryCloseAllowed && !finalCloseAllowed ? `<span class="fin-note warning">${data.selectedPeriod?.status === 'soft_closed' ? 'برای بستن نهایی، نقش مالک/مدیر و عبور همهٔ کنترل‌ها لازم است.' : 'اقدام بستن در وضعیت فعلی یا با دادهٔ ناقص در دسترس نیست.'}</span>` : ''}
+        </div>
+      </section>
+      <details class="fin-advanced fin-specialist-area" id="fin-ledger-specialist"><summary><span><strong>جزئیات حرفه‌ای حسابدار و مدیر</strong><small>افتتاحیه، دارایی، حقوق، گزارش‌های تفصیلی و دفتر مالی در این بخش است.</small></span><em>فقط هنگام نیاز</em></summary>
       <div class="fin-metrics">
-        ${metric('اسناد دفتر جدید', fa(data.entries?.length || 0), 'پیش‌نویس، منتظر و قطعی')}
-        ${metric('جمع بدهکار قطعی', money(data.snapshot.ledger.debitIrr), 'منبع: اسناد دفتر مالی جدید')}
-        ${metric('جمع بستانکار قطعی', money(data.snapshot.ledger.creditIrr), 'منبع: اسناد دفتر مالی جدید')}
-        ${metric('اختلاف فروش و دفتر', money(data.snapshot.reconciliation.salesDifferenceIrr), 'مانع بستن دوره', data.snapshot.reconciliation.salesDifferenceIrr ? 'danger' : 'success')}
+        ${metric('اسناد دفتر جدید', fa(data.pagination?.total ?? data.entries?.length ?? 0), 'پیش‌نویس، منتظر و قطعی')}
+        ${metric('جمع بدهکار قطعی', money(snapshot.ledger?.debitIrr), 'منبع: اسناد دفتر مالی جدید')}
+        ${metric('جمع بستانکار قطعی', money(snapshot.ledger?.creditIrr), 'منبع: اسناد دفتر مالی جدید')}
+        ${metric('اختلاف فروش و دفتر', money(reconciliation.salesDifferenceIrr), 'مانع بستن دوره', reconciliation.salesDifferenceIrr ? 'danger' : 'success')}
       </div>
       <section class="fin-panel fin-operations"><div class="fin-panel-title"><div><h3>مانده‌های شروع دوره</h3><p>موجودی بانک، صندوق، کالا و بدهی را یک‌بار وارد کنید؛ قبل از ثبت نهایی، توازن کنترل می‌شود.</p></div><span>برای شروع دوره</span></div>
         <div class="fin-metrics">
-          ${metric('بچ‌های افتتاحیه', fa(openingBalanceBatches.length), activeOpeningBalance ? `وضعیت فعال: ${label(activeOpeningBalance.status)}` : 'بچ فعال وجود ندارد')}
+          ${metric('دوره‌های افتتاحیه', fa(openingBalanceBatches.length), activeOpeningBalance ? `وضعیت فعال: ${label(activeOpeningBalance.status)}` : 'دسته فعال وجود ندارد')}
           ${metric('حساب مجاز', fa(openingBalanceAccounts.length), 'فقط حساب تفصیلی ترازنامه')}
           ${metric('قاعده توازن', 'صفر', 'اختلاف بدهکار و بستانکار باید صفر باشد')}
           ${metric('روش اصلاح', 'سند معکوس', 'ویرایش یا حذف سند قطعی ممنوع است')}
@@ -1962,7 +2484,7 @@
             </div>
           </form>
           <div id="fin-opening-preview-result" class="fin-preview-result">${activeOpeningBalance
-            ? `<div class="fin-note warning"><strong>ثبت جدید متوقف است</strong><span>بچ ${esc(activeOpeningBalance.id)} در وضعیت ${esc(label(activeOpeningBalance.status))} است. برای اصلاح ثبت قطعی فقط سند معکوس بزنید.</span></div>`
+            ? `<div class="fin-note warning"><strong>ثبت جدید متوقف است</strong><span>دسته ${esc(activeOpeningBalance.id)} در وضعیت ${esc(label(activeOpeningBalance.status))} است. برای اصلاح ثبت قطعی فقط سند معکوس بزنید.</span></div>`
             : data.periodSource !== 'finance_v2'
               ? `<div class="fin-note warning"><strong>ابتدا دوره مالی جدید بسازید</strong><span>مانده افتتاحیه به دورهٔ قدیمی یا فرضی ثبت قطعی نمی‌شود.</span></div>`
               : empty('پیش‌نمایش هیچ داده‌ای ذخیره نمی‌کند و هیچ رقم جبرانی حدس نمی‌زند.')}</div>
@@ -2062,8 +2584,8 @@
         </div>
       </section>
       <div class="fin-grid-2">
-        <section class="fin-panel"><div class="fin-panel-title"><div><h3>سود و زیان</h3><p>فقط خطوط قطعی حساب‌های ۴، ۵ و ۶</p></div>${statusBadge(pnl.status, pnl.status === 'available' ? 'success' : 'neutral')}</div><div class="fin-result-grid">${metric('درآمد خالص', money(pnl.revenueIrr), 'گروه حساب ۴')}${metric('بهای تمام‌شده', money(pnl.cogsIrr), 'گروه حساب ۵')}${metric('هزینه عملیاتی', money(pnl.operatingExpenseIrr), 'گروه حساب ۶')}${metric('سود/زیان دوره', money(pnl.netProfitIrr), 'زیان منفی پنهان نمی‌شود', pnl.netProfitIrr < 0 ? 'danger' : 'success')}</div></section>
-        <section class="fin-panel"><div class="fin-panel-title"><div><h3>ترازنامه</h3><p>دارایی = بدهی + حقوق مالکانه + نتیجه دوره</p></div>${statusBadge(balance.status, balance.status === 'balanced' ? 'success' : balance.status === 'unbalanced' ? 'danger' : 'neutral')}</div><div class="fin-result-grid">${metric('دارایی', money(balance.assetsIrr), 'گروه حساب ۱')}${metric('بدهی', money(balance.liabilitiesIrr), 'گروه حساب ۲')}${metric('حقوق مالکانه', money(balance.equityIrr), 'شامل نتیجه دوره')}${metric('اختلاف معادله', money(Math.abs(balance.equationDifferenceIrr)), 'باید صفر باشد', balance.equationDifferenceIrr ? 'danger' : 'success')}</div></section>
+        <section class="fin-panel"><div class="fin-panel-title"><div><h3>سود و زیان</h3><p>فقط خطوط قطعی حساب‌های ۴، ۵ و ۶</p></div>${statusBadge(pnl.status, pnl.status === 'available' ? 'success' : pnl.status === 'partial_coverage' ? 'warning' : 'neutral')}</div>${pnl.status === 'partial_coverage' ? `<div class="fin-note warning" role="alert"><strong>این سود برای تصمیم‌گیری یا انتشار معتبر نیست</strong><span>اختلاف فروش و دفتر: ${money(Math.abs(pnl.controls?.salesDifferenceIrr || 0))} · بهای تمام‌شده مسدود: ${fa(pnl.controls?.blockedCogsEvents || 0)} · بهای تمام‌شده مفقود: ${fa(pnl.controls?.missingCogsEvents || 0)}</span></div>` : ''}<div class="fin-result-grid">${metric('درآمد خالص', money(pnl.revenueIrr), 'گروه حساب ۴')}${metric('بهای تمام‌شده', money(pnl.cogsIrr), 'گروه حساب ۵')}${metric('هزینه عملیاتی', money(pnl.operatingExpenseIrr), 'گروه حساب ۶')}${metric('سود/زیان دوره', money(pnl.netProfitIrr), pnl.status === 'available' ? 'رقم قابل اتکا از دفتر قطعی' : 'رقم موقت؛ پوشش کامل نیست', pnl.status !== 'available' ? 'warning' : pnl.netProfitIrr < 0 ? 'danger' : 'success')}</div></section>
+        <section class="fin-panel"><div class="fin-panel-title"><div><h3>ترازنامه</h3><p>دارایی = بدهی + حقوق مالکانه + نتیجه دوره</p></div>${statusBadge(balance.status, balance.status === 'balanced' ? 'success' : balance.status === 'unbalanced' ? 'danger' : balance.status === 'partial_coverage' ? 'warning' : 'neutral')}</div>${balance.status === 'partial_coverage' ? `<div class="fin-note warning" role="alert"><strong>معادله تراز است، اما ماهیت مانده سالم نیست</strong><span>${fa(balance.abnormalBalanceRows?.length || 0)} حساب دارای مانده خلاف ماهیت است: ${(balance.abnormalBalanceRows || []).slice(0, 3).map((row) => `${esc(row.accountCode)} ${esc(businessText(row.accountName || ''))}`).join('، ')}</span></div>` : ''}<div class="fin-result-grid">${metric('دارایی', money(balance.assetsIrr), 'گروه حساب ۱')}${metric('بدهی', money(balance.liabilitiesIrr), 'گروه حساب ۲', balance.liabilitiesIrr < 0 ? 'warning' : '')}${metric('حقوق مالکانه', money(balance.equityIrr), 'شامل نتیجه دوره')}${metric('اختلاف معادله', money(Math.abs(balance.equationDifferenceIrr)), 'باید صفر باشد', balance.equationDifferenceIrr ? 'danger' : 'success')}</div></section>
       </div>
       <section class="fin-panel"><div class="fin-panel-title"><div><h3>جریان وجوه نقد مستقیم</h3><p>فقط تغییر حساب‌های صندوق، تنخواه و بانک؛ طبقه‌بندی نامطمئن پنهان نمی‌شود.</p></div>${statusBadge(cashFlow.status, cashFlow.status === 'rule_based' ? 'success' : cashFlow.status === 'partial_coverage' ? 'warning' : 'neutral')}</div><div class="fin-result-grid">${metric('عملیاتی', money(cashFlow.operatingIrr), 'قاعده حساب مقابل')}${metric('سرمایه‌گذاری', money(cashFlow.investingIrr), 'دارایی ثابت')}${metric('تأمین مالی', money(cashFlow.financingIrr), 'سرمایه/تسهیلات')}${metric('تغییر خالص وجه', money(cashFlow.netChangeIrr), cashFlow.unclassifiedIrr ? `طبقه‌بندی‌نشده: ${money(cashFlow.unclassifiedIrr)}` : 'تمام تغییرات طبقه‌بندی شد', cashFlow.unclassifiedIrr ? 'warning' : 'success')}</div></section>
       <details class="fin-advanced"><summary>تراز آزمایشی (${fa(trial.rows.length)} حساب)</summary><section class="fin-panel"><div class="fin-panel-title"><div><h3>تراز آزمایشی</h3><p>جمع بدهکار و بستانکار از خطوط قطعی دفتر جدید</p></div>${statusBadge(trial.status, trial.status === 'balanced' ? 'success' : trial.status === 'unbalanced' ? 'danger' : 'neutral')}</div>${table('trial-balance', [
@@ -2073,13 +2595,9 @@
         { label: 'مانده', render: (row) => money(Math.abs(row.balanceIrr)) },
         { label: 'ماهیت مانده', render: (row) => row.balanceIrr > 0 ? 'بدهکار' : row.balanceIrr < 0 ? 'بستانکار' : 'صفر' },
       ], trial.rows, 'برای این محدوده سند قطعی وجود ندارد.')}</section></details>
-      <section class="fin-panel"><div class="fin-panel-title"><div><h3>چک‌لیست بستن دوره</h3><p>بستن دوره تا عبور همهٔ کنترل‌ها غیرفعال است.</p></div><span>${fa(checks.filter((item) => item.passed).length)} / ${fa(checks.length)}</span></div>
-        <div class="fin-check-list">${checks.map((item) => `<article class="${item.passed ? 'passed' : 'failed'}"><span>${item.passed ? '✓' : '!'}</span><strong>${esc(item.label)}</strong>${statusBadge(item.passed ? 'passed' : 'failed')}</article>`).join('')}</div>
-        <button type="button" class="fin-btn primary" data-fin-close-period="${esc(data.selectedPeriod?.id || '')}" ${checks.every((item) => item.passed) && data.periodSource === 'finance_v2' && data.selectedPeriod?.id ? '' : 'disabled'}>بستن مقدماتی دوره</button>
-      </section>
       <section class="fin-panel"><div class="fin-panel-title"><div><h3>اسناد دفتر مالی جدید</h3><p>سند قطعی ویرایش نمی‌شود؛ اصلاح فقط با سند معکوس انجام می‌شود.</p></div></div>
         ${table('ledger', [
-          { label: 'شماره', render: (row) => `<strong>${esc(row.number)}</strong>` },
+          { label: 'شماره', render: (row) => `<strong class="fin-record-anchor" data-fin-record-id="${esc(row.id)}" tabindex="-1">${esc(row.number)}</strong>` },
           { label: 'تاریخ', render: (row) => dateTime(row.date) },
           { label: 'شرح', render: (row) => esc(row.description) },
           { label: 'منشأ', render: (row) => `<strong>${esc(financeSourceLabel(row.source))}</strong>${row.sourceId ? `<small class="fin-cell-note">مرجع ${esc(row.sourceId)}</small>` : ''}` },
@@ -2089,6 +2607,7 @@
         ], data.entries, 'هنوز سندی در دفتر مالی جدید قطعی نشده است.', data.pagination)}
       </section>
       <details class="fin-advanced"><summary>سایر ابزارهای پیشرفته</summary><div><span>کدینگ حساب‌ها</span><span>پارامترهای قانونی حقوق: نیازمند تأیید تخصصی مؤثر-از-تاریخ</span><span>مالیات</span><span>${esc(data.integrityControl.label)}</span></div></details>
+      </details>
       <div class="fin-note warning"><strong>سامانه مؤدیان: متصل نیست</strong><span>${esc(data.taxpayerIntegration.message)}</span></div>`;
   }
 
@@ -2110,9 +2629,17 @@
     const link = document.createElement('a'); link.href = url; link.download = `westo-finance-${kind}-${new Date().toISOString().slice(0, 10)}.csv`; link.click(); URL.revokeObjectURL(url);
   }
 
-  window.renderAccountingWorkspace = async function renderAccountingWorkspace(container, qs = '') {
+  window.renderAccountingWorkspace = async function renderAccountingWorkspace(container, qs = '', context = {}) {
     root = container;
+    accessContext = {
+      hasCapability: typeof context.hasCapability === 'function' ? context.hasCapability : () => false,
+      currentUser: typeof context.currentUser === 'function' ? context.currentUser : () => null,
+      branchCount: typeof context.branchCount === 'function' ? context.branchCount : () => 0,
+    };
     readLocationQuery(qs);
+    if (context.workspace && WORKSPACES.some((item) => item.id === context.workspace)) {
+      state.workspace = context.workspace;
+    }
     renderShell();
     await loadWorkspace();
   };

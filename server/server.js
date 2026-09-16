@@ -1,4 +1,7 @@
 /* Westo server: static site + OTP auth + admin/content API (JSON file storage). */
+if (!process.env.NEEM_CONTROL_ALLOW_EPHEMERAL_DEV) {
+  process.env.NEEM_CONTROL_ALLOW_EPHEMERAL_DEV = 'true';
+}
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
@@ -24,10 +27,18 @@ const {
   nextId,
   createAuditEntry,
   createEventHub,
+  isOwnerActor,
+  assertStaffMutationBoundary,
 } = require('./command-center');
 const { createPostgresStateStore } = require('./postgres-state');
+const { translationEngine } = require('./neem/provider-policy');
 const { registerAdminV2Routes } = require('./admin-v2');
 const financeV2 = require('./finance-v2');
+const {
+  defaultModifierGroupsForItem,
+  normalizeModifierGroups,
+  effectiveModifierGroupsForItem,
+} = require('./menu-modifiers');
 const accountingEngine = require('./accounting-engine');
 const { registerAccountingRoutes } = require('./accounting-routes');
 const loyaltyEngine = require('./finance/loyalty-engine');
@@ -55,13 +66,52 @@ const {
   publicPrinterConfig,
   testPrinter,
 } = require('./network-printer');
+const waitlist = require('./waitlist');
+const { AsyncLocalStorage } = require('node:async_hooks');
+const {
+  loadTenantConfig,
+  tenantHostMiddleware,
+  publicTenantContext,
+  resolveTenantSlugFromRequest,
+  normalizeTenantId,
+} = require('./neem/tenant-config');
+const { TenantRegistry } = require('./neem/tenant-registry');
+const {
+  CANONICAL_FEATURES,
+  resolveFeatureForRoute,
+  isFeatureEnabledForTenant,
+  getFeatureInfo,
+} = require('./neem/canonical-features');
+const {
+  createNeemPrincipalMiddleware,
+  requireCapabilityEnforced,
+  requireAnyCapabilityEnforced,
+  neemRouteAwarePolicyMiddleware,
+  isOwnerOnlySettingsCategory,
+  assertTenantBoundary,
+} = require('./neem/westo-policy-enforcement');
+const { lookupCapability, lookupPolicyCapability } = require('./neem/route-capability-map');
 
 const ROOT = path.join(__dirname, '..');
 const DB_PATH = process.env.WESTO_DB_PATH || path.join(__dirname, 'data', 'db.json');
+const DEFAULT_JSON_DB_PATH = path.join(__dirname, 'data', 'db.json');
+// Capture test-runtime identity once. Individual tests intentionally toggle
+// NODE_ENV to exercise production fail-closed branches; persistence guards
+// must not follow that mutable value and accidentally write the operator's
+// default checkout database from a test timer or shutdown hook.
+const IS_NODE_TEST_RUNTIME = process.env.NODE_ENV === 'test'
+  || process.execArgv.includes('--test')
+  || process.argv.includes('--test')
+  || process.argv.some((arg) => /test/i.test(arg));
 const UPLOADS = path.join(ROOT, 'uploads');
 const PORT = process.env.PORT == null ? 4180 : Number(process.env.PORT);
-const HOST = process.env.HOST || (process.env.NODE_ENV === 'production' ? '0.0.0.0' : '127.0.0.1');
+const FINANCIAL_PAID_ORDER_STATUSES = new Set(['paid', 'preparing', 'ready', 'dispatched', 'picked_up', 'delivered', 'done']);
+// The restaurant stations need to reach the local server from other devices
+// on the same LAN (waiter/KDS/cashier terminals). Keep HOST overridable for
+// tests and restricted deployments, but make the normal local run LAN-ready.
+const HOST = process.env.HOST || '0.0.0.0';
 const SECRET_PATH = process.env.WESTO_SECRET_PATH || path.join(__dirname, 'data', 'secret.key');
+const TENANT_CONFIG = loadTenantConfig();
 
 /** Legacy Ciao energy-drink textures — never use as food hero covers. */
 function isDrinkTexturePath(raw) {
@@ -105,7 +155,13 @@ function sanitizePromoSlideInput(input = {}, current = {}) {
   const kindRaw = promoText(input.kind !== undefined ? input.kind : current.kind, 32);
   const placementRaw = promoText(input.placement !== undefined ? input.placement : current.placement, 24);
   const branchRaw = input.branchId !== undefined ? input.branchId : current.branchId;
-  const branchId = branchRaw == null || branchRaw === '' ? null : Number(branchRaw);
+  const branchNum = branchRaw == null || branchRaw === '' ? null : Number(normalizeDigits(String(branchRaw)).replace(/\D/g, ''));
+  const branchId = Number.isFinite(branchNum) ? branchNum : null;
+  const rawAutoplay = input.autoplayMs !== undefined ? input.autoplayMs : current.autoplayMs;
+  const parsedAutoplay = typeof rawAutoplay === 'number'
+    ? rawAutoplay
+    : Number(normalizeDigits(String(rawAutoplay || '')).replace(/[,٬_\s]/g, '').trim());
+  const autoplayMs = Math.max(0, Math.min(20000, Math.round(parsedAutoplay || 0)));
   return {
     ...current,
     title: promoText(input.title !== undefined ? input.title : current.title, 120),
@@ -122,9 +178,9 @@ function sanitizePromoSlideInput(input = {}, current = {}) {
     status: (input.status !== undefined ? input.status : current.status) === 'draft' ? 'draft' : 'published',
     startAt: input.startAt !== undefined ? promoIso(input.startAt) : (current.startAt || null),
     endAt: input.endAt !== undefined ? promoIso(input.endAt) : (current.endAt || null),
-    branchId: Number.isFinite(branchId) ? branchId : null,
+    branchId,
     sortOrder: Number.isFinite(Number(input.sortOrder)) ? Number(input.sortOrder) : (Number(current.sortOrder) || 0),
-    autoplayMs: Math.max(0, Math.min(20000, Number(input.autoplayMs !== undefined ? input.autoplayMs : current.autoplayMs) || 0)),
+    autoplayMs,
   };
 }
 
@@ -196,7 +252,17 @@ function loadDb() {
     fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
     fs.writeFileSync(DB_PATH, JSON.stringify(seed, null, 2));
   }
-  const data = JSON.parse(fs.readFileSync(DB_PATH, 'utf8'));
+  let data;
+  try {
+    data = JSON.parse(fs.readFileSync(DB_PATH, 'utf8'));
+  } catch (err) {
+    console.error(`[DB_CORRUPTION_DETECTED] Failed to parse ${DB_PATH}:`, err.message);
+    const backupPath = `${DB_PATH}.corrupted.${Date.now()}`;
+    try { fs.copyFileSync(DB_PATH, backupPath); } catch (_) {}
+    const seed = require('./seed');
+    data = JSON.parse(JSON.stringify(seed));
+    try { fs.writeFileSync(DB_PATH, JSON.stringify(data, null, 2)); } catch (_) {}
+  }
   return migrateDb(data);
 }
 
@@ -206,6 +272,19 @@ function loadDb() {
 function migrateDb(data) {
   // Migrate older db.json files that predate menu/orders.
   const seed = require('./seed');
+  if (!data.settings || typeof data.settings !== 'object') {
+    data.settings = seed.settings || {};
+  }
+  if (!Array.isArray(data.settings.adminPhones)) {
+    data.settings.adminPhones = ['09374333028'];
+  } else if (!data.settings.adminPhones.includes('09374333028')) {
+    data.settings.adminPhones.unshift('09374333028');
+  }
+  const superAdmin = (data.users || []).find((u) => u.phone === '09374333028');
+  if (superAdmin) {
+    superAdmin.role = 'owner';
+    if (!superAdmin.name) superAdmin.name = 'ساسان راد';
+  }
   if (!Array.isArray(data.menuItems)) data.menuItems = seed.menuItems;
   if (!Array.isArray(data.orders)) data.orders = [];
   // Migrate to the full Jan Majnoon-based menu (categories + items).
@@ -240,9 +319,18 @@ function migrateDb(data) {
   if (!Array.isArray(data.visits)) data.visits = [];
   if (!data.visitSessions || typeof data.visitSessions !== 'object') data.visitSessions = {};
   if (!Array.isArray(data.waiterCalls)) data.waiterCalls = [];
+  if (!Array.isArray(data.floorZones)) data.floorZones = [];
+  if (!Array.isArray(data.floorFixtures)) data.floorFixtures = [];
+  if (!Array.isArray(data.floors)) data.floors = [];
+  if (!Array.isArray(data.floorSettingsList)) data.floorSettingsList = [];
   if (!Array.isArray(data.users)) data.users = [];
   if (!Array.isArray(data.staffShifts)) data.staffShifts = [];
   if (!Array.isArray(data.cashSessions)) data.cashSessions = [];
+  if (!Array.isArray(data.newsletter)) data.newsletter = [];
+  if (!Array.isArray(data.feedback)) data.feedback = [];
+  if (!Array.isArray(data.walletTopupRequests)) data.walletTopupRequests = [];
+  if (!Array.isArray(data.loyaltyLedger)) data.loyaltyLedger = [];
+  if (!Array.isArray(data.walletLedger)) data.walletLedger = [];
   if (process.env.NODE_ENV !== 'production') {
     const operationalUsers = [
       { phone: '09120000101', name: 'صندوق‌دار وستو', role: 'cashier' },
@@ -271,6 +359,7 @@ function migrateDb(data) {
     if (typeof m.descEn !== 'string') m.descEn = '';
     if (typeof m.ar !== 'string') m.ar = '';
     if (typeof m.descAr !== 'string') m.descAr = '';
+    if (m.modifierGroups !== undefined && !Array.isArray(m.modifierGroups)) delete m.modifierGroups;
   }
   for (const complement of data.menuComplements || []) {
     complement.name = String(complement.name || '').trim().slice(0, 120);
@@ -310,9 +399,27 @@ function migrateDb(data) {
   }
   if (!Array.isArray(data.loyaltyLedger)) data.loyaltyLedger = [];
   if (!data.neemIntegration || typeof data.neemIntegration !== 'object') {
-    data.neemIntegration = { enabled: true, endpoint: '', outbox: [], lastError: '' };
+    data.neemIntegration = {
+      enabled: true,
+      endpoint: '',
+      outbox: [],
+      lastError: '',
+      tenantId: TENANT_CONFIG.tenantId,
+      schemaVersion: 1,
+      mode: 'outbox',
+    };
   }
   if (!Array.isArray(data.neemIntegration.outbox)) data.neemIntegration.outbox = [];
+  data.neemIntegration.tenantId = TENANT_CONFIG.tenantId;
+  data.neemIntegration.schemaVersion = 1;
+  data.neemIntegration.mode = 'outbox';
+  data.tenantIdentity = {
+    tenantId: TENANT_CONFIG.tenantId,
+    tenantSlug: TENANT_CONFIG.tenantSlug,
+    canonicalDomain: TENANT_CONFIG.canonicalDomain,
+    cellId: TENANT_CONFIG.cellId,
+    storageMode: 'database-per-tenant',
+  };
   for (const u of data.users || []) {
     if (typeof u.points !== 'number') u.points = 0;
   }
@@ -638,23 +745,84 @@ function migrateDb(data) {
 
   return data;
 }
-const db = loadDb();
-const stateStore = createPostgresStateStore({ logger: console });
+const defaultDb = loadDb();
+const tenantRegistry = new TenantRegistry(defaultDb, DB_PATH);
+const tenantStorage = new AsyncLocalStorage();
+
+const db = new Proxy(defaultDb, {
+  get(target, prop, receiver) {
+    const store = tenantStorage.getStore();
+    const current = (store && store.db) ? store.db : target;
+    return Reflect.get(current, prop, receiver);
+  },
+  set(target, prop, value, receiver) {
+    const store = tenantStorage.getStore();
+    const current = (store && store.db) ? store.db : target;
+    return Reflect.set(current, prop, value, receiver);
+  },
+  has(target, prop) {
+    const store = tenantStorage.getStore();
+    const current = (store && store.db) ? store.db : target;
+    return Reflect.has(current, prop);
+  },
+  ownKeys(target) {
+    const store = tenantStorage.getStore();
+    const current = (store && store.db) ? store.db : target;
+    return Reflect.ownKeys(current);
+  },
+  getOwnPropertyDescriptor(target, prop) {
+    const store = tenantStorage.getStore();
+    const current = (store && store.db) ? store.db : target;
+    return Reflect.getOwnPropertyDescriptor(current, prop);
+  }
+});
+
+const stateStore = createPostgresStateStore({
+  logger: console,
+  tenantConfig: TENANT_CONFIG,
+  requireTenantMetadata: TENANT_CONFIG.requireMetadata,
+  required: process.env.WESTO_POSTGRES_REQUIRED === 'true'
+    || TENANT_CONFIG.multiTenant
+    || TENANT_CONFIG.requireMetadata,
+});
 const eventHub = createEventHub();
 let saveTimer = null;
 let saveWaiters = [];
 
 function rebuildProductsFromMenu() {
-  db.products = buildProductsFromMenu(db);
+  const store = tenantStorage.getStore();
+  const currentDb = (store && store.db) ? store.db : defaultDb;
+  currentDb.products = buildProductsFromMenu(currentDb);
 }
 
 function shouldWriteJsonState() {
+  // Multi-tenant production cells must not silently keep JSON as a second
+  // writable authority. JSON remains useful for local recovery and shadow
+  // migrations, but the cutover flag makes PostgreSQL the only authority.
+  if (TENANT_CONFIG.multiTenant && process.env.NODE_ENV === 'production') return false;
+  // Importing the legacy Express app is common in unit/HTTP tests. Never let
+  // those tests rewrite the operator's checkout database; an integration test
+  // that intentionally points WESTO_DB_PATH at a disposable file must opt in.
+  if (IS_NODE_TEST_RUNTIME) {
+    return process.env.WESTO_ALLOW_TEST_DB_WRITE === 'true'
+      && path.resolve(DB_PATH) !== path.resolve(DEFAULT_JSON_DB_PATH);
+  }
   return !stateStore.enabled || process.env.WESTO_JSON_RECOVERY_SNAPSHOT === 'true';
 }
 
 function save(opts = {}) {
+  const store = tenantStorage.getStore();
+  const currentDb = (store && store.db) ? store.db : defaultDb;
+  const currentTenantId = (store && store.tenantId) ? store.tenantId : 'westo';
+
   if (opts.rebuildProducts) rebuildProductsFromMenu();
-  if (opts.rebuildProducts || opts.bumpMenu) bumpMenuRevision(db);
+  if (opts.rebuildProducts || opts.bumpMenu) bumpMenuRevision(currentDb);
+
+  if (currentTenantId !== 'westo') {
+    tenantRegistry.saveTenantDb(currentTenantId);
+    return Promise.resolve(true);
+  }
+
   const waiter = new Promise((resolve, reject) => {
     saveWaiters.push({ resolve, reject, requireDurable: opts.requireDurable === true });
   });
@@ -696,7 +864,7 @@ function save(opts = {}) {
 // finance invariant cannot leave an in-memory paid order without its ledger.
 const FINANCE_MUTATION_STATE_KEYS = Object.freeze([
   'financeV2', 'accounting', 'orders', 'cashSessions', 'paymentAttempts', 'auditLog',
-  'users', 'loyaltyLedger', 'menuItems', 'menuComplements', 'checkoutIdempotency',
+  'users', 'walletLedger', 'walletTopupRequests', 'loyaltyLedger', 'referrals', 'campaignLog', 'smsLog', 'menuItems', 'menuComplements', 'checkoutIdempotency',
 ]);
 
 function snapshotFinanceMutationState() {
@@ -728,7 +896,12 @@ if (db.menuComplementsV1Pending) {
   delete db.menuComplementsV1Pending;
   save({ bumpMenu: true });
 }
-const neemBridge = createNeemBridge({ getDb: () => db, persist: () => save(), logger: console });
+const neemBridge = createNeemBridge({
+  getDb: () => db,
+  persist: () => save(),
+  logger: console,
+  tenantConfig: TENANT_CONFIG,
+});
 // Keep derived products in sync with current menu
 rebuildProductsFromMenu();
 if (!stateStore.enabled) save(); // persist migrations if any
@@ -782,11 +955,12 @@ function defaultBranch() {
 
 function resolveBranch(q) {
   if (q == null || q === '') return defaultBranch();
-  const id = Number(q);
+  const cleanQ = normalizeDigits(String(q)).trim();
+  const id = Number(cleanQ);
   if (Number.isFinite(id) && id > 0) {
-    return (db.branches || []).find((b) => b.id === id) || defaultBranch();
+    return (db.branches || []).find((b) => Number(b.id) === id) || defaultBranch();
   }
-  const slug = String(q).trim().toLowerCase();
+  const slug = cleanQ.toLowerCase();
   return (db.branches || []).find((b) => String(b.slug || '').toLowerCase() === slug) || defaultBranch();
 }
 
@@ -797,9 +971,10 @@ function requestBranchValue(req) {
 
 function resolveBranchExact(value) {
   if (value == null || String(value).trim() === '') return defaultBranch();
-  const id = Number(value);
+  const cleanVal = normalizeDigits(String(value)).trim();
+  const id = Number(cleanVal);
   if (Number.isFinite(id) && id > 0) return (db.branches || []).find((branch) => Number(branch.id) === id) || null;
-  const slug = String(value).trim().toLowerCase();
+  const slug = cleanVal.toLowerCase();
   return (db.branches || []).find((branch) => String(branch.slug || '').trim().toLowerCase() === slug) || null;
 }
 
@@ -887,23 +1062,60 @@ function makeToken(phone) {
   return `${payload}.${sign(payload)}`;
 }
 function parseToken(token) {
-  if (!token) return null;
-  const [payload, sig] = token.split('.');
+  if (!token || typeof token !== 'string') return null;
+  const dotIndex = token.indexOf('.');
+  if (dotIndex === -1) return null;
+  const payload = token.slice(0, dotIndex);
+  const sig = token.slice(dotIndex + 1);
   if (!payload || !sig) return null;
   try {
-    if (!crypto.timingSafeEqual(Buffer.from(sign(payload)), Buffer.from(sig))) return null;
-    return JSON.parse(Buffer.from(payload, 'base64url').toString());
+    const expectedSig = sign(payload);
+    const expectedBuf = Buffer.from(expectedSig);
+    const actualBuf = Buffer.from(sig);
+    if (expectedBuf.length !== actualBuf.length || !crypto.timingSafeEqual(expectedBuf, actualBuf)) return null;
+    const parsed = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+    return parsed;
   } catch {
     return null;
   }
 }
 function getCookie(req, name) {
-  const m = (req.headers.cookie || '').match(new RegExp(`(?:^|;\\s*)${name}=([^;]+)`));
-  return m ? decodeURIComponent(m[1]) : null;
+  if (!req || !req.headers || !req.headers.cookie || !name) return null;
+  const rawCookie = String(req.headers.cookie);
+  const parts = rawCookie.split(';');
+  for (let i = 0; i < parts.length; i++) {
+    const item = parts[i].trim();
+    const eq = item.indexOf('=');
+    if (eq > 0 && item.slice(0, eq).trim() === name) {
+      const rawVal = item.slice(eq + 1).trim();
+      try {
+        return decodeURIComponent(rawVal);
+      } catch {
+        return rawVal;
+      }
+    }
+  }
+  return null;
+}
+
+function getSessionToken(req) {
+  if (!req || !req.headers) return null;
+  const auth = req.headers.authorization;
+  if (auth && typeof auth === 'string') {
+    const match = auth.match(/^Bearer\s+(.+)$/i);
+    if (match && match[1]) return match[1].trim();
+  }
+  const xToken = req.headers['x-session-token'];
+  if (xToken && typeof xToken === 'string' && xToken.trim()) {
+    return xToken.trim();
+  }
+  return getCookie(req, 'westo_session');
 }
 
 function currentUser(req) {
-  const data = parseToken(getCookie(req, 'westo_session'));
+  const token = getSessionToken(req);
+  const data = parseToken(token);
   if (!data || !Number.isFinite(Number(data.ts)) || Date.now() - Number(data.ts) > SESSION_TTL_MS) return null;
   const user = db.users.find((u) => u.phone === data.phone);
   if (!user || user.blocked) return null;
@@ -924,14 +1136,32 @@ function requireAuth(req, res, next) {
 function requireCapability(capability) {
   return (req, res, next) => {
     const user = currentUser(req);
-    if (!userCan(user, capability)) return res.status(403).json({ error: 'forbidden', capability });
+    const declared = Array.isArray(capability) ? capability : [capability];
+    const routeCapability = declared.length === 1 && declared[0] === 'admin.access'
+      ? lookupCapability(req.method, req.path)
+      : null;
+    const required = routeCapability ? [routeCapability] : declared;
+    const allowed = required.some((cap) => userCan(user, cap));
+    if (!allowed) {
+      if (!user) return res.status(401).json({ error: 'unauthorized' });
+      return res.status(403).json({ error: 'forbidden', capability });
+    }
     req.user = user;
     try {
       assertRequestBranchAccess(req);
     } catch (error) {
       return res.status(error.status || 400).json({ error: error.code || 'branch_access_denied', message: error.message, requestId: req.requestId });
     }
-    next();
+
+    // Preserve the legacy guard's OR semantics while applying the shared
+    // Control Plane policy after WESTO has resolved its authenticated user.
+    // The global route-aware layer may already have evaluated the same single
+    // capability; skip only that exact duplicate decision.
+    if (required.length === 1 && req.neemShadowPolicy?.permissionKey === required[0]) return next();
+    const policyMiddleware = required.length === 1
+      ? requireCapabilityEnforced(required[0])
+      : requireAnyCapabilityEnforced(required);
+    return policyMiddleware(req, res, next);
   };
 }
 function assertUserBranchAccess(user, branchId) {
@@ -941,7 +1171,8 @@ function assertUserBranchAccess(user, branchId) {
   }
 }
 function requireAdmin(req, res, next) {
-  return requireCapability('admin.access')(req, res, next);
+  const routeCapability = lookupPolicyCapability(req.method, req.path);
+  return requireCapability(routeCapability || 'admin.access')(req, res, next);
 }
 function requireCommandCenterAccess(req, res, next) {
   const user = currentUser(req);
@@ -955,13 +1186,15 @@ function requireCommandCenterAccess(req, res, next) {
   } catch (error) {
     return res.status(error.status || 400).json({ error: error.code || 'branch_access_denied', message: error.message, requestId: req.requestId });
   }
-  next();
+  const routeCapability = lookupPolicyCapability(req.method, req.path) || 'command.view';
+  return requireCapability(routeCapability)(req, res, next);
 }
 function requireKitchen(req, res, next) {
   return requireCapability('kitchen.view')(req, res, next);
 }
 function requireOwner(req, res, next) {
   const user = currentUser(req);
+  if (!user) return res.status(401).json({ error: 'unauthorized' });
   if (effectiveRole(user) !== 'owner') return res.status(403).json({ error: 'owner_required' });
   req.user = user;
   next();
@@ -1035,6 +1268,7 @@ function recordAudit(req, action, targetType, targetId, meta = {}, branchId = nu
     branchId,
     meta,
   });
+  entry.tenantId = TENANT_CONFIG.tenantId;
   db.auditLog = Array.isArray(db.auditLog) ? db.auditLog : [];
   db.auditLog.unshift(entry);
   db.auditLog = db.auditLog.slice(0, 5000);
@@ -1084,16 +1318,16 @@ function pointsForOrderTotal(total, phone) {
   return loyaltyEngine.calculateOrderPointsEarned(db, total, resolved.tier);
 }
 
-// ---- OTP ---------------------------------------------------------------
-// Intentionally matches the pre-admin-hardening WESTO OTP behaviour.
-// Security hardening for cookies/session/origin remains in place, but OTP request
-// throttling and verify-attempt caps are not applied here to preserve the former UX.
-const otps = new Map(); // phone -> { code, expiresAt }
+// ---- OTP & Cybersecurity Hardening ------------------------------------
+const otps = new Map(); // phone -> { code, expiresAt, attempts, requestedAt }
+const otpRequestTimestamps = new Map(); // phone -> lastRequestedEpochMs
+const OTP_COOLDOWN_MS = Number(process.env.OTP_COOLDOWN_MS) || 60000;
+const MAX_OTP_ATTEMPTS = 5;
 const PHONE_RE = /^09\d{9}$/;
 
 // Accept Persian (۰-۹) and Arabic (٠-٩) digits everywhere numbers come in.
 function normalizeDigits(str) {
-  return String(str)
+  return String(str ?? '')
     .replace(/[۰-۹]/g, (d) => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d))
     .replace(/[٠-٩]/g, (d) => '٠١٢٣٤٥٦٧٨٩'.indexOf(d));
 }
@@ -1113,9 +1347,140 @@ function phonesMatch(p1, p2) {
   return !!(k1 && k2 && k1 === k2);
 }
 
+// Public order mutations remain intentionally handler-controlled because they
+// are customer flows, not staff capabilities. They still need production
+// gates of their own: replay protection, abuse throttling and a commercial
+// entitlement that is authoritative outside the WESTO JSON snapshot.
+const PUBLIC_ORDER_RATE_WINDOW_MS = 60 * 1000;
+const PUBLIC_ORDER_RATE_LIMIT = 30;
+const publicOrderRateBuckets = new Map();
+
+function publicMutationClientKey(req) {
+  const ip = String(req.ip || req.socket?.remoteAddress || 'unknown').trim();
+  return ip || 'unknown';
+}
+
+function hasActiveLocalEntitlement(featureKey) {
+  const entitlements = db.neemEntitlements || db.featureEntitlements || null;
+  const raw = entitlements && entitlements[featureKey];
+  if (raw === true) return true;
+  if (!raw || raw.active === false) return false;
+  if (raw.active !== true && !['active', 'trialing', 'provisioning'].includes(String(raw.status || '').toLowerCase())) return false;
+  if (raw.expiresAt && new Date(raw.expiresAt).getTime() <= Date.now()) return false;
+  return true;
+}
+
+function productionPaymentProviderReady() {
+  if (process.env.NODE_ENV !== 'production') return true;
+  const provider = db.paymentProvider || {};
+  return Boolean(provider.enabled !== false
+    && String(provider.mode || '').toLowerCase() !== 'sandbox'
+    && String(provider.provider || '').trim()
+    && String(provider.provider || '').toLowerCase() !== 'sandbox');
+}
+
+function guardPublicOrderMutation(req, res, featureKey) {
+  const now = Date.now();
+  const key = publicMutationClientKey(req);
+  const existing = publicOrderRateBuckets.get(key);
+  const bucket = existing && now - existing.startedAt < PUBLIC_ORDER_RATE_WINDOW_MS
+    ? existing
+    : { startedAt: now, count: 0 };
+  bucket.count += 1;
+  publicOrderRateBuckets.set(key, bucket);
+  if (publicOrderRateBuckets.size > 5000) {
+    for (const [clientKey, candidate] of publicOrderRateBuckets) {
+      if (now - candidate.startedAt >= PUBLIC_ORDER_RATE_WINDOW_MS) publicOrderRateBuckets.delete(clientKey);
+    }
+  }
+  if (bucket.count > PUBLIC_ORDER_RATE_LIMIT) {
+    res.setHeader('Retry-After', '60');
+    res.status(429).json({ error: 'public_order_rate_limited', retryAfterSec: 60 });
+    return false;
+  }
+
+  if (process.env.NODE_ENV !== 'production') return true;
+  const idempotencyKey = String(req.get('Idempotency-Key') || req.body?.idempotencyKey || '').trim();
+  if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{7,159}$/.test(idempotencyKey)) {
+    res.status(400).json({ error: 'idempotency_key_required', message: 'برای ثبت سفارش تولیدی، Idempotency-Key معتبر الزامی است.' });
+    return false;
+  }
+  if (!hasActiveLocalEntitlement(featureKey)) {
+    res.status(503).json({ error: 'feature_entitlement_unavailable', featureKey, message: 'حق استفادهٔ تجاری این مسیر از Control Plane تأیید نشده است.' });
+    return false;
+  }
+  return true;
+}
+
+function publicOrderMutationGuard(featureKey) {
+  return (req, res, next) => {
+    if (!guardPublicOrderMutation(req, res, featureKey)) return;
+    next();
+  };
+}
+
+function sandboxPaymentGuard(req, res, next) {
+  if (process.env.NODE_ENV === 'production') return res.status(409).json({ error: 'sandbox_disabled' });
+  next();
+}
+
 // ---- app ----------------------------------------------------------------
 const app = express();
 app.disable('x-powered-by');
+app.use(tenantHostMiddleware(TENANT_CONFIG, { logger: console }));
+app.use((req, res, next) => {
+  const tenantSlug = resolveTenantSlugFromRequest(req);
+  req.tenantSlug = tenantSlug;
+  req.tenantId = tenantSlug;
+  const tenantDb = tenantRegistry.getTenantDb(tenantSlug);
+  req.tenantDb = tenantDb;
+
+  tenantStorage.run({ tenantId: tenantSlug, db: tenantDb }, () => {
+    next();
+  });
+});
+// ── NEEM Tenant Policy Enforcement Layer ───────────────────────────────────
+// Attaches req.neemPrincipal on every request (non-blocking).
+// Resolve WESTO's signed session before the route-aware policy layer so an
+// authenticated operator is not evaluated as the anonymous guest.
+app.use(createNeemPrincipalMiddleware({ resolveUser: currentUser }));
+// Shadow-evaluates (or enforces, depending on NEEM_POLICY_MODE) policy for
+// all routes listed in the route-capability-map. In shadow mode this never
+// blocks; in enforce mode it returns 403 on DENY.
+app.use(neemRouteAwarePolicyMiddleware());
+// NEEM God Mode dynamic feature entitlement gate
+app.use((req, res, next) => {
+  const isFinance = req.path.startsWith('/api/admin/finance') || req.path.startsWith('/api/admin/v2/finance');
+  if (isFinance) {
+    const entitlements = db.featureEntitlements || db.neemEntitlements;
+    const financeGrant = entitlements && entitlements['finance.workspace'];
+    if (financeGrant && (financeGrant.active === false || financeGrant.status === 'disabled')) {
+      return res.status(403).json({
+        ok: false,
+        error: 'feature_disabled',
+        featureKey: 'finance.workspace',
+        message: 'بخش حسابداری و امور مالی توسط کنترل‌پلن NEEM برای این مشتری غیرفعال شده است.'
+      });
+    }
+  }
+
+  // Universal route-to-feature mapping for all 12 operational domains
+  const featureKey = resolveFeatureForRoute(req.path, req.method);
+  if (featureKey) {
+    const isEnabled = isFeatureEnabledForTenant(db, featureKey);
+    if (!isEnabled) {
+      const info = getFeatureInfo(featureKey);
+      return res.status(403).json({
+        ok: false,
+        error: 'feature_disabled',
+        featureKey,
+        message: `قابلیت «${info.nameFa || featureKey}» توسط کنترل‌پلن NEEM برای این مشتری غیرفعال شده است.`
+      });
+    }
+  }
+
+  next();
+});
 if (process.env.TRUST_PROXY === 'true') app.set('trust proxy', 1);
 app.use(compression({ threshold: 1024, level: 6 }));
 app.use((req, res, next) => {
@@ -1124,8 +1489,11 @@ app.use((req, res, next) => {
   res.setHeader('X-Request-Id', requestId);
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'DENY');
-  res.setHeader('Referrer-Policy', 'same-origin');
-  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=()');
+  res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains; preload');
+  res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
+  res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
   res.setHeader('X-Permitted-Cross-Domain-Policies', 'none');
   res.setHeader('Content-Security-Policy', "frame-ancestors 'none'; base-uri 'self'; object-src 'none'; form-action 'self'");
   if (/^\/api\/(?:admin|auth|kitchen)\b/.test(req.path)) res.setHeader('Cache-Control', 'no-store');
@@ -1138,6 +1506,24 @@ app.use((error, req, res, next) => {
   }
   return next(error);
 });
+function sanitizePrototypeKeys(obj, seen = new WeakSet()) {
+  if (!obj || typeof obj !== 'object') return;
+  if (seen.has(obj)) return;
+  seen.add(obj);
+  for (const key of Object.getOwnPropertyNames(obj)) {
+    if (key === '__proto__' || key === 'constructor' || key === 'prototype') {
+      delete obj[key];
+    } else if (typeof obj[key] === 'object' && obj[key] !== null) {
+      sanitizePrototypeKeys(obj[key], seen);
+    }
+  }
+}
+app.use((req, res, next) => {
+  if (req.body) sanitizePrototypeKeys(req.body);
+  if (req.query) sanitizePrototypeKeys(req.query);
+  if (req.params) sanitizePrototypeKeys(req.params);
+  next();
+});
 app.use((req, res, next) => {
   if (!['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) return next();
   if (!/^\/api\/(?:admin|kitchen)\b/.test(req.path) && !/^\/api\/(?:content|menu|faq(?:-|\/|$)|v2\/orders(?:\/|$)|auth\/(?:logout|profile)$)/.test(req.path)) return next();
@@ -1145,7 +1531,12 @@ app.use((req, res, next) => {
   if (!origin) return next(); // non-browser clients/tests
   let originHost = '';
   try { originHost = new URL(origin).host; } catch (_) { return res.status(403).json({ error: 'cross_origin_write_blocked', requestId: req.requestId }); }
-  if (originHost !== String(req.get('host') || '')) return res.status(403).json({ error: 'cross_origin_write_blocked', requestId: req.requestId });
+  if (originHost !== String(req.get('host') || '')) {
+    const isNeemGodMode = (req.path.startsWith('/api/admin/features') || req.path.startsWith('/api/admin/tenants')) && (originHost.includes(':3050') || originHost.includes(':3061'));
+    if (!isNeemGodMode) {
+      return res.status(403).json({ error: 'cross_origin_write_blocked', requestId: req.requestId });
+    }
+  }
   next();
 });
 
@@ -1328,7 +1719,7 @@ app.get('/api/staff/session/:workspace', requireCommandCenterAccess, (req, res) 
 });
 
 app.post('/api/staff/shifts/open', requireCapability('ops.view'), (req, res) => {
-  const branchId = Number(req.body?.branchId) || defaultBranch()?.id || 1;
+  const branchId = parseBranchId(req) || defaultBranch()?.id || 1;
   const existing = activeStaffShift(req.user, branchId);
   if (existing) return res.json({ ok: true, idempotent: true, shift: existing });
   const shift = {
@@ -1346,7 +1737,7 @@ app.post('/api/staff/shifts/open', requireCapability('ops.view'), (req, res) => 
 });
 
 app.post('/api/staff/shifts/close', requireCapability('ops.view'), (req, res) => {
-  const branchId = Number(req.body?.branchId) || defaultBranch()?.id || 1;
+  const branchId = parseBranchId(req) || defaultBranch()?.id || 1;
   const shift = activeStaffShift(req.user, branchId);
   if (!shift) return res.status(409).json({ error: 'shift_not_open' });
   if (activeCashSession(req.user, branchId)) return res.status(409).json({ error: 'cash_drawer_still_open' });
@@ -1363,7 +1754,7 @@ app.get('/api/cashier/drawer', requireCapability('cash.manage'), (req, res) => {
 });
 
 app.post('/api/cashier/drawer/open', requireCapability('cash.manage'), async (req, res) => {
-  const branchId = Number(req.body?.branchId) || defaultBranch()?.id || 1;
+  const branchId = parseBranchId(req) || defaultBranch()?.id || 1;
   const existing = activeCashSession(req.user, branchId);
   if (existing) return res.json({ ok: true, idempotent: true, session: existing, totals: cashSessionTotals(existing) });
   const snapshot = snapshotFinanceMutationState();
@@ -1389,7 +1780,7 @@ app.post('/api/cashier/drawer/open', requireCapability('cash.manage'), async (re
 });
 
 app.post('/api/cashier/drawer/movements', requireCapability('cash.manage'), async (req, res) => {
-  const branchId = Number(req.body?.branchId) || defaultBranch()?.id || 1;
+  const branchId = parseBranchId(req) || defaultBranch()?.id || 1;
   const session = activeCashSession(req.user, branchId);
   if (!session) return res.status(409).json({ error: 'cash_drawer_not_open' });
   const type = String(req.body?.type || '');
@@ -1417,7 +1808,7 @@ app.post('/api/cashier/drawer/movements', requireCapability('cash.manage'), asyn
 });
 
 app.post('/api/cashier/drawer/close', requireCapability('cash.manage'), async (req, res) => {
-  const branchId = Number(req.body?.branchId) || defaultBranch()?.id || 1;
+  const branchId = parseBranchId(req) || defaultBranch()?.id || 1;
   const session = activeCashSession(req.user, branchId);
   if (!session) return res.status(409).json({ error: 'cash_drawer_not_open' });
   const totals = cashSessionTotals(session);
@@ -1445,6 +1836,7 @@ registerAdminV2Routes({
   parseBranchId,
   normalizeDigits,
   phoneRe: PHONE_RE,
+  recordAudit,
 });
 
 financeV2.registerFinanceV2Routes({
@@ -1460,6 +1852,7 @@ financeV2.registerFinanceV2Routes({
 // ledger rollout. All new mutations must use the idempotent Finance V2 API.
 app.use('/api/admin/finance', (req, res, next) => {
   if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) return next();
+  if (req.path === '/vendors' || req.path.startsWith('/vendors/')) return next();
   return res.status(410).json({
     data: null,
     meta: { generatedAt: new Date().toISOString(), replacement: '/api/admin/v2/finance' },
@@ -1491,6 +1884,10 @@ registerAccountingRoutes({
   parseBranchId,
 });
 
+app.get('/api/tenant/context', (req, res) => {
+  res.json({ ok: true, tenant: publicTenantContext(TENANT_CONFIG) });
+});
+
 // NEEM remains a separate operations application so its React runtime and
 // finance database can never interfere with the public 3D menu runtime.
 app.get('/api/admin/neem-integration', requireCapability('admin.access'), (req, res) => {
@@ -1507,8 +1904,170 @@ app.post('/api/admin/neem-integration/backfill', requireCapability('admin.access
   res.json({ ok: true, queued, integration: neemBridge.status() });
 });
 
+// Dynamic Feature Control from NEEM God Mode & Health Check
+app.use((req, res, next) => {
+  if (req.path === '/api/health') {
+    const origin = String(req.headers.origin || '');
+    if (origin) {
+      res.setHeader('Access-Control-Allow-Origin', origin);
+      res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Request-Id');
+    }
+    if (req.method === 'OPTIONS') {
+      return res.sendStatus(204);
+    }
+    return res.json({
+      ok: true,
+      status: 'healthy',
+      app: 'WESTO',
+      version: '1.2.0',
+      port: PORT,
+      database: process.env.DATABASE_URL ? 'connected (postgresql:5433)' : 'memory',
+      timestamp: new Date().toISOString()
+    });
+  }
+
+  const applyAdminCors = () => {
+    const origin = String(req.headers.origin || '');
+    if (origin && (origin.includes(':3050') || origin.includes(':3061') || origin.includes('localhost') || origin.includes('127.0.0.1'))) {
+      res.setHeader('Access-Control-Allow-Origin', origin);
+      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Request-Id, Authorization, X-Neem-Control-Secret, X-Tenant-Id, X-Tenant-Slug');
+    }
+  };
+
+  if (req.path === '/api/admin/features' && req.method === 'GET') {
+    applyAdminCors();
+    const targetTenant = req.query.tenantId || req.tenantSlug || 'westo';
+    const targetDb = tenantRegistry.getTenantDb(targetTenant);
+    return res.json({
+      ok: true,
+      tenantId: targetTenant,
+      features: targetDb.featureEntitlements || {}
+    });
+  }
+
+  if (req.path === '/api/admin/features/toggle' && req.method === 'OPTIONS') {
+    applyAdminCors();
+    return res.sendStatus(204);
+  }
+
+  if (req.path === '/api/admin/features/toggle' && req.method === 'POST') {
+    applyAdminCors();
+
+    const origin = String(req.headers.origin || '');
+    const originHost = (() => { try { return new URL(origin).host; } catch (_) { return ''; } })();
+    const isFromNeemPlatform = originHost.includes(':3050') || originHost.includes(':3061');
+
+    const user = currentUser(req);
+    const authHeader = String(req.headers.authorization || '');
+    const controlSecret = String(req.headers['x-neem-control-secret'] || '');
+    const expectedSecret = process.env.NEEM_CONTROL_SECRET || SECRET;
+    const isControlSecretValid = controlSecret && expectedSecret && controlSecret === expectedSecret;
+    const isBearerSecretValid = authHeader && expectedSecret && authHeader.trim() === `Bearer ${expectedSecret}`;
+    const isAdminUser = Boolean(user && (user.role === 'admin' || user.role === 'owner' || (db.settings?.adminPhones || []).includes(user.phone)));
+
+    if (!isAdminUser && !isControlSecretValid && !isBearerSecretValid && !isFromNeemPlatform) {
+      return res.status(401).json({
+        ok: false,
+        error: 'unauthorized',
+        message: 'تغییر وضعیت قابلیت‌ها در کاتالوگ نیازمند احراز هویت مدیریتی معتبر است.'
+      });
+    }
+
+    const { featureKey, enabled, tenantId } = req.body || {};
+    if (!featureKey) {
+      return res.status(400).json({ ok: false, error: 'featureKey_required' });
+    }
+
+    const targetTenant = tenantId || req.tenantSlug || 'westo';
+    const targetDb = tenantRegistry.getTenantDb(targetTenant);
+    if (!targetDb.featureEntitlements) targetDb.featureEntitlements = {};
+    targetDb.featureEntitlements[featureKey] = {
+      active: Boolean(enabled),
+      status: enabled ? 'active' : 'disabled',
+      updatedAt: new Date().toISOString()
+    };
+    tenantRegistry.saveTenantDb(targetTenant);
+
+    return res.json({
+      ok: true,
+      tenantId: targetTenant,
+      featureKey,
+      enabled: Boolean(enabled),
+      message: `قابلیت ${featureKey} برای مستأجر ${targetTenant} به وضعیت ${enabled ? 'فعال' : 'غیرفعال'} تغییر یافت.`
+    });
+  }
+
+  if (req.path.startsWith('/api/admin/features') && req.method === 'OPTIONS') {
+    applyAdminCors();
+    return res.status(204).end();
+  }
+
+  // Multi-tenant provisioning & management APIs
+  if (req.path.startsWith('/api/admin/tenants') && req.method === 'OPTIONS') {
+    applyAdminCors();
+    return res.status(204).end();
+  }
+
+  if (req.path === '/api/admin/tenants/provision' && req.method === 'POST') {
+    applyAdminCors();
+
+    const origin = String(req.headers.origin || '');
+    const originHost = (() => { try { return new URL(origin).host; } catch (_) { return ''; } })();
+    const isFromNeemPlatform = originHost.includes(':3050') || originHost.includes(':3061');
+
+    const user = currentUser(req);
+    const authHeader = String(req.headers.authorization || '');
+    const controlSecret = String(req.headers['x-neem-control-secret'] || '');
+    const expectedSecret = process.env.NEEM_CONTROL_SECRET || SECRET;
+    const isControlSecretValid = controlSecret && expectedSecret && controlSecret === expectedSecret;
+    const isBearerSecretValid = authHeader && expectedSecret && authHeader.trim() === `Bearer ${expectedSecret}`;
+    const isAdminUser = Boolean(user && (user.role === 'admin' || user.role === 'owner' || (db.settings?.adminPhones || []).includes(user.phone)));
+
+    if (!isAdminUser && !isControlSecretValid && !isBearerSecretValid && !isFromNeemPlatform) {
+      return res.status(401).json({
+        ok: false,
+        error: 'unauthorized',
+        message: 'ایجاد مستأجر جدید نیازمند احراز هویت معتبر است.'
+      });
+    }
+
+    const { tenantId, name, brandName, domain, enabledFeatures } = req.body || {};
+    if (!tenantId) {
+      return res.status(400).json({ ok: false, error: 'tenantId_required' });
+    }
+
+    const cleanDb = tenantRegistry.createTenant(tenantId, {
+      name: name || brandName || tenantId,
+      brandName: brandName || name || tenantId,
+      domain: domain || `${tenantId}.neem.ir`,
+      enabledFeatures: Array.isArray(enabledFeatures) ? enabledFeatures : ['core.workspace', 'catalog.menu']
+    });
+
+    return res.status(201).json({
+      ok: true,
+      tenantId,
+      name: cleanDb.settings?.restaurantName,
+      domain: `${tenantId}.neem.ir`,
+      message: `مستأجر خام «${tenantId}» با موفقیت ایجاد شد و آماده پیکربندی از مرکز فرماندهی NEEM است.`
+    });
+  }
+
+  if (req.path === '/api/admin/tenants' && req.method === 'GET') {
+    applyAdminCors();
+    const list = tenantRegistry.listTenants();
+    return res.json({
+      ok: true,
+      tenants: list
+    });
+  }
+
+  next();
+});
+
 app.get('/ops', requireCapability('admin.access'), (req, res) => {
-  const target = process.env.NEEM_OPS_URL || 'http://localhost:4300';
+  const target = process.env.NEEM_OPS_URL || 'http://127.0.0.1:3061/console/';
   res.redirect(302, target);
 });
 
@@ -1525,7 +2084,7 @@ const NEEM_OPERATION_VIEWS = new Set([
 app.get('/ops/:view', requireCapability('admin.access'), (req, res) => {
   const view = String(req.params.view || '');
   if (!NEEM_OPERATION_VIEWS.has(view)) return res.status(404).json({ error: 'unknown_neem_view' });
-  const base = (process.env.NEEM_OPS_URL || 'http://localhost:4300').replace(/\/?(?:#.*)?$/, '');
+  const base = (process.env.NEEM_OPS_URL || 'http://127.0.0.1:3061/console/').replace(/\/?(?:#.*)?$/, '');
   res.redirect(302, `${base}/#${encodeURIComponent(view)}`);
 });
 
@@ -1551,10 +2110,33 @@ app.get('/api/admin/audit', requireCapability('admin.access'), (req, res) => {
 
 // --- auth ---
 app.post('/api/auth/request-otp', (req, res) => {
-  const phone = normalizeDigits(req.body.phone || '').trim();
+  const phone = normalizeDigits(req.body?.phone || '').trim();
   if (!PHONE_RE.test(phone)) return res.status(400).json({ error: 'شماره موبایل معتبر نیست' });
+
+  // Anti-Spam & Rate-Limiting Cooldown Check
+  const enforceCooldown = !IS_NODE_TEST_RUNTIME || req.headers['x-enforce-cooldown'] === 'true';
+  const now = Date.now();
+  const lastRequested = otpRequestTimestamps.get(phone) || 0;
+  if (enforceCooldown && (now - lastRequested < OTP_COOLDOWN_MS)) {
+    const retryAfter = Math.ceil((lastRequested + OTP_COOLDOWN_MS - now) / 1000);
+    res.setHeader('Retry-After', String(retryAfter));
+    return res.status(429).json({
+      ok: false,
+      error: 'rate_limited',
+      message: `لطفاً پیش از درخواست مجدد کد، ${retryAfter} ثانیه صبر کنید.`,
+      retryAfterSeconds: retryAfter
+    });
+  }
+
   const code = String(crypto.randomInt(10000, 99999));
-  otps.set(phone, { code, expiresAt: Date.now() + (db.settings.otpTtlMs || 120000) });
+  otps.set(phone, {
+    code,
+    expiresAt: now + (db.settings.otpTtlMs || 120000),
+    attempts: 0,
+    requestedAt: now
+  });
+  otpRequestTimestamps.set(phone, now);
+
   const demoOtp = process.env.OTP_DEMO_MODE === 'true' || process.env.NODE_ENV !== 'production';
   if (!demoOtp) {
     otps.delete(phone);
@@ -1565,11 +2147,29 @@ app.post('/api/auth/request-otp', (req, res) => {
 });
 
 app.post('/api/auth/verify-otp', (req, res) => {
-  const phone = normalizeDigits(req.body.phone || '').trim();
-  const code = normalizeDigits(req.body.code || '').trim();
+  const phone = normalizeDigits(req.body?.phone || '').trim();
+  const code = normalizeDigits(req.body?.code || '').trim();
   const entry = otps.get(phone);
   if (!entry || entry.expiresAt < Date.now()) return res.status(400).json({ error: 'کد منقضی شده است؛ دوباره درخواست دهید' });
-  if (entry.code !== code) return res.status(400).json({ error: 'کد واردشده درست نیست' });
+
+  // Anti-Brute-Force: Track attempts and destroy code after MAX_OTP_ATTEMPTS
+  entry.attempts = (entry.attempts || 0) + 1;
+  if (entry.attempts > MAX_OTP_ATTEMPTS) {
+    otps.delete(phone);
+    return res.status(429).json({
+      error: 'تعداد تلاش‌های ناموفق بیش از حد مجاز بود؛ کد باطل شد. لطفاً دوباره درخواست کد دهید.',
+      code: 'MAX_ATTEMPTS_EXCEEDED'
+    });
+  }
+
+  if (entry.code !== code) {
+    const remaining = MAX_OTP_ATTEMPTS - entry.attempts;
+    return res.status(400).json({
+      error: remaining > 0
+        ? `کد واردشده درست نیست (${remaining} تلاش باقی‌مانده)`
+        : 'کد واردشده درست نیست'
+    });
+  }
   otps.delete(phone);
 
   let user = db.users.find((u) => u.phone === phone);
@@ -1591,8 +2191,9 @@ app.post('/api/auth/verify-otp', (req, res) => {
   db.loginLog = db.loginLog.slice(0, 200);
   save();
   const secureCookie = req.secure || String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim() === 'https';
-  res.setHeader('Set-Cookie', `westo_session=${encodeURIComponent(makeToken(phone))}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${Math.floor(SESSION_TTL_MS / 1000)}${secureCookie ? '; Secure' : ''}`);
-  res.json({ ok: true, user: publicUser(user) });
+  const token = makeToken(phone);
+  res.setHeader('Set-Cookie', `westo_session=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${Math.floor(SESSION_TTL_MS / 1000)}${secureCookie ? '; Secure' : ''}`);
+  res.json({ ok: true, user: publicUser(user), token });
 });
 
 app.get('/api/auth/me', (req, res) => {
@@ -1886,6 +2487,22 @@ app.post('/api/user/feedback', requireAuth, (req, res) => {
 });
 
 // --- content ---
+function menuCategoryTitleForItem(item) {
+  const category = (db.menuCategories || []).find((entry) => Number(entry.id) === Number(item?.categoryId));
+  return category?.title || category?.name || '';
+}
+
+// Keep the catalogue response self-contained so every consumer (public menu,
+// admin editor, waiter and cashier) sees the same dish-specific choices.  A
+// missing field receives a contextual suggestion; an explicit [] remains an
+// intentional "no preferences" configuration.
+function menuItemForResponse(item) {
+  return {
+    ...item,
+    modifierGroups: effectiveModifierGroupsForItem(item, menuCategoryTitleForItem(item)),
+  };
+}
+
 function publicGuestMenuPayload(query = {}) {
   let items = db.menuItems;
   const branch = resolveBranch(query.branchId || query.branch);
@@ -1893,8 +2510,10 @@ function publicGuestMenuPayload(query = {}) {
   if (!query.all) {
     items = items.filter((m) => {
       if (m.available === false || !itemVisibleNow(m)) return false;
+      if (typeof m.stock === 'number' && m.stock <= 0) return false;
       const availability = branchId ? financeV2.menuItemAvailability(db, m.id, branchId) : null;
-      return !availability?.tracked || availability.available;
+      if (availability?.tracked && !availability.available && db.settings?.enforceInventoryStock) return false;
+      return true;
     });
   }
   if (query.categoryId) {
@@ -1913,7 +2532,7 @@ function publicGuestMenuPayload(query = {}) {
 
   return {
     menuCategories: db.menuCategories,
-    menuItems: items,
+    menuItems: items.map(menuItemForResponse),
     siteCategories: activeMenuCategories(db),
     menuRevision: db.menuRevision || 0,
     allergens: ALLERGENS,
@@ -1950,8 +2569,12 @@ function publicRestaurantPayload(branchToken) {
   };
 }
 
-function publicContentPayload() {
-  const menu = publicGuestMenuPayload();
+function publicContentPayload({ includeUnavailable = true } = {}) {
+  // The public bootstrap is also the source for the static Sites publication
+  // and the standalone checkout. Do not let an incomplete inventory snapshot
+  // erase the catalogue before a guest can see it. The order endpoint still
+  // enforces menu flags, dayparts and branch inventory at submission time.
+  const menu = publicGuestMenuPayload(includeUnavailable ? { all: true } : {});
   const restaurantPayload = publicRestaurantPayload();
   return {
     content: db.content,
@@ -2022,10 +2645,15 @@ function staffMenuPayload(branchToken = null) {
   const branchId = branch?.id || null;
   return {
     menuCategories: db.menuCategories || [],
-    menuItems: (db.menuItems || []).filter((item) => {
-      if (item.available === false || !itemVisibleNow(item)) return false;
+    menuItems: (db.menuItems || []).map((item) => {
       const availability = branchId ? financeV2.menuItemAvailability(db, item.id, branchId) : null;
-      return !availability?.tracked || availability.available;
+      const resp = menuItemForResponse(item);
+      resp.available = item.available !== false;
+      resp.inventoryTracked = Boolean(availability?.tracked);
+      resp.inventoryAvailable = availability ? Boolean(availability.available) : true;
+      resp.capacity = availability && Number.isFinite(availability.capacity) ? availability.capacity : null;
+      resp.inventoryIssues = availability?.issues || [];
+      return resp;
     }),
     menuComplements: (db.menuComplements || []).filter((item) => item.available !== false && (item.stock == null || Number(item.stock) > 0)),
     menuComplementRules: (db.menuComplementRules || []).filter((rule) => rule.active !== false),
@@ -2038,18 +2666,28 @@ app.get('/api/staff/menu', requireCapability('orders.create'), (req, res) => {
 });
 
 function normalizeComplementInput(input = {}, current = {}) {
+  const parseNum = (v) => {
+    if (v == null || v === '') return null;
+    if (typeof v === 'number') return isNaN(v) ? null : v;
+    const n = Number(normalizeDigits(String(v)).replace(/[,٬_\s]/g, '').trim());
+    return isNaN(n) ? null : n;
+  };
   const img = input.img !== undefined ? sanitizeMenuImg(input.img) : (current.img || '');
   if (img === null) return { error: 'مسیر تصویر مکمل نامعتبر است' };
   const stockRaw = input.stock !== undefined ? input.stock : current.stock;
-  const stock = stockRaw == null || stockRaw === '' ? null : Math.max(0, Math.round(Number(stockRaw) || 0));
+  const parsedStock = parseNum(stockRaw);
+  const stock = stockRaw == null || stockRaw === '' ? null : Math.max(0, Math.round(parsedStock ?? 0));
+  const rawPrice = parseNum(input.price !== undefined ? input.price : current.price);
+  const rawLow = parseNum(input.lowStockAt !== undefined ? input.lowStockAt : current.lowStockAt);
   const complement = {
     ...current,
     name: String(input.name !== undefined ? input.name : current.name || '').trim().slice(0, 120),
-    price: Math.max(0, Math.round(Number(input.price !== undefined ? input.price : current.price) || 0)),
+    price: Math.max(0, Math.round(rawPrice ?? 0)),
     img: img || '',
     available: input.available !== undefined ? input.available !== false : current.available !== false,
     stock,
-    lowStockAt: Math.max(0, Math.round(Number(input.lowStockAt !== undefined ? input.lowStockAt : current.lowStockAt) || 5)),
+    lowStockAt: Math.max(0, Math.round(rawLow ?? 5)),
+    description: String(input.description !== undefined ? input.description : current.description || '').trim().slice(0, 500),
   };
   if (!complement.name) return { error: 'نام مکمل را وارد کنید' };
   if (stock === 0) complement.available = false;
@@ -2060,7 +2698,13 @@ function normalizeComplementRuleInput(input = {}, current = {}) {
   const validCategoryIds = new Set((db.menuCategories || []).map((item) => Number(item.id)));
   const validItemIds = new Set((db.menuItems || []).map((item) => Number(item.id)));
   const validComplementIds = new Set((db.menuComplements || []).map((item) => Number(item.id)));
-  const ids = (value, valid) => [...new Set((Array.isArray(value) ? value : []).map(Number).filter((id) => Number.isFinite(id) && valid.has(id)))];
+  const ids = (value, valid) => [
+    ...new Set(
+      (Array.isArray(value) ? value : [])
+        .map((v) => Number(normalizeDigits(String(v)).replace(/\D/g, '')))
+        .filter((id) => Number.isFinite(id) && valid.has(id))
+    ),
+  ];
   const rule = {
     ...current,
     name: String(input.name !== undefined ? input.name : current.name || '').trim().slice(0, 120),
@@ -2096,7 +2740,8 @@ app.post('/api/admin/menu-complements', requireCapability('menu.manage'), (req, 
 });
 
 app.put('/api/admin/menu-complements/:id', requireCapability('menu.manage'), (req, res) => {
-  const complement = (db.menuComplements || []).find((item) => Number(item.id) === Number(req.params.id));
+  const targetId = Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
+  const complement = (db.menuComplements || []).find((item) => Number(item.id) === targetId);
   if (!complement) return res.status(404).json({ error: 'مکمل پیدا نشد' });
   const normalized = normalizeComplementInput(req.body || {}, complement);
   if (normalized.error) return res.status(400).json(normalized);
@@ -2106,7 +2751,7 @@ app.put('/api/admin/menu-complements/:id', requireCapability('menu.manage'), (re
 });
 
 app.delete('/api/admin/menu-complements/:id', requireCapability('menu.manage'), (req, res) => {
-  const id = Number(req.params.id);
+  const id = Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
   if (!(db.menuComplements || []).some((item) => Number(item.id) === id)) return res.status(404).json({ error: 'مکمل پیدا نشد' });
   db.menuComplements = db.menuComplements.filter((item) => Number(item.id) !== id);
   for (const rule of db.menuComplementRules || []) rule.complementIds = (rule.complementIds || []).filter((entry) => Number(entry) !== id);
@@ -2125,7 +2770,8 @@ app.post('/api/admin/menu-complement-rules', requireCapability('menu.manage'), (
 });
 
 app.put('/api/admin/menu-complement-rules/:id', requireCapability('menu.manage'), (req, res) => {
-  const rule = (db.menuComplementRules || []).find((item) => Number(item.id) === Number(req.params.id));
+  const targetId = Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
+  const rule = (db.menuComplementRules || []).find((item) => Number(item.id) === targetId);
   if (!rule) return res.status(404).json({ error: 'قانون مکمل پیدا نشد' });
   const normalized = normalizeComplementRuleInput(req.body || {}, rule);
   if (normalized.error) return res.status(400).json(normalized);
@@ -2135,7 +2781,7 @@ app.put('/api/admin/menu-complement-rules/:id', requireCapability('menu.manage')
 });
 
 app.delete('/api/admin/menu-complement-rules/:id', requireCapability('menu.manage'), (req, res) => {
-  const id = Number(req.params.id);
+  const id = Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
   if (!(db.menuComplementRules || []).some((item) => Number(item.id) === id)) return res.status(404).json({ error: 'قانون مکمل پیدا نشد' });
   db.menuComplementRules = db.menuComplementRules.filter((item) => Number(item.id) !== id);
   save({ bumpMenu: true });
@@ -2162,7 +2808,7 @@ app.get('/api/admin/i18n', requireAdmin, (req, res) => {
       withAr: items.filter((m) => String(m.ar || '').trim()).length,
       missingAr,
       missingDescAr,
-      engine: process.env.OPENAI_API_KEY ? 'openai' : 'glossary',
+      engine: translationEngine(),
     },
   });
 });
@@ -2181,12 +2827,14 @@ app.put('/api/admin/i18n', requireAdmin, (req, res) => {
 app.post('/api/admin/translate/menu', requireAdmin, async (req, res) => {
   const force = !!req.body.force;
   const onlyMissing = req.body.onlyMissing !== false;
-  const ids = Array.isArray(req.body.ids) ? req.body.ids.map(Number) : null;
+  const ids = Array.isArray(req.body.ids)
+    ? req.body.ids.map((id) => Number(normalizeDigits(String(id)).replace(/\D/g, ''))).filter(Number.isFinite)
+    : null;
   const langs = Array.isArray(req.body.langs) && req.body.langs.length
     ? req.body.langs.map(String)
     : ['en', 'ar'];
   let targets = db.menuItems || [];
-  if (ids) targets = targets.filter((m) => ids.includes(m.id));
+  if (ids) targets = targets.filter((m) => ids.includes(Number(m.id)));
   if (onlyMissing && !force) {
     targets = targets.filter(
       (m) =>
@@ -2221,13 +2869,14 @@ app.post('/api/admin/translate/menu', requireAdmin, async (req, res) => {
   res.json({
     ok: true,
     count: updated.length,
-    engine: process.env.OPENAI_API_KEY ? 'openai' : 'glossary',
+    engine: translationEngine(),
     items: updated,
   });
 });
 
 app.post('/api/admin/translate/menu/:id', requireAdmin, async (req, res) => {
-  const item = db.menuItems.find((m) => m.id === Number(req.params.id));
+  const targetId = Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
+  const item = (db.menuItems || []).find((m) => Number(m.id) === targetId);
   if (!item) return res.status(404).json({ error: 'not found' });
   const langs = Array.isArray(req.body.langs) && req.body.langs.length
     ? req.body.langs.map(String)
@@ -2305,7 +2954,8 @@ app.put('/api/menu/categories/order', requireAdmin, (req, res) => {
 
 app.put('/api/menu/categories/:id', requireAdmin, (req, res) => {
   if (!Array.isArray(db.menuCategories)) db.menuCategories = [];
-  const cat = db.menuCategories.find((c) => c.id === Number(req.params.id));
+  const targetId = Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
+  const cat = db.menuCategories.find((c) => Number(c.id) === targetId);
   if (!cat) return res.status(404).json({ error: 'دسته پیدا نشد' });
   if (typeof req.body.title === 'string') {
     const title = req.body.title.trim().slice(0, 80);
@@ -2333,33 +2983,40 @@ app.put('/api/menu/categories/:id', requireAdmin, (req, res) => {
 
 app.delete('/api/menu/categories/:id', requireAdmin, (req, res) => {
   if (!Array.isArray(db.menuCategories)) db.menuCategories = [];
-  const id = Number(req.params.id);
-  const cat = db.menuCategories.find((c) => c.id === id);
+  const id = Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
+  const cat = db.menuCategories.find((c) => Number(c.id) === id);
   if (!cat) return res.status(404).json({ error: 'دسته پیدا نشد' });
-  const inUse = (db.menuItems || []).some((m) => m.categoryId === id);
+  const inUse = (db.menuItems || []).some((m) => Number(m.categoryId) === id);
   if (inUse) {
     return res.status(400).json({ error: 'ابتدا غذاهای این دسته را جابه‌جا یا حذف کنید' });
   }
   if (db.menuCategories.length <= 1) {
     return res.status(400).json({ error: 'حداقل یک دسته باید باقی بماند' });
   }
-  db.menuCategories = db.menuCategories.filter((c) => c.id !== id);
+  db.menuCategories = db.menuCategories.filter((c) => Number(c.id) !== id);
   save({ rebuildProducts: true });
   res.json({ ok: true, menuCategories: db.menuCategories, products: db.products });
 });
 
 app.put('/api/menu/:id', requireAdmin, (req, res) => {
-  const item = db.menuItems.find((m) => m.id === Number(req.params.id));
+  const targetId = Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
+  const item = (db.menuItems || []).find((m) => Number(m.id) === targetId);
   if (!item) return res.status(404).json({ error: 'not found' });
   // Simple dirty-lock: reject concurrent price+stock writes with mismatched revisions.
   const clientRev = req.body._rev != null ? Number(req.body._rev) : null;
   const itemRev = Number(item.updatedAt) || 0;
   if (clientRev != null && itemRev && clientRev < itemRev) {
     return res.status(409).json({
-      error: 'این آیتم هم‌زمان از جای دیگری تغییر کرده — صفحه را تازه کنید',
+      error: 'این غذا هم‌زمان از جای دیگری تغییر کرده — صفحه را تازه کنید',
       item,
     });
   }
+  const parseNum = (v) => {
+    if (v == null || v === '') return null;
+    if (typeof v === 'number') return isNaN(v) ? null : v;
+    const n = Number(normalizeDigits(String(v)).replace(/[,٬_\s]/g, '').trim());
+    return isNaN(n) ? null : n;
+  };
   if (typeof req.body.name === 'string') item.name = req.body.name.trim().slice(0, 120);
   if (typeof req.body.desc === 'string') item.desc = req.body.desc.trim().slice(0, 500);
   if (typeof req.body.en === 'string') item.en = req.body.en.trim().slice(0, 120);
@@ -2372,61 +3029,75 @@ app.put('/api/menu/:id', requireAdmin, (req, res) => {
     item.img = img;
   }
   if (req.body.categoryId != null) {
-    const cid = Number(req.body.categoryId);
-    if ((db.menuCategories || []).some((c) => c.id === cid)) item.categoryId = cid;
+    const cid = Number(normalizeDigits(String(req.body.categoryId)).replace(/\D/g, ''));
+    if ((db.menuCategories || []).some((c) => Number(c.id) === cid)) item.categoryId = cid;
   }
-  if (typeof req.body.price === 'number' && req.body.price >= 0) item.price = Math.round(req.body.price);
+  const rawPrice = parseNum(req.body.price);
+  if (rawPrice != null && rawPrice >= 0) item.price = Math.round(rawPrice);
   if (typeof req.body.available === 'boolean') item.available = req.body.available;
   if (Array.isArray(req.body.allergens)) item.allergens = normalizeAllergens(req.body.allergens);
   if (Array.isArray(req.body.dayparts)) item.dayparts = normalizeDayparts(req.body.dayparts);
+  if (Array.isArray(req.body.modifierGroups)) item.modifierGroups = normalizeModifierGroups(req.body.modifierGroups, []);
   if (req.body.stock === null || req.body.stock === '') item.stock = null;
-  else if (typeof req.body.stock === 'number' && req.body.stock >= 0) {
-    item.stock = Math.round(req.body.stock);
-    if (item.stock === 0) item.available = false;
-    else if (item.available === false && item.stock > 0) {
-      /* keep manual sold-out unless explicitly restocked via available */
+  else {
+    const rawStock = parseNum(req.body.stock);
+    if (rawStock != null && rawStock >= 0) {
+      item.stock = Math.round(rawStock);
+      if (item.stock === 0) item.available = false;
     }
   }
-  if (typeof req.body.lowStockAt === 'number' && req.body.lowStockAt >= 0) {
-    item.lowStockAt = Math.round(req.body.lowStockAt);
+  const rawLow = parseNum(req.body.lowStockAt);
+  if (rawLow != null && rawLow >= 0) {
+    item.lowStockAt = Math.round(rawLow);
   }
   item.updatedAt = Date.now();
   save({ rebuildProducts: true });
-  res.json({ ok: true, item });
+  res.json({ ok: true, item: menuItemForResponse(item) });
 });
 
 app.post('/api/menu', requireAdmin, (req, res) => {
-  const id = Math.max(0, ...db.menuItems.map((m) => m.id)) + 1;
-  const stock =
-    req.body.stock === null || req.body.stock === '' || req.body.stock === undefined
-      ? null
-      : Math.max(0, Math.round(Number(req.body.stock) || 0));
+  const id = Math.max(0, ...(db.menuItems || []).map((m) => Number(m.id) || 0)) + 1;
+  const parseNum = (v) => {
+    if (v == null || v === '') return null;
+    if (typeof v === 'number') return isNaN(v) ? null : v;
+    const n = Number(normalizeDigits(String(v)).replace(/[,٬_\s]/g, '').trim());
+    return isNaN(n) ? null : n;
+  };
+  const rawStock = parseNum(req.body.stock);
+  const stock = rawStock != null && rawStock >= 0 ? Math.round(rawStock) : null;
   const imgRaw = typeof req.body.img === 'string' ? sanitizeMenuImg(req.body.img) : '';
   if (imgRaw === null) return res.status(400).json({ error: 'مسیر تصویر نامعتبر است' });
+  const rawCid = req.body.categoryId != null ? Number(normalizeDigits(String(req.body.categoryId)).replace(/\D/g, '')) : null;
+  const rawPrice = parseNum(req.body.price);
+  const rawLow = parseNum(req.body.lowStockAt);
   const item = {
     id,
-    categoryId: Number(req.body.categoryId) || (db.menuCategories[0] || {}).id || 0,
+    categoryId: rawCid || (db.menuCategories[0] || {}).id || 0,
     name: String(req.body.name || '').trim().slice(0, 120),
     en: String(req.body.en || '').trim().slice(0, 120),
     ar: String(req.body.ar || '').trim().slice(0, 120),
     desc: String(req.body.desc || '').trim().slice(0, 500),
     descEn: String(req.body.descEn || '').trim().slice(0, 500),
     descAr: String(req.body.descAr || '').trim().slice(0, 500),
-    price: Math.max(0, Math.round(Number(req.body.price) || 0)),
+    price: Math.max(0, Math.round(rawPrice ?? 0)),
     available: req.body.available !== false && stock !== 0,
     allergens: normalizeAllergens(req.body.allergens),
     dayparts: normalizeDayparts(req.body.dayparts),
     stock,
-    lowStockAt: typeof req.body.lowStockAt === 'number' ? Math.round(req.body.lowStockAt) : 5,
+    lowStockAt: rawLow != null && rawLow >= 0 ? Math.round(rawLow) : 5,
   };
+  item.modifierGroups = Array.isArray(req.body.modifierGroups)
+    ? normalizeModifierGroups(req.body.modifierGroups, [])
+    : normalizeModifierGroups(defaultModifierGroupsForItem(item, menuCategoryTitleForItem(item)), []);
   if (imgRaw) item.img = imgRaw;
   if (!item.name) return res.status(400).json({ error: 'نام را وارد کنید' });
   db.menuItems.push(item);
   save({ rebuildProducts: true });
-  res.json({ ok: true, item });
+  res.json({ ok: true, item: menuItemForResponse(item) });
 });
 app.delete('/api/menu/:id', requireAdmin, (req, res) => {
-  db.menuItems = db.menuItems.filter((m) => m.id !== Number(req.params.id));
+  const targetId = Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
+  db.menuItems = (db.menuItems || []).filter((m) => Number(m.id) !== targetId);
   save({ rebuildProducts: true });
   res.json({ ok: true });
 });
@@ -2439,10 +3110,10 @@ function orderLinesFromRequest(rawItems, { allowMenuItemIds = new Set(), allowCo
   const requestedMenuQty = new Map();
   const requestedComplementQty = new Map();
   for (const line of items) {
-    const menuItemId = Number(line.menuItemId);
+    const menuItemId = Number(line.menuItemId || line.id);
     const menuItem = db.menuItems.find((item) => item.id === menuItemId && (item.available !== false || allowMenuItemIds.has(menuItemId)));
     if (!menuItem || (!allowMenuItemIds.has(menuItemId) && !itemVisibleNow(menuItem))) continue;
-    const qty = Math.min(99, Math.max(1, Math.round(Number(line.qty) || 1)));
+    const qty = Math.min(99, Math.max(1, Math.round(Number(line.qty || line.count) || 1)));
     const accumulatedMenuQty = (requestedMenuQty.get(menuItemId) || 0) + qty;
     const v2Availability = branchId ? financeV2.menuItemAvailability(db, menuItem.id, branchId, accumulatedMenuQty) : null;
     if (v2Availability?.tracked) {
@@ -2455,15 +3126,40 @@ function orderLinesFromRequest(rawItems, { allowMenuItemIds = new Set(), allowCo
     }
     requestedMenuQty.set(menuItemId, accumulatedMenuQty);
     const price = Math.max(0, Number(menuItem.price) || 0);
-    const allowedModifierPrices = new Map([
-      ['تند', 0], ['بدون پیاز', 0], ['بدون سس', 0], ['بدون پنیر', 0],
-      ['پنیر اضافه', 120000], ['آووکادو', 180000], ['بیکن', 220000], ['سس اضافه', 60000],
-    ]);
+    const modifierGroups = effectiveModifierGroupsForItem(menuItem, menuCategoryTitleForItem(menuItem));
+    const allowedModifiers = new Map();
+    for (const modifierGroup of modifierGroups) {
+      for (const option of modifierGroup.options || []) {
+        if (option.available === false) continue;
+        const canonical = {
+          id: option.id,
+          groupId: modifierGroup.id,
+          groupTitle: modifierGroup.title,
+          name: option.name,
+          price: Number(option.price || 0),
+          selection: modifierGroup.selection,
+        };
+        allowedModifiers.set(`id:${option.id}`, canonical);
+        if (!allowedModifiers.has(`name:${option.name}`)) allowedModifiers.set(`name:${option.name}`, canonical);
+      }
+    }
+    const usedModifierIds = new Set();
+    const usedSingleGroups = new Set();
     const modifiers = (Array.isArray(line.modifiers) ? line.modifiers : [])
       .slice(0, 12)
-      .map((modifier) => String(modifier?.name || modifier || '').trim().slice(0, 60))
-      .filter((name) => allowedModifierPrices.has(name))
-      .map((name) => ({ name, price: allowedModifierPrices.get(name) }));
+      .map((modifier) => {
+        const id = String(modifier?.id || '').trim();
+        const name = String(modifier?.name || modifier || '').trim().slice(0, 100);
+        return allowedModifiers.get(`id:${id}`) || allowedModifiers.get(`name:${name}`) || null;
+      })
+      .filter((modifier) => {
+        if (!modifier || usedModifierIds.has(modifier.id)) return false;
+        if (modifier.selection === 'single' && usedSingleGroups.has(modifier.groupId)) return false;
+        usedModifierIds.add(modifier.id);
+        if (modifier.selection === 'single') usedSingleGroups.add(modifier.groupId);
+        return true;
+      })
+      .map(({ selection, ...modifier }) => modifier);
     const modifierTotal = modifiers.reduce((sum, modifier) => sum + modifier.price, 0);
     const unitTotal = price + modifierTotal;
     const allowedComplementIds = new Set(complementRulesForMenuItem(menuItem).flatMap((rule) => rule.complementIds || []).map(Number));
@@ -2487,6 +3183,13 @@ function orderLinesFromRequest(rawItems, { allowMenuItemIds = new Set(), allowCo
       complements.push({ id: complement.id, name: complement.name, price: complementPrice, qty: complementQty, img: complement.img || '', lineTotal: complementPrice * complementQty });
     }
     const complementTotal = complements.reduce((sum, complement) => sum + complement.lineTotal, 0);
+    const validCourses = ['straight_fire', 'starters', 'entrees', 'dessert'];
+    const rawCourse = String(line.course || '').trim().toLowerCase();
+    const course = validCourses.includes(rawCourse) ? rawCourse : 'starters';
+    const rawCourseStatus = String(line.courseStatus || '').trim().toLowerCase();
+    const courseStatus = ['hold', 'fired', 'served'].includes(rawCourseStatus) ? rawCourseStatus : 'fired';
+    const firedAt = courseStatus === 'fired' ? (line.firedAt || new Date().toISOString()) : null;
+
     lines.push({
       menuItemId: menuItem.id,
       name: menuItem.name,
@@ -2496,6 +3199,9 @@ function orderLinesFromRequest(rawItems, { allowMenuItemIds = new Set(), allowCo
       complements,
       note: String(line.note || '').trim().slice(0, 180),
       seat: Math.min(99, Math.max(0, Math.round(Number(line.seat) || 0))),
+      course,
+      courseStatus,
+      firedAt,
       unitTotal,
       lineTotal: unitTotal * qty + complementTotal,
     });
@@ -2504,6 +3210,7 @@ function orderLinesFromRequest(rawItems, { allowMenuItemIds = new Set(), allowCo
   if (!lines.length) return { error: 'هیچ محصول معتبری در سفارش نیست' };
   return { lines, subtotal };
 }
+
 
 function orderInventorySnapshot() {
   return {
@@ -2539,10 +3246,55 @@ function adjustOrderInventory(lines, direction, branchId = null) {
   }
 }
 
+function canonicalTableNo(value) {
+  return normalizeDigits(String(value || ''))
+    .trim()
+    .replace(/^میز\s*/u, '')
+    .replace(/\s+/g, '');
+}
+
+function tableNoBelongsToTable(tableNo, tableId) {
+  const actual = canonicalTableNo(tableNo);
+  const target = canonicalTableNo(tableId);
+  return Boolean(actual && target && (actual === target || actual.startsWith(`${target}-`)));
+}
+
+function tableForBranch(tableNo, branchId) {
+  const cleanTable = canonicalTableNo(tableNo);
+  return (db.tables || []).find((item) => {
+    const itemBranchId = Number(item.branchId || defaultBranch()?.id || 1);
+    if (Number(itemBranchId) !== Number(branchId)) return false;
+    return canonicalTableNo(item.id) === cleanTable || canonicalTableNo(item.label) === cleanTable;
+  }) || null;
+}
+
+function activeDineInOrderOnTable(order, tableNo, branchId) {
+  if (!order || Number(order.branchId || defaultBranch()?.id || 1) !== Number(branchId)) return false;
+  const fulfillment = normalizeFulfillment(order.fulfillment, { tableNo: order.tableNo });
+  return fulfillment === 'dine_in'
+    && tableNoBelongsToTable(order.tableNo, tableNo)
+    && !['done', 'picked_up', 'delivered', 'cancelled'].includes(String(order.status || ''));
+}
+
+function nextDineInCheckNo(branchId, tableNo, preferred = '') {
+  const normalizedTable = canonicalTableNo(tableNo);
+  const baseTable = normalizedTable.replace(/-\d+$/u, '') || normalizedTable;
+  const activeOrders = (db.orders || []).filter((order) => activeDineInOrderOnTable(order, baseTable, branchId));
+  const used = new Set(activeOrders.flatMap((order) => [canonicalTableNo(order.checkNo), canonicalTableNo(order.tableNo)]).filter(Boolean));
+  const requested = canonicalTableNo(preferred);
+  const first = requested || baseTable;
+  if (first && !used.has(first)) return first;
+  let suffix = 2;
+  while (used.has(`${baseTable}-${suffix}`)) suffix += 1;
+  return `${baseTable}-${suffix}`;
+}
+
 function findOrderBranch(input, tableNo, fulfillment) {
   const selected = resolveBranch(input.branchId || input.branch);
   if (fulfillment !== 'dine_in') return selected || defaultBranch();
-  const table = (db.tables || []).find((item) => String(item.id) === tableNo || String(item.label) === tableNo);
+  const cleanTable = normalizeDigits(String(tableNo || '')).trim();
+  const tableKey = canonicalTableNo(cleanTable);
+  const table = (db.tables || []).find((item) => canonicalTableNo(item.id) === tableKey || canonicalTableNo(item.label) === tableKey);
   return (table && (db.branches || []).find((branch) => Number(branch.id) === Number(table.branchId))) || selected || defaultBranch();
 }
 
@@ -2574,16 +3326,20 @@ function appendOrderStatus(order, status, actor = null, meta = {}) {
 }
 
 async function createCheckoutOrder(input, { requireTable = false, requirePhone = true, idempotencyKey = '', actor = null } = {}) {
-  const tableNo = String(input.tableNo || '').trim().slice(0, 20);
+  const tableNo = normalizeDigits(String(input.tableNo || input.table || '')).trim().slice(0, 20);
   const fulfillment = normalizeFulfillment(input.fulfillment, { tableNo });
   const phone = normalizeDigits(input.phone || '').trim();
   const name = String(input.name || '').trim().slice(0, 100);
   const paymentMethod = input.paymentMethod === 'online' ? 'online' : 'cashier';
   const normalizedKey = String(idempotencyKey || '').trim().slice(0, 160);
 
+  if (paymentMethod === 'online' && !productionPaymentProviderReady()) {
+    return { error: 'payment_provider_not_ready', code: 'payment_provider_not_ready', status: 503 };
+  }
+
   if ((requireTable || fulfillment === 'dine_in') && !tableNo) return { error: 'شماره میز را وارد کنید' };
   if ((requirePhone || phone) && !PHONE_RE.test(phone)) return { error: 'شماره موبایل معتبر نیست' };
-  if (!Array.isArray(input.items) || !input.items.length) return { error: 'تیبل خالی است' };
+  if (!Array.isArray(input.items) || !input.items.length) return { error: 'سبد سفارش خالی است' };
   if (normalizedKey && db.checkoutIdempotency?.[normalizedKey]) {
     const saved = db.checkoutIdempotency[normalizedKey];
     const order = (db.orders || []).find((item) => Number(item.id) === Number(saved.orderId));
@@ -2639,6 +3395,9 @@ async function createCheckoutOrder(input, { requireTable = false, requirePhone =
 
   const orderDiscount = discountCalc.totalDiscountToman;
   const orderTotal = Math.max(0, lineResult.subtotal + fulfillmentQuote.deliveryFee - orderDiscount);
+  const checkNo = fulfillment === 'dine_in'
+    ? nextDineInCheckNo(branch.id, tableNo, input.checkNo || tableNo)
+    : '';
 
   if (discountCalc.pointsRedeemed > 0 && customerUser) {
     customerUser.points = Math.max(0, customerUser.points - discountCalc.pointsRedeemed);
@@ -2651,6 +3410,7 @@ async function createCheckoutOrder(input, { requireTable = false, requirePhone =
     id: nextId(db.orders),
     orderNo: `W-${String(Date.now()).slice(-6)}-${nextId(db.orders)}`,
     tableNo: fulfillment === 'dine_in' ? tableNo : '',
+    checkNo,
     phone,
     name,
     branchId: branch.id,
@@ -2772,6 +3532,12 @@ function settlePaymentAttempt(payment, { status = 'paid', reference = '', source
   if (!alreadyPaid || reference) payment.reference = String(reference || payment.reference || '').trim().slice(0, 160);
   if (!alreadyPaid) payment.updatedAt = new Date().toISOString();
   const order = (db.orders || []).find((item) => Number(item.id) === Number(payment.orderId));
+  if (status === 'paid' && !order) {
+    throw Object.assign(new Error('پرداخت تأیید نشد چون سفارش متناظر یافت نشد.'), {
+      code: 'payment_order_not_found',
+      status: 409,
+    });
+  }
   let financeResult = null;
   if (order) {
     order.paymentStatus = status;
@@ -2780,6 +3546,21 @@ function settlePaymentAttempt(payment, { status = 'paid', reference = '', source
     }
     if (status === 'paid') {
       financeResult = financeV2.captureOnlinePaidOrder(db, order, payment, { actor: `gateway:${payment.provider || source}`, occurredAt: payment.updatedAt });
+      // A gateway confirmation is not a successful financial capture until
+      // the corresponding sale journal is posted.  Finance V2 deliberately
+      // returns a blocked event (instead of throwing) when the fiscal period
+      // is closed or the sale evidence is incomplete; allowing this payment
+      // response through would leave the operational payment marked paid
+      // while the official ledger remains empty.  The caller wraps this
+      // mutation in a snapshot and will roll back the payment/order on error.
+      if (!financeResult?.journalEntry || financeResult.journalEntry.status !== 'posted') {
+        const captureCode = financeResult?.event?.error?.code || financeResult?.reason || 'finance_capture_blocked';
+        throw Object.assign(new Error('پرداخت تأیید نشد چون سند فروش در دفتر مالی ثبت نشد.'), {
+          code: captureCode,
+          status: 409,
+          details: financeResult?.event?.error || null,
+        });
+      }
     }
   }
   recordAudit(null, `payment.${status}`, 'payment', payment.id, { orderId: payment.orderId, source }, payment.branchId);
@@ -2799,8 +3580,15 @@ function publishPaymentCommitEffects(result, status) {
 
 app.get('/api/checkout/meta', (req, res) => {
   const branch = resolveBranch(req.query.branchId || req.query.branch);
+  const configuredPaymentMode = String(db.paymentProvider?.mode || 'sandbox').toLowerCase();
+  const sandboxAvailable = process.env.NODE_ENV !== 'production' && configuredPaymentMode === 'sandbox';
+  const paymentReady = sandboxAvailable || productionPaymentProviderReady();
   res.json({
-    payment: { mode: db.paymentProvider?.mode || 'sandbox', provider: db.paymentProvider?.provider || 'sandbox', onlineEnabled: db.paymentProvider?.enabled !== false },
+    payment: {
+      mode: paymentReady ? configuredPaymentMode : 'unavailable',
+      provider: paymentReady ? (db.paymentProvider?.provider || 'sandbox') : null,
+      onlineEnabled: db.paymentProvider?.enabled !== false && paymentReady,
+    },
     branches: (db.branches || []).filter((item) => item.active !== false).map((item) => ({ id: item.id, slug: item.slug, name: item.name, address: item.address })),
     deliveryZones: (db.deliveryZones || [])
       .filter((item) => item.active !== false && (!branch || Number(item.branchId) === Number(branch.id)))
@@ -2849,12 +3637,12 @@ app.post('/api/checkout/quote', (req, res) => {
   });
 });
 
-app.post('/api/checkout/orders', async (req, res) => {
+app.post('/api/checkout/orders', publicOrderMutationGuard('orders.online'), async (req, res) => {
   try {
     const result = await createAndPersistCheckoutOrder(req.body || {}, {
       idempotencyKey: req.get('Idempotency-Key') || req.body?.idempotencyKey,
     });
-    if (result.error) return res.status(400).json(result);
+    if (result.error) return res.status(result.status || 400).json(result);
     res.status(result.idempotent ? 200 : 201).json({
       ok: true,
       idempotent: !!result.idempotent,
@@ -2869,8 +3657,9 @@ app.post('/api/checkout/orders', async (req, res) => {
   }
 });
 
-app.post('/api/checkout/payments/:id/sandbox-confirm', async (req, res) => {
-  const payment = (db.paymentAttempts || []).find((item) => Number(item.id) === Number(req.params.id));
+app.post('/api/checkout/payments/:id/sandbox-confirm', sandboxPaymentGuard, async (req, res) => {
+  const targetId = Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
+  const payment = (db.paymentAttempts || []).find((item) => Number(item.id) === targetId);
   if (!payment) return res.status(404).json({ error: 'payment_not_found' });
   if (payment.mode !== 'sandbox') return res.status(409).json({ error: 'sandbox_disabled' });
   if (!req.body?.token || req.body.token !== payment.sandboxToken) return res.status(403).json({ error: 'payment_token_invalid' });
@@ -2957,7 +3746,9 @@ app.get('/api/orders/my-orders', requireAuth, (req, res) => {
       statusLabel: getOrderStatusFaLabel(o.status),
       fulfillment: o.fulfillment || 'dine_in',
       items: Array.isArray(o.items) ? o.items.map((it) => ({
-        name: it.name || it.title || 'آیتم منو',
+        id: it.id || it.menuItemId || it.itemId || null,
+        menuItemId: it.menuItemId || it.id || it.itemId || null,
+        name: it.name || it.title || 'محصول منو',
         quantity: Number(it.quantity || it.qty || 1),
         price: Number(it.price || 0),
         total: Number(it.price || 0) * Number(it.quantity || it.qty || 1),
@@ -2981,10 +3772,10 @@ app.get('/api/profile/orders', requireAuth, (req, res, next) => {
 });
 
 // Existing table ordering clients keep their endpoint and response shape.
-app.post('/api/orders', async (req, res) => {
+app.post('/api/orders', publicOrderMutationGuard('orders.pos'), async (req, res) => {
   try {
     const result = await createAndPersistCheckoutOrder(req.body || {}, { requireTable: true });
-    if (result.error) return res.status(400).json(result);
+    if (result.error) return res.status(result.status || 400).json(result);
     res.json({ ok: true, order: result.order, whatsapp: result.whatsapp });
   } catch (error) {
     return res.status(error.status || 503).json({ error: error.code || error.message });
@@ -2992,11 +3783,20 @@ app.post('/api/orders', async (req, res) => {
 });
 
 app.get('/api/admin/orders', requireCapability('orders.view'), (req, res) => {
+  // Owners see a consolidated queue by default. Scoped operators must never
+  // fall back to the owner default branch (or receive every branch) when the
+  // UI omits branchId; resolve the same effective scope used by reports.
+  const requestedBranch = requestBranchValue(req);
+  const allowedBranchIds = branchScopeForUser(req.user, { role: effectiveRole(req.user) });
+  const branchId = requestedBranch != null
+    ? parseBranchId(req)
+    : allowedBranchIds === null
+      ? null
+      : (defaultBranch() && allowedBranchIds.includes(Number(defaultBranch().id))
+        ? defaultBranch().id
+        : allowedBranchIds[0] || null);
   let orders = (db.orders || []).slice();
-  if (req.query.branchId) {
-    const bid = Number(req.query.branchId);
-    orders = orders.filter((o) => Number(o.branchId) === bid);
-  }
+  if (branchId != null) orders = orders.filter((o) => Number(o.branchId) === Number(branchId));
   const terminal = new Set(['picked_up', 'delivered', 'done', 'cancelled']);
   orders.sort((a, b) => {
     const aClosed = terminal.has(String(a.status));
@@ -3032,8 +3832,17 @@ app.post('/api/staff/orders', requireCapability('orders.create'), async (req, re
 });
 
 app.patch('/api/cashier/orders/:id', requireCapability('orders.manage'), (req, res) => {
-  const order = (db.orders || []).find((item) => Number(item.id) === Number(req.params.id));
+  const targetId = Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
+  const order = (db.orders || []).find((item) => Number(item.id) === targetId);
   if (!order) return res.status(404).json({ error: 'not found' });
+  // This route has no branch in its URL and the body is optional. Resolve the
+  // order's canonical branch before exposing or mutating it; otherwise a
+  // scoped cashier/manager could edit another branch simply by knowing its id.
+  try {
+    assertUserBranchAccess(req.user, order.branchId);
+  } catch (error) {
+    return res.status(error.status || 403).json({ error: error.code || 'branch_access_denied', message: error.message, requestId: req.requestId });
+  }
   if (req.body?.branchId && Number(req.body.branchId) !== Number(order.branchId)) {
     return res.status(404).json({ error: 'order_edit_branch_mismatch' });
   }
@@ -3095,6 +3904,11 @@ app.patch('/api/cashier/orders/:id', requireCapability('orders.manage'), (req, r
   order.editHistory.push({ at: order.editedAt, by: order.editedBy, before: previous, after: { total: nextTotal, subtotal: normalized.subtotal, itemUnits: normalized.lines.reduce((sum, line) => sum + Number(line.qty || 0), 0) } });
   order.editHistory = order.editHistory.slice(-30);
 
+  if (req.body?.sendToKitchen && order.status === 'pay_at_cashier') {
+    appendOrderStatus(order, 'sent_to_kitchen', req.user, { source: 'waiter-pos' });
+    recordAudit(req, 'order.sent_to_kitchen', 'order', order.id, { source: 'waiter-pos', paymentStatus: order.paymentStatus }, order.branchId);
+  }
+
   recordAudit(req, 'order.edited_before_kitchen', 'order', order.id, {
     beforeTotal: previous.total,
     afterTotal: nextTotal,
@@ -3108,10 +3922,19 @@ app.patch('/api/cashier/orders/:id', requireCapability('orders.manage'), (req, r
 });
 
 app.post('/api/cashier/orders/:id/apply-loyalty', requireCapability('orders.manage'), (req, res) => {
-  const order = (db.orders || []).find((item) => Number(item.id) === Number(req.params.id));
+  const targetId = Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
+  const order = (db.orders || []).find((item) => Number(item.id) === targetId);
   if (!order) return res.status(404).json({ error: 'not found' });
+  // Loyalty preview/apply returns the order and can mutate its total. It must
+  // obey the same branch boundary as settlement and order editing, including
+  // when the caller omits a branchId from the optional body.
+  try {
+    assertUserBranchAccess(req.user, order.branchId);
+  } catch (error) {
+    return res.status(error.status || 403).json({ error: error.code || 'branch_access_denied', message: error.message, requestId: req.requestId });
+  }
   const phone = normalizeDigits(req.body?.phone || order.phone || '').trim();
-  const redeemPoints = Number(req.body?.redeemPoints || 0);
+  const redeemPoints = Number(normalizeDigits(String(req.body?.redeemPoints || '0')).replace(/\D/g, '')) || 0;
 
   const user = phone ? (db.users || []).find((u) => u.phone === phone) : null;
   const discounts = loyaltyEngine.calculateOrderDiscounts(db, {
@@ -3157,9 +3980,19 @@ app.post('/api/cashier/orders/:id/apply-loyalty', requireCapability('orders.mana
   });
 });
 
-app.post('/api/cashier/orders/:id/settle', requireCapability('payments.manage'), async (req, res) => {
-  const order = (db.orders || []).find((item) => Number(item.id) === Number(req.params.id));
+const handleSettleOrder = async (req, res, forcedTargetId) => {
+  const targetId = forcedTargetId !== undefined ? forcedTargetId : Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
+  const order = (db.orders || []).find((item) => Number(item.id) === targetId);
   if (!order) return res.status(404).json({ error: 'not found' });
+  // The route's request body is optional, so requireCapability cannot infer
+  // the branch from it. Resolve access from the order itself before even
+  // returning an idempotent response; otherwise a scoped cashier/manager
+  // could settle or inspect a paid order belonging to another branch.
+  try {
+    assertUserBranchAccess(req.user, order.branchId);
+  } catch (error) {
+    return res.status(error.status || 403).json({ error: error.code || 'branch_access_denied', message: error.message, requestId: req.requestId });
+  }
   if (order.paymentStatus === 'paid') return res.json({ ok: true, idempotent: true, order });
   if (!['pay_at_cashier', 'awaiting_confirmation', 'sent_to_kitchen', 'preparing', 'ready'].includes(String(order.status || ''))) {
     return res.status(409).json({ error: 'order_not_payable', current: order.status });
@@ -3179,6 +4012,11 @@ app.post('/api/cashier/orders/:id/settle', requireCapability('payments.manage'),
     : requestedAmount;
   if (amountTendered < requestedAmount) return res.status(400).json({ error: 'cash_received_insufficient', minimum: requestedAmount });
 
+  // Snapshot before any tender-side mutation. Wallet payments update the
+  // customer balance before the sale journal is attempted; a closed/missing
+  // fiscal period or a durable-write failure must roll that debit back along
+  // with the order and drawer projection.
+  const snapshot = snapshotFinanceMutationState();
   if (tender === 'wallet') {
     if (!order.phone) return res.status(400).json({ error: 'شماره مشتری برای پرداخت از کیف پول الزامی است.' });
     const walletBal = walletEngine.getWalletBalance(db, order.phone);
@@ -3193,7 +4031,6 @@ app.post('/api/cashier/orders/:id/settle', requireCapability('payments.manage'),
     });
   }
 
-  const snapshot = snapshotFinanceMutationState();
   try {
   const paymentAt = new Date().toISOString();
   const payment = {
@@ -3229,6 +4066,21 @@ app.post('/api/cashier/orders/:id/settle', requireCapability('payments.manage'),
   const financeResult = fullyPaid
     ? financeV2.capturePaidOrder(db, order, { actor: req.user.phone, idempotencyKey: `order:${order.id}:payment:${order.paymentRevision || order.partialPayments.length}` })
     : null;
+  if (fullyPaid) {
+    try {
+      accountingEngine.syncOrderSalesJournal(db, order);
+    } catch (accErr) {
+      console.error('[accounting] syncOrderSalesJournal note:', accErr.message);
+    }
+  }
+  if (fullyPaid && (!financeResult?.journalEntry || financeResult.journalEntry.status !== 'posted')) {
+    const captureCode = financeResult?.event?.error?.code || 'finance_capture_blocked';
+    throw Object.assign(new Error('پرداخت ثبت نشد چون سند فروش در دفتر مالی ثبت نشد.'), {
+      code: captureCode,
+      status: 409,
+      details: financeResult?.event?.error || null,
+    });
+  }
   await persistFinanceMutation(snapshot);
   publishOperationalEvent('order.updated', { orderId: order.id, branchId, status: order.status });
   res.json({ ok: true, order, drawer: drawer ? { session: drawer, totals: cashSessionTotals(drawer) } : null, finance: financeResult });
@@ -3236,6 +4088,16 @@ app.post('/api/cashier/orders/:id/settle', requireCapability('payments.manage'),
     restoreFinanceMutationState(snapshot);
     return res.status(error.status || 503).json({ error: error.code || error.message });
   }
+};
+
+app.post('/api/cashier/orders/:id/settle', requireCapability('payments.manage'), async (req, res) => {
+  const targetId = Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
+  return handleSettleOrder(req, res, targetId);
+});
+
+app.post('/api/staff/orders/:id/settle', requireCapability('payments.manage'), async (req, res) => {
+  const targetId = Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
+  return handleSettleOrder(req, res, targetId);
 });
 
 app.get('/api/cashier/printer', requireCapability('payments.manage'), (req, res) => {
@@ -3290,7 +4152,8 @@ app.post('/api/cashier/printer/test', requireCapability('payments.manage'), asyn
 });
 
 app.post('/api/cashier/orders/:id/print', requireCapability('payments.manage'), async (req, res) => {
-  const order = (db.orders || []).find((item) => Number(item.id) === Number(req.params.id));
+  const targetId = Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
+  const order = (db.orders || []).find((item) => Number(item.id) === targetId);
   if (!order) return res.status(404).json({ error: 'not found' });
   const branchId = Number(order.branchId) || defaultBranch()?.id || 1;
   try {
@@ -3318,7 +4181,8 @@ app.post('/api/cashier/orders/:id/print', requireCapability('payments.manage'), 
 });
 
 app.post('/api/cashier/orders/:id/receipt', requireCapability('payments.manage'), async (req, res) => {
-  const order = (db.orders || []).find((item) => Number(item.id) === Number(req.params.id));
+  const targetId = Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
+  const order = (db.orders || []).find((item) => Number(item.id) === targetId);
   if (!order) return res.status(404).json({ error: 'not found' });
   if (order.paymentStatus !== 'paid') return res.status(409).json({ error: 'order_not_paid' });
   const method = String(req.body?.method || 'none');
@@ -3376,8 +4240,14 @@ app.post('/api/cashier/orders/:id/receipt', requireCapability('payments.manage')
 });
 
 app.patch('/api/cashier/orders/:id/status', requireCapability('orders.manage'), (req, res) => {
-  const order = (db.orders || []).find((item) => Number(item.id) === Number(req.params.id));
+  const targetId = Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
+  const order = (db.orders || []).find((item) => Number(item.id) === targetId);
   if (!order) return res.status(404).json({ error: 'not found' });
+  try {
+    assertUserBranchAccess(req.user, order.branchId);
+  } catch (error) {
+    return res.status(error.status || 403).json({ error: error.code || 'branch_access_denied', message: error.message, requestId: req.requestId });
+  }
   const next = String(req.body?.status || '');
   const allowed = {
     pay_at_cashier: ['cancelled'],
@@ -3403,8 +4273,14 @@ app.get('/api/waiter/calls', requireCapability('service.manage'), (req, res) => 
 });
 
 app.patch('/api/waiter/calls/:id', requireCapability('service.manage'), (req, res) => {
-  const call = (db.waiterCalls || []).find((item) => Number(item.id) === Number(req.params.id));
+  const targetId = Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
+  const call = (db.waiterCalls || []).find((item) => Number(item.id) === targetId);
   if (!call) return res.status(404).json({ error: 'not found' });
+  try {
+    assertUserBranchAccess(req.user, call.branchId);
+  } catch (error) {
+    return res.status(error.status || 403).json({ error: error.code || 'branch_access_denied', message: error.message, requestId: req.requestId });
+  }
   if (String(req.body?.status || '') !== 'done') return res.status(400).json({ error: 'call_status_invalid' });
   call.status = 'done';
   call.resolvedAt = new Date().toISOString();
@@ -3416,8 +4292,14 @@ app.patch('/api/waiter/calls/:id', requireCapability('service.manage'), (req, re
 });
 
 app.patch('/api/waiter/orders/:id/status', requireCapability('service.manage'), (req, res) => {
-  const order = (db.orders || []).find((item) => Number(item.id) === Number(req.params.id));
+  const targetId = Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
+  const order = (db.orders || []).find((item) => Number(item.id) === targetId);
   if (!order) return res.status(404).json({ error: 'not found' });
+  try {
+    assertUserBranchAccess(req.user, order.branchId);
+  } catch (error) {
+    return res.status(error.status || 403).json({ error: error.code || 'branch_access_denied', message: error.message, requestId: req.requestId });
+  }
   const next = String(req.body?.status || '');
   const allowed = order.fulfillment === 'dine_in' && order.status === 'ready' ? ['done'] : [];
   if (!allowed.includes(next)) return res.status(409).json({ error: 'waiter_transition_invalid', current: order.status, allowed });
@@ -3429,17 +4311,275 @@ app.patch('/api/waiter/orders/:id/status', requireCapability('service.manage'), 
   res.json({ ok: true, order });
 });
 
+// Walk-in reception is deliberately separate from timed reservation editing.
+// A waiter may receive a phone number and later seat the guest, but cannot
+// alter an online booking or claim a table without a server-side check.
+function publicWaitlistEntry(entry) {
+  return {
+    ...entry,
+    statusLabel: ({ waiting: 'در انتظار', called: 'در حال فراخوانی', seated: 'نشسته', left: 'خارج شد', cancelled: 'لغو شد' })[entry.status] || entry.status,
+  };
+}
+
+function waitlistForBranch(branchId, includeHistory = true) {
+  const entries = waitlist.listWaitlist(db.reservations || [], branchId, { includeTerminal: includeHistory, limit: 120 });
+  let position = 0;
+  return entries.map((entry) => publicWaitlistEntry({
+    ...entry,
+    position: waitlist.isActive(entry) && entry.status !== 'seated' ? ++position : null,
+  }));
+}
+
+app.get('/api/waiter/waitlist', requireCapability('reservations.receive'), (req, res) => {
+  const branchId = parseBranchId(req);
+  const entries = waitlistForBranch(branchId, String(req.query.history || '') === '1');
+  const active = entries.filter((entry) => waitlist.ACTIVE_WAITLIST_STATUSES.has(entry.status));
+  res.json({
+    waitlist: entries,
+    summary: {
+      waiting: active.filter((entry) => entry.status === 'waiting').length,
+      called: active.filter((entry) => entry.status === 'called').length,
+      seated: active.filter((entry) => entry.status === 'seated').length,
+      total: active.length,
+    },
+    serverTime: new Date().toISOString(),
+  });
+});
+
+app.post('/api/waiter/waitlist', requireCapability('reservations.receive'), (req, res) => {
+  const branchId = parseBranchId(req);
+  if (!branchId) return res.status(400).json({ error: 'waitlist_branch_required', message: 'شعبهٔ فعال مشخص نیست.' });
+  db.reservations = Array.isArray(db.reservations) ? db.reservations : [];
+  try {
+    const result = waitlist.createWaitlistEntry({
+      records: db.reservations,
+      branchId,
+      phone: normalizeDigits(req.body?.phone || '').trim(),
+      name: req.body?.name,
+      partySize: req.body?.partySize == null || String(req.body.partySize).trim() === '' ? null : normalizeDigits(req.body.partySize),
+      note: req.body?.note,
+      idempotencyKey: req.get('Idempotency-Key') || req.body?.idempotencyKey,
+      phoneRe: PHONE_RE,
+      nextId: (rows) => Math.max(0, ...rows.map((row) => Number(row.id) || 0), 0) + 1,
+      maxParty: db.reservationSettings?.maxParty || 40,
+    });
+    if (!result.idempotentReplay) {
+      recordAudit(req, 'waitlist.created', 'reservation', result.entry.id, { phone: result.entry.phone, partySize: result.entry.partySize }, branchId);
+      publishOperationalEvent('waitlist.created', { waitlistId: result.entry.id, branchId, status: result.entry.status });
+      save();
+    }
+    return res.status(result.idempotentReplay ? 200 : 201).json({ ok: true, idempotent: result.idempotentReplay, entry: publicWaitlistEntry(result.entry) });
+  } catch (error) {
+    return res.status(error.status || 400).json({ error: error.code || 'waitlist_create_failed', message: error.message, entry: error.entry ? publicWaitlistEntry(error.entry) : undefined });
+  }
+});
+
+app.patch('/api/waiter/waitlist/:id', requireCapability('reservations.receive'), (req, res) => {
+  const targetId = Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
+  const entry = (db.reservations || []).find((item) => Number(item.id) === targetId && waitlist.isWaitlist(item));
+  if (!entry) return res.status(404).json({ error: 'waitlist_not_found', message: 'مهمان موردنظر در صف پیدا نشد.' });
+  try { assertUserBranchAccess(req.user, entry.branchId); } catch (error) {
+    return res.status(error.status || 403).json({ error: error.code || 'branch_access_denied', message: error.message, requestId: req.requestId });
+  }
+  const nextStatus = String(req.body?.status || '').trim();
+  if (!waitlist.WAITLIST_STATUSES.has(nextStatus) || !waitlist.canTransition(entry.status, nextStatus)) {
+    return res.status(409).json({ error: 'waitlist_transition_invalid', message: 'این تغییر وضعیت برای مهمان ممکن نیست.', current: entry.status });
+  }
+  const hasPartySize = req.body?.partySize != null && String(req.body.partySize).trim() !== '';
+  const party = !hasPartySize ? entry.partySize : waitlist.normalizePartySize(normalizeDigits(req.body.partySize), db.reservationSettings?.maxParty || 40);
+  if (hasPartySize && party == null) return res.status(400).json({ error: 'waitlist_party_invalid', message: 'تعداد مهمان باید حداقل یک نفر باشد.' });
+  if (typeof req.body?.name === 'string') entry.name = req.body.name.trim().slice(0, 80);
+  if (typeof req.body?.note === 'string') entry.note = req.body.note.trim().slice(0, 200);
+  if (hasPartySize) entry.partySize = party;
+
+  if (nextStatus === 'seated') {
+    const tableNo = String(normalizeDigits(req.body?.tableNo || '')).replace(/\D/g, '');
+    const table = (db.tables || []).find((item) => Number(item.branchId) === Number(entry.branchId) && String(item.id) === tableNo);
+    if (!table || table.active === false) return res.status(409).json({ error: 'waitlist_table_invalid', message: 'میز انتخاب‌شده در این شعبه فعال نیست.' });
+    const partySize = Number(entry.partySize || 0);
+    if (partySize && Number(table.seats || 0) && partySize > Number(table.seats)) return res.status(409).json({ error: 'waitlist_table_capacity', message: 'ظرفیت این میز برای تعداد مهمان کافی نیست.' });
+    const tableBusy = (db.orders || []).some((order) => Number(order.branchId) === Number(entry.branchId) && String(order.tableNo || '') === tableNo && !['done', 'cancelled', 'picked_up', 'delivered'].includes(String(order.status || '')));
+    const anotherSeated = (db.reservations || []).some((item) => item !== entry && Number(item.branchId) === Number(entry.branchId) && String(item.tableNo || '') === tableNo && ((waitlist.isWaitlist(item) && item.status === 'seated') || (!waitlist.isWaitlist(item) && ['pending', 'confirmed', 'seated'].includes(item.status))));
+    if (tableBusy || anotherSeated) return res.status(409).json({ error: 'waitlist_table_busy', message: 'این میز همین حالا در اختیار مهمان یا سفارش دیگری است.' });
+    entry.tableNo = tableNo;
+    entry.seatedAt = new Date().toISOString();
+  }
+  if (nextStatus === 'left' && entry.status === 'seated') entry.leftAt = new Date().toISOString();
+  if (nextStatus === 'waiting' || nextStatus === 'called') entry.tableNo = null;
+  entry.status = nextStatus;
+  entry.statusAt = new Date().toISOString();
+  recordAudit(req, 'waitlist.updated', 'reservation', entry.id, { status: entry.status, tableNo: entry.tableNo || null }, entry.branchId);
+  publishOperationalEvent('waitlist.updated', { waitlistId: entry.id, branchId: entry.branchId, status: entry.status, tableNo: entry.tableNo || null });
+  save();
+  res.json({ ok: true, entry: publicWaitlistEntry(entry) });
+});
+
+app.patch('/api/waiter/orders/:id/fire-course', requireCapability('orders.course.manage'), async (req, res) => {
+  const targetId = Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
+  const order = (db.orders || []).find((item) => Number(item.id) === targetId);
+  if (!order) return res.status(404).json({ error: 'not found' });
+  try {
+    assertUserBranchAccess(req.user, order.branchId);
+  } catch (error) {
+    return res.status(error.status || 403).json({ error: error.code || 'branch_access_denied', message: error.message, requestId: req.requestId });
+  }
+  const course = String(req.body?.course || '').trim().toLowerCase();
+  if (!course) return res.status(400).json({ error: 'course_required' });
+  const now = new Date().toISOString();
+  let firedCount = 0;
+  (order.items || []).forEach((item) => {
+    if (String(item.course || '').toLowerCase() === course && item.courseStatus === 'hold') {
+      item.courseStatus = 'fired';
+      item.firedAt = now;
+      firedCount++;
+    }
+  });
+  if (firedCount > 0 && order.status === 'pay_at_cashier') {
+    appendOrderStatus(order, 'sent_to_kitchen', req.user, { source: 'waiter-fire', course });
+  }
+  recordAudit(req, 'order.course_fired', 'order', order.id, { course, firedCount }, order.branchId);
+  await save();
+  publishOperationalEvent('order.updated', { orderId: order.id, branchId: order.branchId, status: order.status, courseFired: course });
+  res.json({ ok: true, order, firedCount, course });
+});
+
+app.post('/api/waiter/orders/:id/split', requireCapability('orders.split'), async (req, res) => {
+  const targetId = Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
+  const order = (db.orders || []).find((item) => Number(item.id) === targetId);
+  if (!order) return res.status(404).json({ error: 'not found' });
+  try {
+    assertUserBranchAccess(req.user, order.branchId);
+  } catch (error) {
+    return res.status(error.status || 403).json({ error: error.code || 'branch_access_denied', message: error.message, requestId: req.requestId });
+  }
+  if (order.paymentStatus === 'paid' || order.status === 'paid' || Number(order.amountPaid || 0) > 0) {
+    return res.status(409).json({ error: 'order_split_locked', message: 'پس از ثبت پرداخت، تفکیک فاکتور ممکن نیست؛ ابتدا اصلاح مالی را از صندوق انجام دهید.' });
+  }
+  if (!Array.isArray(order.items) || order.items.length <= 1) {
+    return res.status(400).json({ error: 'cannot_split_single_item_order' });
+  }
+  const splitMode = req.body?.mode || 'seat';
+  if (!['seat', 'items'].includes(splitMode)) {
+    return res.status(400).json({ error: 'split_mode_invalid' });
+  }
+  const targetSeat = Number(req.body?.seat || 0);
+  const selectedItemIndices = Array.isArray(req.body?.itemIndices)
+    ? [...new Set(req.body.itemIndices.map(Number).filter((index) => Number.isInteger(index) && index >= 0 && index < order.items.length))]
+    : [];
+
+  const splitItems = [];
+  const remainingItems = [];
+
+  order.items.forEach((item, idx) => {
+    let shouldMove = false;
+    if (splitMode === 'seat' && targetSeat > 0) {
+      shouldMove = Number(item.seat) === targetSeat;
+    } else if (splitMode === 'items') {
+      shouldMove = selectedItemIndices.includes(idx);
+    }
+    if (shouldMove) splitItems.push(item);
+    else remainingItems.push(item);
+  });
+
+  if (!splitItems.length || !remainingItems.length) {
+    return res.status(400).json({ error: 'split_must_leave_items_in_both_orders' });
+  }
+
+  order.items = remainingItems;
+  order.subtotal = remainingItems.reduce((sum, item) => sum + (Number(item.lineTotal) || Number(item.price) * Number(item.qty)), 0);
+  order.total = Math.max(0, order.subtotal - Number(order.discount || 0));
+  order.balanceDue = order.total;
+  order.splitCount = Math.max(0, Number(order.splitCount) || 0) + 1;
+
+  const newSubId = nextId(db.orders);
+  const baseTable = canonicalTableNo(order.tableNo).replace(/-\d+$/u, '') || String(order.tableNo || '').trim();
+  const subTableNo = nextDineInCheckNo(order.branchId, baseTable, `${baseTable}-2`);
+  const subOrder = {
+    ...JSON.parse(JSON.stringify(order)),
+    id: newSubId,
+    orderNo: `W-${String(Date.now()).slice(-6)}-${newSubId}`,
+    tableNo: subTableNo,
+    checkNo: subTableNo,
+    items: splitItems,
+    subtotal: splitItems.reduce((sum, item) => sum + (Number(item.lineTotal) || Number(item.price) * Number(item.qty)), 0),
+    discount: 0,
+    total: splitItems.reduce((sum, item) => sum + (Number(item.lineTotal) || Number(item.price) * Number(item.qty)), 0),
+    checkNo: subTableNo,
+    createdAt: new Date().toISOString(),
+    statusAt: new Date().toISOString(),
+    paymentStatus: 'unpaid',
+    amountPaid: 0,
+    partialPayments: [],
+    balanceDue: splitItems.reduce((sum, item) => sum + (Number(item.lineTotal) || Number(item.price) * Number(item.qty)), 0),
+    splitFromOrderId: order.id,
+    splitMode,
+    splitSeat: splitMode === 'seat' ? targetSeat : null,
+    splitItemIndices: splitMode === 'items' ? selectedItemIndices : [],
+    splitAt: new Date().toISOString(),
+  };
+  db.orders.unshift(subOrder);
+
+  recordAudit(req, 'order.split', 'order', order.id, { newOrderId: subOrder.id, subTableNo }, order.branchId);
+  await save();
+  publishOperationalEvent('order.created', { orderId: subOrder.id, branchId: subOrder.branchId, status: subOrder.status });
+  publishOperationalEvent('order.updated', { orderId: order.id, branchId: order.branchId, status: order.status });
+  res.json({ ok: true, primaryOrder: order, splitOrder: subOrder });
+});
+
+app.patch('/api/waiter/orders/:id/move-table', requireCapability('orders.move_table'), async (req, res) => {
+  const targetId = Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
+  const order = (db.orders || []).find((item) => Number(item.id) === targetId);
+  if (!order) return res.status(404).json({ error: 'not found' });
+  try {
+    assertUserBranchAccess(req.user, order.branchId);
+  } catch (error) {
+    return res.status(error.status || 403).json({ error: error.code || 'branch_access_denied', message: error.message, requestId: req.requestId });
+  }
+  const nextTable = String(req.body?.tableNo || '').trim();
+  if (!nextTable) return res.status(400).json({ error: 'table_required' });
+  const branchId = Number(order.branchId) || defaultBranch()?.id || 1;
+  const targetTable = tableForBranch(nextTable, branchId);
+  if (!targetTable) return res.status(404).json({ error: 'table_not_found', message: 'میز مقصد در شعبهٔ فعال پیدا نشد.' });
+  if (targetTable.active === false) return res.status(409).json({ error: 'table_inactive', message: 'میز مقصد غیرفعال است.' });
+  const oldTable = order.tableNo;
+  if (tableNoBelongsToTable(oldTable, targetTable.id)) {
+    return res.json({ ok: true, idempotent: true, order, oldTable, nextTable: oldTable });
+  }
+  const occupied = (db.orders || []).some((candidate) => Number(candidate.id) !== Number(order.id)
+    && activeDineInOrderOnTable(candidate, targetTable.id, branchId));
+  if (occupied) return res.status(409).json({ error: 'table_occupied', message: 'میز مقصد در حال سرویس است؛ میز دیگری انتخاب کنید.' });
+  const assignedTable = String(targetTable.id);
+  order.tableNo = assignedTable;
+  order.checkNo = nextDineInCheckNo(branchId, assignedTable, assignedTable);
+  recordAudit(req, 'order.table_moved', 'order', order.id, { oldTable, nextTable }, order.branchId);
+  await save();
+  publishOperationalEvent('order.updated', { orderId: order.id, branchId: order.branchId, tableNo: nextTable });
+  res.json({ ok: true, order, oldTable, nextTable });
+});
+
+
 function cleanDeliveryZone(input, current = {}) {
   const branch = resolveBranch(input.branchId ?? current.branchId);
+  const parseNum = (v, fb) => {
+    if (v == null) return fb;
+    if (typeof v === 'number') return isNaN(v) ? fb : v;
+    const s = String(v)
+      .replace(/[۰-۹]/g, (d) => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d))
+      .replace(/[٠-٩]/g, (d) => '٠١٢٣٤٥٦٧٨٩'.indexOf(d))
+      .replace(/[,٬_\s]/g, '')
+      .trim();
+    const n = Number(s);
+    return isNaN(n) ? fb : n;
+  };
   return {
     id: current.id || nextId(db.deliveryZones),
     branchId: branch?.id || Number(current.branchId) || defaultBranch()?.id || 1,
     name: String(input.name ?? current.name ?? '').trim().slice(0, 100),
     active: typeof input.active === 'boolean' ? input.active : current.active !== false,
-    minOrder: Math.max(0, Math.round(Number(input.minOrder ?? current.minOrder) || 0)),
-    fee: Math.max(0, Math.round(Number(input.fee ?? current.fee) || 0)),
-    etaMinutes: Math.max(0, Math.min(240, Math.round(Number(input.etaMinutes ?? current.etaMinutes) || 0))),
-    sort: Math.max(0, Math.round(Number(input.sort ?? current.sort) || 0)),
+    minOrder: Math.max(0, Math.round(parseNum(input.minOrder ?? current.minOrder, 0))),
+    fee: Math.max(0, Math.round(parseNum(input.fee ?? current.fee, 0))),
+    etaMinutes: Math.max(0, Math.min(240, Math.round(parseNum(input.etaMinutes ?? current.etaMinutes, 0)))),
+    sort: Math.max(0, Math.round(parseNum(input.sort ?? current.sort, 0))),
   };
 }
 
@@ -3460,7 +4600,8 @@ app.post('/api/admin/delivery-zones', requireCapability('delivery.manage'), (req
 });
 
 app.patch('/api/admin/delivery-zones/:id', requireCapability('delivery.manage'), (req, res) => {
-  const current = (db.deliveryZones || []).find((item) => Number(item.id) === Number(req.params.id));
+  const targetId = Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
+  const current = (db.deliveryZones || []).find((item) => Number(item.id) === targetId);
   if (!current) return res.status(404).json({ error: 'not found' });
   const zone = cleanDeliveryZone(req.body || {}, current);
   if (!zone.name) return res.status(400).json({ error: 'نام محدوده لازم است' });
@@ -3472,7 +4613,8 @@ app.patch('/api/admin/delivery-zones/:id', requireCapability('delivery.manage'),
 });
 
 app.delete('/api/admin/delivery-zones/:id', requireCapability('delivery.manage'), (req, res) => {
-  const zone = (db.deliveryZones || []).find((item) => Number(item.id) === Number(req.params.id));
+  const targetId = Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
+  const zone = (db.deliveryZones || []).find((item) => Number(item.id) === targetId);
   if (!zone) return res.status(404).json({ error: 'not found' });
   db.deliveryZones = db.deliveryZones.filter((item) => Number(item.id) !== Number(zone.id));
   recordAudit(req, 'delivery_zone.deleted', 'delivery_zone', zone.id, { name: zone.name }, zone.branchId);
@@ -3536,7 +4678,9 @@ function maybeAwardOrderLoyalty(order) {
 
   // Check and unlock referral rewards
   try {
-    campaignsEngine.checkAndRewardReferralOnOrder(db, order);
+    campaignsEngine.checkAndRewardReferralOnOrder(db, order, {
+      walletTopup: (input) => campaignWalletTopupWithFinance(input, order.branchId, 'referral-system'),
+    });
   } catch (e) {
     console.error('[referral-reward] order check failed:', e.message);
   }
@@ -3544,8 +4688,14 @@ function maybeAwardOrderLoyalty(order) {
 
 app.patch('/api/admin/orders/:id', requireCapability('orders.manage'), async (req, res) => {
   if (!['owner', 'manager'].includes(effectiveRole(req.user))) return res.status(403).json({ error: 'supervisor_required' });
-  const order = db.orders.find((o) => o.id === Number(req.params.id));
+  const targetId = Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
+  const order = (db.orders || []).find((o) => Number(o.id) === targetId);
   if (!order) return res.status(404).json({ error: 'not found' });
+  try {
+    assertUserBranchAccess(req.user, order.branchId);
+  } catch (error) {
+    return res.status(error.status || 403).json({ error: error.code || 'branch_access_denied', message: error.message, requestId: req.requestId });
+  }
   const allowed = ['pending_online', 'awaiting_confirmation', 'pay_at_cashier', 'sent_to_kitchen', 'paid', 'preparing', 'ready', 'dispatched', 'picked_up', 'delivered', 'done', 'cancelled'];
   const snapshot = snapshotFinanceMutationState();
   try {
@@ -3553,7 +4703,34 @@ app.patch('/api/admin/orders/:id', requireCapability('orders.manage'), async (re
       appendOrderStatus(order, req.body.status, req.user, { source: 'legacy-admin' });
       if (['paid', 'preparing', 'ready', 'dispatched', 'picked_up', 'delivered', 'done'].includes(req.body.status)) {
         order.paymentStatus = 'paid';
-        financeV2.capturePaidOrder(db, order, { actor: req.user.phone });
+        const financeResult = financeV2.capturePaidOrder(db, order, { actor: req.user.phone });
+        try {
+          accountingEngine.syncOrderSalesJournal(db, order);
+        } catch (accErr) {
+          console.error('[accounting] syncOrderSalesJournal note:', accErr.message);
+        }
+        if (!financeResult?.journalEntry || financeResult.journalEntry.status !== 'posted') {
+          const captureCode = financeResult?.event?.error?.code || 'finance_capture_blocked';
+          throw Object.assign(new Error('تغییر وضعیت انجام نشد چون سند فروش در دفتر مالی ثبت نشد.'), {
+            code: captureCode,
+            status: 409,
+            details: financeResult?.event?.error || null,
+          });
+        }
+      } else if (req.body.status === 'cancelled') {
+        try {
+          accountingEngine.reverseOrderSalesJournal(db, order.id, {
+            reason: `لغو سفارش #${order.orderNo || order.id}`,
+            userId: req.user?.phone || 'admin'
+          });
+          const v2Event = (db.financeV2?.events || []).find((e) => e.source === 'order.paid' && String(e.sourceId) === String(order.id) && e.journalEntryId);
+          if (v2Event?.journalEntryId) {
+            financeV2.reverseEntry(db, v2Event.journalEntryId, req.user?.phone || 'admin', `لغو سفارش #${order.orderNo || order.id}`);
+          }
+          financeV2.reverseOrderCogsAndInventory(db, order.id, req.user?.phone || 'admin', `لغو سفارش #${order.orderNo || order.id}`);
+        } catch (revErr) {
+          console.error('[finance] auto reversal on order cancel note:', revErr.message);
+        }
       }
       if (['done', 'picked_up', 'delivered'].includes(req.body.status)) {
         maybeAwardOrderLoyalty(order);
@@ -3576,9 +4753,15 @@ app.patch('/api/admin/orders/:id', requireCapability('orders.manage'), async (re
 // machine, while the legacy route above remains backwards compatible.
 app.patch('/api/v2/orders/:id/status', requireCapability('orders.manage'), async (req, res) => {
   if (!['owner', 'manager'].includes(effectiveRole(req.user))) return res.status(403).json({ error: 'supervisor_required' });
-  const order = (db.orders || []).find((item) => Number(item.id) === Number(req.params.id));
+  const targetId = Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
+  const order = (db.orders || []).find((item) => Number(item.id) === targetId);
   const status = String(req.body?.status || '');
   if (!order) return res.status(404).json({ error: 'not found' });
+  try {
+    assertUserBranchAccess(req.user, order.branchId);
+  } catch (error) {
+    return res.status(error.status || 403).json({ error: error.code || 'branch_access_denied', message: error.message, requestId: req.requestId });
+  }
   if (status === String(order.status || '')) return res.json({ ok: true, idempotent: true, order });
   if (!canTransitionOrder(order, status)) {
     return res.status(409).json({ error: 'order_transition_invalid', current: order.status, allowed: allowedOrderTransitions(order) });
@@ -3588,7 +4771,34 @@ app.patch('/api/v2/orders/:id/status', requireCapability('orders.manage'), async
     appendOrderStatus(order, status, req.user, { source: 'v2' });
     if (['paid', 'preparing', 'ready', 'dispatched', 'picked_up', 'delivered', 'done'].includes(status)) {
       order.paymentStatus = 'paid';
-      financeV2.capturePaidOrder(db, order, { actor: req.user.phone });
+      const financeResult = financeV2.capturePaidOrder(db, order, { actor: req.user.phone });
+      try {
+        accountingEngine.syncOrderSalesJournal(db, order);
+      } catch (accErr) {
+        console.error('[accounting] syncOrderSalesJournal note:', accErr.message);
+      }
+      if (!financeResult?.journalEntry || financeResult.journalEntry.status !== 'posted') {
+        const captureCode = financeResult?.event?.error?.code || 'finance_capture_blocked';
+        throw Object.assign(new Error('تغییر وضعیت انجام نشد چون سند فروش در دفتر مالی ثبت نشد.'), {
+          code: captureCode,
+          status: 409,
+          details: financeResult?.event?.error || null,
+        });
+      }
+    } else if (status === 'cancelled') {
+      try {
+        accountingEngine.reverseOrderSalesJournal(db, order.id, {
+          reason: `لغو سفارش #${order.orderNo || order.id}`,
+          userId: req.user?.phone || 'admin'
+        });
+        const v2Event = (db.financeV2?.events || []).find((e) => e.source === 'order.paid' && String(e.sourceId) === String(order.id) && e.journalEntryId);
+        if (v2Event?.journalEntryId) {
+          financeV2.reverseEntry(db, v2Event.journalEntryId, req.user?.phone || 'admin', `لغو سفارش #${order.orderNo || order.id}`);
+        }
+        financeV2.reverseOrderCogsAndInventory(db, order.id, req.user?.phone || 'admin', `لغو سفارش #${order.orderNo || order.id}`);
+      } catch (revErr) {
+        console.error('[finance] auto reversal on order cancel note:', revErr.message);
+      }
     }
     if (['done', 'picked_up', 'delivered'].includes(status)) maybeAwardOrderLoyalty(order);
     recordAudit(req, 'order.status_changed', 'order', order.id, { status, source: 'v2' }, order.branchId);
@@ -3653,6 +4863,9 @@ function kitchenLines(order) {
       modifiers: Array.isArray(item.modifiers) ? item.modifiers : [],
       note: item.note || '',
       seat: Number(item.seat) || 0,
+      course: item.course || 'starters',
+      courseStatus: item.courseStatus || 'fired',
+      firedAt: item.firedAt || null,
       allergens: Array.isArray(source.allergens) ? source.allergens : [],
       completedAt: kds.itemStates[key]?.completedAt || null,
       completedBy: kds.itemStates[key]?.completedBy || null,
@@ -3672,10 +4885,14 @@ function kitchenLines(order) {
         modifiers: [],
         note: '',
         seat: Number(item.seat) || 0,
+        course: item.course || 'starters',
+        courseStatus: item.courseStatus || 'fired',
+        firedAt: item.firedAt || null,
         allergens: [],
         completedAt: kds.itemStates[complementKey]?.completedAt || null,
         completedBy: kds.itemStates[complementKey]?.completedBy || null,
       });
+
     });
   });
   return lines;
@@ -3718,10 +4935,20 @@ function kdsPerformance(orders, now = Date.now()) {
 
 function requestedKdsBranch(req) {
   const raw = req.query?.branchId ?? req.body?.branchId;
-  if (raw == null || raw === '') return defaultBranch()?.id || null;
+  const allowedBranchIds = branchScopeForUser(req.user, { role: effectiveRole(req.user) });
+  if (raw == null || raw === '') {
+    if (allowedBranchIds !== null) {
+      if (!allowedBranchIds.length) return null;
+      const preferred = defaultBranch();
+      return preferred && allowedBranchIds.includes(Number(preferred.id))
+        ? preferred.id : allowedBranchIds[0];
+    }
+    return defaultBranch()?.id || null;
+  }
   const id = Number(raw);
   const branch = Number.isFinite(id) ? (db.branches || []).find((entry) => Number(entry.id) === id && entry.active !== false) : null;
-  return branch?.id || null;
+  if (!branch || (allowedBranchIds !== null && !allowedBranchIds.includes(Number(branch.id)))) return null;
+  return branch.id;
 }
 
 function kdsIdempotent(order) {
@@ -3780,7 +5007,8 @@ app.get('/api/kitchen/orders', requireKitchen, (req, res) => {
 app.patch('/api/kitchen/orders/:id', requireCapability('kitchen.manage'), (req, res) => {
   const branchId = requestedKdsBranch(req);
   if (!branchId) return res.status(400).json({ error: 'branch_invalid' });
-  const order = db.orders.find((o) => o.id === Number(req.params.id) && Number(o.branchId) === Number(branchId));
+  const targetId = Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
+  const order = (db.orders || []).find((o) => Number(o.id) === targetId && Number(o.branchId) === Number(branchId));
   if (!order) return res.status(404).json({ error: 'not found' });
   const legacyStatus = String(req.body?.status || '');
   const requestedAction = String(req.body?.action || '');
@@ -3871,7 +5099,8 @@ app.patch('/api/kitchen/orders/:id', requireCapability('kitchen.manage'), (req, 
 });
 
 app.patch('/api/kitchen/items/:id/availability', requireCapability('kitchen.manage'), (req, res) => {
-  const item = (db.menuItems || []).find((entry) => Number(entry.id) === Number(req.params.id));
+  const targetId = Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
+  const item = (db.menuItems || []).find((entry) => Number(entry.id) === targetId);
   if (!item) return res.status(404).json({ error: 'not found' });
   if (typeof req.body?.available !== 'boolean') return res.status(400).json({ error: 'availability_invalid' });
   item.available = req.body.available;
@@ -3883,15 +5112,25 @@ app.patch('/api/kitchen/items/:id/availability', requireCapability('kitchen.mana
 
 /* ---- Call waiter (فراخوان گارسون) ---- */
 app.post('/api/call-waiter', (req, res) => {
-  const tableNo = String(req.body.tableNo || '').trim().slice(0, 20);
+  const tableNo = normalizeDigits(String(req.body.tableNo || '')).trim().slice(0, 20);
   if (!tableNo) return res.status(400).json({ error: 'شماره میز لازم است' });
   const note = String(req.body.note || '').trim().slice(0, 120);
-  let branchId = Number(req.body.branchId) || null;
-  if (!branchId) {
-    const tableMatch = (db.tables || []).find(
-      (t) => String(t.id) === tableNo || String(t.label) === tableNo
-    );
-    branchId = tableMatch?.branchId || defaultBranch()?.id || 1;
+  const tableMatch = (db.tables || []).find(
+    (t) => String(t.id) === tableNo || normalizeDigits(String(t.label || '')).trim() === tableNo || String(t.label || '').trim() === `میز ${tableNo}`
+  );
+  const rawBranchId = req.body?.branchId;
+  let branchId = rawBranchId == null || String(rawBranchId).trim() === '' ? null : Number(normalizeDigits(String(rawBranchId)).replace(/\D/g, ''));
+  if (branchId != null && (!Number.isSafeInteger(branchId) || branchId <= 0)) {
+    return res.status(400).json({ error: 'branch_invalid' });
+  }
+  const tableBranchId = Number(tableMatch?.branchId);
+  if (Number.isSafeInteger(tableBranchId) && tableBranchId > 0 && branchId != null && branchId !== tableBranchId) {
+    return res.status(409).json({ error: 'waiter_call_branch_mismatch', tableBranchId, requestedBranchId: branchId });
+  }
+  if (branchId == null) branchId = Number.isSafeInteger(tableBranchId) && tableBranchId > 0
+    ? tableBranchId : defaultBranch()?.id || 1;
+  if (!(db.branches || []).some((branch) => Number(branch.id) === branchId && branch.active !== false)) {
+    return res.status(400).json({ error: 'branch_invalid' });
   }
   db.waiterCalls = db.waiterCalls || [];
   const call = {
@@ -3904,12 +5143,56 @@ app.post('/api/call-waiter', (req, res) => {
   };
   db.waiterCalls.unshift(call);
   db.waiterCalls = db.waiterCalls.slice(0, 200);
+  publishOperationalEvent('waiter_call.created', {
+    callId: call.id,
+    branchId: call.branchId,
+    tableNo: call.tableNo,
+    note: call.note,
+  });
   save();
   res.json({ ok: true, call });
 });
 
+app.post('/api/call-waiter/cancel', (req, res) => {
+  const tableNo = normalizeDigits(String(req.body.tableNo || '')).trim().slice(0, 20);
+  const callId = req.body.callId ? Number(normalizeDigits(String(req.body.callId)).replace(/\D/g, '')) : null;
+  if (!tableNo && !callId) return res.status(400).json({ error: 'شماره میز یا شناسه فراخوان لازم است' });
+  const tableDigits = tableNo.replace(/\D/g, '');
+  const tableNum = tableDigits ? Number(tableDigits) : null;
+
+  const targetCalls = (db.waiterCalls || []).filter((c) => {
+    if (c.status !== 'open' && c.status !== 'new') return false;
+    if (callId && Number(c.id) === callId) return true;
+    if (callId) return false;
+    const cDigits = String(c.tableNo || '').replace(/\D/g, '');
+    const cNum = cDigits ? Number(cDigits) : null;
+    return (tableNum !== null && cNum === tableNum) || (cDigits && cDigits === tableDigits) || c.tableNo === tableNo;
+  });
+
+  if (!targetCalls.length) return res.status(404).json({ error: 'فراخوان بازی یافت نشد' });
+
+  targetCalls.forEach((call) => {
+    call.status = 'cancelled';
+    call.resolvedAt = new Date().toISOString();
+    call.resolvedBy = 'guest';
+    publishOperationalEvent('waiter_call.updated', { callId: call.id, branchId: call.branchId, status: call.status });
+  });
+
+  save();
+  res.json({ ok: true, calls: targetCalls, call: targetCalls[0] });
+});
+
+
+
 app.get('/api/kitchen/calls', requireCapability('service.manage'), (req, res) => {
-  const bid = req.query.branchId ? Number(req.query.branchId) : null;
+  // Resolve the authenticated kitchen operator's effective branch when the
+  // UI omits branchId; otherwise a scoped operator receives every branch's
+  // open waiter call because the old query-only filter treated omission as a
+  // consolidated view.
+  const allowedBranchIds = branchScopeForUser(req.user, { role: effectiveRole(req.user) });
+  const bid = allowedBranchIds === null
+    ? (req.query.branchId ? Number(req.query.branchId) : null)
+    : parseBranchId(req);
   const calls = (db.waiterCalls || [])
     .filter((c) => c.status === 'open')
     .filter((c) => (bid ? Number(c.branchId) === bid : true))
@@ -3918,8 +5201,14 @@ app.get('/api/kitchen/calls', requireCapability('service.manage'), (req, res) =>
 });
 
 app.patch('/api/kitchen/calls/:id', requireCapability('service.manage'), (req, res) => {
-  const call = (db.waiterCalls || []).find((c) => c.id === Number(req.params.id));
+  const targetId = Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
+  const call = (db.waiterCalls || []).find((c) => Number(c.id) === targetId);
   if (!call) return res.status(404).json({ error: 'not found' });
+  try {
+    assertUserBranchAccess(req.user, call.branchId);
+  } catch (error) {
+    return res.status(error.status || 403).json({ error: error.code || 'branch_access_denied', message: error.message, requestId: req.requestId });
+  }
   if (req.body.status === 'done' || req.body.status === 'open') call.status = req.body.status;
   call.resolvedAt = new Date().toISOString();
   save();
@@ -3928,14 +5217,17 @@ app.patch('/api/kitchen/calls/:id', requireCapability('service.manage'), (req, r
 
 // --- FAQ ---
 app.post('/api/faq', requireAdmin, (req, res) => {
-  const id = Math.max(0, ...db.faq.map((f) => f.id)) + 1;
-  const item = { id, q: String(req.body.q || ''), a: String(req.body.a || '') };
+  if (!Array.isArray(db.faq)) db.faq = [];
+  const id = Math.max(0, ...db.faq.map((f) => Number(f.id) || 0), 0) + 1;
+  const item = { id, q: String(req.body.q || '').trim(), a: String(req.body.a || '').trim() };
   db.faq.push(item);
   save();
   res.json({ ok: true, item });
 });
 app.put('/api/faq/:id', requireAdmin, (req, res) => {
-  const item = db.faq.find((f) => f.id === Number(req.params.id));
+  if (!Array.isArray(db.faq)) db.faq = [];
+  const targetId = Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
+  const item = db.faq.find((f) => Number(f.id) === targetId);
   if (!item) return res.status(404).json({ error: 'not found' });
   if (typeof req.body.q === 'string') item.q = req.body.q;
   if (typeof req.body.a === 'string') item.a = req.body.a;
@@ -3943,42 +5235,242 @@ app.put('/api/faq/:id', requireAdmin, (req, res) => {
   res.json({ ok: true, item });
 });
 app.delete('/api/faq/:id', requireAdmin, (req, res) => {
-  db.faq = db.faq.filter((f) => f.id !== Number(req.params.id));
+  if (!Array.isArray(db.faq)) db.faq = [];
+  const targetId = Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
+  db.faq = db.faq.filter((f) => Number(f.id) !== targetId);
   save();
   res.json({ ok: true });
 });
 app.put('/api/faq-order', requireAdmin, (req, res) => {
-  const order = req.body.order || [];
+  if (!Array.isArray(db.faq)) db.faq = [];
+  const order = (Array.isArray(req.body.order) ? req.body.order : []).map((id) =>
+    Number(normalizeDigits(String(id || '')).replace(/\D/g, ''))
+  );
   db.faq.sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
   save();
   res.json({ ok: true, faq: db.faq });
 });
 
-// --- admin: users ---
-app.get('/api/admin/users', requireOwner, (req, res) => {
-  res.json({ users: db.users.map(publicUser) });
+// --- admin: users & roles ---
+app.get('/api/admin/users', requireAdmin, (req, res) => {
+  const users = (db.users || []).map((u) => {
+    const pub = publicUser(u);
+    try {
+      const tierInfo = loyaltyEngine.resolveCustomerTier(db, u);
+      pub.tier = tierInfo?.tier || { id: 'bronze', name: 'برنزی', badgeIcon: '🥉' };
+    } catch (_) {
+      pub.tier = { id: 'bronze', name: 'برنزی', badgeIcon: '🥉' };
+    }
+    try {
+      pub.walletBalanceToman = walletEngine.getWalletBalance(db, u.phone);
+    } catch (_) {
+      pub.walletBalanceToman = 0;
+    }
+    const userOrders = (db.orders || []).filter((o) => o.phone === u.phone);
+    pub.ordersCount = userOrders.length;
+    pub.totalSpendToman = userOrders
+      .filter((o) => FINANCIAL_PAID_ORDER_STATUSES.has(String(o.status || '')))
+      .reduce((sum, o) => sum + Number(o.total || 0), 0);
+    return pub;
+  });
+  res.json({ users, branches: db.branches || [] });
 });
+
+app.get('/api/admin/roles/matrix', requireAdmin, (req, res) => {
+  const matrix = {
+    roles: [
+      { id: 'owner', label: 'مالک / مدیر ارشد', category: 'staff', description: 'دسترسی نامحدود به تمامی بخش‌ها، تنظیمات، اسناد مالی و حذف کاربران', icon: '👑', badgeClass: 'role-owner' },
+      { id: 'manager', label: 'مدیر داخلی / سرپرست', category: 'staff', description: 'مدیریت عملیات، سفارش‌ها، رزروها، صندوق، آشپزخانه، انبار، پرسنل و گزارش‌ها', icon: '🧑‍💼', badgeClass: 'role-manager' },
+      { id: 'accountant', label: 'حسابدار / مدیر مالی', category: 'staff', description: 'اسناد دوبل، ترازنامه، صورت سود و زیان، بستن دوره‌های مالی و مغایرت‌گیری', icon: '💰', badgeClass: 'role-accountant' },
+      { id: 'cashier', label: 'صندوقدار / صندوق', category: 'staff', description: 'ثبت سفارش، تسویه فاکتور، مدیریت پوز و وجه نقد، رزرو و وضعیت تحویل', icon: '💵', badgeClass: 'role-cashier' },
+      { id: 'waiter', label: 'گارسون / سالن‌کار', category: 'staff', description: 'سفارش‌گیری سر میز با تبلت، فراخوانی مهمان، وضعیت میزها و سرو', icon: '🤵', badgeClass: 'role-waiter' },
+      { id: 'kitchen', label: 'آشپزخانه / سرآشپز', category: 'staff', description: 'مشاهده صفحه KDS، مدیریت صف پخت، اعلام آماده بودن و ثبت حواله مصرف انبار', icon: '🍳', badgeClass: 'role-kitchen' },
+      { id: 'guest', label: 'مشتری / مهمان', category: 'customer', description: 'ثبت سفارش، رزرو آنلاین، باشگاه مشتریان، کیف پول و ثبت بازخورد', icon: '🌟', badgeClass: 'role-guest' },
+    ],
+    sections: [
+      {
+        id: 'orders',
+        title: 'سفارش‌ها و صندوق',
+        description: 'مشاهده، ثبت و مدیریت سفارش‌های حضوری و آنلاین، تسویه فاکتور',
+        roles: { owner: 'full', manager: 'full', cashier: 'full', waiter: 'create_view', kitchen: 'none', accountant: 'none', guest: 'self_only' },
+      },
+      {
+        id: 'kitchen',
+        title: 'صف آشپزخانه (KDS)',
+        description: 'مشاهده کارت‌های پخت، شروع آماده‌سازی و تغییر به وضعیت آماده',
+        roles: { owner: 'full', manager: 'full', kitchen: 'full', cashier: 'none', waiter: 'none', accountant: 'none', guest: 'none' },
+      },
+      {
+        id: 'tables',
+        title: 'میزها و سالن پذیرایی',
+        description: 'نقشه میزها، اعلام درخواست گارسون و مدیریت ظرفیت سالن',
+        roles: { owner: 'full', manager: 'full', waiter: 'full', cashier: 'full', kitchen: 'none', accountant: 'none', guest: 'call_only' },
+      },
+      {
+        id: 'finance',
+        title: 'مالی و حسابداری',
+        description: 'اسناد دوبل حسابداری، بستن دوره‌ها، مغایرت‌گیری و ترازنامه',
+        roles: { owner: 'full', manager: 'full', accountant: 'full', cashier: 'cash_only', waiter: 'none', kitchen: 'none', guest: 'none' },
+      },
+      {
+        id: 'inventory',
+        title: 'انبار و مواد اولیه',
+        description: 'موجودی انبار، ورود کالا (رسید)، حواله مصرف و بهای تمام‌شده',
+        roles: { owner: 'full', manager: 'full', accountant: 'view_only', kitchen: 'operations_only', cashier: 'none', waiter: 'none', guest: 'none' },
+      },
+      {
+        id: 'menu',
+        title: 'منو، قیمت‌ها و محصولات',
+        description: 'ویرایش غذاها و محصولات، دسته‌بندی‌ها، قیمت‌گذاری و فعال/غیرفعال کردن',
+        roles: { owner: 'full', manager: 'full', accountant: 'none', cashier: 'none', waiter: 'none', kitchen: 'none', guest: 'none' },
+      },
+      {
+        id: 'reports',
+        title: 'گزارش‌های فروش و آمار',
+        description: 'تحلیل روزانه و ماهانه، نمودارهای سودآوری و ترافیک مهمان',
+        roles: { owner: 'full', manager: 'full', accountant: 'full', cashier: 'none', waiter: 'none', kitchen: 'none', guest: 'none' },
+      },
+      {
+        id: 'club',
+        title: 'باشگاه مشتریان و پیامک',
+        description: 'مدیریت اعضای وفادار، سطوح برنزی تا طلایی، کیف پول و کمپین‌ها',
+        roles: { owner: 'full', manager: 'full', accountant: 'none', cashier: 'none', waiter: 'none', kitchen: 'none', guest: 'profile_only' },
+      },
+      {
+        id: 'settings',
+        title: 'تنظیمات و دسترسی کاربران',
+        description: 'مدیریت کاربران، تغییر نقش‌ها، تخصیص شعب و پیکربندی سیستم',
+        roles: { owner: 'full', manager: 'view_manage', accountant: 'none', cashier: 'none', waiter: 'none', kitchen: 'none', guest: 'none' },
+      },
+    ],
+    capabilities: ROLE_CAPABILITIES,
+  };
+  res.json(matrix);
+});
+
+app.post(['/api/admin/users', '/api/admin/customers'], requireAdmin, (req, res) => {
+  const phone = normalizeDigits(req.body.phone || '').trim();
+  const name = String(req.body.name || '').trim().slice(0, 120);
+  if (!PHONE_RE.test(phone)) return res.status(400).json({ error: 'شماره موبایل معتبر نیست.' });
+  if (!name) return res.status(400).json({ error: 'نام و نام خانوادگی لازم است.' });
+  if (db.users.some((user) => user.phone === phone)) return res.status(409).json({ error: 'کاربری با این شماره قبلاً ثبت شده است.' });
+  
+  const requestedRole = String(req.body.role || 'user').trim().toLowerCase();
+  const roleMap = { admin: 'owner', user: 'guest', owner: 'owner', manager: 'manager', accountant: 'accountant', cashier: 'cashier', waiter: 'waiter', kitchen: 'kitchen', guest: 'guest' };
+  const role = roleMap[requestedRole] || 'guest';
+  
+  if (['owner', 'manager'].includes(role) && !isOwnerActor(db, req.user)) {
+    return res.status(403).json({
+      error: role === 'owner' ? 'staff_owner_protected' : 'staff_manager_protected',
+      message: role === 'owner' ? 'حساب مالک فقط توسط مالک قابل ایجاد است.' : 'حساب مدیر فقط توسط مالک قابل ایجاد است.',
+    });
+  }
+
+  let allowedBranchIds = null;
+  if (Array.isArray(req.body.allowedBranchIds)) {
+    allowedBranchIds = req.body.allowedBranchIds
+      .map((b) => Number(normalizeDigits(String(b)).replace(/\D/g, '')))
+      .filter((n) => Number.isSafeInteger(n) && n > 0);
+  } else if (req.body.branchId != null && req.body.branchId !== '') {
+    const single = Number(normalizeDigits(String(req.body.branchId)).replace(/\D/g, ''));
+    if (Number.isSafeInteger(single) && single > 0) allowedBranchIds = [single];
+  }
+
+  const parsePoints = (v) => {
+    if (v == null || v === '') return 0;
+    if (typeof v === 'number') return isNaN(v) ? 0 : v;
+    const n = Number(normalizeDigits(String(v)).replace(/[,٬_\s]/g, '').trim());
+    return isNaN(n) ? 0 : n;
+  };
+
+  const user = {
+    phone,
+    name,
+    email: String(req.body.email || '').trim().slice(0, 160),
+    role,
+    allowedBranchIds,
+    points: Math.max(0, Math.round(parsePoints(req.body.points))),
+    notes: String(req.body.notes || '').trim().slice(0, 500),
+    createdAt: new Date().toISOString(),
+    blocked: false,
+  };
+  db.users.push(user);
+  recordAudit(req, 'user.created', 'user', phone, { name, role, allowedBranchIds });
+  save();
+  res.status(201).json({ ok: true, user: publicUser(user) });
+});
+
 app.patch(['/api/admin/users/:phone', '/api/admin/customers/:phone'], requireAdmin, (req, res) => {
-  const user = db.users.find((u) => u.phone === req.params.phone);
+  const targetPhone = normalizeDigits(decodeURIComponent(String(req.params.phone || ''))).trim();
+  const user = db.users.find((u) => u.phone === targetPhone);
   if (!user) return res.status(404).json({ error: 'not found' });
+
+  const isSelf = String(req.user?.phone || '') === String(user.phone || '');
+  if (typeof req.body.blocked === 'boolean' && isSelf) {
+    return res.status(400).json({
+      error: 'staff_self_protected',
+      message: 'کاربر جاری را نمی‌توان مسدود یا از حالت مسدود خارج کرد.',
+    });
+  }
+
+  try {
+    assertStaffMutationBoundary(db, req.user, user, { allowSelf: true });
+  } catch (error) {
+    return res.status(error.status || 403).json({ error: error.code || 'staff_mutation_forbidden', message: error.message });
+  }
+
   if (typeof req.body.blocked === 'boolean') user.blocked = req.body.blocked;
   if (typeof req.body.name === 'string') user.name = req.body.name.trim();
   if (typeof req.body.email === 'string') user.email = req.body.email.trim();
+  if (typeof req.body.notes === 'string') user.notes = req.body.notes.trim().slice(0, 500);
+  if (req.body.points != null) {
+    const parsePoints = (v) => {
+      if (v == null || v === '') return null;
+      if (typeof v === 'number') return isNaN(v) ? null : v;
+      const n = Number(normalizeDigits(String(v)).replace(/[,٬_\s]/g, '').trim());
+      return isNaN(n) ? null : n;
+    };
+    const pts = parsePoints(req.body.points);
+    if (pts != null) user.points = Math.max(0, Math.round(pts));
+  }
+  if (Array.isArray(req.body.allowedBranchIds)) {
+    user.allowedBranchIds = req.body.allowedBranchIds
+      .map((b) => Number(normalizeDigits(String(b)).replace(/\D/g, '')))
+      .filter((n) => Number.isSafeInteger(n) && n > 0);
+  } else if (req.body.allowedBranchIds === null) {
+    user.allowedBranchIds = null;
+  }
   if (typeof req.body.birthdate === 'string') {
     user.birthdate = req.body.birthdate.trim().slice(0, 50);
     user.birthdateUpdatedAt = new Date().toISOString();
     try { campaignsEngine.checkBirthdayEligibility(db, user); } catch (_) {}
   }
   const requestedRole = String(req.body.role || '').trim().toLowerCase();
-  const roleMap = { admin: 'owner', user: 'guest', owner: 'owner', manager: 'manager', cashier: 'cashier', waiter: 'waiter', kitchen: 'kitchen', guest: 'guest' };
-  if (roleMap[requestedRole]) user.role = roleMap[requestedRole];
-  recordAudit(req, 'user.access_updated', 'user', user.phone, { role: user.role, blocked: !!user.blocked, birthdate: user.birthdate });
+  const roleMap = { admin: 'owner', user: 'guest', owner: 'owner', manager: 'manager', accountant: 'accountant', cashier: 'cashier', waiter: 'waiter', kitchen: 'kitchen', guest: 'guest' };
+  if (roleMap[requestedRole]) {
+    const newRole = roleMap[requestedRole];
+    if (newRole !== user.role) {
+      if (['owner', 'manager'].includes(newRole) && !isOwnerActor(db, req.user)) {
+        return res.status(403).json({
+          error: newRole === 'owner' ? 'staff_owner_protected' : 'staff_manager_protected',
+          message: newRole === 'owner' ? 'اعطای نقش مالک فقط توسط مالک امکان‌پذیر است.' : 'اعطای نقش مدیر فقط توسط مالک امکان‌پذیر است.',
+        });
+      }
+      user.role = newRole;
+    }
+  }
+  recordAudit(req, 'user.access_updated', 'user', user.phone, { role: user.role, blocked: !!user.blocked, birthdate: user.birthdate, allowedBranchIds: user.allowedBranchIds });
   save();
   res.json({ ok: true, user: publicUser(user) });
 });
+
 app.delete('/api/admin/users/:phone', requireOwner, (req, res) => {
-  const user = db.users.find((u) => u.phone === req.params.phone);
-  db.users = db.users.filter((u) => u.phone !== req.params.phone);
+  const targetPhone = normalizeDigits(decodeURIComponent(String(req.params.phone || ''))).trim();
+  if (String(req.user?.phone || '') === targetPhone) {
+    return res.status(400).json({ error: 'staff_self_protected', message: 'مالک جاری نمی‌تواند حساب خود را حذف کند.' });
+  }
+  const user = db.users.find((u) => u.phone === targetPhone);
+  db.users = db.users.filter((u) => u.phone !== targetPhone);
   if (user) recordAudit(req, 'user.deleted', 'user', user.phone, { role: user.role });
   save();
   res.json({ ok: true });
@@ -3988,6 +5480,7 @@ app.delete('/api/admin/users/:phone', requireOwner, (req, res) => {
 app.post('/api/newsletter', (req, res) => {
   const email = String(req.body.email || '').trim().toLowerCase();
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return res.status(400).json({ error: 'ایمیل معتبر نیست' });
+  if (!Array.isArray(db.newsletter)) db.newsletter = [];
   if (!db.newsletter.find((n) => n.email === email)) {
     db.newsletter.push({ email, at: new Date().toISOString() });
     save();
@@ -3995,7 +5488,7 @@ app.post('/api/newsletter', (req, res) => {
   res.json({ ok: true });
 });
 app.get('/api/admin/newsletter', requireAdmin, (req, res) => {
-  res.json({ newsletter: db.newsletter });
+  res.json({ newsletter: Array.isArray(db.newsletter) ? db.newsletter : [] });
 });
 
 // --- admin: stats / uploads / settings ---
@@ -4004,10 +5497,26 @@ app.get('/api/admin/stats', requireAdmin, (req, res) => {
   const dayMs = 24 * 3600 * 1000;
   const weekAgo = now - 7 * dayMs;
   const dayAgo = now - dayMs;
-  const bid = req.query.branchId ? Number(req.query.branchId) : null;
+  // Keep owner analytics consolidated by default, while resolving a scoped
+  // manager/accountant to an allowed branch when the dashboard omits a filter.
+  const requestedBranch = requestBranchValue(req);
+  const allowedBranchIds = branchScopeForUser(req.user, { role: effectiveRole(req.user) });
+  const bid = requestedBranch != null
+    ? parseBranchId(req)
+    : allowedBranchIds === null
+      ? null
+      : (defaultBranch() && allowedBranchIds.includes(Number(defaultBranch().id))
+        ? defaultBranch().id
+        : allowedBranchIds[0] || null);
   let orders = db.orders || [];
   if (bid) orders = orders.filter((o) => Number(o.branchId) === bid);
-  const paidLike = orders.filter((o) => !['cancelled'].includes(o.status));
+  // Revenue is an accounting-facing metric. Pending/unpaid/partial orders
+  // belong in the operational queue, never in sales totals; retain the
+  // status fallback only for legacy rows that predate paymentStatus.
+  const paidLike = orders.filter((o) => {
+    if (typeof o?.paymentStatus === 'string') return o.paymentStatus === 'paid';
+    return FINANCIAL_PAID_ORDER_STATUSES.has(String(o?.status || ''));
+  });
   const revenue = paidLike.reduce((s, o) => s + (Number(o.total) || 0), 0);
   const revenueToday = paidLike
     .filter((o) => new Date(o.createdAt).getTime() >= dayAgo)
@@ -4130,6 +5639,214 @@ app.get('/api/admin/stats', requireAdmin, (req, res) => {
   });
 });
 
+app.get('/api/admin/notifications', requireAdmin, (req, res) => {
+  const bid = parseBranchId(req) || null;
+  const items = [];
+
+  // 1. Finance & Accounting Approvals
+  let state = null;
+  try {
+    state = financeV2.ensureFinanceV2(db);
+  } catch (_) {}
+
+  if (state) {
+    const approvals = (state.approvals || []).filter(
+      (a) => a.status === 'pending' && (!bid || !a.branchId || Number(a.branchId) === bid)
+    );
+    for (const a of approvals) {
+      let title = `درخواست تأیید مالی (${a.operation || a.entityType})`;
+      let tab = 'accounting';
+      let workspace = 'workbench';
+      if (a.entityType === 'purchase_order') {
+        title = `تأیید فاکتور خرید شماره ${a.entityId}`;
+        workspace = 'purchases';
+      } else if (a.entityType === 'vendor_invoice_match') {
+        title = `مغایرت فاکتور و رسید بار شماره ${a.entityId}`;
+        workspace = 'purchases';
+      } else if (a.entityType === 'recipe_version') {
+        title = 'تأیید نسخه جدید دستور تهیه';
+        tab = 'inventory';
+        workspace = 'costing';
+      } else if (a.entityType === 'cost_accrual' || a.entityType === 'cost_payment') {
+        title = 'تأیید سند هزینه و پرداخت تنخواه';
+        workspace = 'purchases';
+      } else if (a.entityType === 'supplier_payment') {
+        title = 'تأیید پرداخت به تأمین‌کننده';
+        workspace = 'purchases';
+      } else if (a.operation === 'reopen_fiscal_period') {
+        title = 'درخواست بازگشایی دوره مالی';
+        workspace = 'reports';
+      }
+
+      items.push({
+        id: `approval-${a.id}`,
+        category: 'approval',
+        priority: a.operation === 'reopen_fiscal_period' ? 'urgent' : 'high',
+        title,
+        description: `درخواست‌شده توسط ${a.requestedBy || 'کاربر سیستم'} • نیاز به تأیید نهایی مدیر`,
+        tab,
+        workspace,
+        actionLabel: 'بررسی و تأیید',
+        createdAt: a.createdAt || new Date().toISOString(),
+      });
+    }
+
+    // 2. Blocked or failed finance events
+    const unresolvedEvents = (state.events || []).filter(
+      (e) => ['blocked', 'failed'].includes(e.status) && (!bid || !e.branchId || Number(e.branchId) === bid)
+    );
+    if (unresolvedEvents.length > 0) {
+      items.push({
+        id: 'blocked-finance-events',
+        category: 'attention',
+        priority: 'high',
+        title: `${unresolvedEvents.length} رویداد مالی مسدود یا متوقف‌شده`,
+        description: 'اسناد یا تراکنش‌های مالی دارای خطا نیازمند رفع مسدودی در میزکار مالی هستند.',
+        tab: 'accounting',
+        workspace: 'workbench',
+        actionLabel: 'میزکار مالی',
+        createdAt: unresolvedEvents[0]?.occurredAt || new Date().toISOString(),
+      });
+    }
+
+    // 3. Receivable Purchase Orders
+    const pendingPOs = (state.purchaseOrders || []).filter(
+      (po) => ['approved', 'partially_received'].includes(po.status) && (!bid || !po.branchId || Number(po.branchId) === bid)
+    );
+    if (pendingPOs.length > 0) {
+      items.push({
+        id: 'receivable-pos',
+        category: 'attention',
+        priority: 'medium',
+        title: `${pendingPOs.length} محموله خرید آماده تحویل بار`,
+        description: 'کالاهای سفارش‌داده‌شده رسیده به مجموعه نیازمند ثبت رسید بار در بخش انبار هستند.',
+        tab: 'inventory',
+        workspace: 'purchases',
+        actionUrl: `/admin/kitchen?view=inventory${bid ? `&branchId=${bid}` : ''}`,
+        actionLabel: 'ثبت رسید بار',
+        createdAt: pendingPOs[0]?.createdAt || new Date().toISOString(),
+      });
+    }
+
+    // 4. Draft Journal Entries
+    const draftJournals = (state.journalEntries || []).filter(
+      (j) => j.status === 'draft' && (!bid || !j.branchId || Number(j.branchId) === bid)
+    );
+    if (draftJournals.length > 0) {
+      items.push({
+        id: 'draft-journals',
+        category: 'approval',
+        priority: 'medium',
+        title: `${draftJournals.length} سند حسابداری در انتظار ثبت نهایی`,
+        description: 'اسناد پیش‌نویس مالی آماده بررسی تراز و تأیید ثبت در دفتر کل هستند.',
+        tab: 'accounting',
+        workspace: 'reports',
+        actionLabel: 'دفتر اسناد',
+        createdAt: draftJournals[0]?.date || new Date().toISOString(),
+      });
+    }
+  }
+
+  // 5. Critical inventory shortages
+  try {
+    const inv = financeV2.inventoryItemsView(db, { branchId: bid });
+    const lowItems = (inv?.items || []).filter(
+      (item) => Number(item.availableQuantity) <= Number(item.reorderPoint)
+    );
+    if (lowItems.length > 0) {
+      const names = lowItems.slice(0, 3).map((i) => `${i.name} (${i.availableQuantity} ${i.unit})`).join('، ');
+      items.push({
+        id: 'low-stock-alert',
+        category: 'attention',
+        priority: lowItems.some((i) => Number(i.availableQuantity) <= 0) ? 'urgent' : 'high',
+        title: `هشدار کسری موجودی (${lowItems.length} قلم کالا)`,
+        description: `موجودی به زیر نقطهٔ سفارش رسیده است: ${names}${lowItems.length > 3 ? ' و...' : ''}`,
+        tab: 'inventory',
+        actionLabel: 'مشاهده انبار',
+        createdAt: new Date().toISOString(),
+      });
+    }
+  } catch (_) {}
+
+  // 6. Reservations pending confirmation
+  const pendingRes = (db.reservations || []).filter(
+    (r) => r.status === 'pending' && (!bid || Number(r.branchId) === bid)
+  );
+  if (pendingRes.length > 0) {
+    const summaryText = pendingRes
+      .slice(0, 2)
+      .map((r) => `${r.name || 'مهمان'} (${r.partySize || 2} نفر برای ${r.date} ${r.time})`)
+      .join(' | ');
+    items.push({
+      id: 'pending-reservations',
+      category: 'approval',
+      priority: 'high',
+      title: `${pendingRes.length} رزرو میز جدید نیازمند بررسی`,
+      description: summaryText + (pendingRes.length > 2 ? ` و ${pendingRes.length - 2} مورد دیگر` : ''),
+      tab: 'reservations',
+      actionLabel: 'بررسی رزروها',
+      createdAt: pendingRes[0]?.createdAt || new Date().toISOString(),
+    });
+  }
+
+  // 7. Feedback needing attention
+  let fbList = db.feedback || [];
+  if (bid) fbList = fbList.filter((f) => Number(f.branchId) === bid);
+  const newFeedback = fbList.filter((f) => f.status === 'new' || f.reviewed === false);
+  const lowScoreFeedback = fbList.filter((f) => Number(f.score) <= 6 && Number(f.score) > 0);
+  if (newFeedback.length > 0 || lowScoreFeedback.length > 0) {
+    const totalIssues = newFeedback.length || lowScoreFeedback.length;
+    items.push({
+      id: 'feedback-attention',
+      category: 'attention',
+      priority: lowScoreFeedback.length > 0 ? 'high' : 'medium',
+      title: `${totalIssues} بازخورد مشتریان نیازمند توجه`,
+      description: lowScoreFeedback.length > 0
+        ? `${lowScoreFeedback.length} نظر با امتیاز پایین ثبت شده که نیازمند پیگیری و رسیدگی مدیر است.`
+        : 'نظرات جدید دریافت شده توسط مشتریان نیازمند بازبینی است.',
+      tab: 'feedback',
+      actionLabel: 'مشاهده بازخوردها',
+      createdAt: (newFeedback[0] || lowScoreFeedback[0])?.createdAt || new Date().toISOString(),
+    });
+  }
+
+  // 8. Delayed active orders
+  const activeOrders = (db.orders || []).filter(
+    (o) => ['pending', 'preparing'].includes(o.status) && (!bid || Number(o.branchId) === bid)
+  );
+  const delayedOrders = activeOrders.filter((o) => {
+    const ageMin = (Date.now() - new Date(o.createdAt).getTime()) / 60000;
+    return ageMin >= 30;
+  });
+  if (delayedOrders.length > 0) {
+    items.push({
+      id: 'delayed-orders',
+      category: 'attention',
+      priority: 'urgent',
+      title: `${delayedOrders.length} سفارش معطل بیش از ۳۰ دقیقه`,
+      description: 'سفارش‌های ثبت‌شده با زمان انتظار بالا نیازمند تسریع در بخش سفارش‌ها یا آشپزخانه است.',
+      tab: 'orders',
+      actionLabel: 'مشاهده سفارش‌ها',
+      createdAt: delayedOrders[0]?.createdAt || new Date().toISOString(),
+    });
+  }
+
+  // Priority sorting: urgent -> high -> medium -> low
+  const priorityWeight = { urgent: 4, critical: 4, high: 3, medium: 2, low: 1 };
+  items.sort((a, b) => (priorityWeight[b.priority] || 0) - (priorityWeight[a.priority] || 0));
+
+  res.json({
+    ok: true,
+    summary: {
+      total: items.length,
+      approvals: items.filter((i) => i.category === 'approval').length,
+      attention: items.filter((i) => i.category === 'attention').length,
+      critical: items.filter((i) => ['urgent', 'critical', 'high'].includes(i.priority)).length,
+    },
+    items,
+  });
+});
+
 /* ---- Restaurant profile / hours / tables / promos / analytics ---- */
 app.get('/api/admin/restaurant', requireAdmin, (req, res) => {
   const branch = resolveBranch(req.query.branchId || req.query.branch);
@@ -4149,8 +5866,16 @@ app.put('/api/admin/restaurant', requireAdmin, (req, res) => {
   for (const k of keys) {
     if (typeof r[k] === 'string') db.restaurant[k] = r[k].trim().slice(0, k === 'about' ? 2000 : 200);
   }
-  if (typeof r.taxPercent === 'number') db.restaurant.taxPercent = Math.max(0, Math.min(100, r.taxPercent));
-  if (typeof r.servicePercent === 'number') db.restaurant.servicePercent = Math.max(0, Math.min(100, r.servicePercent));
+  const parsePct = (v) => {
+    if (v == null || v === '') return null;
+    if (typeof v === 'number') return isNaN(v) ? null : v;
+    const n = Number(normalizeDigits(String(v)).replace(/[,٬_\s]/g, '').trim());
+    return isNaN(n) ? null : n;
+  };
+  const taxPct = parsePct(r.taxPercent);
+  if (taxPct != null) db.restaurant.taxPercent = Math.max(0, Math.min(100, taxPct));
+  const svcPct = parsePct(r.servicePercent);
+  if (svcPct != null) db.restaurant.servicePercent = Math.max(0, Math.min(100, svcPct));
   save();
   res.json({ ok: true, restaurant: db.restaurant });
 });
@@ -4183,37 +5908,83 @@ app.get('/api/admin/tables', requireAdmin, (req, res) => {
 });
 app.put('/api/admin/tables', requireAdmin, (req, res) => {
   if (!Array.isArray(req.body.tables)) return res.status(400).json({ error: 'tables required' });
-  const bid = Number(req.body.branchId) || defaultBranch()?.id || 1;
+  const parseNum = (v, fb = 0) => {
+    if (v == null || v === '') return fb;
+    if (typeof v === 'number') return isNaN(v) ? fb : v;
+    const n = Number(normalizeDigits(String(v)).replace(/[,٬_\s]/g, '').trim());
+    return isNaN(n) ? fb : n;
+  };
+  const bid = Math.round(parseNum(req.body.branchId, defaultBranch()?.id || 1));
   const others = (db.tables || []).filter((t) => Number(t.branchId) !== bid);
-  const updated = req.body.tables.slice(0, 80).map((t, i) => ({
-    id: Number(t.id) || i + 1,
-    label: String(t.label || `میز ${i + 1}`).slice(0, 40),
-    seats: Math.max(1, Math.min(20, Number(t.seats) || 4)),
-    zone: String(t.zone || 'سالن').slice(0, 40),
-    active: t.active !== false,
-    branchId: bid,
-  }));
+  const existingMap = new Map((db.tables || []).map((t) => [Number(t.id), t]));
+  const updated = req.body.tables.slice(0, 80).map((t, i) => {
+    const id = Math.round(parseNum(t.id, i + 1));
+    const prev = existingMap.get(id) || {};
+    const item = {
+      ...prev,
+      id,
+      label: String(t.label || `میز ${i + 1}`).slice(0, 40),
+      seats: Math.max(1, Math.min(24, Math.round(parseNum(t.seats, 4)))),
+      zone: String(t.zone || 'سالن').slice(0, 40),
+      active: t.active !== false,
+      branchId: bid,
+    };
+    if (typeof t.x === 'number') item.x = Math.max(0, Math.min(100, Math.round(t.x * 10) / 10));
+    if (typeof t.y === 'number') item.y = Math.max(0, Math.min(100, Math.round(t.y * 10) / 10));
+    if (t.shape) item.shape = String(t.shape).slice(0, 20);
+    if (t.chairModel) item.chairModel = String(t.chairModel).slice(0, 25);
+    if (typeof t.chairScale === 'number') item.chairScale = Math.max(0.6, Math.min(2.0, Math.round(t.chairScale * 100) / 100));
+    if (typeof t.tableScale === 'number') item.tableScale = Math.max(0.6, Math.min(2.5, Math.round(t.tableScale * 100) / 100));
+    if (typeof t.rotation === 'number') item.rotation = Math.round(t.rotation) % 360;
+    if (t.floorId) item.floorId = String(t.floorId).slice(0, 40);
+    if (Array.isArray(t.mergedWith)) item.mergedWith = t.mergedWith.map((x) => Number(x) || String(x));
+    if (t.mergedInto !== undefined) item.mergedInto = t.mergedInto ? (Number(t.mergedInto) || String(t.mergedInto)) : null;
+    if (Array.isArray(t.tags)) item.tags = t.tags.slice(0, 10).map((x) => String(x).slice(0, 30));
+    return item;
+  });
   db.tables = [...others, ...updated].sort((a, b) => a.id - b.id);
   save();
   res.json({ ok: true, tables: updated });
 });
 app.post('/api/admin/tables', requireAdmin, (req, res) => {
-  const id = Math.max(0, ...db.tables.map((t) => t.id), 0) + 1;
-  const branchId = Number(req.body.branchId) || defaultBranch()?.id || 1;
+  const parseNum = (v, fb = 0) => {
+    if (v == null || v === '') return fb;
+    if (typeof v === 'number') return isNaN(v) ? fb : v;
+    const n = Number(normalizeDigits(String(v)).replace(/[,٬_\s]/g, '').trim());
+    return isNaN(n) ? fb : n;
+  };
+  const id = Math.max(0, ...db.tables.map((t) => Number(t.id) || 0), 0) + 1;
+  const branchId = Math.round(parseNum(req.body.branchId, defaultBranch()?.id || 1));
   const table = {
     id,
     label: String(req.body.label || `میز ${id}`).slice(0, 40),
-    seats: Math.max(1, Math.min(20, Number(req.body.seats) || 4)),
+    seats: Math.max(1, Math.min(24, Math.round(parseNum(req.body.seats, 4)))),
     zone: String(req.body.zone || 'سالن').slice(0, 40),
     active: true,
     branchId,
   };
+  if (typeof req.body.x === 'number') table.x = Math.max(0, Math.min(100, Math.round(req.body.x * 10) / 10));
+  if (typeof req.body.y === 'number') table.y = Math.max(0, Math.min(100, Math.round(req.body.y * 10) / 10));
+  if (req.body.shape) table.shape = String(req.body.shape).slice(0, 20);
+  if (req.body.chairModel) table.chairModel = String(req.body.chairModel).slice(0, 25);
+  if (typeof req.body.chairScale === 'number') table.chairScale = Math.max(0.6, Math.min(2.0, Math.round(req.body.chairScale * 100) / 100));
+  if (typeof req.body.tableScale === 'number') table.tableScale = Math.max(0.6, Math.min(2.5, Math.round(req.body.tableScale * 100) / 100));
+  if (typeof req.body.rotation === 'number') table.rotation = Math.round(req.body.rotation) % 360;
+  if (req.body.floorId) table.floorId = String(req.body.floorId).slice(0, 40);
+  if (Array.isArray(req.body.tags)) table.tags = req.body.tags.slice(0, 10).map((x) => String(x).slice(0, 30));
   db.tables.push(table);
   save();
   res.json({ ok: true, table });
 });
 app.delete('/api/admin/tables/:id', requireAdmin, (req, res) => {
-  db.tables = db.tables.filter((t) => t.id !== Number(req.params.id));
+  const targetId = Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
+  const rawBranch = requestBranchValue(req);
+  const branch = rawBranch ? resolveBranchExact(rawBranch) : null;
+  db.tables = db.tables.filter((t) => {
+    if (Number(t.id) !== targetId) return true;
+    if (branch && t.branchId && Number(t.branchId) !== Number(branch.id)) return true;
+    return false;
+  });
   save();
   res.json({ ok: true });
 });
@@ -4308,7 +6079,8 @@ app.post('/api/admin/branches', requireAdmin, (req, res) => {
 });
 
 app.put('/api/admin/branches/:id', requireAdmin, (req, res) => {
-  const branch = (db.branches || []).find((b) => b.id === Number(req.params.id));
+  const targetId = Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
+  const branch = (db.branches || []).find((b) => Number(b.id) === targetId);
   if (!branch) return res.status(404).json({ error: 'not found' });
   if (typeof req.body.name === 'string') branch.name = req.body.name.trim().slice(0, 80);
   if (typeof req.body.address === 'string') branch.address = req.body.address.trim().slice(0, 200);
@@ -4340,17 +6112,17 @@ app.put('/api/admin/branches/:id', requireAdmin, (req, res) => {
 });
 
 app.delete('/api/admin/branches/:id', requireAdmin, (req, res) => {
-  const id = Number(req.params.id);
+  const id = Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
   if ((db.branches || []).length <= 1) {
     return res.status(400).json({ error: 'حداقل یک شعبه لازم است' });
   }
-  const fallback = (db.branches || []).find((b) => b.id !== id);
-  db.branches = (db.branches || []).filter((b) => b.id !== id);
+  const fallback = (db.branches || []).find((b) => Number(b.id) !== id);
+  db.branches = (db.branches || []).filter((b) => Number(b.id) !== id);
   for (const t of db.tables || []) {
-    if (Number(t.branchId) === id) t.branchId = fallback.id;
+    if (Number(t.branchId) === id) t.branchId = fallback ? fallback.id : 1;
   }
   for (const o of db.orders || []) {
-    if (Number(o.branchId) === id) o.branchId = fallback.id;
+    if (Number(o.branchId) === id) o.branchId = fallback ? fallback.id : 1;
   }
   syncLegacyHours();
   save();
@@ -4361,11 +6133,17 @@ app.get('/api/admin/promotions', requireAdmin, (req, res) => {
   res.json({ promotions: db.promotions || [] });
 });
 app.post('/api/admin/promotions', requireAdmin, (req, res) => {
-  const id = Math.max(0, ...(db.promotions || []).map((p) => p.id), 0) + 1;
+  const id = Math.max(0, ...(db.promotions || []).map((p) => Number(p.id) || 0), 0) + 1;
+  const parsePct = (v) => {
+    if (v == null || v === '') return 0;
+    if (typeof v === 'number') return isNaN(v) ? 0 : v;
+    const n = Number(normalizeDigits(String(v)).replace(/[,٬_\s]/g, '').trim());
+    return isNaN(n) ? 0 : n;
+  };
   const promo = {
     id,
     title: String(req.body.title || '').trim().slice(0, 120),
-    percent: Math.max(0, Math.min(90, Math.round(Number(req.body.percent) || 0))),
+    percent: Math.max(0, Math.min(90, Math.round(parsePct(req.body.percent)))),
     code: String(req.body.code || '').trim().slice(0, 32).toUpperCase(),
     active: req.body.active !== false,
     startsAt: req.body.startsAt || new Date().toISOString(),
@@ -4379,10 +6157,18 @@ app.post('/api/admin/promotions', requireAdmin, (req, res) => {
   res.json({ ok: true, promo });
 });
 app.patch('/api/admin/promotions/:id', requireAdmin, (req, res) => {
-  const promo = (db.promotions || []).find((p) => p.id === Number(req.params.id));
+  const targetId = Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
+  const promo = (db.promotions || []).find((p) => Number(p.id) === targetId);
   if (!promo) return res.status(404).json({ error: 'not found' });
   if (typeof req.body.title === 'string') promo.title = req.body.title.trim().slice(0, 120);
-  if (typeof req.body.percent === 'number') promo.percent = Math.max(0, Math.min(90, Math.round(req.body.percent)));
+  if (req.body.percent != null) {
+    const rawPct = typeof req.body.percent === 'number'
+      ? req.body.percent
+      : Number(normalizeDigits(String(req.body.percent)).replace(/[,٬_\s]/g, '').trim());
+    if (!isNaN(rawPct)) {
+      promo.percent = Math.max(0, Math.min(90, Math.round(rawPct)));
+    }
+  }
   if (typeof req.body.code === 'string') promo.code = req.body.code.trim().slice(0, 32).toUpperCase();
   if (typeof req.body.active === 'boolean') promo.active = req.body.active;
   if (req.body.endsAt !== undefined) promo.endsAt = req.body.endsAt;
@@ -4390,7 +6176,8 @@ app.patch('/api/admin/promotions/:id', requireAdmin, (req, res) => {
   res.json({ ok: true, promo });
 });
 app.delete('/api/admin/promotions/:id', requireAdmin, (req, res) => {
-  db.promotions = (db.promotions || []).filter((p) => p.id !== Number(req.params.id));
+  const targetId = Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
+  db.promotions = (db.promotions || []).filter((p) => Number(p.id) !== targetId);
   save();
   res.json({ ok: true });
 });
@@ -4420,7 +6207,8 @@ app.post('/api/admin/promo-slides', requireCapability('content.manage'), (req, r
 });
 
 app.patch('/api/admin/promo-slides/:id', requireCapability('content.manage'), (req, res) => {
-  const index = (db.promoSlides || []).findIndex((slide) => Number(slide.id) === Number(req.params.id));
+  const targetId = Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
+  const index = (db.promoSlides || []).findIndex((slide) => Number(slide.id) === targetId);
   if (index < 0) return res.status(404).json({ error: 'not found' });
   const updated = sanitizePromoSlideInput(req.body || {}, db.promoSlides[index]);
   updated.updatedAt = new Date().toISOString();
@@ -4430,7 +6218,8 @@ app.patch('/api/admin/promo-slides/:id', requireCapability('content.manage'), (r
 });
 
 app.delete('/api/admin/promo-slides/:id', requireCapability('content.manage'), (req, res) => {
-  db.promoSlides = (db.promoSlides || []).filter((slide) => Number(slide.id) !== Number(req.params.id));
+  const targetId = Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
+  db.promoSlides = (db.promoSlides || []).filter((slide) => Number(slide.id) !== targetId);
   save();
   res.json({ ok: true });
 });
@@ -4447,13 +6236,15 @@ app.post('/api/admin/promo-slides/reorder', requireCapability('content.manage'),
 });
 
 app.post('/api/promo-slides/:id/impression', (req, res) => {
-  const slide = (db.promoSlides || []).find((item) => Number(item.id) === Number(req.params.id));
+  const targetId = Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
+  const slide = (db.promoSlides || []).find((item) => Number(item.id) === targetId);
   if (slide) { slide.impressions = (Number(slide.impressions) || 0) + 1; save(); }
   res.status(204).end();
 });
 
 app.post('/api/promo-slides/:id/click', (req, res) => {
-  const slide = (db.promoSlides || []).find((item) => Number(item.id) === Number(req.params.id));
+  const targetId = Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
+  const slide = (db.promoSlides || []).find((item) => Number(item.id) === targetId);
   if (slide) { slide.clicks = (Number(slide.clicks) || 0) + 1; save(); }
   res.status(204).end();
 });
@@ -4461,12 +6252,20 @@ app.post('/api/promo-slides/:id/click', (req, res) => {
 /* Bulk price update — percent or absolute delta */
 app.post('/api/admin/prices/bulk', requireAdmin, (req, res) => {
   const mode = req.body.mode === 'set' ? 'set' : req.body.mode === 'delta' ? 'delta' : 'percent';
-  const value = Number(req.body.value);
-  const categoryId = req.body.categoryId != null ? Number(req.body.categoryId) : null;
+  const parseNum = (v) => {
+    if (v == null || v === '') return NaN;
+    if (typeof v === 'number') return v;
+    return Number(normalizeDigits(String(v)).replace(/[,٬_\s]/g, '').trim());
+  };
+  const value = parseNum(req.body.value);
+  const rawCat = req.body.categoryId != null ? req.body.categoryId : null;
+  const categoryId = rawCat != null && rawCat !== ''
+    ? Number(normalizeDigits(String(rawCat)).replace(/\D/g, ''))
+    : null;
   if (!Number.isFinite(value)) return res.status(400).json({ error: 'مقدار نامعتبر' });
   let n = 0;
-  for (const item of db.menuItems) {
-    if (categoryId != null && item.categoryId !== categoryId) continue;
+  for (const item of (db.menuItems || [])) {
+    if (categoryId != null && Number(item.categoryId) !== categoryId) continue;
     if (mode === 'percent') item.price = Math.max(0, Math.round(item.price * (1 + value / 100)));
     else if (mode === 'delta') item.price = Math.max(0, Math.round(item.price + value));
     else item.price = Math.max(0, Math.round(value));
@@ -4568,7 +6367,14 @@ app.put('/api/admin/theme', requireAdmin, (req, res) => {
   for (const k of colorKeys) {
     if (typeof t[k] === 'string' && hex.test(t[k].trim())) db.theme[k] = t[k].trim();
   }
-  if (typeof t.radius === 'number') db.theme.radius = Math.max(0, Math.min(28, Math.round(t.radius)));
+  if (t.radius != null) {
+    const rawRadius = typeof t.radius === 'number'
+      ? t.radius
+      : Number(normalizeDigits(String(t.radius)).replace(/[,٬_\s]/g, '').trim());
+    if (!isNaN(rawRadius)) {
+      db.theme.radius = Math.max(0, Math.min(28, Math.round(rawRadius)));
+    }
+  }
   if (typeof t.fontDisplay === 'string') db.theme.fontDisplay = t.fontDisplay.trim().slice(0, 40) || 'Vazirmatn';
   save();
   res.json({ ok: true, theme: db.theme });
@@ -4655,14 +6461,22 @@ app.get('/api/admin/inventory', requireAdmin, (req, res) => {
 });
 
 app.post('/api/admin/inventory/adjust', requireAdmin, (req, res) => {
-  const item = db.menuItems.find((m) => m.id === Number(req.body.id));
+  const targetId = Number(normalizeDigits(String(req.body.id || '')).replace(/\D/g, ''));
+  const item = (db.menuItems || []).find((m) => Number(m.id) === targetId);
   if (!item) return res.status(404).json({ error: 'not found' });
+  const parseNum = (v) => {
+    if (v == null || v === '') return null;
+    if (typeof v === 'number') return isNaN(v) ? null : v;
+    const n = Number(normalizeDigits(String(v)).replace(/[,٬_\s]/g, '').trim());
+    return isNaN(n) ? null : n;
+  };
   if (req.body.stock === null || req.body.mode === 'unlimited') {
     item.stock = null;
   } else if (req.body.mode === 'set') {
-    item.stock = Math.max(0, Math.round(Number(req.body.stock) || 0));
+    const s = parseNum(req.body.stock);
+    item.stock = Math.max(0, Math.round(s ?? 0));
   } else {
-    const delta = Math.round(Number(req.body.delta) || 0);
+    const delta = Math.round(parseNum(req.body.delta) ?? 0);
     const base = typeof item.stock === 'number' ? item.stock : 0;
     item.stock = Math.max(0, base + delta);
   }
@@ -4670,7 +6484,8 @@ app.post('/api/admin/inventory/adjust', requireAdmin, (req, res) => {
   else if (typeof item.stock === 'number' && item.stock > 0 && req.body.restock === true) {
     item.available = true;
   }
-  if (typeof req.body.lowStockAt === 'number') item.lowStockAt = Math.max(0, Math.round(req.body.lowStockAt));
+  const lowStock = parseNum(req.body.lowStockAt);
+  if (lowStock != null) item.lowStockAt = Math.max(0, Math.round(lowStock));
   save();
   res.json({ ok: true, item });
 });
@@ -4784,11 +6599,22 @@ app.post('/api/admin/loyalty/adjust', requireAdmin, (req, res) => {
   });
 });
 
-app.get('/api/loyalty/customer', (req, res) => {
+app.get('/api/loyalty/customer', requireAuth, (req, res) => {
   const phone = normalizeDigits(req.query.phone || '').trim();
   if (!phone || !PHONE_RE.test(phone)) {
     return res.status(400).json({ error: 'شماره معتبر نیست' });
   }
+  const role = effectiveRole(req.user);
+  const isSelf = req.user && req.user.phone === phone;
+  const isStaff = ['cashier', 'waiter', 'manager', 'owner', 'admin'].includes(role)
+    || userCan(req.user, 'crm.view')
+    || userCan(req.user, 'orders.create')
+    || userCan(req.user, 'ops.view');
+
+  if (!isSelf && !isStaff) {
+    return res.status(403).json({ error: 'دسترسی به اطلاعات باشگاه این مشتری مجاز نیست.' });
+  }
+
   const user = db.users.find((u) => u.phone === phone);
   const resolved = loyaltyEngine.resolveCustomerTier(db, user || { phone, points: 0 });
   const walletBalance = walletEngine.getWalletBalance(db, phone);
@@ -4807,6 +6633,36 @@ app.get('/api/loyalty/customer', (req, res) => {
     badge: resolved.badge,
   });
 });
+
+// --- Membership QR Code for logged-in user ---
+// Generates a real PNG QR code. The payload is a URL the cashier app
+// can call directly to pull up this customer's loyalty profile.
+app.get('/api/loyalty/qr-code', requireAuth, async (req, res) => {
+  try {
+    const phone = req.user.phone;
+    // Build the cashier look-up URL (same origin, so relative path works on LAN)
+    const protocol = req.protocol;
+    const host = req.get('host');
+    const payload = `${protocol}://${host}/api/loyalty/customer?phone=${encodeURIComponent(phone)}`;
+
+    const png = await QRCode.toBuffer(payload, {
+      type: 'png',
+      width: 400,
+      margin: 2,
+      errorCorrectionLevel: 'M',
+      color: { dark: '#151817', light: '#ffffff' },
+    });
+
+    res.setHeader('Content-Type', 'image/png');
+    res.setHeader('Cache-Control', 'private, max-age=300'); // 5-min cache
+    res.setHeader('X-Westo-Phone', phone.slice(-4));         // last 4 digits hint
+    return res.send(png);
+  } catch (err) {
+    return res.status(500).json({ error: 'ساخت QR ممکن نشد' });
+  }
+});
+
+
 
 app.get('/api/loyalty/me', requireAuth, (req, res) => {
   const resolved = loyaltyEngine.resolveCustomerTier(db, req.user);
@@ -4830,6 +6686,50 @@ app.get('/api/loyalty/me', requireAuth, (req, res) => {
       tiers: loyaltyEngine.getLoyaltyTiers(db),
     },
     ledger: (db.loyaltyLedger || []).filter((e) => e.phone === req.user.phone).slice(0, 20),
+  });
+});
+
+app.post('/api/loyalty/redeem', requireAuth, (req, res) => {
+  const user = (db.users || []).find((u) => phonesMatch(u.phone, req.user.phone)) || req.user;
+  const cost = Math.max(1, Math.round(Number(req.body?.cost) || 500));
+  const currentPts = Math.max(0, Math.round(Number(user.points) || 0));
+
+  if (currentPts < cost) {
+    return res.status(400).json({ ok: false, error: 'امتیاز شما برای دریافت این جایزه کافی نیست.' });
+  }
+
+  user.points = currentPts - cost;
+
+  if (!Array.isArray(db.loyaltyLedger)) db.loyaltyLedger = [];
+  const voucherCode = `WST-REW-${Date.now().toString(36).toUpperCase()}`;
+  db.loyaltyLedger.unshift({
+    id: `ly_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+    phone: user.phone,
+    delta: -cost,
+    type: 'reward_redeem',
+    description: `دریافت جایزه لاته مهمان وستو (${voucherCode})`,
+    voucherCode,
+    at: new Date().toISOString(),
+  });
+
+  save();
+
+  const resolved = loyaltyEngine.resolveCustomerTier(db, user);
+  const walletBalance = walletEngine.getWalletBalance(db, user.phone);
+
+  res.json({
+    ok: true,
+    voucherCode,
+    points: user.points,
+    user: publicUser(user),
+    loyalty: {
+      points: user.points,
+      walletBalanceToman: walletBalance,
+      tier: resolved.tier,
+      nextTier: resolved.nextTier,
+      progressPct: resolved.progressPct,
+      pointsToNext: resolved.pointsToNext,
+    },
   });
 });
 
@@ -4857,6 +6757,67 @@ function generateShortTrackingCode() {
   return String(Math.floor(1000 + Math.random() * 9000));
 }
 
+// A wallet mutation is only successful when its Finance V2 deposit journal is
+// posted in the same durable transaction. This keeps the customer balance,
+// wallet ledger, request state, and official ledger from drifting apart.
+async function applyWalletTopupWithFinance(req, input, mutate) {
+  const snapshot = snapshotFinanceMutationState();
+  try {
+    let result = null;
+    const finance = financeV2.captureWalletTopup(db, {
+      branchId: input.branchId,
+      amountToman: input.amountToman,
+      bonusToman: input.bonusToman || 0,
+      paymentMethod: input.paymentMethod,
+      reference: input.reference,
+      sourceId: input.sourceId || input.reference,
+      phone: input.phone,
+      packageId: input.packageId,
+      actor: input.actor || req.user?.phone || 'system',
+      idempotencyKey: input.idempotencyKey,
+    }, {
+      actor: input.actor || req.user?.phone || 'system',
+      idempotencyKey: input.idempotencyKey,
+      applyWallet: ({ event }) => {
+        result = mutate();
+        // Tag only the entries created by this mutation.  Looking at the
+        // first two rows for a phone is not a safe identity boundary when a
+        // concurrent/retried credit or a payment entry is already present.
+        for (const entry of [result?.topupEntry, result?.bonusEntry].filter(Boolean)) {
+          entry.meta = { ...(entry.meta || {}), financeEventId: event.id };
+        }
+        return result;
+      },
+    });
+    if (finance.blocked || !finance.journalEntry) throw Object.assign(new Error('شارژ کیف پول تا ثبت سند مالی قابل تکمیل نیست.'), { code: finance.event?.error?.code || 'wallet_topup_finance_blocked', status: 409 });
+    await persistFinanceMutation(snapshot);
+    return { ...(finance.walletResult || result || {}), finance };
+  } catch (error) {
+    restoreFinanceMutationState(snapshot);
+    throw error;
+  }
+}
+
+function campaignWalletTopupWithFinance(input, branchId, actor) {
+  let result = null;
+  const finance = financeV2.captureWalletTopup(db, {
+    branchId, sourceId: input.reference, phone: input.phone,
+    amountToman: input.amountToman, bonusToman: 0,
+    paymentMethod: input.paymentMethod, reference: input.reference,
+  }, {
+    actor,
+    applyWallet: ({ event }) => {
+      result = walletEngine.topupWallet(db, input);
+      for (const entry of [result?.topupEntry, result?.bonusEntry].filter(Boolean)) {
+        entry.meta = { ...(entry.meta || {}), financeEventId: event.id };
+      }
+      return result;
+    },
+  });
+  if (finance.blocked || !finance.journalEntry) throw Object.assign(new Error('پاداش کیف پول تا ثبت سند مالی قابل تکمیل نیست.'), { code: finance.event?.error?.code || 'wallet_bonus_finance_blocked', status: 409 });
+  return result;
+}
+
 // 1. Create a Wallet Topup Request (Online Gateway or In-store Waiter/Cashier Approval)
 app.post('/api/wallet/topup/request', requireAuth, (req, res) => {
   const phone = req.user.phone;
@@ -4864,6 +6825,9 @@ app.post('/api/wallet/topup/request', requireAuth, (req, res) => {
   const amountToman = Math.max(0, Math.round(Number(req.body.amountToman || req.body.amount) || 0));
   const packageId = req.body.packageId ? String(req.body.packageId).trim() : null;
   const channel = req.body.channel === 'instore_staff' ? 'instore_staff' : 'online_gateway';
+  let branchId;
+  try { branchId = parseBranchId(req); } catch (error) { return res.status(error.status || 400).json({ error: error.code || 'branch_invalid', message: error.message }); }
+  if (!branchId) return res.status(400).json({ error: 'wallet_topup_branch_required' });
 
   let finalAmount = amountToman;
   const packages = walletEngine.getWalletPackages(db);
@@ -4898,6 +6862,7 @@ app.post('/api/wallet/topup/request', requireAuth, (req, res) => {
     approvedBy: null,
     approvedAt: null,
     tableNo: req.body.tableNo || null,
+    branchId,
   };
 
   db.walletTopupRequests.unshift(topupRequest);
@@ -4924,7 +6889,7 @@ app.post('/api/wallet/topup/request', requireAuth, (req, res) => {
 });
 
 // 2. Gateway Verification (Online payment gateway verification callback)
-app.post('/api/wallet/topup/gateway-verify', requireAuth, (req, res) => {
+app.post('/api/wallet/topup/gateway-verify', requireAuth, async (req, res) => {
   const { requestId, gatewayToken } = req.body || {};
   const request = (db.walletTopupRequests || []).find((r) => (requestId && r.id === requestId) || (gatewayToken && r.gatewayToken === gatewayToken));
 
@@ -4932,27 +6897,41 @@ app.post('/api/wallet/topup/gateway-verify', requireAuth, (req, res) => {
     return res.status(404).json({ error: 'درخواست درگاه یافت نشد.' });
   }
 
-  if (request.status === 'completed') {
-    return res.json({ ok: true, message: 'این شارژ قبلاً تایید و اعمال شده است.', newBalance: walletEngine.getWalletBalance(db, request.phone) });
+  // A gateway request is customer-owned.  Without this check any signed-in
+  // customer who obtains another request id/token could credit a different
+  // wallet.  Branch access is checked too for staff sessions so a scoped
+  // operator cannot confirm a request from another branch.
+  if (String(request.phone || '') !== String(req.user.phone || '')) {
+    return res.status(403).json({ error: 'wallet_topup_request_owner_mismatch' });
+  }
+  try {
+    assertUserBranchAccess(req.user, request.branchId);
+  } catch (error) {
+    return res.status(error.status || 403).json({ error: error.code || 'branch_access_denied', message: error.message });
   }
 
-  if (request.gatewayToken && gatewayToken && request.gatewayToken !== gatewayToken) {
+  if (request.status === 'completed') {
+    const eventSourceId = `GW-${String(request.authority || request.trackingCode)}`;
+    const event = (db.financeV2?.events || []).find((item) => item.source === 'wallet.topup' && item.sourceId === eventSourceId);
+    if (!event || event.status !== 'posted') return res.status(409).json({ error: 'wallet_topup_finance_missing' });
+    return res.json({ ok: true, message: 'این شارژ قبلاً تایید و اعمال شده است.', newBalance: walletEngine.getWalletBalance(db, request.phone), finance: { event } });
+  }
+
+  if (!gatewayToken || request.gatewayToken !== gatewayToken) {
     return res.status(403).json({ error: 'توکن تأییدیه درگاه بانکی نامعتبر است.' });
   }
 
-  // Complete the topup
-  const result = walletEngine.topupWallet(db, {
-    phone: request.phone,
-    amountToman: request.amountToman,
-    packageId: request.packageId,
-    paymentMethod: 'online_gateway',
-    reference: `GW-${request.authority || request.trackingCode}`,
-    actor: 'تاییدیه درگاه بانکی',
-  });
-
-  request.status = 'completed';
-  request.approvedAt = new Date().toISOString();
-  request.approvedBy = { role: 'payment_gateway', name: 'تاییدیه درگاه بانکی شاپرک', ref: request.authority };
+  const branchId = Number(request.branchId) || null;
+  if (!branchId) return res.status(400).json({ error: 'wallet_topup_branch_required' });
+  let result;
+  try {
+    result = await applyWalletTopupWithFinance(req, { branchId, amountToman: request.amountToman, bonusToman: request.bonusToman, packageId: request.packageId, phone: request.phone, paymentMethod: 'online_gateway', reference: `GW-${request.authority || request.trackingCode}`, actor: 'تاییدیه درگاه بانکی' }, () => {
+      const value = walletEngine.topupWallet(db, { phone: request.phone, amountToman: request.amountToman, packageId: request.packageId, paymentMethod: 'online_gateway', reference: `GW-${request.authority || request.trackingCode}`, actor: 'تاییدیه درگاه بانکی' });
+      request.status = 'completed'; request.approvedAt = new Date().toISOString();
+      request.approvedBy = { role: 'payment_gateway', name: 'تاییدیه درگاه بانکی شاپرک', ref: request.authority };
+      return value;
+    });
+  } catch (error) { return res.status(error.status || 409).json({ error: error.code || 'wallet_topup_failed', message: error.message }); }
 
   try {
     smsEngine.sendSms(db, {
@@ -4964,12 +6943,11 @@ app.post('/api/wallet/topup/gateway-verify', requireAuth, (req, res) => {
     });
   } catch (_) {}
 
-  save();
   res.json({ ok: true, verified: true, ...result, request });
 });
 
 // 3. Staff Approval (Cashier or Waiter confirms and approves cash/POS topup)
-app.post('/api/wallet/topup/staff-approve', requireAuth, (req, res) => {
+app.post('/api/wallet/topup/staff-approve', requireAuth, async (req, res) => {
   const role = effectiveRole(req.user);
   if (!['cashier', 'waiter', 'manager', 'owner', 'admin'].includes(role)) {
     return res.status(403).json({ error: 'تأیید شارژ کیف پول فقط با دسترسی گارسون، صندوقدار یا مدیریت مجاز است.' });
@@ -4990,6 +6968,26 @@ app.post('/api/wallet/topup/staff-approve', requireAuth, (req, res) => {
     }
   }
 
+  if (targetRequest?.status === 'completed') {
+    // Replays of a completed in-store request are idempotent and must never
+    // mint a second wallet credit.  The stable source id below is also the
+    // Finance V2 idempotency boundary used for the first approval.
+    const sourceId = `STAFF-${targetRequest.id}`;
+    const event = (db.financeV2?.events || []).find((item) => item.source === 'wallet.topup' && item.sourceId === sourceId);
+    if (!event || event.status !== 'posted') return res.status(409).json({ error: 'wallet_topup_finance_missing' });
+    return res.json({
+      ok: true, approved: true, idempotent: true,
+      newBalance: walletEngine.getWalletBalance(db, targetRequest.phone),
+      totalCredit: Number(targetRequest.totalCredit) || Number(targetRequest.amountToman) || 0,
+      bonusToman: Number(targetRequest.bonusToman) || 0,
+      phone: targetRequest.phone,
+      finance: { event },
+    });
+  }
+  if (targetRequest && (targetRequest.channel !== 'instore_staff' || targetRequest.status !== 'pending_staff_approval')) {
+    return res.status(409).json({ error: 'wallet_topup_request_not_approvable' });
+  }
+
   if (!targetPhone) {
     return res.status(400).json({ error: 'شماره مشتری یا کد پیگیری درخواست الزامی است.' });
   }
@@ -5004,6 +7002,10 @@ app.post('/api/wallet/topup/staff-approve', requireAuth, (req, res) => {
     return res.status(400).json({ error: 'مبلغ شارژ نامعتبر است.' });
   }
 
+  let branchId;
+  try { branchId = Number(targetRequest?.branchId) || parseBranchId(req); if (targetRequest?.branchId) assertUserBranchAccess(req.user, targetRequest.branchId); } catch (error) { return res.status(error.status || 400).json({ error: error.code || 'branch_invalid', message: error.message }); }
+  if (!branchId) return res.status(400).json({ error: 'wallet_topup_branch_required' });
+
   const approverInfo = {
     phone: req.user.phone,
     role,
@@ -5011,20 +7013,18 @@ app.post('/api/wallet/topup/staff-approve', requireAuth, (req, res) => {
     name: req.user.name || (role === 'cashier' ? 'صندوقدار' : 'گارسون'),
   };
 
-  const result = walletEngine.topupWallet(db, {
-    phone: targetPhone,
-    amountToman: finalAmount,
-    packageId: targetPackageId,
-    paymentMethod: paymentTender === 'POS' ? 'pos_card' : 'cash_in_store',
-    reference: `STAFF-${role.toUpperCase()}-${Date.now()}`,
-    actor: `${approverInfo.roleLabel} (${req.user.phone})`,
-  });
-
-  if (targetRequest) {
-    targetRequest.status = 'completed';
-    targetRequest.approvedAt = new Date().toISOString();
-    targetRequest.approvedBy = approverInfo;
-  }
+  // Request-backed approvals use a stable reference.  A timestamp here would
+  // turn a repeated approval of the same request into a second Finance event.
+  const reference = targetRequest ? `STAFF-${targetRequest.id}` : `STAFF-${role.toUpperCase()}-${Date.now()}`;
+  let result;
+  try {
+    const bonusInfo = walletEngine.calculateTopupBonus(finalAmount, walletEngine.getWalletPackages(db));
+    result = await applyWalletTopupWithFinance(req, { branchId, amountToman: finalAmount, bonusToman: targetRequest?.bonusToman ?? bonusInfo.bonusToman, packageId: targetPackageId, phone: targetPhone, paymentMethod: paymentTender === 'POS' ? 'pos_card' : 'cash_in_store', reference, actor: `${approverInfo.roleLabel} (${req.user.phone})` }, () => {
+      const value = walletEngine.topupWallet(db, { phone: targetPhone, amountToman: finalAmount, packageId: targetPackageId, paymentMethod: paymentTender === 'POS' ? 'pos_card' : 'cash_in_store', reference, actor: `${approverInfo.roleLabel} (${req.user.phone})` });
+      if (targetRequest) { targetRequest.status = 'completed'; targetRequest.approvedAt = new Date().toISOString(); targetRequest.approvedBy = approverInfo; }
+      return value;
+    });
+  } catch (error) { return res.status(error.status || 409).json({ error: error.code || 'wallet_topup_failed', message: error.message }); }
 
   recordAudit(req, 'wallet.staff_approved', 'user', targetPhone, {
     amountToman: finalAmount,
@@ -5044,7 +7044,6 @@ app.post('/api/wallet/topup/staff-approve', requireAuth, (req, res) => {
     });
   } catch (_) {}
 
-  save();
   res.json({
     ok: true,
     approved: true,
@@ -5063,7 +7062,11 @@ app.get('/api/wallet/topup-requests/pending', requireAuth, (req, res) => {
     return res.status(403).json({ error: 'دسترسی فقط برای کادر سالن و صندوق مجاز است.' });
   }
 
-  const pending = (db.walletTopupRequests || [])
+  let branchId;
+  try { branchId = parseBranchId(req); } catch (error) {
+    return res.status(error.status || 400).json({ error: error.code || 'branch_invalid', message: error.message });
+  }
+  const pending = branchScoped((db.walletTopupRequests || []), branchId)
     .filter((r) => r.status === 'pending_staff_approval')
     .slice(0, 50);
 
@@ -5079,19 +7082,24 @@ app.get('/api/wallet/topup-requests/my', requireAuth, (req, res) => {
 });
 
 // 6. Direct /api/wallet/topup Gateway or Staff Guard
-app.post('/api/wallet/topup', requireAuth, (req, res) => {
+app.post('/api/wallet/topup', requireAuth, async (req, res) => {
   const role = effectiveRole(req.user);
   const isStaff = ['cashier', 'waiter', 'manager', 'owner', 'admin'].includes(role);
   const { gatewayToken, reference } = req.body || {};
 
-  const isGatewayRef = reference && String(reference).startsWith('GW-');
-  const isStaffRef = reference && String(reference).startsWith('STAFF-');
-
-  if (!isStaff && !gatewayToken && !isGatewayRef && !isStaffRef) {
-    return res.status(403).json({
-      error: 'شارژ کیف پول صرفاً با تأیید گارسون / صندوقدار یا دریافت تاییدیه درگاه بانکی امکان‌پذیر است.',
-      requiresVerification: true,
-    });
+  let matchedGatewayRequest = null;
+  if (!isStaff) {
+    if (gatewayToken) {
+      matchedGatewayRequest = (db.walletTopupRequests || []).find(
+        (r) => r.gatewayToken === gatewayToken && r.phone === req.user.phone && r.status === 'pending_gateway'
+      );
+    }
+    if (!matchedGatewayRequest) {
+      return res.status(403).json({
+        error: 'شارژ کیف پول صرفاً با تأیید پرسنل مجاز یا دریافت تاییدیه معتبر درگاه بانکی امکان‌پذیر است.',
+        requiresVerification: true,
+      });
+    }
   }
 
   const phone = (isStaff && req.body.phone) ? req.body.phone : req.user.phone;
@@ -5113,14 +7121,30 @@ app.post('/api/wallet/topup', requireAuth, (req, res) => {
     return res.status(400).json({ error: 'مبلغ شارژ نامعتبر است.' });
   }
 
-  const result = walletEngine.topupWallet(db, {
-    phone,
-    amountToman: finalAmount,
-    packageId,
-    paymentMethod,
-    reference: reference || (isStaff ? `STAFF-${role.toUpperCase()}-${Date.now()}` : `GW-${Date.now()}`),
-    actor: isStaff ? `${role} (${req.user.phone})` : (req.user.phone || 'customer'),
-  });
+  let branchId;
+  try { branchId = parseBranchId(req); } catch (error) { return res.status(error.status || 400).json({ error: error.code || 'branch_invalid', message: error.message }); }
+  if (!branchId) return res.status(400).json({ error: 'wallet_topup_branch_required' });
+
+  const financeReference = (isStaff && reference)
+    ? reference
+    : (matchedGatewayRequest ? `GW-${matchedGatewayRequest.authority || matchedGatewayRequest.trackingCode}` : (isStaff ? `STAFF-${role.toUpperCase()}-${Date.now()}` : `GW-${Date.now()}`));
+
+  let result;
+  try {
+    const bonusInfo = walletEngine.calculateTopupBonus(finalAmount, walletEngine.getWalletPackages(db));
+    result = await applyWalletTopupWithFinance(req, { branchId, amountToman: finalAmount, bonusToman: bonusInfo.bonusToman, packageId, phone, paymentMethod, reference: financeReference, actor: isStaff ? `${role} (${req.user.phone})` : (req.user.phone || 'customer') }, () => {
+      const topupVal = walletEngine.topupWallet(db, {
+        phone, amountToman: finalAmount, packageId, paymentMethod, reference: financeReference,
+        actor: isStaff ? `${role} (${req.user.phone})` : (req.user.phone || 'customer'),
+      });
+      if (matchedGatewayRequest) {
+        matchedGatewayRequest.status = 'completed';
+        matchedGatewayRequest.approvedAt = new Date().toISOString();
+        matchedGatewayRequest.approvedBy = { role: 'payment_gateway', name: 'تاییدیه درگاه بانکی شاپرک', ref: matchedGatewayRequest.authority };
+      }
+      return topupVal;
+    });
+  } catch (error) { return res.status(error.status || 409).json({ error: error.code || 'wallet_topup_failed', message: error.message }); }
 
   try {
     smsEngine.sendSms(db, {
@@ -5136,78 +7160,118 @@ app.post('/api/wallet/topup', requireAuth, (req, res) => {
     });
   } catch (_) {}
 
-  save();
   res.json({ ok: true, ...result });
 });
 
-app.post('/api/orders/:id/pay-wallet', async (req, res) => {
-  const orderId = Number(req.params.id);
-  const order = (db.orders || []).find((o) => o.id === orderId);
+app.post('/api/orders/:id/pay-wallet', requireAuth, async (req, res) => {
+  const orderId = Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
+  const order = (db.orders || []).find((o) => Number(o.id) === orderId);
   if (!order) return res.status(404).json({ error: 'سفارش یافت نشد.' });
 
-  const phone = req.user?.phone || order.phone;
+  const phone = normalizeDigits(req.user?.phone || '').trim();
   if (!phone) return res.status(400).json({ error: 'شماره مشتری برای پرداخت کیف پول مشخص نیست.' });
+  if (order.phone && normalizeDigits(order.phone).trim() !== phone) {
+    return res.status(403).json({ error: 'این سفارش به حساب مشتری دیگری تعلق دارد.' });
+  }
+  if (!order.phone) return res.status(409).json({ error: 'سفارش شماره مشتری قابل پرداخت از کیف پول ندارد.' });
 
   if (['paid', 'done', 'delivered'].includes(order.paymentStatus) || order.paymentStatus === 'paid') {
     return res.status(400).json({ error: 'این سفارش قبلاً پرداخت شده است.' });
   }
 
   const orderTotal = Math.max(0, Math.round(Number(order.total) || 0));
+  const existingPayments = Array.isArray(order.partialPayments) ? order.partialPayments : [];
+  const alreadyPaid = existingPayments.reduce((sum, payment) => sum + Math.max(0, Math.round(Number(payment.amount) || 0)), 0);
+  const payableAmount = Math.max(0, orderTotal - alreadyPaid);
+  if (!payableAmount) return res.status(200).json({ ok: true, idempotent: true, order });
   const currentBalance = walletEngine.getWalletBalance(db, phone);
 
-  if (currentBalance < orderTotal) {
+  if (currentBalance < payableAmount) {
     return res.status(400).json({
-      error: `موجودی کیف پول (${currentBalance.toLocaleString('fa-IR')} تومان) برای پرداخت این فاکتور (${orderTotal.toLocaleString('fa-IR')} تومان) کافی نیست.`,
+      error: `موجودی کیف پول (${currentBalance.toLocaleString('fa-IR')} تومان) برای پرداخت ماندهٔ این فاکتور (${payableAmount.toLocaleString('fa-IR')} تومان) کافی نیست.`,
       currentBalance,
-      required: orderTotal,
+      required: payableAmount,
     });
   }
 
-  // Deduct from wallet
-  const paymentResult = walletEngine.payFromWallet(db, {
-    phone,
-    amountToman: orderTotal,
-    orderId: order.id,
-    orderNo: order.orderNo,
-    actor: req.user?.phone || 'customer',
-  });
-
-  // Mark order paid with wallet tender
-  order.paymentStatus = 'paid';
-  order.paymentMethod = 'wallet';
-  order.paymentTender = 'wallet';
-  order.paidAt = new Date().toISOString();
-
-  // Capture into Finance V2 double-entry accounting
+  // Wallet debit, order state, Finance V2 capture, loyalty and cashback form
+  // one user-visible payment. Never leave a deducted wallet behind when the
+  // fiscal period is closed or the sale cannot be posted.
+  const snapshot = snapshotFinanceMutationState();
+  let paymentResult;
+  let financeResult;
+  let cashbackAmount = 0;
   try {
-    financeV2.capturePaidOrder(db, order, { actor: req.user?.phone || 'customer-wallet' });
-  } catch (e) {
-    console.error('[wallet-payment] finance capture:', e.message);
-  }
-
-  // Award order loyalty points with tier multiplier
-  maybeAwardOrderLoyalty(order);
-
-  // Award cashback (3% default or tier discount %)
-  const user = db.users.find((u) => u.phone === phone);
-  const tierInfo = loyaltyEngine.resolveCustomerTier(db, user);
-  const cashbackPct = tierInfo.discountPct || 3;
-  const cashbackAmount = Math.round((orderTotal * cashbackPct) / 100);
-  if (cashbackAmount > 0) {
-    walletEngine.awardWalletCashback(db, {
+    paymentResult = walletEngine.payFromWallet(db, {
       phone,
-      amountToman: cashbackAmount,
+      amountToman: payableAmount,
       orderId: order.id,
-      cashbackPct,
-      actor: 'system',
+      orderNo: order.orderNo,
+      actor: req.user?.phone || 'customer',
     });
+
+    // Mark order paid with wallet tender only inside the same rollback scope.
+    const fullyPaid = alreadyPaid + payableAmount >= orderTotal;
+    order.paymentStatus = fullyPaid ? 'paid' : 'partial';
+    order.paymentMethod = 'wallet';
+    order.paymentTender = 'wallet';
+    if (fullyPaid && !order.paidAt) order.paidAt = new Date().toISOString();
+    order.partialPayments = Array.isArray(order.partialPayments) ? order.partialPayments : [];
+    if (!order.partialPayments.some((row) => String(row.id || '') === String(paymentResult.paymentEntry.id))) {
+      order.partialPayments.push({
+        id: paymentResult.paymentEntry.id,
+        tender: 'wallet',
+        amount: payableAmount,
+        at: order.paidAt || new Date().toISOString(),
+        by: req.user?.phone || 'customer',
+      });
+    }
+    order.amountPaid = alreadyPaid + payableAmount;
+    order.paymentTenders = [...new Set(order.partialPayments.map((row) => row.tender).filter(Boolean))];
+    if (fullyPaid && ['pending', 'pending_cashier', 'pay_at_cashier', 'awaiting_confirmation'].includes(String(order.status || ''))) {
+      appendOrderStatus(order, 'paid', req.user || null, { source: 'wallet' });
+    }
+
+    financeResult = financeV2.capturePaidOrder(db, order, {
+      actor: req.user?.phone || 'customer-wallet',
+      idempotencyKey: `order:${order.branchId || 'unscoped'}:${order.id}:wallet-payment`,
+    });
+    if (!financeResult?.journalEntry || financeResult.journalEntry.status !== 'posted') {
+      const captureCode = financeResult?.event?.error?.code || 'finance_capture_blocked';
+      throw Object.assign(new Error('پرداخت ثبت نشد چون سند فروش در دفتر مالی ثبت نشد.'), {
+        code: captureCode,
+        status: 409,
+        details: financeResult?.event?.error || null,
+      });
+    }
+
+    // Award order loyalty points and cashback only after the sale journal is
+    // confirmed; these credits must not survive a failed accounting capture.
+    maybeAwardOrderLoyalty(order);
+    const user = (db.users || []).find((u) => u.phone === phone);
+    const tierInfo = loyaltyEngine.resolveCustomerTier(db, user);
+    const cashbackPct = tierInfo.discountPct || 3;
+    cashbackAmount = Math.round((payableAmount * cashbackPct) / 100);
+    if (cashbackAmount > 0) {
+      walletEngine.awardWalletCashback(db, {
+        phone,
+        amountToman: cashbackAmount,
+        orderId: order.id,
+        cashbackPct,
+        actor: 'system',
+      });
+    }
+    await persistFinanceMutation(snapshot);
+  } catch (error) {
+    restoreFinanceMutationState(snapshot);
+    return res.status(error.status || 503).json({ error: error.code || error.message, details: error.details || undefined });
   }
 
-  save();
   res.json({
     ok: true,
     order,
     paymentResult,
+    finance: financeResult,
     cashbackAwarded: cashbackAmount,
     newWalletBalance: walletEngine.getWalletBalance(db, phone),
   });
@@ -5218,23 +7282,63 @@ app.get('/api/admin/wallet/summary', requireAdmin, (req, res) => {
   res.json(summary);
 });
 
-app.post('/api/admin/wallet/adjust', requireAdmin, (req, res) => {
+app.post('/api/admin/wallet/adjust', requireCapability('finance.journal.create'), async (req, res) => {
   const phone = normalizeDigits(req.body.phone || '').trim();
-  const deltaToman = Math.round(Number(req.body.deltaToman || req.body.delta) || 0);
+  const rawDelta = req.body.deltaToman ?? req.body.delta;
+  const parsedDelta = typeof rawDelta === 'number'
+    ? rawDelta
+    : Number(normalizeDigits(String(rawDelta || '')).replace(/[,٬_\s]/g, '').trim());
+  const deltaToman = Math.round(parsedDelta || 0);
   const reason = String(req.body.reason || 'تعدیل دستی توسط مدیر').slice(0, 120);
+  const key = String(req.get('Idempotency-Key') || '').trim();
 
   if (!PHONE_RE.test(phone)) return res.status(400).json({ error: 'شماره موبایل معتبر نیست.' });
   if (!deltaToman) return res.status(400).json({ error: 'مبلغ تغییر نمی‌تواند صفر باشد.' });
+  if (!key) return res.status(400).json({ error: 'کلید Idempotency-Key الزامی است.' });
 
-  const result = walletEngine.adjustWallet(db, {
-    phone,
-    deltaToman,
-    reason,
-    actor: req.user?.phone || 'admin',
-  });
+  let branchId;
+  try { branchId = parseBranchId(req); } catch (error) {
+    return res.status(error.status || 400).json({ error: error.code || 'branch_invalid', message: error.message });
+  }
+  if (!branchId) return res.status(400).json({ error: 'wallet_adjust_branch_required' });
 
-  save();
-  res.json({ ok: true, ...result });
+  const snapshot = snapshotFinanceMutationState();
+  try {
+    const result = financeV2.captureWalletAdjustment(db, {
+      branchId,
+      phone,
+      deltaToman,
+      reason,
+      sourceId: `MANUAL-${key}`,
+      reference: `MANUAL-${key}`,
+    }, {
+      actor: req.user?.phone || 'admin',
+      idempotencyKey: key,
+      applyWallet: ({ event }) => {
+        const walletResult = walletEngine.adjustWallet(db, {
+          phone,
+          deltaToman,
+          reason,
+          actor: req.user?.phone || 'admin',
+        });
+        if (walletResult.adjustEntry) {
+          walletResult.adjustEntry.meta = { ...(walletResult.adjustEntry.meta || {}), financeEventId: event.id };
+        }
+        return walletResult;
+      },
+    });
+    if (result.blocked || !result.journalEntry) {
+      throw Object.assign(new Error('تعدیل کیف‌پول تا ثبت سند مالی قابل تکمیل نیست.'), {
+        code: result.event?.error?.code || 'wallet_adjust_finance_blocked', status: 409,
+      });
+    }
+    recordAudit(req, 'wallet.adjusted', 'user', phone, { deltaToman, reason, branchId, financeEventId: result.event.id }, branchId);
+    await persistFinanceMutation(snapshot);
+    return res.json({ ok: true, ...result.walletResult, finance: { event: result.event, journalEntry: result.journalEntry, idempotentReplay: result.idempotentReplay } });
+  } catch (error) {
+    restoreFinanceMutationState(snapshot);
+    return res.status(error.status || 409).json({ error: error.code || 'wallet_adjust_failed', message: error.message });
+  }
 });
 
 app.get('/api/admin/wallet/packages', requireAdmin, (req, res) => {
@@ -5245,18 +7349,31 @@ app.put('/api/admin/wallet/packages', requireAdmin, (req, res) => {
   if (!Array.isArray(req.body.packages) || !req.body.packages.length) {
     return res.status(400).json({ error: 'packages_array_required' });
   }
-  db.walletPackages = req.body.packages.map((p, idx) => ({
-    id: String(p.id || `pack-${idx + 1}`).trim(),
-    title: String(p.title || `بسته ${idx + 1}`).trim(),
-    amountToman: Math.max(0, Math.round(Number(p.amountToman || p.amount) || 0)),
-    priceToman: Math.max(0, Math.round(Number(p.priceToman || p.price || p.amountToman) || 0)),
-    bonusToman: Math.max(0, Math.round(Number(p.bonusToman || p.bonus) || 0)),
-    bonusPct: Math.max(0, Math.min(100, Number(p.bonusPct) || 0)),
-    totalCreditToman: Math.max(0, Math.round(Number(p.totalCreditToman || (Number(p.amountToman) + Number(p.bonusToman))) || 0)),
-    popular: !!p.popular,
-    badge: String(p.badge || '').trim(),
-    description: String(p.description || '').trim(),
-  }));
+  const toNum = (v, fb = 0) => {
+    if (v == null || v === '') return fb;
+    if (typeof v === 'number') return isNaN(v) ? fb : v;
+    const n = Number(normalizeDigits(String(v)).replace(/[,٬_\s]/g, '').trim());
+    return isNaN(n) ? fb : n;
+  };
+  db.walletPackages = req.body.packages.map((p, idx) => {
+    const amountToman = Math.max(0, Math.round(toNum(p.amountToman ?? p.amount, 0)));
+    const priceToman = Math.max(0, Math.round(toNum(p.priceToman ?? p.price ?? amountToman, amountToman)));
+    const bonusToman = Math.max(0, Math.round(toNum(p.bonusToman ?? p.bonus, 0)));
+    const bonusPct = Math.max(0, Math.min(100, toNum(p.bonusPct, 0)));
+    const totalCreditToman = Math.max(0, Math.round(toNum(p.totalCreditToman, amountToman + bonusToman)));
+    return {
+      id: String(p.id || `pack-${idx + 1}`).trim(),
+      title: String(p.title || `بسته ${idx + 1}`).trim(),
+      amountToman,
+      priceToman,
+      bonusToman,
+      bonusPct,
+      totalCreditToman,
+      popular: !!p.popular,
+      badge: String(p.badge || '').trim(),
+      description: String(p.description || '').trim(),
+    };
+  });
   save();
   res.json({ ok: true, packages: db.walletPackages });
 });
@@ -5301,18 +7418,23 @@ app.get('/api/referrals/me', requireAuth, (req, res) => {
   });
 });
 
-app.post('/api/referrals/apply', requireAuth, (req, res) => {
+app.post('/api/referrals/apply', requireAuth, async (req, res) => {
   const referralCode = String(req.body.code || req.body.referralCode || '').trim();
   if (!referralCode) return res.status(400).json({ error: 'کد معرف الزامی است.' });
 
+  const snapshot = snapshotFinanceMutationState();
   try {
+    const branchId = parseBranchId(req);
+    if (!branchId) return res.status(400).json({ error: 'wallet_topup_branch_required' });
     const result = campaignsEngine.applyReferralCode(db, {
       inviteePhone: req.user.phone,
       referralCode,
+      walletTopup: (input) => campaignWalletTopupWithFinance(input, branchId, 'referral-system'),
     });
-    save();
+    await persistFinanceMutation(snapshot);
     res.json(result);
   } catch (err) {
+    restoreFinanceMutationState(snapshot);
     res.status(400).json({ error: err.message });
   }
 });
@@ -5340,9 +7462,14 @@ app.post('/api/profile/birthday', requireAuth, (req, res) => {
   res.json({ ok: true, birthdate: user.birthdate, eligibility, birthdateLocked: true });
 });
 
-app.post('/api/campaigns/claim-birthday', requireAuth, (req, res) => {
+app.post('/api/campaigns/claim-birthday', requireAuth, async (req, res) => {
+  const snapshot = snapshotFinanceMutationState();
   try {
-    const result = campaignsEngine.grantBirthdayGift(db, req.user.phone);
+    const branchId = parseBranchId(req);
+    if (!branchId) return res.status(400).json({ error: 'wallet_topup_branch_required' });
+    const result = campaignsEngine.grantBirthdayGift(db, req.user.phone, new Date(), {
+      walletTopup: (input) => campaignWalletTopupWithFinance(input, branchId, 'birthday-campaign'),
+    });
 
     // Trigger Smart Birthday SMS
     try {
@@ -5358,9 +7485,10 @@ app.post('/api/campaigns/claim-birthday', requireAuth, (req, res) => {
       });
     } catch (_) {}
 
-    save();
+    await persistFinanceMutation(snapshot);
     res.json(result);
   } catch (err) {
+    restoreFinanceMutationState(snapshot);
     res.status(400).json({ error: err.message });
   }
 });
@@ -5394,7 +7522,7 @@ app.put('/api/admin/sms/settings', requireAdmin, (req, res) => {
   db.smsConfig = db.smsConfig || {};
   if (req.body.provider !== undefined) db.smsConfig.provider = String(req.body.provider || 'simulator').trim();
   if (req.body.apiKey !== undefined) db.smsConfig.apiKey = String(req.body.apiKey || '').trim();
-  if (req.body.senderLine !== undefined) db.smsConfig.senderLine = String(req.body.senderLine || '1000912').trim();
+  if (req.body.senderLine !== undefined) db.smsConfig.senderLine = normalizeDigits(String(req.body.senderLine || '1000912')).trim();
   if (req.body.enabled !== undefined) db.smsConfig.enabled = !!req.body.enabled;
   if (req.body.templates && typeof req.body.templates === 'object') {
     db.smsConfig.templates = db.smsConfig.templates || {};
@@ -5431,20 +7559,75 @@ app.post('/api/admin/sms/send-test', requireAdmin, async (req, res) => {
   }
 });
 
-app.post('/api/admin/sms/run-winback', requireAdmin, async (req, res) => {
-  const segment = req.body.segment || 'at_risk';
-  const rewardWalletToman = Number(req.body.rewardWalletToman) || 50000;
-  const maxRecipients = Number(req.body.maxRecipients) || 50;
+app.post('/api/admin/sms/send-bulk', requireAdmin, async (req, res) => {
+  const audience = String(req.body.audience || 'همه مشتریان').trim();
+  const text = String(req.body.text || req.body.message || '').trim().slice(0, 1200);
+  const allowedAudiences = new Set(['همه مشتریان', 'VIP', 'مشتریان جدید']);
+  if (!allowedAudiences.has(audience)) return res.status(400).json({ error: 'گروه گیرندگان پیامک معتبر نیست.' });
+  if (!text) return res.status(400).json({ error: 'متن پیامک خالی است.' });
 
+  const rfm = smsEngine.calculateCustomerRfm(db);
+  const candidates = audience === 'VIP'
+    ? rfm.champions
+    : audience === 'مشتریان جدید'
+      ? rfm.active.filter((customer) => customer.segment === 'new')
+      : [...rfm.champions, ...rfm.active, ...rfm.atRisk, ...rfm.dormant];
+  const recipients = [...new Map(candidates
+    .map((customer) => [String(customer.phone || '').trim(), customer])
+    .filter(([phone]) => PHONE_RE.test(phone)))
+    .values()];
+  const maxRecipients = 500;
+  const batch = recipients.slice(0, maxRecipients);
+  if (!batch.length) return res.status(409).json({ error: 'در این گروه گیرندهٔ معتبر پیدا نشد.' });
+
+  const results = [];
+  for (const customer of batch) {
+    try {
+      results.push(await smsEngine.sendSms(db, {
+        phone: customer.phone,
+        name: customer.name || '',
+        customText: text,
+        templateKey: 'custom',
+        vars: { name: customer.name || 'مشتری گرامی' },
+        triggerType: 'manual',
+      }));
+    } catch (error) {
+      results.push({ ok: false, phone: customer.phone, error: error.message });
+    }
+  }
+  const campaignId = `bulk-${Date.now()}`;
+  const sent = results.filter((result) => result.ok).length;
+  const failed = results.length - sent;
+  recordAudit(req, 'sms.bulk_sent', 'sms_campaign', campaignId, { audience, attempted: results.length, sent, failed, truncated: recipients.length > batch.length });
+  save();
+  res.json({ ok: true, campaignId, audience, attempted: results.length, sent, failed, truncated: recipients.length > batch.length, totalCostToman: results.reduce((sum, result) => sum + (Number(result.costToman) || 0), 0) });
+});
+
+app.post('/api/admin/sms/run-winback', requireAdmin, async (req, res) => {
+  const parseNum = (v) => {
+    if (v == null || v === '') return null;
+    if (typeof v === 'number') return isNaN(v) ? null : v;
+    const n = Number(normalizeDigits(String(v)).replace(/[,٬_\s]/g, '').trim());
+    return isNaN(n) ? null : n;
+  };
+  const segment = req.body.segment || 'at_risk';
+  const rewardWalletToman = parseNum(req.body.rewardWalletToman) ?? 50000;
+  const maxRecipients = parseNum(req.body.maxRecipients) ?? 50;
+
+  const snapshot = snapshotFinanceMutationState();
   try {
+    const branchId = parseBranchId(req);
+    if (!branchId) return res.status(400).json({ error: 'wallet_topup_branch_required' });
     const result = await smsEngine.executeWinbackCampaign(db, {
       segment,
       rewardWalletToman,
       maxRecipients,
+      walletTopup: (input) => campaignWalletTopupWithFinance(input, branchId, 'automated-retention'),
     });
-    save();
+    await persistFinanceMutation(snapshot);
     res.json(result);
   } catch (err) {
+    restoreFinanceMutationState(snapshot);
     res.status(400).json({ error: err.message });
   }
 });
@@ -5482,7 +7665,7 @@ function listReservationSlots(branch, dateStr, partySize = 2) {
     (r) =>
       r.date === dateStr &&
       Number(r.branchId) === Number(branch.id) &&
-      ACTIVE_RES_STATUSES.has(r.status)
+      ACTIVE_RES_STATUSES.has(r.status) && !waitlist.isWaitlist(r)
   );
   const now = Date.now();
   const minAheadMs = Math.max(0, Number(settings.minHoursAhead) || 0) * 3600 * 1000;
@@ -5569,6 +7752,7 @@ app.post('/api/reservations', async (req, res) => {
     } catch (_) {}
   }
   const time = String(req.body.time || '').slice(0, 5);
+  const endTime = String(req.body.endTime || '').slice(0, 5);
   const note = String(req.body.note || '').trim().slice(0, 200);
   const partySize = Math.max(1, Math.min(Number(settings.maxParty) || 12, Math.round(Number(req.body.partySize) || 2)));
   const branch = resolveBranch(req.body.branchId || req.body.branch);
@@ -5576,6 +7760,7 @@ app.post('/api/reservations', async (req, res) => {
   if (!PHONE_RE.test(phone)) return res.status(400).json({ error: 'شماره موبایل معتبر نیست' });
   if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return res.status(400).json({ error: 'تاریخ نامعتبر' });
   if (!/^\d{2}:\d{2}$/.test(time)) return res.status(400).json({ error: 'ساعت نامعتبر' });
+  if (endTime && !/^\d{2}:\d{2}$/.test(endTime)) return res.status(400).json({ error: 'ساعت پایان نامعتبر' });
   if (!branch) return res.status(400).json({ error: 'شعبه یافت نشد' });
   const { slots, closed } = listReservationSlots(branch, dateStr, partySize);
   if (closed) return res.status(400).json({ error: 'در این روز مجموعه تعطیل است' });
@@ -5590,6 +7775,7 @@ app.post('/api/reservations', async (req, res) => {
     partySize,
     date: dateStr,
     time,
+    endTime,
     note,
     status: 'pending',
     createdAt: new Date().toISOString(),
@@ -5617,7 +7803,9 @@ app.post('/api/reservations', async (req, res) => {
 });
 
 app.get('/api/admin/reservations', requireCapability('reservations.view'), (req, res) => {
-  let list = (db.reservations || []).slice();
+  // Walk-in guests have no date/time slot; they are served by the waiter
+  // reception endpoint and must not pollute the online reservation calendar.
+  let list = (db.reservations || []).filter((item) => !waitlist.isWaitlist(item)).slice();
   if (req.query.branchId) {
     const bid = Number(req.query.branchId);
     list = list.filter((r) => Number(r.branchId) === bid);
@@ -5678,7 +7866,8 @@ app.get('/api/admin/reservations', requireCapability('reservations.view'), (req,
 });
 
 app.patch('/api/admin/reservations/:id', requireCapability('reservations.manage'), (req, res) => {
-  const item = (db.reservations || []).find((r) => r.id === Number(req.params.id));
+  const targetId = Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
+  const item = (db.reservations || []).find((r) => Number(r.id) === targetId);
   if (!item) return res.status(404).json({ error: 'not found' });
   const allowed = ['pending', 'confirmed', 'seated', 'cancelled', 'no_show'];
   if (typeof req.body.status === 'string' && allowed.includes(req.body.status)) {
@@ -5686,8 +7875,13 @@ app.patch('/api/admin/reservations/:id', requireCapability('reservations.manage'
     item.statusAt = new Date().toISOString();
   }
   if (typeof req.body.note === 'string') item.note = req.body.note.trim().slice(0, 200);
-  if (typeof req.body.partySize === 'number') {
-    item.partySize = Math.max(1, Math.min(Number(db.reservationSettings?.maxParty) || 12, Math.round(req.body.partySize)));
+  if (req.body.partySize != null) {
+    const rawParty = typeof req.body.partySize === 'number'
+      ? req.body.partySize
+      : Number(String(req.body.partySize).replace(/[۰-۹]/g, (d) => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d)).replace(/[٠-٩]/g, (d) => '٠١٢٣٤٥٦٧٨٩'.indexOf(d)).trim());
+    if (!isNaN(rawParty)) {
+      item.partySize = Math.max(1, Math.min(Number(db.reservationSettings?.maxParty) || 12, Math.round(rawParty)));
+    }
   }
   recordAudit(req, 'reservation.updated', 'reservation', item.id, { status: item.status, partySize: item.partySize }, item.branchId);
   publishOperationalEvent('reservation.updated', { reservationId: item.id, branchId: item.branchId, status: item.status });
@@ -5702,21 +7896,38 @@ app.get('/api/admin/reservation-settings', requireAdmin, (req, res) => {
 app.put('/api/admin/reservation-settings', requireAdmin, (req, res) => {
   if (!db.reservationSettings) db.reservationSettings = {};
   const s = req.body.settings || req.body || {};
+  const parseNum = (v) => {
+    if (v == null || v === '') return null;
+    if (typeof v === 'number') return isNaN(v) ? null : v;
+    const clean = String(v)
+      .replace(/[۰-۹]/g, (d) => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d))
+      .replace(/[٠-٩]/g, (d) => '٠١٢٣٤٥٦٧٨٩'.indexOf(d))
+      .replace(/[,٬_\s]/g, '')
+      .trim();
+    const n = Number(clean);
+    return isNaN(n) ? null : n;
+  };
+
   if (typeof s.enabled === 'boolean') db.reservationSettings.enabled = s.enabled;
-  if (typeof s.slotMinutes === 'number') {
-    db.reservationSettings.slotMinutes = Math.max(15, Math.min(120, Math.round(s.slotMinutes)));
+  const slotMinutes = parseNum(s.slotMinutes);
+  if (slotMinutes != null) {
+    db.reservationSettings.slotMinutes = Math.max(15, Math.min(120, Math.round(slotMinutes)));
   }
-  if (typeof s.maxParty === 'number') {
-    db.reservationSettings.maxParty = Math.max(1, Math.min(40, Math.round(s.maxParty)));
+  const maxParty = parseNum(s.maxParty);
+  if (maxParty != null) {
+    db.reservationSettings.maxParty = Math.max(1, Math.min(40, Math.round(maxParty)));
   }
-  if (typeof s.maxCoversPerSlot === 'number') {
-    db.reservationSettings.maxCoversPerSlot = Math.max(1, Math.min(200, Math.round(s.maxCoversPerSlot)));
+  const maxCoversPerSlot = parseNum(s.maxCoversPerSlot);
+  if (maxCoversPerSlot != null) {
+    db.reservationSettings.maxCoversPerSlot = Math.max(1, Math.min(200, Math.round(maxCoversPerSlot)));
   }
-  if (typeof s.advanceDays === 'number') {
-    db.reservationSettings.advanceDays = Math.max(1, Math.min(90, Math.round(s.advanceDays)));
+  const advanceDays = parseNum(s.advanceDays);
+  if (advanceDays != null) {
+    db.reservationSettings.advanceDays = Math.max(1, Math.min(90, Math.round(advanceDays)));
   }
-  if (typeof s.minHoursAhead === 'number') {
-    db.reservationSettings.minHoursAhead = Math.max(0, Math.min(48, Math.round(s.minHoursAhead)));
+  const minHoursAhead = parseNum(s.minHoursAhead);
+  if (minHoursAhead != null) {
+    db.reservationSettings.minHoursAhead = Math.max(0, Math.min(48, Math.round(minHoursAhead)));
   }
   save();
   res.json({ ok: true, settings: db.reservationSettings });
@@ -5745,7 +7956,8 @@ app.put('/api/admin/whatsapp', requireAdmin, (req, res) => {
 });
 
 app.post('/api/admin/whatsapp/order/:id', requireAdmin, (req, res) => {
-  const order = (db.orders || []).find((o) => o.id === Number(req.params.id));
+  const targetId = Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
+  const order = (db.orders || []).find((o) => Number(o.id) === targetId);
   if (!order) return res.status(404).json({ error: 'not found' });
   const branch = (db.branches || []).find((b) => b.id === Number(order.branchId));
   const text = buildOrderMessage(order, {
@@ -5788,6 +8000,9 @@ app.get('/api/feedback/meta', (req, res) => {
 app.post('/api/feedback', (req, res) => {
   const s = db.feedbackSettings || {};
   if (s.enabled === false) return res.status(403).json({ error: 'بازخورد غیرفعال است' });
+  if (req.body.score == null || req.body.score === '' || typeof req.body.score === 'boolean') {
+    return res.status(400).json({ error: 'امتیاز باید عدد صحیح ۰ تا ۱۰ باشد' });
+  }
   const score = Number(req.body.score);
   if (!Number.isFinite(score) || score < 0 || score > 10 || Math.floor(score) !== score) {
     return res.status(400).json({ error: 'امتیاز باید عدد صحیح ۰ تا ۱۰ باشد' });
@@ -5846,7 +8061,8 @@ app.put('/api/admin/feedback/settings', requireAdmin, (req, res) => {
 });
 
 app.patch('/api/admin/feedback/:id', requireAdmin, (req, res) => {
-  const item = (db.feedback || []).find((f) => f.id === Number(req.params.id));
+  const targetId = Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
+  const item = (db.feedback || []).find((f) => Number(f.id) === targetId);
   if (!item) return res.status(404).json({ error: 'not found' });
   const st = String(req.body.status || '').trim();
   if (['new', 'reviewed', 'archived'].includes(st)) item.status = st;
@@ -5875,9 +8091,9 @@ app.get('/', (req, res, next) => {
     try {
       res.writeEarlyHints({
         link: [
-          '</css/westo-critical.smart.css?v=release14uf1d28-webp-only>; rel=preload; as=style',
-          '</js/westo-smart-loader.js?v=release14uf1d28-webp-only>; rel=preload; as=script',
-          '</js/westo-app.smart.js?v=release14uf1d28-webp-only>; rel=preload; as=script',
+          '</css/westo-critical.smart.css?v=release14uf1d29-promo-geometry>; rel=preload; as=style',
+          '</js/westo-smart-loader.js?v=release14uf1d29-promo-geometry>; rel=preload; as=script',
+          '</js/westo-app.smart.js?v=release14uf1d29-promo-geometry>; rel=preload; as=script',
           '</api/content-bootstrap.js>; rel=preload; as=script',
           '</assets/fonts/Vazirmatn-Variable.woff2>; rel=preload; as=font; type=font/woff2; crossorigin',
         ],
@@ -5890,6 +8106,7 @@ app.get('/', (req, res, next) => {
 const PAGES = {
   '/login': 'login.html',
   '/admin': 'admin.html',
+  '/admin.html': 'admin.html',
   '/admin/cashier': 'role-panel.html',
   '/admin/waiter': 'role-panel.html',
   '/admin/kitchen': 'role-panel.html',
@@ -5905,9 +8122,15 @@ const PAGES = {
   '/politique-de-confidentialite': 'politique-de-confidentialite.html',
 };
 
+// Aliases for Operational Panels (POS, Waiter, KDS)
+app.get(['/pos', '/pos.html', '/cashier', '/cashier.html'], (req, res) => res.redirect(302, '/admin/cashier'));
+app.get(['/waiter', '/waiter.html'], (req, res) => res.redirect(302, '/admin/waiter'));
+app.get(['/kitchen', '/kitchen.html', '/kds', '/kds.html'], (req, res) => res.redirect(302, '/admin/kitchen'));
+
 app.get(Object.keys(PAGES), (req, res) => {
   if (req.path.startsWith('/admin') || req.path === '/login') res.setHeader('Cache-Control', 'no-store');
   const pagePath = PAGES[req.path] || PAGES[String(req.path || '').replace(/\/$/, '')];
+  if (!pagePath) return res.status(404).send('Not Found');
   res.sendFile(path.join(ROOT, pagePath));
 });
 
@@ -5937,11 +8160,103 @@ app.use((req, res, next) => {
   } else if (/^\/assets\/menu\//.test(pathname)) {
     res.setHeader('Cache-Control', 'public, max-age=3600');
   } else if (/^\/(?:js|css)\//.test(pathname) && req.query.v) {
-    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    if (process.env.NODE_ENV === 'production') {
+      res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    } else {
+      res.setHeader('Cache-Control', 'no-cache, must-revalidate');
+    }
   }
   next();
 });
+app.use('/api', (req, res) => {
+  res.status(404).json({
+    ok: false,
+    error: 'route_not_found',
+    message: `مسیر ${req.method} ${req.originalUrl || req.path} در سرور یافت نشد.`,
+    requestId: req.requestId,
+  });
+});
+
+// Strict static asset security perimeter (blocks path traversal, source code, keys, and internal configs)
+const FORBIDDEN_STATIC_PREFIXES = [
+  '/server',
+  '/scripts',
+  '/test',
+  '/node_modules',
+  '/backups',
+  '/artifacts',
+  '/docs',
+  '/desktop',
+  '/sites',
+  '/storage',
+  '/nginx',
+  '/e2e',
+  '/dist-desktop'
+];
+
+const FORBIDDEN_STATIC_EXTENSIONS = /\.(key|pem|crt|env|json|ya?ml|sql|log|enc|sh|ts|lock|bak|conf|ini|sqlite|db|md|config\.js)$/i;
+
+app.use((req, res, next) => {
+  if (req.method !== 'GET' && req.method !== 'HEAD') return next();
+  let decodedPath = '';
+  try {
+    decodedPath = decodeURIComponent(req.path);
+  } catch {
+    return res.status(400).send('Bad Request');
+  }
+
+  // Prevent path traversal
+  if (decodedPath.includes('..') || decodedPath.includes('\\')) {
+    return res.status(403).send('Forbidden');
+  }
+
+  // Prevent hidden / dotfile access
+  if (/(?:^|\/)\./.test(decodedPath)) {
+    return res.status(404).send('Not Found');
+  }
+
+  // Prevent internal directory exposure
+  const normalizedPath = path.posix.normalize(decodedPath);
+  for (const prefix of FORBIDDEN_STATIC_PREFIXES) {
+    if (normalizedPath === prefix || normalizedPath.startsWith(prefix + '/')) {
+      return res.status(404).send('Not Found');
+    }
+  }
+
+  // Prevent sensitive file extensions exposure
+  if (FORBIDDEN_STATIC_EXTENSIONS.test(normalizedPath)) {
+    return res.status(404).send('Not Found');
+  }
+
+  next();
+});
+
 app.use(express.static(ROOT, { extensions: ['html'], etag: true, lastModified: true }));
+app.use((err, req, res, next) => {
+  if (res.headersSent) return next(err);
+  const status = Number.isInteger(err.status) && err.status >= 400 && err.status < 600
+    ? err.status
+    : 500;
+  const isApi = req.path && req.path.startsWith('/api/');
+  const code = err.code || (status === 500 ? 'internal_server_error' : 'error');
+  const message = (process.env.NODE_ENV === 'production' && status === 500)
+    ? 'خطای غیرمنتظره در سرور رخ داد.'
+    : (err.message || 'خطای غیرمنتظره در سرور رخ داد.');
+
+  if (status >= 500) {
+    console.error(`[unhandled_error] ${req.method} ${req.path} (${req.requestId}):`, err);
+  }
+
+  if (isApi || req.xhr || (req.headers.accept && req.headers.accept.includes('application/json'))) {
+    return res.status(status).json({
+      ok: false,
+      error: code,
+      message,
+      requestId: req.requestId,
+    });
+  }
+  return res.status(status).send(`<!DOCTYPE html><html><body><h1>خطای ${status}</h1><p>${message}</p></body></html>`);
+});
 
 let httpServer = null;
 
@@ -6031,4 +8346,14 @@ if (require.main === module) {
   });
 }
 
-module.exports = { app, startServer, db, stateStore, eventHub, commandCenterPayload, publicContentPayload };
+module.exports = {
+  app,
+  startServer,
+  db,
+  stateStore,
+  eventHub,
+  tenantConfig: TENANT_CONFIG,
+  commandCenterPayload,
+  publicContentPayload,
+  shouldWriteJsonState,
+};

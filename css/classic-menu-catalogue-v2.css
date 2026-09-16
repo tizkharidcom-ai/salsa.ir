@@ -16,12 +16,65 @@ body.classic-menu {
   background: var(--cm-catalogue-paper);
 }
 
-html[data-theme='light'] body.classic-menu,
-html[data-theme='dark'] body.classic-menu {
+html[data-theme='light'] body.classic-menu {
   color: var(--cm-catalogue-ink);
   background:
     radial-gradient(circle at 50% 0%, rgba(212, 170, 106, 0.16), transparent 28rem),
     var(--cm-catalogue-paper);
+}
+
+html[data-theme='dark'] body.classic-menu {
+  --cm-catalogue-ink: #f6f3ee;
+  --cm-catalogue-muted: #a49f96;
+  --cm-catalogue-paper: #0c0f12;
+  --cm-catalogue-card: #151b20;
+  --cm-catalogue-panel: #1a2228;
+  color: var(--cm-catalogue-ink);
+  background:
+    radial-gradient(circle at 50% 0%, rgba(120, 208, 216, 0.08), transparent 28rem),
+    var(--cm-catalogue-paper);
+}
+
+html[data-theme='dark'] body.classic-menu .cm-header {
+  background: #14191d;
+  box-shadow: 0 0.7rem 2.3rem rgba(0, 0, 0, 0.45);
+}
+
+html[data-theme='dark'] body.classic-menu .cm-header__bar {
+  border-color: rgba(255, 255, 255, 0.14);
+  background: rgba(22, 28, 34, 0.84);
+  box-shadow: 0 0.55rem 1.8rem rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+
+html[data-theme='dark'] body.classic-menu .cm-item {
+  color: #f6f3ee;
+  border-color: rgba(255, 255, 255, 0.08);
+  background: var(--cm-catalogue-card);
+}
+
+html[data-theme='dark'] body.classic-menu .cm-item:hover,
+html[data-theme='dark'] body.classic-menu .cm-item:focus-visible {
+  border-color: rgba(120, 208, 216, 0.35);
+  background: #1c242c;
+  box-shadow: 0 1rem 2.4rem rgba(0, 0, 0, 0.55);
+}
+
+html[data-theme='dark'] body.classic-menu .cm-item__name,
+html[data-theme='dark'] body.classic-menu .cm-section-head h2 {
+  color: #f6f3ee;
+}
+
+html[data-theme='dark'] body.classic-menu .cm-item__summary {
+  color: #a49f96;
+}
+
+html[data-theme='dark'] body.classic-menu .cm-item__price {
+  color: #78d0d8;
+}
+
+html[data-theme='dark'] body.classic-menu .cm-item__price span,
+html[data-theme='dark'] body.classic-menu .cm-item__price small {
+  color: #a49f96;
 }
 
 body.classic-menu .cm-header {

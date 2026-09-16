@@ -3338,8 +3338,10 @@
     callWaiterBtn.addEventListener('click', async () => {
       const msg = $('#order-msg');
       const params = new URLSearchParams(location.search);
-      const tableNo = (($('#order-table') || {}).value || '').trim() || params.get('table') || '';
-      const branchId = Number(params.get('branch') || params.get('branchId') || 0) || undefined;
+      const rawTable = normalizeDigits((($('#order-table') || {}).value || '').trim() || params.get('table') || '');
+      const tableNo = rawTable.trim();
+      const rawBranch = normalizeDigits(params.get('branch') || params.get('branchId') || '').replace(/\D/g, '');
+      const branchId = rawBranch ? Number(rawBranch) : undefined;
       if (!tableNo) {
         if (msg) {
           msg.textContent = tr('cart.needTable');
@@ -3360,6 +3362,7 @@
           msg.textContent = tr('cart.waiterOk');
           msg.className = 'msg ok';
         }
+        window.dispatchEvent(new CustomEvent('westo:waiter-called', { detail: { tableNo, callId: d.call?.id } }));
       } catch (e) {
         if (msg) {
           msg.textContent = e.message || tr('cart.waiterFail');
@@ -3369,6 +3372,7 @@
         callWaiterBtn.disabled = false;
       }
     });
+
   }
 
   // Prefill table from QR link ?table=
@@ -3376,6 +3380,242 @@
   if (tableFromQr && $('#order-table') && !$('#order-table').value) {
     $('#order-table').value = tableFromQr;
   }
+
+  function initFloatingWaiterCall() {
+    const params = new URLSearchParams(location.search);
+    const rawTable = normalizeDigits(params.get('table') || params.get('t') || (($('#order-table') || {}).value || '')).trim();
+    if (rawTable) {
+      try { sessionStorage.setItem('westo_active_table', rawTable); } catch(e) {}
+    }
+    const savedTable = (() => {
+      try { return sessionStorage.getItem('westo_active_table') || ''; } catch(e) { return ''; }
+    })();
+    const tableNo = rawTable || savedTable;
+    if (!tableNo) return; // Only show floating call button when table is known from QR
+
+    const rawBranch = normalizeDigits(params.get('branch') || params.get('branchId') || '').replace(/\D/g, '');
+    const branchId = rawBranch ? Number(rawBranch) : undefined;
+
+    if ($('#westo-call-fab-wrap')) return;
+
+    const fabWrap = document.createElement('div');
+    fabWrap.id = 'westo-call-fab-wrap';
+    fabWrap.className = 'westo-call-fab-wrap';
+    fabWrap.innerHTML = `
+      <button type="button" id="westo-call-fab" class="westo-call-fab" aria-label="فراخوان گارسون" title="فراخوان گارسون برای میز ${tableNo}">
+        <span class="fab-icon">🛎️</span>
+        <span class="fab-text">فراخوان گارسون</span>
+        <span class="fab-table-badge">میز ${tableNo}</span>
+      </button>`;
+    document.body.appendChild(fabWrap);
+
+    const modal = document.createElement('div');
+    modal.id = 'westo-call-modal';
+    modal.className = 'westo-call-modal';
+    modal.hidden = true;
+    modal.innerHTML = `
+      <div class="westo-call-sheet" role="dialog" aria-modal="true" aria-labelledby="westo-call-sheet-title">
+        <div class="westo-call-sheet__head">
+          <div class="sheet-title-group">
+            <span class="sheet-icon">🛎️</span>
+            <div>
+              <h3 id="westo-call-sheet-title">فراخوان گارسون</h3>
+              <p>شماره میز شما: <b>${tableNo}</b></p>
+            </div>
+          </div>
+          <button type="button" class="sheet-close-btn" id="westo-call-sheet-close" aria-label="بستن">✕</button>
+        </div>
+
+        <div class="westo-call-presets" id="westo-call-presets">
+          <button type="button" class="call-preset-btn active" data-note="حضور گارسون در کنار میز">
+            <span class="p-icon">🙋‍♂️</span>
+            <span class="p-title">حضور گارسون</span>
+            <small>درخواست حضور گارسون در کنار میز</small>
+          </button>
+          <button type="button" class="call-preset-btn" data-note="درخواست صورت‌حساب و فاکتور">
+            <span class="p-icon">🧾</span>
+            <span class="p-title">صورت‌حساب / فاکتور</span>
+            <small>تسویه و آوردن دستگاه کارتخوان</small>
+          </button>
+          <button type="button" class="call-preset-btn" data-note="درخواست قاشق و چنگال، دستمال یا لیوان">
+            <span class="p-icon">🍴</span>
+            <span class="p-title">سرویس و ملزومات</span>
+            <small>قاشق، چنگال، دستمال، لیوان، آب</small>
+          </button>
+          <button type="button" class="call-preset-btn" data-note="سفارش مجدد و مشاوره درباره منو">
+            <span class="p-icon">💬</span>
+            <span class="p-title">سفارش مجدد / راهنمایی</span>
+            <small>مشاوره آیتم‌ها یا ثبت سفارش تکمیلی</small>
+          </button>
+        </div>
+
+        <div class="westo-call-note-field">
+          <label for="westo-call-custom-note">توضیح اختیاری برای گارسون</label>
+          <input id="westo-call-custom-note" type="text" placeholder="مثلاً: دو لیوان آب یخ لطفاً…" maxlength="100" />
+        </div>
+
+        <div class="westo-call-actions">
+          <button type="button" class="westo-call-submit-btn" id="westo-call-submit">
+            <span>ارسال فراخوان گارسون</span>
+            <span>🔔</span>
+          </button>
+        </div>
+      </div>`;
+    document.body.appendChild(modal);
+
+    const fab = $('#westo-call-fab');
+    const closeBtn = $('#westo-call-sheet-close');
+    const submitBtn = $('#westo-call-submit');
+    const noteInput = $('#westo-call-custom-note');
+    let selectedNote = 'حضور گارسون در کنار میز';
+    let activeCallId = null;
+    let cooldownTimer = null;
+
+    modal.querySelectorAll('.call-preset-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        modal.querySelectorAll('.call-preset-btn').forEach((b) => b.classList.remove('active'));
+        btn.classList.add('active');
+        selectedNote = btn.dataset.note || 'حضور گارسون در کنار میز';
+      });
+    });
+
+    const openModal = () => {
+      if (fab.classList.contains('is-calling')) return;
+      modal.hidden = false;
+      if (noteInput) noteInput.value = '';
+    };
+
+    const closeModal = () => {
+      modal.hidden = true;
+    };
+
+    fab.addEventListener('click', (e) => {
+      if (e.target.closest('.fab-cancel-btn')) return;
+      openModal();
+    });
+
+    closeBtn.addEventListener('click', closeModal);
+    modal.addEventListener('click', (e) => {
+      if (e.target === modal) closeModal();
+    });
+
+    const setCallingState = (callId, initialRemaining = 60) => {
+      activeCallId = callId;
+      fab.classList.add('is-calling');
+      let remaining = Math.max(1, Math.min(60, initialRemaining));
+      try {
+        sessionStorage.setItem('westo_active_call', JSON.stringify({
+          tableNo,
+          callId,
+          startedAt: Date.now() - (60 - remaining) * 1000
+        }));
+      } catch(e) {}
+
+      const updateFabText = (sec) => {
+        const textEl = fab.querySelector('.fab-text');
+        if (textEl) textEl.textContent = `گارسون در راه است (${sec}ث)`;
+      };
+
+      fab.innerHTML = `
+        <span class="fab-icon">✓</span>
+        <span class="fab-text">گارسون در راه است (${remaining}ث)</span>
+        <button type="button" class="fab-cancel-btn" title="انصراف از درخواست">انصراف</button>
+      `;
+
+      if (cooldownTimer) clearInterval(cooldownTimer);
+      cooldownTimer = setInterval(() => {
+        remaining--;
+        if (remaining > 0) {
+          updateFabText(remaining);
+        } else {
+          clearInterval(cooldownTimer);
+          resetCallingState();
+        }
+      }, 1000);
+
+      const bindCancel = () => {
+        const cancelBtn = fab.querySelector('.fab-cancel-btn');
+        if (cancelBtn) {
+          cancelBtn.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            try {
+              await fetch('/api/call-waiter/cancel', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ tableNo, callId: activeCallId })
+              });
+            } catch(err) {}
+            clearInterval(cooldownTimer);
+            resetCallingState();
+          });
+        }
+      };
+      bindCancel();
+    };
+
+    const resetCallingState = () => {
+      try { sessionStorage.removeItem('westo_active_call'); } catch(e) {}
+      fab.classList.remove('is-calling');
+      activeCallId = null;
+      fab.innerHTML = `
+        <span class="fab-icon">🛎️</span>
+        <span class="fab-text">فراخوان گارسون</span>
+        <span class="fab-table-badge">میز ${tableNo}</span>
+      `;
+    };
+
+    // Restore active cooldown across page navigation or refresh
+    try {
+      const savedCall = JSON.parse(sessionStorage.getItem('westo_active_call') || 'null');
+      if (savedCall && savedCall.startedAt) {
+        const elapsed = Math.floor((Date.now() - savedCall.startedAt) / 1000);
+        if (elapsed < 60) {
+          setCallingState(savedCall.callId, 60 - elapsed);
+        } else {
+          sessionStorage.removeItem('westo_active_call');
+        }
+      }
+    } catch(e) {}
+
+    // Listen to calls initiated from other UI parts (e.g. cart checkout drawer)
+    window.addEventListener('westo:waiter-called', (e) => {
+      if (e.detail?.callId) {
+        setCallingState(e.detail.callId);
+      }
+    });
+
+
+    submitBtn.addEventListener('click', async () => {
+      const customNote = (noteInput?.value || '').trim();
+      const finalNote = customNote ? `${selectedNote}: ${customNote}` : selectedNote;
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'در حال ارسال…';
+
+      try {
+        const res = await fetch('/api/call-waiter', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ tableNo, note: finalNote, branchId })
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || 'خطا در برقراری ارتباط');
+        closeModal();
+        setCallingState(data.call?.id);
+      } catch (err) {
+        alert(err.message || 'ثبت فراخوان با خطا مواجه شد. لطفاً دوباره تلاش کنید.');
+      } finally {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = `<span>ارسال فراخوان گارسون</span> <span>🔔</span>`;
+      }
+    });
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initFloatingWaiterCall);
+  } else {
+    initFloatingWaiterCall();
+  }
+
 
   const phoneInput = $('#order-phone');
   if (phoneInput) {
@@ -3420,7 +3660,8 @@
       submitBtn.textContent = tr('cart.submitting');
       try {
         const params = new URLSearchParams(location.search);
-        const branchId = Number(params.get('branch') || params.get('branchId') || 0) || undefined;
+        const rawBranch = normalizeDigits(params.get('branch') || params.get('branchId') || '').replace(/\D/g, '');
+        const branchId = rawBranch ? Number(rawBranch) : undefined;
         const r = await fetch('/api/orders', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
