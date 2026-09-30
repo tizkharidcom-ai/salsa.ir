@@ -1,0 +1,695 @@
+/* WESTO dish detail card — scoped premium editorial treatment.
+   Geometry remains owned by the existing dish-board/PWA layout. */
+
+html.is-dish-boards #westo-dish-card.is-shared-dish-card {
+  --dish-card-bg-top: rgba(10, 15, 16, 0.97);
+  --dish-card-bg-bottom: rgba(5, 10, 11, 0.99);
+  --dish-card-ink: rgba(248, 245, 237, 0.96);
+  --dish-card-muted: rgba(248, 245, 237, 0.68);
+  --dish-card-line: rgba(255, 255, 255, 0.14);
+  --dish-card-gold: rgba(205, 165, 90, 0.9);
+  direction: rtl !important;
+  color: var(--dish-card-ink) !important;
+  background: linear-gradient(180deg, var(--dish-card-bg-top), var(--dish-card-bg-bottom)) !important;
+  border: 1px solid var(--dish-card-line) !important;
+  border-radius: 28px !important;
+  corner-shape: squircle;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.025) !important;
+  -webkit-backdrop-filter: blur(8px) !important;
+  backdrop-filter: blur(8px) !important;
+  text-align: right !important;
+}
+
+html.is-dish-boards #westo-dish-card.is-shared-dish-card::before {
+  content: "" !important;
+  position: absolute !important;
+  inset: 0 !important;
+  z-index: 0 !important;
+  pointer-events: none !important;
+  border-radius: inherit !important;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.024), transparent 22%) !important;
+  opacity: 1 !important;
+}
+
+html.is-dish-boards #westo-dish-card.is-shared-dish-card::after {
+  content: none !important;
+  display: none !important;
+}
+
+html.is-dish-boards #westo-dish-card .benefits_max-width {
+  position: relative !important;
+  z-index: 1 !important;
+  display: grid !important;
+  grid-template-columns: auto minmax(0, 1fr) !important;
+  grid-template-areas:
+    "price title"
+    "description description"
+    "allergens allergens"
+    "action action" !important;
+  align-content: center !important;
+  align-items: start !important;
+  column-gap: clamp(12px, 2vw, 22px) !important;
+  row-gap: clamp(8px, 1.4vh, 14px) !important;
+  width: 100% !important;
+  height: 100% !important;
+  min-width: 0 !important;
+  direction: ltr !important;
+}
+
+html.is-dish-boards #westo-dish-card .menu-cat-label,
+html.is-dish-boards #westo-dish-card .subhead_icon {
+  display: none !important;
+}
+
+html.is-dish-boards #westo-dish-card .margin-bottom.margin-small:has([data-menu-price]) {
+  grid-area: price !important;
+  display: block !important;
+  margin: 0 !important;
+  min-width: 0 !important;
+  align-self: start !important;
+  justify-self: start !important;
+}
+
+html.is-dish-boards #westo-dish-card .margin-bottom.margin-small:has([data-menu-price]) .subhead_wrapper,
+html.is-dish-boards #westo-dish-card .margin-bottom.margin-small:has([data-menu-price]) .subhead {
+  display: contents !important;
+}
+
+html.is-dish-boards #westo-dish-card .subhead_text:has([data-menu-price]) {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 10px !important;
+  min-width: 0 !important;
+  padding: 11px 14px !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  border-radius: 16px !important;
+  color: rgba(244, 241, 233, 0.92) !important;
+  background: rgba(5, 9, 10, 0.72) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.025) !important;
+  white-space: nowrap !important;
+  direction: rtl !important;
+}
+
+html.is-dish-boards #westo-dish-card .subhead_text [data-menu-price] {
+  display: block !important;
+  min-width: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  color: inherit !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  font-size: clamp(12px, 1.35vw, 15px) !important;
+  font-weight: 650 !important;
+  line-height: 1.2 !important;
+}
+
+html.is-dish-boards #westo-dish-card .dish-price-tag {
+  display: inline-grid !important;
+  place-items: center !important;
+  flex: 0 0 auto !important;
+  width: 20px !important;
+  height: 20px !important;
+  color: var(--dish-card-gold) !important;
+}
+
+html.is-dish-boards #westo-dish-card .dish-price-tag svg {
+  width: 100% !important;
+  height: 100% !important;
+  stroke: currentColor !important;
+  stroke-width: 1.5 !important;
+  stroke-linecap: round !important;
+  stroke-linejoin: round !important;
+}
+
+html.is-dish-boards #westo-dish-card .margin-bottom.margin-xsmall:has([data-menu-name]) {
+  grid-area: title !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: flex-start !important;
+  gap: 12px !important;
+  min-width: 0 !important;
+  margin: 0 !important;
+  direction: rtl !important;
+}
+
+html.is-dish-boards #westo-dish-card [data-menu-name] {
+  flex: 1 1 auto !important;
+  min-width: 0 !important;
+  margin: 0 !important;
+  color: var(--dish-card-ink) !important;
+  font-size: clamp(24px, 4vw, 34px) !important;
+  font-weight: 700 !important;
+  line-height: 1.2 !important;
+  letter-spacing: -0.02em !important;
+  text-align: right !important;
+  text-wrap: balance !important;
+  text-shadow: none !important;
+  -webkit-line-clamp: 2 !important;
+}
+
+html.is-dish-boards #westo-dish-card .dish-favorite-button {
+  appearance: none !important;
+  display: inline-grid !important;
+  place-items: center !important;
+  flex: 0 0 46px !important;
+  width: 46px !important;
+  height: 46px !important;
+  padding: 0 !important;
+  border: 1px solid rgba(255, 255, 255, 0.16) !important;
+  border-radius: 50% !important;
+  color: rgba(248, 245, 237, 0.88) !important;
+  background: rgba(255, 255, 255, 0.015) !important;
+  box-shadow: none !important;
+  cursor: pointer !important;
+  transition: transform 160ms ease, opacity 160ms ease, border-color 160ms ease !important;
+}
+
+html.is-dish-boards #westo-dish-card .dish-favorite-button svg {
+  width: 21px !important;
+  height: 21px !important;
+  fill: transparent !important;
+  stroke: currentColor !important;
+  stroke-width: 1.55 !important;
+  stroke-linecap: round !important;
+  stroke-linejoin: round !important;
+  transition: transform 160ms ease, opacity 160ms ease !important;
+}
+
+html.is-dish-boards #westo-dish-card .dish-favorite-button.is-favorite {
+  color: rgba(226, 190, 121, 0.96) !important;
+  border-color: rgba(205, 165, 90, 0.38) !important;
+}
+
+html.is-dish-boards #westo-dish-card .dish-favorite-button.is-favorite svg {
+  fill: rgba(205, 165, 90, 0.18) !important;
+}
+
+html.is-dish-boards #westo-dish-card .dish-favorite-button:active {
+  transform: scale(0.96) !important;
+}
+
+html.is-dish-boards #westo-dish-card .dish-favorite-button:focus-visible {
+  outline: 2px solid rgba(44, 210, 213, 0.65) !important;
+  outline-offset: 3px !important;
+}
+
+html.is-dish-boards #westo-dish-card [data-menu-desc] {
+  grid-area: description !important;
+  display: -webkit-box !important;
+  width: min(100%, 34rem) !important;
+  min-width: 0 !important;
+  margin: 0 !important;
+  color: var(--dish-card-muted) !important;
+  font-size: clamp(13px, 1.5vw, 16px) !important;
+  font-weight: 400 !important;
+  line-height: 1.75 !important;
+  text-align: right !important;
+  direction: rtl !important;
+  -webkit-box-orient: vertical !important;
+  -webkit-line-clamp: 2 !important;
+  overflow: hidden !important;
+}
+
+html.is-dish-boards #westo-dish-card .menu-allergen-slot {
+  grid-area: allergens !important;
+  min-width: 0 !important;
+  margin: 0 !important;
+  direction: rtl !important;
+}
+
+html.is-dish-boards #westo-dish-card .menu-allergen {
+  display: flex !important;
+  align-items: center !important;
+  flex-wrap: wrap !important;
+  gap: 7px 8px !important;
+  min-width: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  color: rgba(235, 224, 205, 0.8) !important;
+  background: transparent !important;
+  white-space: normal !important;
+  overflow: visible !important;
+  direction: rtl !important;
+}
+
+html.is-dish-boards #westo-dish-card .menu-allergen__head {
+  gap: 5px !important;
+  color: rgba(244, 241, 233, 0.56) !important;
+}
+
+html.is-dish-boards #westo-dish-card .menu-allergen__marker {
+  width: 6px !important;
+  height: 6px !important;
+  background: var(--dish-card-gold) !important;
+  box-shadow: none !important;
+}
+
+html.is-dish-boards #westo-dish-card .menu-allergen__head strong {
+  font-size: 12px !important;
+  font-weight: 600 !important;
+}
+
+html.is-dish-boards #westo-dish-card .menu-allergen__chips {
+  display: flex !important;
+  align-items: center !important;
+  flex-wrap: wrap !important;
+  gap: 6px !important;
+  min-width: 0 !important;
+  direction: rtl !important;
+}
+
+html.is-dish-boards #westo-dish-card .menu-allergen__chip {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 5px !important;
+  min-height: 25px !important;
+  padding: 4px 9px !important;
+  border: 1px solid rgba(202, 164, 92, 0.3) !important;
+  border-radius: 999px !important;
+  color: rgba(235, 224, 205, 0.8) !important;
+  background: transparent !important;
+  font-size: 12px !important;
+  font-weight: 500 !important;
+  line-height: 1.2 !important;
+  white-space: nowrap !important;
+}
+
+html.is-dish-boards #westo-dish-card .menu-allergen__chip svg {
+  width: 15px !important;
+  height: 15px !important;
+  color: var(--dish-card-gold) !important;
+}
+
+html.is-dish-boards #westo-dish-card .max-width-xsmall:has([data-menu-add]) {
+  grid-area: action !important;
+  display: block !important;
+  width: 100% !important;
+  max-width: none !important;
+  min-width: 0 !important;
+  margin: 0 !important;
+}
+
+html.is-dish-boards #westo-dish-card .menu-add-wrap {
+  display: block !important;
+  width: 100% !important;
+  margin: 0 !important;
+}
+
+html.is-dish-boards #westo-dish-card .menu-add-btn.glass-button {
+  appearance: none !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  width: 100% !important;
+  min-height: 64px !important;
+  padding: 0 !important;
+  border: 1px solid rgba(53, 226, 228, 0.72) !important;
+  border-radius: 30px !important;
+  color: #fff !important;
+  background: linear-gradient(90deg, #087d82 0%, #0a8f94 100%) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 8px 24px rgba(0, 160, 165, 0.08) !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+  cursor: pointer !important;
+  overflow: hidden !important;
+  transition: transform 180ms ease, opacity 180ms ease, border-color 180ms ease !important;
+}
+
+html.is-dish-boards #westo-dish-card .menu-add-btn.glass-button::before,
+html.is-dish-boards #westo-dish-card .menu-add-btn.glass-button::after {
+  content: none !important;
+  display: none !important;
+}
+
+html.is-dish-boards #westo-dish-card .menu-add-btn .glass-button-text {
+  position: relative !important;
+  inset: auto !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 14px !important;
+  width: 100% !important;
+  padding: 0 18px !important;
+  color: inherit !important;
+  font-size: clamp(18px, 2vw, 20px) !important;
+  font-weight: 600 !important;
+  line-height: 1.2 !important;
+  text-shadow: none !important;
+}
+
+html.is-dish-boards #westo-dish-card .menu-add-btn .glass-button-icon {
+  width: 21px !important;
+  height: 21px !important;
+  stroke-width: 2 !important;
+}
+
+html.is-dish-boards #westo-dish-card .menu-add-btn:disabled {
+  cursor: not-allowed !important;
+  opacity: 0.48 !important;
+}
+
+html.is-dish-boards #westo-dish-card .menu-add-btn:active:not(:disabled) {
+  transform: scale(0.985) !important;
+}
+
+html.is-dish-boards #westo-dish-card .menu-add-btn:focus-visible {
+  outline: 2px solid rgba(44, 210, 213, 0.65) !important;
+  outline-offset: 3px !important;
+}
+
+html.is-dish-boards #westo-dish-card .glass-button-shadow {
+  display: none !important;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  html.is-dish-boards #westo-dish-card .dish-favorite-button:hover,
+  html.is-dish-boards #westo-dish-card .menu-add-btn:hover:not(:disabled) {
+    transform: translateY(-1px) !important;
+  }
+}
+
+@media (min-width: 992px) {
+  html.is-dish-boards {
+    /* Keep the editorial card compact while giving the title row enough room. */
+    --menu-card-w: clamp(380px, 31vw, 440px);
+    --dish-info-h: clamp(238px, 30dvh, 280px);
+  }
+
+  html.is-dish-boards #westo-dish-card.is-shared-dish-card {
+    padding: 18px 20px 17px !important;
+  }
+
+  html.is-dish-boards #westo-dish-card .benefits_max-width {
+    column-gap: clamp(10px, 1vw, 14px) !important;
+    row-gap: clamp(7px, 1vh, 10px) !important;
+  }
+
+  html.is-dish-boards #westo-dish-card .margin-bottom.margin-xsmall:has([data-menu-name]) {
+    gap: 8px !important;
+  }
+
+  html.is-dish-boards #westo-dish-card [data-menu-name] {
+    font-size: clamp(22px, 1.8vw, 27px) !important;
+    line-height: 1.15 !important;
+    overflow-wrap: normal !important;
+    word-break: normal !important;
+  }
+
+  html.is-dish-boards #westo-dish-card .dish-favorite-button {
+    flex-basis: 44px !important;
+    width: 44px !important;
+    height: 44px !important;
+  }
+
+  html.is-dish-boards #westo-dish-card .subhead_text:has([data-menu-price]) {
+    gap: 7px !important;
+    padding: 9px 11px !important;
+  }
+
+  html.is-dish-boards #westo-dish-card .subhead_text [data-menu-price] {
+    font-size: clamp(11.5px, 1vw, 13px) !important;
+  }
+
+  html.is-dish-boards #westo-dish-card .dish-price-tag {
+    width: 17px !important;
+    height: 17px !important;
+  }
+
+  html.is-dish-boards #westo-dish-card [data-menu-desc] {
+    font-size: clamp(12px, 1vw, 13.5px) !important;
+    line-height: 1.65 !important;
+  }
+
+  html.is-dish-boards #westo-dish-card .menu-allergen {
+    gap: 5px 6px !important;
+  }
+
+  html.is-dish-boards #westo-dish-card .menu-allergen__head strong,
+  html.is-dish-boards #westo-dish-card .menu-allergen__chip {
+    font-size: 11px !important;
+  }
+
+  html.is-dish-boards #westo-dish-card .menu-allergen__chip {
+    min-height: 23px !important;
+    padding: 3px 7px !important;
+  }
+
+  html.is-dish-boards #westo-dish-card .menu-add-btn.glass-button {
+    min-height: 56px !important;
+  }
+
+  html.is-dish-boards #westo-dish-card .menu-add-btn .glass-button-text {
+    font-size: 18px !important;
+  }
+}
+
+/* Tablets keep the same bottom-card composition, but no longer stretch the
+   information surface across the entire display. Phone geometry is untouched. */
+@media (min-width: 768px) and (max-width: 991px) and (min-height: 621px) {
+  html.is-dish-boards {
+    --dish-info-h: clamp(232px, 25dvh, 252px);
+  }
+
+  html.is-dish-boards #westo-dish-card.is-shared-dish-card {
+    left: 50% !important;
+    right: auto !important;
+    width: min(calc(100vw - 28px), 720px) !important;
+    height: var(--dish-info-h) !important;
+    min-height: var(--dish-info-h) !important;
+    max-height: var(--dish-info-h) !important;
+    padding: 16px 18px !important;
+    transform: translateX(-50%) !important;
+  }
+
+  html.is-dish-boards #westo-dish-card .benefits_max-width {
+    column-gap: 14px !important;
+    row-gap: 8px !important;
+  }
+
+  html.is-dish-boards #westo-dish-card .margin-bottom.margin-xsmall:has([data-menu-name]) {
+    gap: 9px !important;
+  }
+
+  html.is-dish-boards #westo-dish-card [data-menu-name] {
+    font-size: clamp(24px, 3vw, 28px) !important;
+    line-height: 1.15 !important;
+    overflow-wrap: normal !important;
+    word-break: normal !important;
+  }
+
+  html.is-dish-boards #westo-dish-card .dish-favorite-button {
+    flex-basis: 46px !important;
+    width: 46px !important;
+    height: 46px !important;
+  }
+
+  html.is-dish-boards #westo-dish-card .subhead_text:has([data-menu-price]) {
+    gap: 8px !important;
+    padding: 10px 12px !important;
+  }
+
+  html.is-dish-boards #westo-dish-card .subhead_text [data-menu-price] {
+    font-size: 12.5px !important;
+  }
+
+  html.is-dish-boards #westo-dish-card .dish-price-tag {
+    width: 18px !important;
+    height: 18px !important;
+  }
+
+  html.is-dish-boards #westo-dish-card [data-menu-desc] {
+    font-size: 13px !important;
+    line-height: 1.65 !important;
+  }
+
+  html.is-dish-boards #westo-dish-card .menu-add-btn.glass-button {
+    min-height: 58px !important;
+  }
+
+  html.is-dish-boards #westo-dish-card .menu-add-btn .glass-button-text {
+    font-size: 18px !important;
+  }
+}
+
+@media (min-width: 768px) and (max-width: 991px) and (max-height: 620px) and (orientation: landscape) {
+  html.is-dish-boards #westo-dish-card [data-menu-name] {
+    font-size: 21px !important;
+    overflow-wrap: normal !important;
+    word-break: normal !important;
+  }
+
+  html.is-dish-boards #westo-dish-card .dish-favorite-button {
+    flex-basis: 42px !important;
+    width: 42px !important;
+    height: 42px !important;
+  }
+
+  html.is-dish-boards #westo-dish-card .subhead_text:has([data-menu-price]) {
+    gap: 6px !important;
+    padding: 8px 10px !important;
+  }
+
+  html.is-dish-boards #westo-dish-card .subhead_text [data-menu-price],
+  html.is-dish-boards #westo-dish-card [data-menu-desc] {
+    font-size: 10.5px !important;
+  }
+
+  html.is-dish-boards #westo-dish-card .menu-add-btn.glass-button {
+    min-height: 48px !important;
+  }
+}
+
+/* Persian glyphs extend below the Latin baseline. On tablet and desktop the
+   exported heading used a tight clipped line box, cutting dots and terminals. */
+@media (min-width: 768px) {
+  html.is-dish-boards #westo-dish-card [data-menu-name] {
+    display: block !important;
+    line-height: 1.3 !important;
+    padding-block: 0.04em 0.14em !important;
+    overflow: visible !important;
+  }
+}
+
+@media (max-width: 430px) {
+  html.is-dish-boards #westo-dish-card.is-shared-dish-card {
+    border-radius: 24px !important;
+    padding: 13px 15px !important;
+  }
+
+  html.is-dish-boards #westo-dish-card .benefits_max-width {
+    column-gap: 8px !important;
+    row-gap: 7px !important;
+  }
+
+  html.is-dish-boards #westo-dish-card .margin-bottom.margin-xsmall:has([data-menu-name]) {
+    gap: 8px !important;
+  }
+
+  html.is-dish-boards #westo-dish-card [data-menu-name] {
+    font-size: clamp(22px, 6vw, 27px) !important;
+  }
+
+  html.is-dish-boards #westo-dish-card .dish-favorite-button {
+    flex-basis: 44px !important;
+    width: 44px !important;
+    height: 44px !important;
+  }
+
+  html.is-dish-boards #westo-dish-card .subhead_text:has([data-menu-price]) {
+    gap: 7px !important;
+    padding: 10px 11px !important;
+  }
+
+  html.is-dish-boards #westo-dish-card .subhead_text [data-menu-price] {
+    font-size: 11px !important;
+  }
+
+  html.is-dish-boards #westo-dish-card .dish-price-tag {
+    width: 18px !important;
+    height: 18px !important;
+  }
+
+  html.is-dish-boards #westo-dish-card [data-menu-desc] {
+    font-size: 12px !important;
+    line-height: 1.6 !important;
+  }
+
+  html.is-dish-boards #westo-dish-card .menu-allergen {
+    gap: 5px 6px !important;
+  }
+
+  html.is-dish-boards #westo-dish-card .menu-allergen__head strong,
+  html.is-dish-boards #westo-dish-card .menu-allergen__chip {
+    font-size: 11px !important;
+  }
+
+  html.is-dish-boards #westo-dish-card .menu-allergen__chip {
+    min-height: 23px !important;
+    padding: 3px 7px !important;
+  }
+
+  html.is-dish-boards #westo-dish-card .menu-add-btn.glass-button {
+    min-height: 64px !important;
+  }
+
+  html.is-dish-boards #westo-dish-card .menu-add-btn .glass-button-text {
+    font-size: 18px !important;
+  }
+}
+
+@media (max-width: 360px) {
+  html.is-dish-boards #westo-dish-card.is-shared-dish-card {
+    padding-inline: 12px !important;
+  }
+
+  html.is-dish-boards #westo-dish-card [data-menu-name] {
+    font-size: 21px !important;
+  }
+
+  html.is-dish-boards #westo-dish-card .dish-favorite-button {
+    flex-basis: 42px !important;
+    width: 42px !important;
+    height: 42px !important;
+  }
+
+  html.is-dish-boards #westo-dish-card .subhead_text:has([data-menu-price]) {
+    padding-inline: 9px !important;
+  }
+
+  html.is-dish-boards #westo-dish-card .dish-price-tag {
+    display: none !important;
+  }
+
+  html.is-dish-boards #westo-dish-card .menu-allergen__chip {
+    font-size: 10.5px !important;
+  }
+}
+
+html[data-theme='light'].is-dish-boards #westo-dish-card.is-shared-dish-card {
+  --dish-card-bg-top: rgba(248, 246, 240, 0.98);
+  --dish-card-bg-bottom: rgba(238, 238, 232, 0.99);
+  --dish-card-ink: rgba(20, 27, 28, 0.94);
+  --dish-card-muted: rgba(20, 27, 28, 0.68);
+  --dish-card-line: rgba(15, 25, 27, 0.15);
+  box-shadow: 0 20px 58px rgba(36, 48, 42, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.72) !important;
+}
+
+html[data-theme='light'].is-dish-boards #westo-dish-card .subhead_text:has([data-menu-price]) {
+  color: #141b1c !important;
+  border-color: rgba(15, 25, 27, 0.18) !important;
+  background: rgba(255, 255, 255, 0.85) !important;
+  box-shadow: 0 2px 8px rgba(15, 25, 27, 0.06) !important;
+}
+
+html[data-theme='light'].is-dish-boards #westo-dish-card .dish-favorite-button {
+  color: rgba(20, 27, 28, 0.82) !important;
+  border-color: rgba(15, 25, 27, 0.16) !important;
+  background: rgba(255, 255, 255, 0.32) !important;
+}
+
+html[data-theme='light'].is-dish-boards #westo-dish-card .menu-allergen,
+html[data-theme='light'].is-dish-boards #westo-dish-card .menu-allergen__head {
+  color: #374151 !important;
+}
+html[data-theme='light'].is-dish-boards #westo-dish-card .menu-allergen__head strong {
+  color: #1a2327 !important;
+}
+html[data-theme='light'].is-dish-boards #westo-dish-card .menu-allergen__chip {
+  color: #1a2327 !important;
+  border-color: rgba(26, 35, 39, 0.22) !important;
+  background: rgba(255, 255, 255, 0.85) !important;
+}
+html[data-theme='light'].is-dish-boards #westo-dish-card .menu-allergen__chip svg {
+  color: #0c555c !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html.is-dish-boards #westo-dish-card .dish-favorite-button,
+  html.is-dish-boards #westo-dish-card .dish-favorite-button svg,
+  html.is-dish-boards #westo-dish-card .menu-add-btn.glass-button {
+    transition: none !important;
+  }
+}

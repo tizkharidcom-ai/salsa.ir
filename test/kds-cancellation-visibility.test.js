@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
+const fs = require('./helpers/source-fs');
 const path = require('node:path');
 const { paymentStatusFor } = require('../server/command-center');
 const { isKitchenOrderPaymentEligible } = require('../server/waiter-order-invariants');

@@ -4,6 +4,7 @@
 const fs = require('fs');
 const path = require('path');
 const { CANONICAL_FEATURES } = require('./canonical-features');
+const { defaultVersions, validateSelections } = require('../../modules/runtime');
 
 const TENANTS_DIR = path.resolve(__dirname, '../data/tenants');
 const DEFAULT_JSON_DB_PATH = path.resolve(__dirname, '../data/db.json');
@@ -67,6 +68,7 @@ function createBlankTenantDb(tenantId, options = {}) {
       storageMode: 'database-per-tenant',
       plan: options.plan || null,
       templateCode: options.templateCode || 'tpl-blank-cafe-v1',
+      moduleVersions: { ...defaultVersions(), ...validateSelections(options.moduleVersions || {}) },
       createdAt: new Date().toISOString(),
     },
     settings: {
@@ -90,6 +92,20 @@ function createBlankTenantDb(tenantId, options = {}) {
     menuCategories: [],
     menuItems: [], // 0 menu items (100% clean/raw commercial state)
     products: [],
+    content: {},
+    faq: [],
+    hours: {},
+    promotions: [],
+    promoSlides: [],
+    menuComplements: [],
+    menuComplementRules: [],
+    reservations: [],
+    waiterCalls: [],
+    deliveryZones: [],
+    auditLog: [],
+    cashSessions: [],
+    staffShifts: [],
+    paymentAttempts: [],
     orders: [], // 0 orders
     users: hasOwnerPhone ? [
       {
@@ -103,6 +119,7 @@ function createBlankTenantDb(tenantId, options = {}) {
       },
     ] : [],
     accounting: {
+      settings: { autoPostOrders: true },
       chartOfAccounts: [
         { code: '1110', nameFa: 'صندوق نقد', type: 'asset', normalBalance: 'debit' },
         { code: '1310', nameFa: 'حساب‌های بانکی و درگاه آنلاین', type: 'asset', normalBalance: 'debit' },
@@ -121,6 +138,7 @@ function createBlankTenantDb(tenantId, options = {}) {
       vendors: [],
     },
     financeV2: {
+      rollout: { captureEnabled: true, enabledBranchIds: [], cutoverBranchIds: [] },
       journalEntries: [],
       events: [],
       recipeVersions: [],

@@ -26,7 +26,8 @@ function copy(relative) {
   const to = path.join(STATIC, relative);
   if (!fs.existsSync(from)) throw new Error(`Missing public asset: ${relative}`);
   fs.mkdirSync(path.dirname(to), { recursive: true });
-  fs.cpSync(from, to, { recursive: true });
+  fs.cpSync(from, to, { recursive: true, dereference: true,
+    filter: source => !path.basename(source).startsWith('.') });
 }
 
 execFileSync(process.execPath, [path.join(ROOT, 'scripts', 'build-static-content-bootstrap.js')], {

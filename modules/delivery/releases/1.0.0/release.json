@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "moduleKey": "delivery",
+  "version": "1.0.0",
+  "labelFa": "نسخهٔ فعلی وستو",
+  "runtimeApiVersion": "westo-v1",
+  "publishedAt": "2026-09-30T12:34:40.495Z",
+  "changesFa": [
+    "همان رابط و رفتار موجود؛ بدون بازطراحی"
+  ],
+  "digest": "c3d710905ce0ecb5019e8b6949424841fa27fcd85c55cd593260fa7f69c0782b",
+  "assets": [
+    {
+      "legacyPath": "js/admin/features/delivery-views.js",
+      "sha256": "8965fc8d813d1718a169a218c6c1c9297efafa07fc27ded79d2e3b251aadd9b3"
+    }
+  ]
+}

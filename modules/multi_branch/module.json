@@ -1,0 +1,79 @@
+{
+  "schemaVersion": 1,
+  "key": "multi_branch",
+  "nameFa": "مدیریت چندشعبه‌ای",
+  "version": "1.0.0",
+  "runtime": "node-commonjs-express",
+  "runtimeApiVersion": "westo-v1",
+  "dependencies": [
+    "accounting"
+  ],
+  "technicalFeatures": [
+    "core.multi_branch",
+    "finance.consolidation"
+  ],
+  "sharedComposition": [
+    "server/server.js",
+    "js/admin.js",
+    "role-panel.html"
+  ],
+  "dataCapture": "always-on-operational-core",
+  "access": "tenant-entitlement-and-user-capability",
+  "files": [
+    {
+      "path": "server/finance/consolidation-engine.js",
+      "legacyPath": "server/finance/consolidation-engine.js",
+      "layer": "server"
+    },
+    {
+      "path": "frontend/admin-views.js",
+      "legacyPath": "js/admin/features/multi_branch-views.js",
+      "layer": "frontend"
+    }
+  ],
+  "httpRoutes": [
+    {
+      "id": "get-132",
+      "method": "GET",
+      "paths": [
+        "/api/branches"
+      ],
+      "path": "server/routes/get-132.js"
+    },
+    {
+      "id": "get-133",
+      "method": "GET",
+      "paths": [
+        "/api/admin/branches"
+      ],
+      "path": "server/routes/get-133.js"
+    },
+    {
+      "id": "post-134",
+      "method": "POST",
+      "paths": [
+        "/api/admin/branches"
+      ],
+      "path": "server/routes/post-134.js"
+    },
+    {
+      "id": "put-135",
+      "method": "PUT",
+      "paths": [
+        "/api/admin/branches/:id"
+      ],
+      "path": "server/routes/put-135.js"
+    },
+    {
+      "id": "delete-136",
+      "method": "DELETE",
+      "paths": [
+        "/api/admin/branches/:id"
+      ],
+      "path": "server/routes/delete-136.js"
+    }
+  ],
+  "adminViews": [
+    "branches"
+  ]
+}

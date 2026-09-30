@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
+const fs = require('./helpers/source-fs');
 const path = require('node:path');
 const { registerAdminV2Routes, __test } = require('../server/admin-v2');
 

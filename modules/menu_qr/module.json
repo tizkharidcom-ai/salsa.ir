@@ -1,0 +1,555 @@
+{
+  "schemaVersion": 1,
+  "key": "menu_qr",
+  "nameFa": "منوی دیجیتال و سفارش آنلاین",
+  "version": "1.0.0",
+  "runtime": "node-commonjs-express",
+  "runtimeApiVersion": "westo-v1",
+  "dependencies": [
+    "platform_core"
+  ],
+  "technicalFeatures": [
+    "catalog.menu",
+    "catalog.modifiers",
+    "catalog.pricing",
+    "catalog.languages",
+    "catalog.print",
+    "orders.online",
+    "floor.qr"
+  ],
+  "sharedComposition": [
+    "server/server.js",
+    "js/admin.js",
+    "role-panel.html"
+  ],
+  "dataCapture": "always-on-operational-core",
+  "access": "tenant-entitlement-and-user-capability",
+  "files": [
+    {
+      "path": "frontend/css/checkout.css",
+      "legacyPath": "css/checkout.css",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/css/classic-menu-catalogue-v2.css",
+      "legacyPath": "css/classic-menu-catalogue-v2.css",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/css/classic-menu.css",
+      "legacyPath": "css/classic-menu.css",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/css/entrance-gate-redesign.css",
+      "legacyPath": "css/entrance-gate-redesign.css",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/css/entrance-gate.css",
+      "legacyPath": "css/entrance-gate.css",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/css/entrance-promo-deck.css",
+      "legacyPath": "css/entrance-promo-deck.css",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/css/menu-promo-deck.css",
+      "legacyPath": "css/menu-promo-deck.css",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/css/menu-story.css",
+      "legacyPath": "css/menu-story.css",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/css/promo-slider.css",
+      "legacyPath": "css/promo-slider.css",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/css/westo-critical.smart.css",
+      "legacyPath": "css/westo-critical.smart.css",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/css/westo-dish-card-premium.css",
+      "legacyPath": "css/westo-dish-card-premium.css",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/css/westo-glass.css",
+      "legacyPath": "css/westo-glass.css",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/css/westo-landscape-recovery.css",
+      "legacyPath": "css/westo-landscape-recovery.css",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/css/westo-production-v11.css",
+      "legacyPath": "css/westo-production-v11.css",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/css/westo-production-v12.css",
+      "legacyPath": "css/westo-production-v12.css",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/css/westo-pwa.css",
+      "legacyPath": "css/westo-pwa.css",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/css/westo-ultra-fine-v1.2.css",
+      "legacyPath": "css/westo-ultra-fine-v1.2.css",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/css/westo-v14.1-experience-polish.css",
+      "legacyPath": "css/westo-v14.1-experience-polish.css",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/css/westo-v14.3-ultra-fine.css",
+      "legacyPath": "css/westo-v14.3-ultra-fine.css",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/css/westo.webflow.shared.min.css",
+      "legacyPath": "css/westo.webflow.shared.min.css",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/index.html",
+      "legacyPath": "index.html",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/js/admin/modules/catalog/menu-module.js",
+      "legacyPath": "js/admin/modules/catalog/menu-module.js",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/js/category-neon-indicator.js",
+      "legacyPath": "js/category-neon-indicator.js",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/js/category-theme.js",
+      "legacyPath": "js/category-theme.js",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/js/checkout.js",
+      "legacyPath": "js/checkout.js",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/js/classic-menu.js",
+      "legacyPath": "js/classic-menu.js",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/js/content-overrides.js",
+      "legacyPath": "js/content-overrides.js",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/js/entrance-promo-deck.js",
+      "legacyPath": "js/entrance-promo-deck.js",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/js/language-switch-rescue.js",
+      "legacyPath": "js/language-switch-rescue.js",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/js/menu-promo-deck.js",
+      "legacyPath": "js/menu-promo-deck.js",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/js/menu-store.js",
+      "legacyPath": "js/menu-store.js",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/js/promo-slider.js",
+      "legacyPath": "js/promo-slider.js",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/js/subcategory-kill-switch.js",
+      "legacyPath": "js/subcategory-kill-switch.js",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/js/table-cart.js",
+      "legacyPath": "js/table-cart.js",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/js/three-scene.js",
+      "legacyPath": "js/three-scene.js",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/js/vendor/three/westo-postprocessing.bundle.mjs",
+      "legacyPath": "js/vendor/three/westo-postprocessing.bundle.mjs",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/js/vendor/westo-liquid-shader.bundle.mjs",
+      "legacyPath": "js/vendor/westo-liquid-shader.bundle.mjs",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/js/westo-app.smart.js",
+      "legacyPath": "js/westo-app.smart.js",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/js/westo-background.smart.js",
+      "legacyPath": "js/westo-background.smart.js",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/js/westo-entrance.js",
+      "legacyPath": "js/westo-entrance.js",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/js/westo-foundation.smart.js",
+      "legacyPath": "js/westo-foundation.smart.js",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/js/westo-hero.smart.js",
+      "legacyPath": "js/westo-hero.smart.js",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/js/westo-liquid-rail.js",
+      "legacyPath": "js/westo-liquid-rail.js",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/js/westo-menu.smart.js",
+      "legacyPath": "js/westo-menu.smart.js",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/js/westo-motion.smart.js",
+      "legacyPath": "js/westo-motion.smart.js",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/js/westo-production-v11.js",
+      "legacyPath": "js/westo-production-v11.js",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/js/westo-production-v12.js",
+      "legacyPath": "js/westo-production-v12.js",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/js/westo-smart-loader.js",
+      "legacyPath": "js/westo-smart-loader.js",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/js/westo-v14.3-ultra-fine.js",
+      "legacyPath": "js/westo-v14.3-ultra-fine.js",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/menu-print.html",
+      "legacyPath": "menu-print.html",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/menu.html",
+      "legacyPath": "menu.html",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/order.html",
+      "legacyPath": "order.html",
+      "layer": "frontend"
+    },
+    {
+      "path": "server/checkout-quote.js",
+      "legacyPath": "server/checkout-quote.js",
+      "layer": "server"
+    },
+    {
+      "path": "server/customer-order-progress.js",
+      "legacyPath": "server/customer-order-progress.js",
+      "layer": "server"
+    },
+    {
+      "path": "server/menu-availability.js",
+      "legacyPath": "server/menu-availability.js",
+      "layer": "server"
+    },
+    {
+      "path": "server/menu-branch-scope.js",
+      "legacyPath": "server/menu-branch-scope.js",
+      "layer": "server"
+    },
+    {
+      "path": "server/menu-modifiers.js",
+      "legacyPath": "server/menu-modifiers.js",
+      "layer": "server"
+    },
+    {
+      "path": "server/public-checkout-order.js",
+      "legacyPath": "server/public-checkout-order.js",
+      "layer": "server"
+    },
+    {
+      "path": "server/translate.js",
+      "legacyPath": "server/translate.js",
+      "layer": "server"
+    },
+    {
+      "path": "frontend/admin-views.js",
+      "legacyPath": "js/admin/features/menu_qr-views.js",
+      "layer": "frontend"
+    }
+  ],
+  "httpRoutes": [
+    {
+      "id": "get-033",
+      "method": "GET",
+      "paths": [
+        "/api/content-bootstrap.js"
+      ],
+      "path": "server/routes/get-033.js"
+    },
+    {
+      "id": "get-034",
+      "method": "GET",
+      "paths": [
+        "/js/content-bootstrap.static.js"
+      ],
+      "path": "server/routes/get-034.js"
+    },
+    {
+      "id": "put-037",
+      "method": "PUT",
+      "paths": [
+        "/api/products/:id"
+      ],
+      "path": "server/routes/put-037.js"
+    },
+    {
+      "id": "get-038",
+      "method": "GET",
+      "paths": [
+        "/api/menu"
+      ],
+      "path": "server/routes/get-038.js"
+    },
+    {
+      "id": "get-040",
+      "method": "GET",
+      "paths": [
+        "/api/admin/menu-engineering"
+      ],
+      "path": "server/routes/get-040.js"
+    },
+    {
+      "id": "post-041",
+      "method": "POST",
+      "paths": [
+        "/api/admin/menu-complements"
+      ],
+      "path": "server/routes/post-041.js"
+    },
+    {
+      "id": "put-042",
+      "method": "PUT",
+      "paths": [
+        "/api/admin/menu-complements/:id"
+      ],
+      "path": "server/routes/put-042.js"
+    },
+    {
+      "id": "delete-043",
+      "method": "DELETE",
+      "paths": [
+        "/api/admin/menu-complements/:id"
+      ],
+      "path": "server/routes/delete-043.js"
+    },
+    {
+      "id": "post-044",
+      "method": "POST",
+      "paths": [
+        "/api/admin/menu-complement-rules"
+      ],
+      "path": "server/routes/post-044.js"
+    },
+    {
+      "id": "put-045",
+      "method": "PUT",
+      "paths": [
+        "/api/admin/menu-complement-rules/:id"
+      ],
+      "path": "server/routes/put-045.js"
+    },
+    {
+      "id": "delete-046",
+      "method": "DELETE",
+      "paths": [
+        "/api/admin/menu-complement-rules/:id"
+      ],
+      "path": "server/routes/delete-046.js"
+    },
+    {
+      "id": "post-053",
+      "method": "POST",
+      "paths": [
+        "/api/menu/categories"
+      ],
+      "path": "server/routes/post-053.js"
+    },
+    {
+      "id": "put-054",
+      "method": "PUT",
+      "paths": [
+        "/api/menu/categories/order"
+      ],
+      "path": "server/routes/put-054.js"
+    },
+    {
+      "id": "put-055",
+      "method": "PUT",
+      "paths": [
+        "/api/menu/categories/:id"
+      ],
+      "path": "server/routes/put-055.js"
+    },
+    {
+      "id": "delete-056",
+      "method": "DELETE",
+      "paths": [
+        "/api/menu/categories/:id"
+      ],
+      "path": "server/routes/delete-056.js"
+    },
+    {
+      "id": "put-057",
+      "method": "PUT",
+      "paths": [
+        "/api/menu/:id"
+      ],
+      "path": "server/routes/put-057.js"
+    },
+    {
+      "id": "patch-058",
+      "method": "PATCH",
+      "paths": [
+        "/api/menu/:id"
+      ],
+      "path": "server/routes/patch-058.js"
+    },
+    {
+      "id": "post-059",
+      "method": "POST",
+      "paths": [
+        "/api/admin/menu/bulk-adjust-prices"
+      ],
+      "path": "server/routes/post-059.js"
+    },
+    {
+      "id": "post-060",
+      "method": "POST",
+      "paths": [
+        "/api/admin/menu/bulk-undo-prices"
+      ],
+      "path": "server/routes/post-060.js"
+    },
+    {
+      "id": "post-061",
+      "method": "POST",
+      "paths": [
+        "/api/menu"
+      ],
+      "path": "server/routes/post-061.js"
+    },
+    {
+      "id": "delete-062",
+      "method": "DELETE",
+      "paths": [
+        "/api/menu/:id"
+      ],
+      "path": "server/routes/delete-062.js"
+    },
+    {
+      "id": "post-064",
+      "method": "POST",
+      "paths": [
+        "/api/checkout/quote"
+      ],
+      "path": "server/routes/post-064.js"
+    },
+    {
+      "id": "post-065",
+      "method": "POST",
+      "paths": [
+        "/api/checkout/orders"
+      ],
+      "path": "server/routes/post-065.js"
+    },
+    {
+      "id": "post-066",
+      "method": "POST",
+      "paths": [
+        "/api/checkout/recovery"
+      ],
+      "path": "server/routes/post-066.js"
+    },
+    {
+      "id": "post-067",
+      "method": "POST",
+      "paths": [
+        "/api/checkout/payments/:id/sandbox-confirm"
+      ],
+      "path": "server/routes/post-067.js"
+    },
+    {
+      "id": "get-131",
+      "method": "GET",
+      "paths": [
+        "/api/admin/qr-code"
+      ],
+      "path": "server/routes/get-131.js"
+    },
+    {
+      "id": "get-168",
+      "method": "GET",
+      "paths": [
+        "/api/loyalty/qr-code"
+      ],
+      "path": "server/routes/get-168.js"
+    }
+  ],
+  "adminViews": [
+    "printmenu",
+    "complements",
+    "prices",
+    "products",
+    "menu",
+    "translate"
+  ]
+}

@@ -1,0 +1,196 @@
+/* WESTO Menu Promo Deck v13.9
+   Layout-recovery pass.
+   The promo deck belongs to the category-index composition, but it must never
+   float independently over the WebGL subject. It is therefore anchored to the
+   category section (not the viewport), given an explicit vertical budget, and
+   sized to leave a real breathing gap before the selected-category plate. */
+
+:root {
+  --menu-promo-gap-after-nav: 18px;
+  --menu-promo-w: min(720px, 80vw);
+  --menu-promo-h: clamp(168px, 19vh, 214px);
+  --menu-promo-stack-lift: 14px;
+  --menu-promo-radius: 26px;
+  --menu-promo-subject-gap: 28px;
+}
+
+#westo-menu-promo-deck.westo-menu-promo-deck {
+  position: absolute;
+  z-index: 18;
+  top: calc(var(--v12-nav-h,84px) + var(--menu-promo-gap-after-nav));
+  left: 50%;
+  transform: translateX(-50%);
+  width: var(--menu-promo-w);
+  margin: 0;
+  direction: rtl;
+  isolation: isolate;
+  pointer-events: auto;
+  contain: layout style;
+  --menu-deck-h: var(--menu-promo-h);
+  --menu-deck-radius: var(--menu-promo-radius);
+}
+html.is-dish-boards #westo-menu-promo-deck { display:none !important; }
+html:not(.is-dish-boards) #westo-menu-promo-deck { display:block; }
+
+#westo-menu-promo-deck .westo-menu-promo-deck__deck {
+  position: relative;
+  height: calc(var(--menu-deck-h) + var(--menu-promo-stack-lift));
+  padding-top: var(--menu-promo-stack-lift);
+  perspective: 1400px;
+  touch-action: none;
+  cursor: grab;
+  outline: none;
+}
+#westo-menu-promo-deck .westo-menu-promo-deck__deck.is-dragging { cursor:grabbing; }
+#westo-menu-promo-deck .westo-menu-promo-deck__deck:focus-visible::after {
+  content:'';
+  position:absolute;
+  inset:7px -5px -5px;
+  border:2px solid color-mix(in srgb,var(--prod-cyan,#31dbe0) 70%,white);
+  border-radius:calc(var(--menu-deck-radius) + 7px);
+  pointer-events:none;
+  z-index:50;
+}
+
+#westo-menu-promo-deck .westo-menu-promo-deck__card {
+  position:absolute;
+  inset:var(--menu-promo-stack-lift) 0 0;
+  height:var(--menu-deck-h);
+  overflow:hidden;
+  border-radius:var(--menu-deck-radius);
+  border:1px solid rgba(255,255,255,.15);
+  background:rgba(5,13,15,.98);
+  box-shadow:0 18px 44px rgba(0,0,0,.22),inset 0 1px 0 rgba(255,255,255,.08);
+  transform-origin:50% 50%;
+  backface-visibility:hidden;
+  transition:transform .46s cubic-bezier(.18,.82,.18,1),opacity .32s ease;
+  will-change:auto;
+}
+#westo-menu-promo-deck .westo-menu-promo-deck__deck.is-dragging .westo-menu-promo-deck__card { will-change:transform,opacity; }
+#westo-menu-promo-deck .westo-menu-promo-deck__card[data-layer='0'] { z-index:30;transform:translate3d(0,0,0) rotate(0deg) scale(1);opacity:1; }
+#westo-menu-promo-deck .westo-menu-promo-deck__card[data-layer='1'] { z-index:20;transform:translate3d(4px,-7px,-62px) rotate(-1.45deg) scale(.976);opacity:.92; }
+#westo-menu-promo-deck .westo-menu-promo-deck__card[data-layer='2'] { z-index:10;transform:translate3d(8px,-13px,-116px) rotate(-2.6deg) scale(.954);opacity:.76; }
+#westo-menu-promo-deck .westo-menu-promo-deck__card[data-layer='hidden'] { z-index:1;transform:translate3d(12px,-17px,-172px) rotate(-3.25deg) scale(.932);opacity:0;pointer-events:none!important; }
+#westo-menu-promo-deck .westo-menu-promo-deck__card[data-layer='1']::before,
+#westo-menu-promo-deck .westo-menu-promo-deck__card[data-layer='2']::before,
+#westo-menu-promo-deck .westo-menu-promo-deck__card[data-layer='hidden']::before {
+  content:'';
+  position:absolute;
+  inset:0;
+  z-index:2;
+  pointer-events:none;
+  background:rgba(0,0,0,.10);
+}
+#westo-menu-promo-deck .westo-menu-promo-deck__card[data-layer='2']::before { background:rgba(0,0,0,.20); }
+#westo-menu-promo-deck .westo-menu-promo-deck__card[data-layer='hidden']::before { background:rgba(0,0,0,.28); }
+
+#westo-menu-promo-deck .westo-menu-promo-deck__media {
+  width:100%;height:100%;display:block;object-fit:cover;object-position:center;
+  user-select:none;-webkit-user-drag:none;pointer-events:none;
+}
+#westo-menu-promo-deck .westo-menu-promo-deck__fallback {
+  position:absolute;inset:0;display:grid;place-items:center;padding:24px;text-align:center;
+  font-weight:800;font-size:clamp(18px,2vw,26px);color:rgba(255,255,255,.9);
+  background:radial-gradient(circle at 20% 20%,rgba(42,210,214,.22),transparent 38%),linear-gradient(145deg,#102326,#081315 72%);
+}
+#westo-menu-promo-deck .westo-menu-promo-deck__card::after {
+  content:'';position:absolute;inset:0;z-index:3;pointer-events:none;
+  background:linear-gradient(180deg,rgba(255,255,255,.022),transparent 52%,rgba(0,0,0,.07));
+}
+
+#westo-menu-promo-deck .westo-menu-promo-deck__share {
+  position:absolute;inset-block-start:12px;inset-inline-end:12px;z-index:5;
+  width:44px;height:44px;min-width:44px;min-height:44px;
+  border:1px solid rgba(255,255,255,.24);border-radius:50%;display:grid;place-items:center;
+  color:#fff;cursor:pointer;background:rgba(7,14,16,.76);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.15),0 6px 16px rgba(0,0,0,.15);
+  -webkit-backdrop-filter:none;backdrop-filter:none;
+}
+#westo-menu-promo-deck .westo-menu-promo-deck__share svg { width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.8; }
+
+/* Pagination keeps its tiny visual language, but every dot owns a real touch
+   target. This avoids 7px tap targets without making the UI visually heavier. */
+#westo-menu-promo-deck .westo-menu-promo-deck__pagination {
+  min-height:32px;
+  margin-top:2px;
+  display:flex;align-items:center;justify-content:center;gap:0;direction:ltr;
+}
+#westo-menu-promo-deck .westo-menu-promo-deck__dot {
+  position:relative;
+  width:32px;height:32px;min-width:32px;min-height:32px;padding:0;border:0;border-radius:99px;
+  background:transparent;cursor:pointer;
+}
+#westo-menu-promo-deck .westo-menu-promo-deck__dot::before {
+  content:'';position:absolute;left:50%;top:50%;translate:-50% -50%;
+  width:7px;height:7px;border-radius:99px;background:rgba(255,255,255,.26);
+  transition:width .2s cubic-bezier(.18,.82,.18,1),background .2s ease;
+}
+#westo-menu-promo-deck .westo-menu-promo-deck__dot[aria-selected='true']::before { width:26px;background:var(--prod-cyan,#31dbe0); }
+
+#westo-menu-promo-deck .westo-menu-promo-deck__hint {
+  position:absolute;inset:auto 50% 25px auto;translate:50% 0;z-index:45;
+  padding:5px 9px;border-radius:999px;font-size:9px;line-height:1;white-space:nowrap;
+  color:rgba(255,255,255,.76);background:rgba(4,11,13,.58);border:1px solid rgba(255,255,255,.10);
+  pointer-events:none;opacity:0;transition:opacity .2s ease;
+}
+@media (hover:hover) and (pointer:fine) {
+  #westo-menu-promo-deck .westo-menu-promo-deck__deck:not(.has-interacted):hover .westo-menu-promo-deck__hint { opacity:1; }
+}
+
+html[data-theme='light'] #westo-menu-promo-deck .westo-menu-promo-deck__card {
+  border-color:rgba(50,76,72,.16);
+  box-shadow:0 16px 38px rgba(49,66,62,.12),inset 0 1px 0 rgba(255,255,255,.72);
+}
+html[data-theme='light'] #westo-menu-promo-deck .westo-menu-promo-deck__dot::before { background:rgba(31,52,49,.22); }
+html[data-theme='light'] #westo-menu-promo-deck .westo-menu-promo-deck__share {
+  color:#142321;border-color:rgba(52,76,72,.15);background:rgba(249,251,248,.94);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.92),0 6px 16px rgba(47,67,62,.10);
+}
+
+/* Category-index rhythm: the slider owns the upper content band. WebGL keeps
+   the selected-category plate below it. On touch devices arrows are redundant
+   with swipe + category dock and were visible as stray edge fragments. */
+html:not(.is-dish-boards).has-westo-menu-promo-deck .section.is-gamme {
+  --menu-promo-zone-bottom: calc(var(--v12-nav-h,84px) + var(--menu-promo-gap-after-nav) + var(--menu-promo-h) + var(--menu-promo-stack-lift) + 32px);
+}
+
+@media (max-width: 991px), (pointer:coarse) {
+  :root {
+    --menu-promo-gap-after-nav: 12px;
+    --menu-promo-w: min(92vw,560px);
+    --menu-promo-h: clamp(142px,18.5vh,176px);
+    --menu-promo-stack-lift: 11px;
+    --menu-promo-radius: 23px;
+    --menu-promo-subject-gap: 30px;
+  }
+  #westo-menu-promo-deck .westo-menu-promo-deck__share {
+    inset-block-start:9px;inset-inline-end:9px;
+  }
+  #westo-menu-promo-deck .westo-menu-promo-deck__hint { display:none; }
+  html:not(.is-dish-boards) .carousel_arrow { display:none !important; }
+}
+
+@media (max-width:430px) {
+  :root {
+    --menu-promo-w: 94vw;
+    --menu-promo-h: clamp(136px,18vh,164px);
+    --menu-promo-radius: 21px;
+  }
+}
+
+@media (max-height:650px) and (orientation:landscape) {
+  :root {
+    --menu-promo-gap-after-nav: 8px;
+    --menu-promo-w: min(460px,60vw);
+    --menu-promo-h: 104px;
+    --menu-promo-stack-lift: 8px;
+    --menu-promo-radius: 17px;
+  }
+  #westo-menu-promo-deck .westo-menu-promo-deck__pagination { min-height:24px; }
+  #westo-menu-promo-deck .westo-menu-promo-deck__dot { width:28px;height:24px;min-width:28px;min-height:24px; }
+}
+
+@media (prefers-reduced-motion:reduce) {
+  #westo-menu-promo-deck .westo-menu-promo-deck__card { transition-duration:.001ms!important; }
+  #westo-menu-promo-deck .westo-menu-promo-deck__hint { display:none!important; }
+}

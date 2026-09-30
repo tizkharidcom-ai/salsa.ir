@@ -1,0 +1,260 @@
+/* WESTO Entrance Promotional Deck v14.4
+   Tactile fanned stack with direct drag, spring return and circular card order.
+   This layer only mounts when active promoSlides target the entrance. */
+
+#westo-entrance.has-eg-promo .eg-card {
+  grid-template-rows: minmax(0,auto) auto auto auto minmax(0,1fr) auto !important;
+}
+#westo-entrance.has-eg-promo .eg-experience { grid-row:5 !important; }
+#westo-entrance.has-eg-promo .eg-cta-wrap { grid-row:6 !important; }
+
+#westo-entrance .eg-promo {
+  grid-row:4 !important;
+  width:min(680px,92%) !important;
+  max-width:100%;
+  margin:2px auto 0;
+  position:relative;
+  isolation:isolate;
+  z-index:3;
+  direction:rtl;
+  --eg-promo-h: clamp(164px, 22vh, 224px);
+  --eg-promo-radius: 26px;
+}
+#westo-entrance .eg-promo[hidden] { display:none !important; }
+#westo-entrance .eg-promo__deck {
+  position:relative;
+  height:calc(var(--eg-promo-h) + 18px);
+  padding-top:18px;
+  perspective:1400px;
+  touch-action:none;
+  cursor:grab;
+  outline:none;
+}
+#westo-entrance .eg-promo__deck.is-dragging { cursor:grabbing; }
+#westo-entrance .eg-promo__deck.is-fanning { pointer-events:none; }
+#westo-entrance .eg-promo__deck:focus-visible::after {
+  content:"";
+  position:absolute;
+  inset:10px -5px -5px;
+  border:2px solid color-mix(in srgb, var(--prod-cyan,#31dbe0) 74%, white);
+  border-radius:calc(var(--eg-promo-radius) + 7px);
+  pointer-events:none;
+  z-index:50;
+}
+#westo-entrance .eg-promo__card {
+  position:absolute;
+  inset:18px 0 0;
+  height:var(--eg-promo-h);
+  overflow:hidden;
+  border-radius:var(--eg-promo-radius);
+  border:1px solid rgba(255,255,255,.16);
+  background:rgba(5,13,15,.92);
+  box-shadow:
+    0 26px 40px rgba(0,0,0,.32),
+    0 8px 16px rgba(0,0,0,.24),
+    inset 0 1px 0 rgba(255,255,255,.11);
+  transform-origin:50% 50%;
+  will-change:auto;
+  backface-visibility:hidden;
+  touch-action:none;
+  transition:transform .5s cubic-bezier(.34,1.45,.5,1),opacity .42s ease,box-shadow .3s ease;
+}
+#westo-entrance .eg-promo__deck.is-dragging .eg-promo__card,
+#westo-entrance .eg-promo__deck.is-animating .eg-promo__card {
+  will-change:transform,opacity,box-shadow !important;
+}
+#westo-entrance .eg-promo__deck.is-dragging .eg-promo__card { transition:none !important; }
+#westo-entrance .eg-promo__card[data-layer="0"] {
+  z-index:30;
+  transform:translate3d(0,0,0) rotate(0deg) scale(1);
+  opacity:1;
+  filter:brightness(1);
+}
+#westo-entrance .eg-promo__card[data-layer="1"] {
+  z-index:20;
+  transform:translate3d(8px,-16px,0) rotate(-3deg) scale(.95);
+  opacity:1;
+  filter:none;
+}
+#westo-entrance .eg-promo__card[data-layer="2"] {
+  z-index:10;
+  transform:translate3d(16px,-32px,0) rotate(-6deg) scale(.90);
+  opacity:1;
+  filter:none;
+}
+#westo-entrance .eg-promo__card[data-layer="hidden"] {
+  z-index:1;
+  transform:translate3d(24px,-48px,0) rotate(-9deg) scale(.85);
+  opacity:0;
+  filter:none;
+  pointer-events:none !important;
+}
+#westo-entrance .eg-promo__media {
+  width:100%;
+  height:100%;
+  display:block;
+  object-fit:cover;
+  object-position:center;
+  user-select:none;
+  -webkit-user-drag:none;
+  pointer-events:none;
+}
+#westo-entrance .eg-promo__fallback {
+  position:absolute;
+  inset:0;
+  display:grid;
+  place-items:center;
+  padding:24px;
+  text-align:center;
+  font-weight:800;
+  font-size:clamp(18px,2vw,26px);
+  color:rgba(255,255,255,.9);
+  background:
+    radial-gradient(circle at 20% 20%,rgba(42,210,214,.22),transparent 38%),
+    linear-gradient(145deg,#102326,#081315 72%);
+}
+#westo-entrance .eg-promo__card::after {
+  content:"";
+  position:absolute;
+  inset:0;
+  pointer-events:none;
+  background:linear-gradient(180deg,rgba(255,255,255,.035),transparent 46%,rgba(0,0,0,.09));
+}
+#westo-entrance .eg-promo__share {
+  position:absolute;
+  inset-block-start:12px;
+  inset-inline-end:12px;
+  z-index:5;
+  width:42px;
+  height:42px;
+  min-width:42px;
+  min-height:42px;
+  border:1px solid rgba(255,255,255,.25);
+  border-radius:50%;
+  display:grid;
+  place-items:center;
+  color:#fff;
+  cursor:pointer;
+  background:linear-gradient(145deg,rgba(7,14,16,.48),rgba(7,14,16,.18));
+  -webkit-backdrop-filter:blur(14px) saturate(150%);
+  backdrop-filter:blur(14px) saturate(150%);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.18),0 9px 24px rgba(0,0,0,.18);
+}
+#westo-entrance .eg-promo__share svg { width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.8; }
+#westo-entrance .eg-promo__pagination {
+  min-height:16px;
+  margin-top:4px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:7px;
+  direction:ltr;
+}
+#westo-entrance .eg-promo__dot {
+  width:7px;
+  height:7px;
+  min-width:7px;
+  min-height:7px;
+  padding:0;
+  border:0;
+  border-radius:99px;
+  background:rgba(255,255,255,.28);
+  cursor:pointer;
+  transition:width .26s cubic-bezier(.18,.82,.18,1),background .26s ease,opacity .26s ease;
+}
+#westo-entrance .eg-promo__dot[aria-selected="true"] {
+  width:28px;
+  background:var(--prod-cyan,#31dbe0);
+}
+#westo-entrance .eg-promo__hint {
+  position:absolute;
+  inset:auto 50% 28px auto;
+  translate:50% 0;
+  z-index:45;
+  padding:5px 9px;
+  border-radius:999px;
+  font-size:9px;
+  line-height:1;
+  white-space:nowrap;
+  color:rgba(255,255,255,.78);
+  background:rgba(4,11,13,.34);
+  border:1px solid rgba(255,255,255,.12);
+  -webkit-backdrop-filter:blur(10px);
+  backdrop-filter:blur(10px);
+  pointer-events:none;
+  opacity:0;
+  transition:opacity .25s ease;
+}
+#westo-entrance .eg-promo__deck:not(.has-interacted):hover .eg-promo__hint { opacity:1; }
+
+html[data-theme='light'] #westo-entrance .eg-promo__card {
+  border-color:rgba(59,84,82,.18);
+  box-shadow:0 22px 52px rgba(48,64,61,.18),inset 0 1px 0 rgba(255,255,255,.78);
+}
+html[data-theme='light'] #westo-entrance .eg-promo__dot { background:rgba(36,58,56,.24); }
+html[data-theme='light'] #westo-entrance .eg-promo__share {
+  color:#152321;
+  border-color:rgba(255,255,255,.82);
+  background:linear-gradient(145deg,rgba(255,255,255,.72),rgba(235,243,239,.38));
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.9),0 9px 24px rgba(47,67,62,.16);
+}
+html[data-theme='light'] #westo-entrance .eg-promo__hint {
+  color:rgba(24,39,37,.7);
+  background:rgba(250,252,249,.64);
+  border-color:rgba(45,68,65,.12);
+}
+
+html[data-perf-tier='economy'] #westo-entrance .eg-promo__share {
+  -webkit-backdrop-filter:none !important;
+  backdrop-filter:none !important;
+  background:rgba(7,15,17,.88) !important;
+}
+html[data-theme='light'][data-perf-tier='economy'] #westo-entrance .eg-promo__share { background:rgba(249,251,248,.94) !important; }
+
+@media (min-width:768px) and (max-height:850px) {
+  #westo-entrance .eg-promo { --eg-promo-h:140px; width:min(570px,78%) !important; margin-top:0; }
+  #westo-entrance .eg-promo__deck { height:154px; padding-top:14px; }
+  #westo-entrance .eg-promo__card { inset-block-start:14px; --eg-promo-radius:22px; }
+  #westo-entrance.has-eg-promo .eg-logo-stage { width:88px !important;max-height:132px !important; }
+  #westo-entrance.has-eg-promo .eg-brand-wordmark-img { max-height:48px !important; }
+  #westo-entrance.has-eg-promo .eg-experience { min-height:92px !important; }
+  #westo-entrance.has-eg-promo .eg-step-icon { width:40px !important;height:40px !important;flex-basis:40px !important; }
+  #westo-entrance.has-eg-promo .eg-steps-row { min-height:44px !important; }
+  #westo-entrance.has-eg-promo .eg-steps-row::before { top:19px !important; }
+}
+
+@media (max-width:767px) {
+  #westo-entrance .eg-promo {
+    width:min(100%,430px) !important;
+    --eg-promo-h:clamp(168px,45vw,205px);
+    --eg-promo-radius:22px;
+    margin-top:1px;
+  }
+  #westo-entrance .eg-promo__deck { height:calc(var(--eg-promo-h) + 15px);padding-top:15px; }
+  #westo-entrance .eg-promo__card { inset-block-start:15px; }
+  #westo-entrance .eg-promo__share { width:40px;height:40px;min-width:40px;min-height:40px;inset-block-start:10px;inset-inline-end:10px; }
+  #westo-entrance.has-eg-promo .eg-card { min-height:780px !important; }
+  #westo-entrance.has-eg-promo .eg-logo-stage { width:82px !important;max-height:122px !important;margin-bottom:0 !important; }
+  #westo-entrance.has-eg-promo .eg-brand-wordmark-img { width:min(238px,65vw) !important;max-height:47px !important; }
+  #westo-entrance.has-eg-promo .eg-tagline { margin-top:3px !important; }
+  #westo-entrance.has-eg-promo .eg-experience { min-height:104px !important; }
+}
+@media (max-width:430px) and (max-height:790px) {
+  #westo-entrance .eg-promo { --eg-promo-h:148px; width:min(100%,355px) !important; }
+  #westo-entrance .eg-promo__deck { height:161px;padding-top:13px; }
+  #westo-entrance .eg-promo__card { inset-block-start:13px; }
+  #westo-entrance.has-eg-promo .eg-card { min-height:730px !important; }
+  #westo-entrance.has-eg-promo .eg-logo-stage { width:68px !important;max-height:100px !important; }
+  #westo-entrance.has-eg-promo .eg-brand-wordmark-img { width:198px !important;max-height:38px !important; }
+  #westo-entrance.has-eg-promo .eg-step-label { display:none !important; }
+  #westo-entrance.has-eg-promo .eg-experience { min-height:88px !important; }
+}
+@media (max-height:560px) and (orientation:landscape) {
+  #westo-entrance .eg-promo { --eg-promo-h:116px;width:min(430px,62vw) !important; }
+  #westo-entrance .eg-promo__deck { height:128px;padding-top:12px; }
+  #westo-entrance .eg-promo__card { inset-block-start:12px;--eg-promo-radius:18px; }
+}
+@media (prefers-reduced-motion:reduce) {
+  #westo-entrance .eg-promo__card { transition-duration:.001ms !important; }
+  #westo-entrance .eg-promo__hint { display:none !important; }
+}

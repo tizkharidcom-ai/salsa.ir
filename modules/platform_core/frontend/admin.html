@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+
+  <meta charset="utf-8" />
+  <base href="/" />
+  <title>مرکز فرمان — وستو</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=5, user-scalable=yes, viewport-fit=cover" />
+  <meta name="robots" content="noindex, nofollow, noarchive" />
+  <meta name="referrer" content="same-origin" />
+  <meta name="theme-color" content="#f4f5f7" />
+  <script>
+    (function () {
+      try {
+        var pref = localStorage.getItem('westo_admin_theme');
+        if (pref !== 'light' && pref !== 'dark' && pref !== 'system') pref = 'light';
+        var t = pref === 'system'
+          ? (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark')
+          : pref;
+        document.documentElement.setAttribute('data-theme', t);
+        document.documentElement.setAttribute('data-theme-pref', pref);
+      } catch (e) {
+        document.documentElement.setAttribute('data-theme', 'light');
+        document.documentElement.setAttribute('data-theme-pref', 'light');
+      }
+    })();
+  </script>
+  <link rel="icon" type="image/png" sizes="32x32" href="assets/images/6a1d9bb2854e5557fe84e7d1_westo-fav-dark.png" />
+  <link rel="stylesheet" href="css/westo-glass.css?v=glassAction1" />
+  <link rel="stylesheet" href="css/panel.css?v=kds-cancellation-lane-v1" />
+  <link rel="stylesheet" href="css/admin-command-center-v2.css?v=adminUx2" />
+  <link rel="stylesheet" href="css/admin-operations-v3.css?v=adminOps7-order-actions" />
+  <link rel="stylesheet" href="css/admin-professional-v4.css?v=adminPro4" />
+  <link rel="stylesheet" href="css/admin-qr.css?v=qrStudio1" />
+  <link rel="stylesheet" href="css/admin-finance-tokens.css?v=financeTokens-phase7-reports" />
+  <link rel="stylesheet" href="css/admin-accounting.css?v=finance-v2-tax-setup-v1-20260924" />
+  <link rel="stylesheet" href="css/admin-break-even-chart.css?v=loyalty-achievements-20260928-r2" />
+  <link rel="stylesheet" href="css/admin-inventory-v2.css?v=inventoryV2-20260903-vendors-multiselect" />
+  <link rel="stylesheet" href="css/admin-users-roles.css?v=usersRoles1" />
+  <link rel="stylesheet" href="css/waiter-floor-plan.css?v=adminFloor6-zone-membership-sync&floor-chair-layout-v5&floor-more-menu-fit-20260928" />
+  <link rel="stylesheet" href="css/shamsi-datepicker.css?v=shamsi2-20260825" />
+  <script src="js/shamsi-core.js?v=shamsi2-20260829"></script>
+  <script src="js/shamsi-datepicker.js?v=shamsi2-20260825"></script>
+  <script src="js/persian-format.js?v=persianNumbers4-date-picker-guard"></script>
+  <script src="js/theme.js?v=adminVitality2" defer></script>
+  <script src="js/admin/modules/core/registry.js?v=adminModules3-modular-views" defer></script>
+  <script src="js/admin/features/platform_core-views.js?v=modules-1" defer></script>
+  <script src="js/admin/features/menu_qr-views.js?v=modules-1" defer></script>
+  <script src="js/admin/features/website_brand-views.js?v=modules-1" defer></script>
+  <script src="js/admin/features/floor-views.js?v=modules-1" defer></script>
+  <script src="js/admin/features/multi_branch-views.js?v=modules-1" defer></script>
+  <script src="js/admin/features/inventory-views.js?v=modules-1" defer></script>
+  <script src="js/admin/features/accounting-views.js?v=modules-1" defer></script>
+  <script src="js/admin/features/pos-views.js?v=modules-1" defer></script>
+  <script src="js/admin/features/kds-views.js?v=modules-1" defer></script>
+  <script src="js/admin/features/reservations-views.js?v=modules-1" defer></script>
+  <script src="js/admin/features/delivery-views.js?v=modules-1" defer></script>
+  <script src="js/admin/features/crm-views.js?v=modules-1" defer></script>
+  <script src="js/admin/modules/catalog/menu-module.js?v=adminModules3-inventory" defer></script>
+  <script src="js/admin/modules/insights/reports-module.js?v=adminModules2" defer></script>
+  <script src="js/admin/modules/insights/dashboard-view.js?v=dashboardV4-toggle-accessibility" defer></script>
+  <script src="js/admin/modules/operations/operations-module.js?v=adminModules2" defer></script>
+  <script src="js/admin/modules/finance/finance-module.js?v=adminModules2" defer></script>
+  <script src="js/admin/modules/finance/finance-ui-model.js?v=financeUiModel-phase8-cache1"></script>
+  <script src="js/admin/modules/inventory/inventory-module.js?v=inventoryV2-20260903-vendors-multiselect" defer></script>
+  <script src="js/admin/modules/content/content-module.js?v=adminModules2" defer></script>
+  <script src="js/admin/modules/settings/settings-module.js?v=adminModules3-dashboard" defer></script>
+  <script src="js/floor-chair-layout.js?v=floor-chair-layout-v15" defer></script>
+  <script src="js/admin/floor-studio.js?v=floor-map-editor-pan-labels-20260928&floor-chair-layout-v6&floor-more-menu-fit-20260928" defer></script>
+  <script src="js/admin.js?v=accounting-apple-20260930-r6" defer></script>
+  <script src="js/admin-professional-v4.js?v=adminVitality5-header-clean1" defer></script>
+  <script src="js/admin/modules/finance/break-even-chart.js?v=break-even-chart4-dashboard"></script>
+  <script src="js/admin/modules/finance/accounting-experience.js?v=accounting-apple-20260930-r6"></script>
+  <script src="js/admin-accounting.js?v=accounting-apple-20260930-r6"></script>
+  <link rel="stylesheet" href="css/vazir-system.css?v=font1" />
+  <link rel="stylesheet" href="css/design-logic-v13.css?v=logic13r1" />
+  <link rel="stylesheet" href="css/admin-vitality-v5.css?v=adminVitality24-menu-editor-ux5" />
+  <link rel="stylesheet" href="css/admin-floor-simple.css?v=floor-map-pan-upright-labels-20260928" />
+  <link rel="stylesheet" href="css/admin-accounting-experience.css?v=accounting-apple-20260930-r6" />
+  <script src="js/design-logic-v13.js?v=logic13r1" defer></script>
+</head>
+<body class="panel-body admin-pro admin-app">
+  <a class="admin-skip-link" href="#main">رفتن به محتوای اصلی</a>
+  <div class="admin-layout">
+    <aside class="admin-sidebar" id="admin-sidebar" aria-label="ناوبری مرکز فرمان">
+      <div class="brand">
+        <img id="brand-logo" src="assets/images/brand/westo-fa-wordmark-dark.png?v=adminVitality2" alt="وستو" width="768" height="192" />
+        <div class="brand-text">
+          <strong>مرکز فرمان</strong>
+          <span>وستو · کافه‌رستوران</span>
+        </div>
+        <button type="button" class="admin-sidebar-close" id="sidebar-close" aria-label="بستن منو">×</button>
+      </div>
+
+      <div class="admin-theme-switch" role="group" aria-label="تم نمایش">
+        <button type="button" class="navbar_theme-btn" data-theme-set="system" aria-pressed="false">سیستم</button>
+        <button type="button" class="navbar_theme-btn" data-theme-set="dark" aria-pressed="false">تیره</button>
+        <button type="button" class="navbar_theme-btn" data-theme-set="light" aria-pressed="false">روشن</button>
+      </div>
+
+      <details class="nav-group nav-workspace" open>
+        <summary class="nav-label">عملیات زنده</summary>
+        <button class="admin-nav-item active" data-tab="dashboard" data-capability="command.view" type="button">نمای زنده</button>
+        <button class="admin-nav-item" data-tab="orders" data-capability="orders.view" type="button">سفارش‌ها</button>
+        <button class="admin-nav-item" data-tab="kitchen" data-capability="kitchen.view" type="button">آشپزخانه</button>
+        <button class="admin-nav-item" data-tab="reservations" data-capability="reservations.view" type="button">رزروهای امروز</button>
+        <button class="admin-nav-item" data-tab="delivery" data-capability="delivery.view" type="button">تحویل، پیک و پرداخت</button>
+        <button class="admin-nav-item" data-tab="analytics" data-capability="analytics.view" type="button">بازدید و آمار</button>
+        <button class="admin-nav-item" data-tab="reports" data-capability="reports.view" type="button">گزارش فروش</button>
+      </details>
+
+      <details class="nav-group nav-workspace">
+        <summary class="nav-label">منو و محصولات</summary>
+        <button class="admin-nav-item" data-tab="menu" data-capability="menu.view" type="button">مدیریت منو</button>
+        <button class="admin-nav-item" data-tab="prices" data-capability="menu.manage" type="button">قیمت‌ها</button>
+        <button class="admin-nav-item" data-tab="products" data-capability="menu.manage" type="button">دسته‌ها و ترتیب نمایش</button>
+        <button class="admin-nav-item" data-tab="complements" data-capability="menu.manage" type="button">مکمل‌ها و مهندسی منو</button>
+        <button class="admin-nav-item" data-tab="translate" data-capability="menu.manage" type="button">ترجمه و زبان‌ها</button>
+        <button class="admin-nav-item" data-tab="printmenu" data-capability="menu.view" type="button">منوی چاپی</button>
+      </details>
+
+      <details class="nav-group nav-workspace">
+        <summary class="nav-label">مشتریان و پذیرایی</summary>
+        <button class="admin-nav-item" data-tab="tables" data-capability="tables.view" type="button">میزها و چیدمان</button>
+        <button class="admin-nav-item" data-tab="club" data-capability="admin.access" type="button">باشگاه مشتریان</button>
+        <button class="admin-nav-item" data-tab="promotions" data-capability="promotions.manage" type="button">تخفیف‌ها و پیشنهادها</button>
+        <button class="admin-nav-item" data-tab="promoSlides" data-capability="content.manage" type="button">اسلایدر تبلیغاتی</button>
+      </details>
+
+      <details class="nav-group nav-workspace">
+        <summary class="nav-label">مالی و حسابداری</summary>
+        <button class="admin-nav-item" data-tab="accounting" data-capability="finance.view" type="button">حسابداری</button>
+        <button class="admin-nav-item" data-tab="inventory" data-capability="inventory.view" type="button">انبار و مواد اولیه</button>
+        <button class="admin-nav-item" data-tab="costControl" data-capability="finance.view" type="button">بهای تمام‌شده</button>
+        <button class="admin-nav-item" data-tab="expenses" data-capability="finance.view" type="button">هزینه‌ها</button>
+      </details>
+
+      <details class="nav-group nav-workspace">
+        <summary class="nav-label">تنظیمات و دسترسی</summary>
+        <button class="admin-nav-item" data-tab="users" data-capability="admin.access" type="button">کاربران و پرسنل</button>
+        <button class="admin-nav-item" data-tab="settings" data-capability="owner" type="button">داشبورد تنظیمات</button>
+      </details>
+
+      <div class="spacer"></div>
+      <a class="admin-nav-item" href="/feedback" style="text-decoration:none;">صفحه بازخورد</a>
+      <a class="admin-nav-item" href="/reserve" style="text-decoration:none;">صفحه رزرو</a>
+      <a class="admin-nav-item" href="/" style="text-decoration:none;">مشاهده سایت</a>
+      <button class="admin-nav-item" id="logout-btn" type="button">خروج</button>
+      <button type="button" class="admin-role-preview-trigger" id="admin-role-preview-trigger" hidden>مشاهده پنل نقش‌ها</button>
+    </aside>
+    <button type="button" class="admin-sidebar-minimize" id="sidebar-minimize" aria-label="جمع کردن منو" aria-pressed="false" title="جمع کردن منو">‹</button>
+    <button type="button" class="admin-sidebar-scrim" id="sidebar-scrim" aria-label="بستن منو"></button>
+
+    <div class="admin-shell">
+      <header class="admin-topbar">
+        <button type="button" class="admin-menu-toggle" id="sidebar-toggle" aria-label="منو">☰</button>
+        <div class="admin-topbar-heading"><span class="admin-topbar-context" id="topbar-context">نمای کلی عملیات</span><div class="admin-topbar-title" id="topbar-title">داشبورد</div></div>
+        <label class="branch-select-wrap" title="شعبه فعال">
+          <span class="sr-only">شعبه</span>
+          <select id="branch-select" class="branch-select" aria-label="انتخاب شعبه"></select>
+        </label>
+        <button type="button" class="admin-shortcuts-trigger-btn" id="admin-shortcuts-btn" aria-label="راهنمای کلیدهای میانبر (؟)" title="راهنمای کلیدهای میانبر (؟)">
+          <span aria-hidden="true">⌨️</span>
+        </button>
+        <div class="admin-notif-menu" id="admin-notif-menu">
+          <button type="button" class="admin-notif-chip" id="admin-notif-btn" aria-haspopup="dialog" aria-expanded="false" aria-controls="admin-notif-dropdown" aria-label="مرکز بررسی‌ها و تأییدیه‌های مدیر" title="بررسی‌ها و تأییدیه‌های مدیر">
+            <svg class="admin-notif-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
+              <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+            </svg>
+            <span class="admin-notif-badge" id="admin-notif-badge" aria-live="polite">۰</span>
+            <span class="admin-notif-ping" id="admin-notif-ping" aria-hidden="true"></span>
+          </button>
+          <div class="admin-notif-dropdown" id="admin-notif-dropdown" role="dialog" aria-label="مرکز بررسی‌ها و تأییدیه‌های مدیر" hidden>
+            <div class="admin-notif-header">
+              <div class="admin-notif-header__titles">
+                <strong>مرکز بررسی‌ها و تأییدیه‌ها</strong>
+                <span id="admin-notif-subtitle">امور نیازمند توجه و تأیید مدیر</span>
+              </div>
+              <div class="admin-notif-header__actions">
+                <button type="button" class="admin-notif-refresh-btn" id="admin-notif-refresh" aria-label="بروزرسانی وضعیت" title="بروزرسانی">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+                </button>
+                <button type="button" class="admin-notif-close-btn" id="admin-notif-close" aria-label="بستن پنجره بررسی‌ها" title="بستن">✕</button>
+              </div>
+            </div>
+            <div class="admin-notif-tabs" role="tablist">
+              <button type="button" class="admin-notif-tab active" data-filter="all" role="tab" aria-selected="true">همه <span class="tab-count" id="notif-count-all">۰</span></button>
+              <button type="button" class="admin-notif-tab" data-filter="approval" role="tab" aria-selected="false">نیازمند تأیید <span class="tab-count" id="notif-count-approval">۰</span></button>
+              <button type="button" class="admin-notif-tab" data-filter="attention" role="tab" aria-selected="false">بررسی فوری <span class="tab-count" id="notif-count-attention">۰</span></button>
+            </div>
+            <div class="admin-notif-body" id="admin-notif-list" role="tabpanel">
+              <div class="admin-notif-loading">در حال بارگذاری موارد نیازمند بررسی…</div>
+            </div>
+            <div class="admin-notif-footer">
+              <span id="admin-notif-footer-summary">در حال پایش زنده رویدادهای شعبه</span>
+              <button type="button" class="admin-notif-dash-btn" id="admin-notif-goto-dash">داشبورد عملیات</button>
+            </div>
+          </div>
+        </div>
+        <div class="admin-user-menu" id="admin-user-menu">
+          <button type="button" class="admin-user-chip admin-user-avatar" id="admin-user-chip" aria-haspopup="menu" aria-expanded="false" aria-controls="admin-user-dropdown" aria-label="باز کردن منوی حساب کاربر" title="حساب کاربر">
+            <span class="admin-user-avatar__initial" aria-hidden="true">ک</span>
+            <span class="admin-connection-state" id="admin-connection-state" role="status" aria-label="متصل"></span>
+          </button>
+          <div class="admin-user-dropdown" id="admin-user-dropdown" role="menu" aria-label="منوی حساب کاربر" hidden>
+            <div class="admin-user-dropdown__identity">
+              <strong id="admin-user-name">کاربر</strong>
+              <span id="admin-user-role">مدیر</span>
+            </div>
+            <a href="/profile" role="menuitem">پروفایل و حساب کاربری</a>
+            <button type="button" id="admin-user-menu-logout" role="menuitem">خروج از حساب</button>
+          </div>
+        </div>
+      </header>
+      <main class="admin-main" id="main" tabindex="-1" aria-busy="false">
+        <h1 class="sr-only">مرکز مدیریت WESTO</h1>
+        <!-- rendered by js/admin.js -->
+      </main>
+    </div>
+  </div>
+
+  <dialog class="admin-shortcuts-modal" id="admin-shortcuts-modal" aria-label="راهنمای کلیدهای میانبر مرکز فرمان" aria-modal="true">
+    <div class="admin-shortcuts-sheet">
+      <header class="admin-shortcuts-header">
+        <div class="admin-shortcuts-title-wrap">
+          <span style="font-size: 1.25rem;" aria-hidden="true">⌨️</span>
+          <strong>راهنمای کلیدهای میانبر مرکز فرمان</strong>
+        </div>
+        <button type="button" class="admin-shortcuts-close" id="admin-shortcuts-close" aria-label="بستن پنجره">✕</button>
+      </header>
+      <div class="admin-shortcuts-body">
+        <div class="admin-shortcuts-grid">
+          <div class="admin-shortcuts-card">
+            <h4>ناوبری سریع بخش‌ها (Alt + کلید)</h4>
+            <ul>
+              <li><span>پیشخوان زنده (Dashboard)</span><span><kbd class="admin-kbd">Alt + 1</kbd> یا <kbd class="admin-kbd">Alt + D</kbd></span></li>
+              <li><span>سفارش‌ها (Orders)</span><span><kbd class="admin-kbd">Alt + 2</kbd> یا <kbd class="admin-kbd">Alt + O</kbd></span></li>
+              <li><span>مدیریت منو (Menu)</span><span><kbd class="admin-kbd">Alt + 3</kbd> یا <kbd class="admin-kbd">Alt + M</kbd></span></li>
+              <li><span>سالن و چیدمان میزها (Floor Plan)</span><span><kbd class="admin-kbd">Alt + 4</kbd> یا <kbd class="admin-kbd">Alt + T</kbd></span></li>
+              <li><span>انبارداری و مواد اولیه (Inventory)</span><span><kbd class="admin-kbd">Alt + 5</kbd> یا <kbd class="admin-kbd">Alt + I</kbd></span></li>
+              <li><span>حسابداری و امور مالی (Finance)</span><span><kbd class="admin-kbd">Alt + 6</kbd> یا <kbd class="admin-kbd">Alt + F</kbd></span></li>
+              <li><span>باشگاه مشتریان (CRM)</span><span><kbd class="admin-kbd">Alt + 7</kbd> یا <kbd class="admin-kbd">Alt + C</kbd></span></li>
+              <li><span>رزروهای سالن (Reservations)</span><span><kbd class="admin-kbd">Alt + 8</kbd> یا <kbd class="admin-kbd">Alt + R</kbd></span></li>
+              <li><span>نمایشگر آشپزخانه (KDS)</span><span><kbd class="admin-kbd">Alt + 9</kbd> یا <kbd class="admin-kbd">Alt + K</kbd></span></li>
+              <li><span>تنظیمات سیستم (Settings)</span><span><kbd class="admin-kbd">Alt + 0</kbd> یا <kbd class="admin-kbd">Alt + S</kbd></span></li>
+            </ul>
+          </div>
+          <div class="admin-shortcuts-card">
+            <h4>پیمایش متوالی (فشردن G و کلید بعدی)</h4>
+            <ul>
+              <li><span>انتقال به پیشخوان زنده</span><span><kbd class="admin-kbd">G</kbd> سپس <kbd class="admin-kbd">D</kbd></span></li>
+              <li><span>انتقال به سفارش‌ها</span><span><kbd class="admin-kbd">G</kbd> سپس <kbd class="admin-kbd">O</kbd></span></li>
+              <li><span>انتقال به منو</span><span><kbd class="admin-kbd">G</kbd> سپس <kbd class="admin-kbd">M</kbd></span></li>
+              <li><span>انتقال به سالن و میزها</span><span><kbd class="admin-kbd">G</kbd> سپس <kbd class="admin-kbd">T</kbd></span></li>
+              <li><span>انتقال به انبارداری</span><span><kbd class="admin-kbd">G</kbd> سپس <kbd class="admin-kbd">I</kbd></span></li>
+              <li><span>انتقال به حسابداری</span><span><kbd class="admin-kbd">G</kbd> سپس <kbd class="admin-kbd">F</kbd></span></li>
+              <li><span>انتقال به باشگاه مشتریان</span><span><kbd class="admin-kbd">G</kbd> سپس <kbd class="admin-kbd">C</kbd></span></li>
+              <li><span>انتقال به رزرواسیون</span><span><kbd class="admin-kbd">G</kbd> سپس <kbd class="admin-kbd">R</kbd></span></li>
+              <li><span>انتقال به آشپزخانه</span><span><kbd class="admin-kbd">G</kbd> سپس <kbd class="admin-kbd">K</kbd></span></li>
+              <li><span>انتقال به تنظیمات</span><span><kbd class="admin-kbd">G</kbd> سپس <kbd class="admin-kbd">S</kbd></span></li>
+            </ul>
+          </div>
+          <div class="admin-shortcuts-card">
+            <h4>عمومی و جریان کار</h4>
+            <ul>
+              <li><span>پالت فرامین و جستجو</span><kbd class="admin-kbd">Ctrl/Cmd + K</kbd></li>
+              <li><span>بستن پنجره‌ها و منوها</span><kbd class="admin-kbd">Escape</kbd></li>
+              <li><span>راهنمای کلیدهای میانبر</span><kbd class="admin-kbd">?</kbd></li>
+              <li><span>حالت تمرکز و ساعات اوج کار</span><kbd class="admin-kbd">F</kbd></li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+  </dialog>
+
+  <dialog class="admin-role-preview" id="admin-role-preview" aria-label="مشاهده پنل نقش‌ها">
+    <form method="dialog" class="admin-role-preview__sheet">
+      <header>
+        <div><span>پیش‌نمایش امن مدیر</span><strong>پنل هر نقش را همان‌طور که می‌بیند بررسی کنید</strong></div>
+        <button value="cancel" aria-label="بستن">×</button>
+      </header>
+      <p>هر پنل ناوبری، اطلاعات و عملیات مخصوص همان ایستگاه را دارد. ورود از این بخش سطح دسترسی واقعی حساب مدیر را تغییر نمی‌دهد.</p>
+      <div class="admin-role-preview__grid" id="admin-role-preview-grid"></div>
+    </form>
+  </dialog>
+
+  <div class="toast" id="toast" role="status" aria-live="polite" aria-atomic="true"></div>
+  <noscript><div class="admin-noscript">برای استفاده از مرکز فرمان، JavaScript باید فعال باشد.</div></noscript>
+</body>
+</html>

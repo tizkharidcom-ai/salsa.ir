@@ -1,0 +1,609 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+  <script>
+    (function(){try{var pref=localStorage.getItem('westo_theme');if(pref!=='light'&&pref!=='dark'&&pref!=='system')pref='system';var t=pref==='system'?(window.matchMedia('(prefers-color-scheme: light)').matches?'light':'dark'):pref;document.documentElement.setAttribute('data-theme',t);document.documentElement.setAttribute('data-theme-pref',pref);}catch(e){document.documentElement.setAttribute('data-theme','dark');document.documentElement.setAttribute('data-theme-pref','system');}})();
+  </script>
+
+  <meta name="theme-color" content="#071012" />
+<meta charset="utf-8" />
+  <title>منوی چاپی — وستو</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=5, user-scalable=yes" />
+  <meta name="robots" content="noindex" />
+  <link rel="stylesheet" href="css/westo-glass.css?v=glassAction1" />
+  <link rel="stylesheet" href="css/panel.css?v=logic9" />
+  <script src="js/shamsi-core.js?v=shamsi1"></script>
+  <style>
+    :root {
+      --ink: #1a1714;
+      --muted: #6b6560;
+      --rule: #d8d2c8;
+      --paper: #f7f3ec;
+      --accent: #2a7a86;
+    }
+    body.print-body {
+      margin: 0;
+      background: #e8e4dc;
+      color: var(--ink);
+      font-family: 'Vazirmatn', 'Geist', sans-serif;
+    }
+    html[data-theme='dark'] body.print-body { background: #071012; }
+    html[data-theme='light'] body.print-body { background: #e8e4dc; }
+    html[data-theme='light'] .print-toolbar {
+      background: rgba(250,250,247,.94);
+      color: #111416;
+      border-bottom-color: rgba(20,75,79,.16);
+    }
+    html[data-theme='light'] .print-toolbar label { color: rgba(25,31,32,.68); }
+    .print-toolbar {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.6rem;
+      align-items: center;
+      padding: 0.75rem 1rem;
+      background: #111318;
+      color: #f2efe8;
+      border-bottom: 1px solid #2a2f3a;
+    }
+    .print-toolbar label {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      font-size: 0.82rem;
+      color: #c9c4bb;
+      cursor: pointer;
+    }
+    .print-toolbar .btn { width: auto; }
+    .print-sheet {
+      max-width: 920px;
+      margin: 1.25rem auto 2.5rem;
+      background: var(--paper);
+      color: var(--ink);
+      padding: 2rem 2.25rem 2.5rem;
+      box-shadow: 0 12px 40px rgba(0,0,0,0.12);
+      border-radius: 4px;
+    }
+    .print-head {
+      text-align: center;
+      border-bottom: 2px solid var(--ink);
+      padding-bottom: 1rem;
+      margin-bottom: 1.35rem;
+    }
+    .print-mark {
+      display: block;
+      margin: 0 auto 0.65rem;
+      height: 3rem;
+      width: auto;
+    }
+    .print-head h1 {
+      margin: 0 0 0.35rem;
+      font-size: 1.85rem;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+    }
+    .print-head .tagline { margin: 0; color: var(--muted); font-size: 0.92rem; }
+    .print-meta {
+      margin-top: 0.65rem;
+      font-size: 0.78rem;
+      color: var(--muted);
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+      justify-content: center;
+    }
+    .print-cat { break-inside: avoid; margin-bottom: 1.4rem; }
+    .print-cat h2 {
+      margin: 0 0 0.55rem;
+      font-size: 1.15rem;
+      border-bottom: 1px solid var(--rule);
+      padding-bottom: 0.3rem;
+      color: var(--accent);
+    }
+    .print-item {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 0.35rem 1rem;
+      padding: 0.4rem 0;
+      border-bottom: 1px dotted var(--rule);
+    }
+    .print-item:last-child { border-bottom: none; }
+    .print-item .name { font-weight: 700; font-size: 0.95rem; }
+    .print-item .desc { grid-column: 1 / -1; font-size: 0.78rem; color: var(--muted); line-height: 1.45; margin: 0; }
+    .print-item .price { font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .print-item .meta {
+      grid-column: 1 / -1;
+      font-size: 0.7rem;
+      color: var(--muted);
+    }
+    .print-foot {
+      margin-top: 1.75rem;
+      padding-top: 0.85rem;
+      border-top: 1px solid var(--rule);
+      text-align: center;
+      font-size: 0.75rem;
+      color: var(--muted);
+    }
+    .print-empty { text-align: center; color: var(--muted); padding: 2rem; }
+    @media print {
+      body.print-body { background: #fff; }
+      .print-toolbar { display: none !important; }
+      .print-sheet {
+        margin: 0;
+        max-width: none;
+        box-shadow: none;
+        border-radius: 0;
+        padding: 0;
+        background: #fff;
+      }
+      .print-cat { break-inside: avoid; page-break-inside: avoid; }
+      a { color: inherit; text-decoration: none; }
+    }
+  </style>
+  <link rel="stylesheet" href="css/vazir-system.css?v=font1" />
+  <link rel="stylesheet" href="css/design-logic-v13.css?v=logic13r1" />
+  <script src="js/theme.js?v=stable1" defer></script>
+  <script src="js/design-logic-v13.js?v=logic13r1" defer></script>
+  <script src="js/persian-format.js?v=persianNumbers3-safe-fields"></script>
+</head>
+<body class="print-body">
+  <div class="print-toolbar">
+    <strong>پیش‌نمایش منوی چاپی</strong>
+    <label><input type="checkbox" id="opt-out" checked /> مخفی کردن ناموجود</label>
+    <label><input type="checkbox" id="opt-all" checked /> نمایش آلرژن</label>
+    <label><input type="checkbox" id="opt-desc" checked /> نمایش توضیح</label>
+    <button type="button" class="btn btn-sm" id="btn-refresh">به‌روزرسانی</button>
+    <button type="button" class="btn btn-sm" id="btn-print">چاپ / PDF</button>
+    <a class="btn btn-sm btn-ghost" href="/admin" style="text-decoration:none;width:auto;">بازگشت به پنل</a>
+  </div>
+  <main class="print-sheet" id="sheet" tabindex="-1" aria-label="پیش‌نمایش منوی چاپی">
+    <h1 class="visually-hidden">منوی WESTO</h1>
+    <p class="print-empty">در حال بارگذاری…</p>
+  </main>
+  <script>
+    (() => {
+      'use strict';
+
+      const $ = (selector) => document.querySelector(selector);
+      const fmt = (value) =>
+        `${window.WestoPersianFormat?.number(value, { locale: 'fa-IR' }) ?? Number(value || 0).toLocaleString('fa-IR')} تومان`;
+      const esc = (value) =>
+        String(value ?? '').replace(
+          /[&<>"']/g,
+          (char) =>
+            ({
+              '&': '&amp;',
+              '<': '&lt;',
+              '>': '&gt;',
+              '"': '&quot;',
+              "'": '&#39;',
+            })[char],
+        );
+
+      const ALLOWED_ROLES = new Set(['owner', 'manager', 'admin']);
+
+      const sheet = $('#sheet');
+      const refreshButton = $('#btn-refresh');
+      const printButton = $('#btn-print');
+      const optOut = $('#opt-out');
+      const optAll = $('#opt-all');
+      const optDesc = $('#opt-desc');
+
+      let cache = null;
+      let authController = null;
+      let dataControllers = [];
+      let authGeneration = 0;
+      let loadGeneration = 0;
+      let pageSuspended = false;
+      let loadInFlight = false;
+
+      function abortController(controller) {
+        if (!controller) return;
+        try {
+          controller.abort();
+        } catch (_) {}
+      }
+
+      function abortDataRequests() {
+        for (const controller of dataControllers) {
+          abortController(controller);
+        }
+        dataControllers = [];
+      }
+
+      async function readJson(response) {
+        try {
+          return await response.json();
+        } catch (_) {
+          return {};
+        }
+      }
+
+      function showSheetMessage(message) {
+        if (!sheet) return;
+
+        const text = String(message || 'خطا در بارگذاری');
+        sheet.replaceChildren();
+
+        const paragraph = document.createElement('p');
+        paragraph.className = 'print-empty';
+        paragraph.textContent = text;
+
+        sheet.appendChild(paragraph);
+      }
+
+      function setLoadingState(loading) {
+        loadInFlight = !!loading;
+        refreshButton.disabled = loadInFlight;
+
+        if (!cache && loadInFlight) {
+          showSheetMessage('در حال بارگذاری…');
+        }
+      }
+
+      async function ensureAdmin() {
+        if (pageSuspended) return false;
+
+        const generation = ++authGeneration;
+        abortController(authController);
+
+        const controller = new AbortController();
+        authController = controller;
+
+        try {
+          const response = await fetch('/api/auth/me', {
+            credentials: 'same-origin',
+            cache: 'no-store',
+            signal: controller.signal,
+          });
+
+          const data = response.ok ? await readJson(response) : {};
+          const user = data?.user || null;
+
+          if (
+            controller.signal.aborted ||
+            generation !== authGeneration ||
+            pageSuspended
+          ) {
+            return false;
+          }
+
+          if (!user) {
+            location.replace('/login');
+            return false;
+          }
+
+          if (!ALLOWED_ROLES.has(String(user.role || '').toLowerCase())) {
+            location.replace('/profile');
+            return false;
+          }
+
+          return true;
+        } catch (error) {
+          if (error?.name === 'AbortError') return false;
+          if (generation !== authGeneration || pageSuspended) return false;
+          throw new Error(
+            'بررسی دسترسی انجام نشد؛ اتصال اینترنت را بررسی کنید.',
+          );
+        } finally {
+          if (authController === controller) authController = null;
+        }
+      }
+
+      function indexMenu(menu) {
+        const itemsByCategory = new Map();
+
+        for (const item of menu?.menuItems || []) {
+          const categoryId = Number(item.categoryId);
+          const list = itemsByCategory.get(categoryId);
+
+          if (list) list.push(item);
+          else itemsByCategory.set(categoryId, [item]);
+        }
+
+        const allergenMap = Object.fromEntries(
+          (menu?.allergens || []).map((allergen) => [
+            allergen.id,
+            allergen.label,
+          ]),
+        );
+
+        return {
+          itemsByCategory,
+          allergenMap,
+        };
+      }
+
+      async function load({ preserveCurrent = true } = {}) {
+        if (pageSuspended || loadInFlight) return;
+
+        const generation = ++loadGeneration;
+        abortDataRequests();
+
+        const menuController = new AbortController();
+        const restaurantController = new AbortController();
+        dataControllers = [menuController, restaurantController];
+
+        setLoadingState(true);
+
+        try {
+          const [menuResponse, restaurantResponse] = await Promise.all([
+            fetch('/api/menu?all=1', {
+              credentials: 'same-origin',
+              cache: 'no-store',
+              signal: menuController.signal,
+            }),
+            fetch('/api/restaurant', {
+              credentials: 'same-origin',
+              cache: 'no-store',
+              signal: restaurantController.signal,
+            }),
+          ]);
+
+          const [menu, restaurant] = await Promise.all([
+            readJson(menuResponse),
+            readJson(restaurantResponse),
+          ]);
+
+          if (!menuResponse.ok) {
+            throw new Error(
+              menu?.error || 'بارگذاری منوی چاپی ناموفق بود',
+            );
+          }
+
+          if (!restaurantResponse.ok) {
+            throw new Error(
+              restaurant?.error ||
+                'بارگذاری اطلاعات رستوران ناموفق بود',
+            );
+          }
+
+          if (
+            menuController.signal.aborted ||
+            restaurantController.signal.aborted ||
+            generation !== loadGeneration ||
+            pageSuspended
+          ) {
+            return;
+          }
+
+          const indexed = indexMenu(menu);
+          cache = {
+            menu,
+            rest: restaurant,
+            itemsByCategory: indexed.itemsByCategory,
+            allergenMap: indexed.allergenMap,
+          };
+
+          applyPrintTheme(restaurant.theme);
+          render();
+        } catch (error) {
+          if (error?.name === 'AbortError') return;
+          if (generation !== loadGeneration || pageSuspended) return;
+
+          if (!cache || preserveCurrent === false) {
+            showSheetMessage(error?.message || 'خطا در بارگذاری');
+          } else {
+            // Keep the last valid printable menu visible. Refresh failures
+            // should not destroy a usable print preview.
+            console.warn(
+              '[WESTO menu-print] refresh failed:',
+              error?.message || error,
+            );
+          }
+        } finally {
+          if (generation === loadGeneration) {
+            dataControllers = [];
+            setLoadingState(false);
+          }
+        }
+      }
+
+      function applyPrintTheme(theme) {
+        if (!theme) return;
+
+        const root = document.documentElement;
+
+        if (theme.printPaper) {
+          root.style.setProperty('--paper', theme.printPaper);
+        }
+        if (theme.printInk) {
+          root.style.setProperty('--ink', theme.printInk);
+        }
+        if (theme.printAccent) {
+          root.style.setProperty('--accent', theme.printAccent);
+        }
+        if (theme.fontDisplay) {
+          document.body.style.fontFamily =
+            `'${theme.fontDisplay}', 'Vazirmatn', sans-serif`;
+        }
+      }
+
+      function render() {
+        if (!cache || pageSuspended) return;
+
+        const hideOut = optOut.checked;
+        const showAllergens = optAll.checked;
+        const showDescription = optDesc.checked;
+
+        const restaurant = cache.rest.restaurant || {};
+        const hours = cache.rest.hours || {};
+        const dayLabels = {
+          sat: 'ش',
+          sun: 'ی',
+          mon: 'د',
+          tue: 'س',
+          wed: 'چ',
+          thu: 'پ',
+          fri: 'ج',
+        };
+
+        const hoursLine = Object.keys(dayLabels)
+          .map((key) => {
+            const value = hours[key];
+            if (!value || value.closed) return null;
+            return `${dayLabels[key]} ${value.open}–${value.close}`;
+          })
+          .filter(Boolean)
+          .slice(0, 4)
+          .join(' · ');
+
+        let html = `
+          <header class="print-head">
+            <img class="print-mark" src="assets/images/brand/westo-mark.png?v=brandCyan2" alt="" width="48" height="66" />
+            <h1>${esc(restaurant.name || 'وستو')}</h1>
+            <p class="tagline">${esc(
+              restaurant.tagline || restaurant.brandName || '',
+            )}</p>
+            <div class="print-meta">
+              ${
+                restaurant.address
+                  ? `<span>${esc(restaurant.address)}</span>`
+                  : ''
+              }
+              ${
+                restaurant.phone
+                  ? `<span dir="ltr">${esc(restaurant.phone)}</span>`
+                  : ''
+              }
+              ${hoursLine ? `<span>${esc(hoursLine)}</span>` : ''}
+            </div>
+          </header>`;
+
+        const categories = cache.menu.menuCategories || [];
+        let any = false;
+
+        for (const category of categories) {
+          const categoryItems =
+            cache.itemsByCategory.get(Number(category.id)) || [];
+
+          let visibleCount = 0;
+          for (const item of categoryItems) {
+            if (!hideOut || item.available !== false) {
+              visibleCount += 1;
+            }
+          }
+
+          if (!visibleCount) continue;
+
+          any = true;
+          html +=
+            `<section class="print-cat"><h2>` +
+            `${esc(category.title)}</h2>`;
+
+          for (const item of categoryItems) {
+            if (hideOut && item.available === false) continue;
+
+            const allergenLine =
+              showAllergens && (item.allergens || []).length
+                ? `<div class="meta">آلرژن: ${(item.allergens || [])
+                    .map((id) =>
+                      esc(cache.allergenMap[id] || id),
+                    )
+                    .join('، ')}</div>`
+                : '';
+
+            html += `<div class="print-item">
+              <div class="name">${esc(item.name)}${
+                item.available === false
+                  ? ' <small>(ناموجود)</small>'
+                  : ''
+              }</div>
+              <div class="price">${fmt(item.price)}</div>
+              ${
+                showDescription && item.desc
+                  ? `<p class="desc">${esc(item.desc)}</p>`
+                  : ''
+              }
+              ${allergenLine}
+            </div>`;
+          }
+
+          html += '</section>';
+        }
+
+        if (!any) {
+          html += '<p class="print-empty">آیتمی برای چاپ نیست</p>';
+        }
+
+        const printDate = window.ShamsiCore ? window.ShamsiCore.formatShamsiDateLong(new Date()) : new Date().toLocaleDateString('fa-IR');
+        html +=
+          `<footer class="print-foot">منوی دیجیتال وستو · چاپ ` +
+          `${printDate} · ` +
+          `${esc(restaurant.website || location.origin)}</footer>`;
+
+        sheet.innerHTML = html;
+        document.title = `منو — ${restaurant.name || 'وستو'}`;
+      }
+
+      async function boot({ preserveCurrent = false } = {}) {
+        try {
+          const allowed = await ensureAdmin();
+          if (!allowed || pageSuspended) return;
+          await load({ preserveCurrent });
+        } catch (error) {
+          if (pageSuspended) return;
+
+          if (!cache || preserveCurrent === false) {
+            showSheetMessage(error?.message || 'خطا در بارگذاری');
+          }
+        }
+      }
+
+      refreshButton.addEventListener('click', () => {
+        if (loadInFlight || pageSuspended) return;
+        load({ preserveCurrent: true });
+      });
+
+      printButton.addEventListener('click', () => {
+        window.print();
+      });
+
+      for (const control of [optOut, optAll, optDesc]) {
+        control.addEventListener('change', render);
+      }
+
+      window.addEventListener('offline', () => {
+        ++loadGeneration;
+        abortDataRequests();
+
+        if (!cache) {
+          showSheetMessage('اتصال اینترنت برقرار نیست');
+        }
+
+        setLoadingState(false);
+      });
+
+      window.addEventListener('online', () => {
+        if (pageSuspended || loadInFlight) return;
+        boot({ preserveCurrent: true });
+      });
+
+      window.addEventListener('pagehide', () => {
+        pageSuspended = true;
+        ++authGeneration;
+        ++loadGeneration;
+
+        abortController(authController);
+        authController = null;
+
+        abortDataRequests();
+        setLoadingState(false);
+      });
+
+      window.addEventListener('pageshow', (event) => {
+        if (!event.persisted) return;
+
+        pageSuspended = false;
+
+        // Revalidate both role access and print data after a bfcache restore.
+        boot({ preserveCurrent: true });
+      });
+
+      boot();
+    })();
+  </script>
+</body>
+</html>

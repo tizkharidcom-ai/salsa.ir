@@ -1,0 +1,87 @@
+{
+  "schemaVersion": 1,
+  "key": "inventory",
+  "nameFa": "انبار، رسپی و تدارکات",
+  "version": "1.0.0",
+  "runtime": "node-commonjs-express",
+  "runtimeApiVersion": "westo-v1",
+  "dependencies": [
+    "menu_qr"
+  ],
+  "technicalFeatures": [
+    "stock.inventory",
+    "stock.recipes",
+    "stock.procurement"
+  ],
+  "sharedComposition": [
+    "server/server.js",
+    "js/admin.js",
+    "role-panel.html"
+  ],
+  "dataCapture": "always-on-operational-core",
+  "access": "tenant-entitlement-and-user-capability",
+  "files": [
+    {
+      "path": "frontend/css/admin-inventory-v2.css",
+      "legacyPath": "css/admin-inventory-v2.css",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/js/admin/modules/inventory/inventory-module.js",
+      "legacyPath": "js/admin/modules/inventory/inventory-module.js",
+      "layer": "frontend"
+    },
+    {
+      "path": "server/finance/inventory-engine.js",
+      "legacyPath": "server/finance/inventory-engine.js",
+      "layer": "server"
+    },
+    {
+      "path": "server/finance/inventory-operations.js",
+      "legacyPath": "server/finance/inventory-operations.js",
+      "layer": "server"
+    },
+    {
+      "path": "server/finance/order-costing.js",
+      "legacyPath": "server/finance/order-costing.js",
+      "layer": "server"
+    },
+    {
+      "path": "server/finance/procurement-engine.js",
+      "legacyPath": "server/finance/procurement-engine.js",
+      "layer": "server"
+    },
+    {
+      "path": "server/finance/restaurant-intelligence.js",
+      "legacyPath": "server/finance/restaurant-intelligence.js",
+      "layer": "server"
+    },
+    {
+      "path": "frontend/admin-views.js",
+      "legacyPath": "js/admin/features/inventory-views.js",
+      "layer": "frontend"
+    }
+  ],
+  "httpRoutes": [
+    {
+      "id": "get-159",
+      "method": "GET",
+      "paths": [
+        "/api/admin/inventory"
+      ],
+      "path": "server/routes/get-159.js"
+    },
+    {
+      "id": "post-160",
+      "method": "POST",
+      "paths": [
+        "/api/admin/inventory/adjust"
+      ],
+      "path": "server/routes/post-160.js"
+    }
+  ],
+  "adminViews": [
+    "costControl",
+    "inventory"
+  ]
+}

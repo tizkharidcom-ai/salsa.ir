@@ -1,0 +1,70 @@
+/* WESTO Ultra Fine v1.2 — desktop hero composition guard.
+   Purpose: reserve a clean editorial band below the WebGL stage on wide screens,
+   keep the active food plate visually separate from title/copy, and place explicit
+   prev/next controls beside the central plate. Mobile/tablet geometry is unchanged. */
+
+@media (min-width: 992px) {
+  html:not(.is-dish-boards) .westo-v12-hero-copy {
+    z-index: 24 !important;
+    width: min(560px, 46vw) !important;
+    bottom: calc(var(--v12-hero-dock-b) + var(--v12-hero-dock-h) + 20px) !important;
+  }
+
+  html:not(.is-dish-boards) .westo-v12-hero-title {
+    font-size: clamp(38px, 4vw, 58px) !important;
+    line-height: .98 !important;
+  }
+
+  html:not(.is-dish-boards) .westo-v12-hero-desc {
+    max-width: 44ch !important;
+    font-size: 11px !important;
+    line-height: 1.55 !important;
+  }
+
+  html:not(.is-dish-boards) .westo-v12-hero-rail {
+    width: min(500px, 38vw) !important;
+  }
+
+  /* The horizontal arrows communicate category navigation, so keep them near
+     the central plate instead of at the viewport bezel. */
+  html:not(.is-dish-boards) .carousel_arrow {
+    display: grid !important;
+    place-items: center !important;
+    top: 40% !important;
+    width: 48px !important;
+    height: 48px !important;
+    z-index: 26 !important;
+    opacity: .88 !important;
+  }
+  html:not(.is-dish-boards) .carousel_arrow.is-prev {
+    inset-inline-start: clamp(52px, 22vw, 340px) !important;
+  }
+  html:not(.is-dish-boards) .carousel_arrow.is-next {
+    inset-inline-end: clamp(52px, 22vw, 340px) !important;
+  }
+
+  /* The source WebGL canvas remains authoritative. Fade only its final lower
+     edge so a very wide food photo can never compete with the editorial copy.
+     The fade starts below the intended plate stage, not through the food. */
+  html:not(.is-dish-boards) main.main-wrapper > canvas {
+    -webkit-mask-image: linear-gradient(180deg, #000 0 61%, rgba(0,0,0,.96) 66%, rgba(0,0,0,.56) 72%, transparent 79%) !important;
+            mask-image: linear-gradient(180deg, #000 0 61%, rgba(0,0,0,.96) 66%, rgba(0,0,0,.56) 72%, transparent 79%) !important;
+  }
+}
+
+/* Short desktop windows are the failure mode shown in the customer-facing
+   screenshot. Tighten copy slightly without moving the category dock. */
+@media (min-width: 992px) and (max-height: 920px) {
+  html:not(.is-dish-boards) .westo-v12-hero-copy {
+    width: min(520px, 44vw) !important;
+    bottom: calc(var(--v12-hero-dock-b) + var(--v12-hero-dock-h) + 14px) !important;
+  }
+  html:not(.is-dish-boards) .westo-v12-hero-kicker { font-size: 9px !important; }
+  html:not(.is-dish-boards) .westo-v12-hero-title { font-size: clamp(36px, 3.7vw, 52px) !important; }
+  html:not(.is-dish-boards) .westo-v12-hero-desc { margin-top: 7px !important; }
+  html:not(.is-dish-boards) .westo-v12-hero-rail { margin-top: 7px !important; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html:not(.is-dish-boards) .carousel_arrow { transition: none !important; }
+}

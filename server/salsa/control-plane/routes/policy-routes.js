@@ -409,6 +409,24 @@ router.get('/modules', (_req, res) => {
 // Require platform auth for management endpoints
 router.use(authenticatePlatform);
 
+// Release selection changes browser code, never grants paid access or copies data.
+const { ModuleReleaseService } = require('../policy/module-release-service');
+const moduleReleaseService = new ModuleReleaseService();
+router.get('/module-releases/:tenantId', async (req, res) => {
+  try {
+    res.setHeader('Cache-Control', 'no-store');
+    res.json({ ok: true, data: await moduleReleaseService.getTenantReleases(req.params.tenantId) });
+  } catch (error) { res.status(error.status || 503).json({ ok: false, error: error.code || error.message }); }
+});
+router.patch('/module-releases/:tenantId/:moduleKey', requirePlatformRole(['platform_owner', 'platform_operations']), async (req, res) => {
+  try {
+    const { version, expectedRevision, reason } = req.body || {};
+    const data = await moduleReleaseService.assign({ tenantId: req.params.tenantId,
+      moduleKey: req.params.moduleKey, version, expectedRevision, reason, actorId: req.platformPrincipal.id });
+    res.json({ ok: true, data });
+  } catch (error) { res.status(error.status || 503).json({ ok: false, error: error.code || error.message }); }
+});
+
 // 1. Commercial Grants
 router.get('/grants/:tenantId', async (req, res) => {
   try {

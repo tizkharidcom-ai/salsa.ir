@@ -1,0 +1,78 @@
+{
+  "schemaVersion": 1,
+  "key": "analytics",
+  "nameFa": "گزارش‌های مدیریتی",
+  "version": "1.0.0",
+  "runtime": "node-commonjs-express",
+  "runtimeApiVersion": "westo-v1",
+  "dependencies": [
+    "platform_core"
+  ],
+  "technicalFeatures": [
+    "insights.reports"
+  ],
+  "sharedComposition": [
+    "server/server.js",
+    "js/admin.js",
+    "role-panel.html"
+  ],
+  "dataCapture": "always-on-operational-core",
+  "access": "tenant-entitlement-and-user-capability",
+  "files": [
+    {
+      "path": "frontend/js/admin/modules/insights/dashboard-view.js",
+      "legacyPath": "js/admin/modules/insights/dashboard-view.js",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/js/admin/modules/insights/reports-module.js",
+      "legacyPath": "js/admin/modules/insights/reports-module.js",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/js/analytics-beacon.js",
+      "legacyPath": "js/analytics-beacon.js",
+      "layer": "frontend"
+    },
+    {
+      "path": "server/finance/ai-engine.js",
+      "legacyPath": "server/finance/ai-engine.js",
+      "layer": "server"
+    },
+    {
+      "path": "server/finance/break-even-defaults.js",
+      "legacyPath": "server/finance/break-even-defaults.js",
+      "layer": "server"
+    },
+    {
+      "path": "server/finance/break-even-engine.js",
+      "legacyPath": "server/finance/break-even-engine.js",
+      "layer": "server"
+    },
+    {
+      "path": "server/finance/fnb-cost-optimizer.js",
+      "legacyPath": "server/finance/fnb-cost-optimizer.js",
+      "layer": "server"
+    },
+    {
+      "path": "server/finance/predictive-engine.js",
+      "legacyPath": "server/finance/predictive-engine.js",
+      "layer": "server"
+    },
+    {
+      "path": "server/finance/restaurant-cost-classifier.js",
+      "legacyPath": "server/finance/restaurant-cost-classifier.js",
+      "layer": "server"
+    }
+  ],
+  "httpRoutes": [
+    {
+      "id": "get-150",
+      "method": "GET",
+      "paths": [
+        "/api/admin/analytics"
+      ],
+      "path": "server/routes/get-150.js"
+    }
+  ]
+}

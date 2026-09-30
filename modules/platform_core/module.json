@@ -1,0 +1,893 @@
+{
+  "schemaVersion": 1,
+  "key": "platform_core",
+  "nameFa": "هسته پلتفرم و پایداری",
+  "version": "1.0.0",
+  "runtime": "node-commonjs-express",
+  "runtimeApiVersion": "westo-v1",
+  "dependencies": [],
+  "technicalFeatures": [
+    "core.workspace",
+    "core.audit_trail",
+    "core.backup_retention"
+  ],
+  "sharedComposition": [
+    "server/server.js",
+    "js/admin.js",
+    "role-panel.html"
+  ],
+  "dataCapture": "always-on-operational-core",
+  "access": "tenant-entitlement-and-user-capability",
+  "files": [
+    {
+      "path": "frontend/admin.html",
+      "legacyPath": "admin.html",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/css/admin-command-center-v2.css",
+      "legacyPath": "css/admin-command-center-v2.css",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/css/admin-operations-v3.css",
+      "legacyPath": "css/admin-operations-v3.css",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/css/admin-professional-v4.css",
+      "legacyPath": "css/admin-professional-v4.css",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/css/admin-qr.css",
+      "legacyPath": "css/admin-qr.css",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/css/admin-users-roles.css",
+      "legacyPath": "css/admin-users-roles.css",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/css/admin-vitality-v5.css",
+      "legacyPath": "css/admin-vitality-v5.css",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/css/design-logic-v13.css",
+      "legacyPath": "css/design-logic-v13.css",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/css/fa-override.css",
+      "legacyPath": "css/fa-override.css",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/css/globals.css",
+      "legacyPath": "css/globals.css",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/css/i18n-dir.css",
+      "legacyPath": "css/i18n-dir.css",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/css/mobile-forms.css",
+      "legacyPath": "css/mobile-forms.css",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/css/panel.css",
+      "legacyPath": "css/panel.css",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/css/responsive-shell.css",
+      "legacyPath": "css/responsive-shell.css",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/css/role-panel.css",
+      "legacyPath": "css/role-panel.css",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/css/shamsi-datepicker.css",
+      "legacyPath": "css/shamsi-datepicker.css",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/css/shamsi-wheel-picker.css",
+      "legacyPath": "css/shamsi-wheel-picker.css",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/css/sib-styles.css",
+      "legacyPath": "css/sib-styles.css",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/css/table.css",
+      "legacyPath": "css/table.css",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/css/vazir-system.css",
+      "legacyPath": "css/vazir-system.css",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/js/admin-professional-v4.js",
+      "legacyPath": "js/admin-professional-v4.js",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/js/admin.js",
+      "legacyPath": "js/admin.js",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/js/admin/modules/core/registry.js",
+      "legacyPath": "js/admin/modules/core/registry.js",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/js/admin/modules/operations/operations-module.js",
+      "legacyPath": "js/admin/modules/operations/operations-module.js",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/js/admin/modules/settings/settings-module.js",
+      "legacyPath": "js/admin/modules/settings/settings-module.js",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/js/animations.js",
+      "legacyPath": "js/animations.js",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/js/auth-nav.js",
+      "legacyPath": "js/auth-nav.js",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/js/buttons.js",
+      "legacyPath": "js/buttons.js",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/js/content-bootstrap.static.js",
+      "legacyPath": "js/content-bootstrap.static.js",
+      "layer": "frontend",
+      "delivery": "tenant-data-bootstrap"
+    },
+    {
+      "path": "frontend/js/design-logic-v13.js",
+      "legacyPath": "js/design-logic-v13.js",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/js/disable-service-worker.js",
+      "legacyPath": "js/disable-service-worker.js",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/js/i18n.js",
+      "legacyPath": "js/i18n.js",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/js/persian-format.js",
+      "legacyPath": "js/persian-format.js",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/js/pwa-bootstrap.js",
+      "legacyPath": "js/pwa-bootstrap.js",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/js/role-panel.js",
+      "legacyPath": "js/role-panel.js",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/js/shamsi-core.js",
+      "legacyPath": "js/shamsi-core.js",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/js/shamsi-datepicker.js",
+      "legacyPath": "js/shamsi-datepicker.js",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/js/shamsi-wheel-picker.js",
+      "legacyPath": "js/shamsi-wheel-picker.js",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/js/sounds.js",
+      "legacyPath": "js/sounds.js",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/js/theme.js",
+      "legacyPath": "js/theme.js",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/js/vendor/ScrollTrigger.min.js",
+      "legacyPath": "js/vendor/ScrollTrigger.min.js",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/js/vendor/SplitText.min.js",
+      "legacyPath": "js/vendor/SplitText.min.js",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/js/vendor/gsap.min.js",
+      "legacyPath": "js/vendor/gsap.min.js",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/js/vendor/jquery-3.5.1.min.js",
+      "legacyPath": "js/vendor/jquery-3.5.1.min.js",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/js/vendor/lenis.mjs",
+      "legacyPath": "js/vendor/lenis.mjs",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/js/vendor/qrcode.min.js",
+      "legacyPath": "js/vendor/qrcode.min.js",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/js/vendor/three/addons/postprocessing/EffectComposer.js",
+      "legacyPath": "js/vendor/three/addons/postprocessing/EffectComposer.js",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/js/vendor/three/addons/postprocessing/MaskPass.js",
+      "legacyPath": "js/vendor/three/addons/postprocessing/MaskPass.js",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/js/vendor/three/addons/postprocessing/OutputPass.js",
+      "legacyPath": "js/vendor/three/addons/postprocessing/OutputPass.js",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/js/vendor/three/addons/postprocessing/Pass.js",
+      "legacyPath": "js/vendor/three/addons/postprocessing/Pass.js",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/js/vendor/three/addons/postprocessing/RenderPass.js",
+      "legacyPath": "js/vendor/three/addons/postprocessing/RenderPass.js",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/js/vendor/three/addons/postprocessing/SMAAPass.js",
+      "legacyPath": "js/vendor/three/addons/postprocessing/SMAAPass.js",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/js/vendor/three/addons/postprocessing/ShaderPass.js",
+      "legacyPath": "js/vendor/three/addons/postprocessing/ShaderPass.js",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/js/vendor/three/addons/shaders/CopyShader.js",
+      "legacyPath": "js/vendor/three/addons/shaders/CopyShader.js",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/js/vendor/three/addons/shaders/OutputShader.js",
+      "legacyPath": "js/vendor/three/addons/shaders/OutputShader.js",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/js/vendor/three/addons/shaders/SMAAShader.js",
+      "legacyPath": "js/vendor/three/addons/shaders/SMAAShader.js",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/js/vendor/three/three.module.js",
+      "legacyPath": "js/vendor/three/three.module.js",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/js/vendor/webflow.9a82b613.50fbdd53e3da9960.js",
+      "legacyPath": "js/vendor/webflow.9a82b613.50fbdd53e3da9960.js",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/js/vendor/webflow.achunk.22b66e874d42861f.js",
+      "legacyPath": "js/vendor/webflow.achunk.22b66e874d42861f.js",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/js/vendor/webflow.achunk.2aaad8b9b407aaec.js",
+      "legacyPath": "js/vendor/webflow.achunk.2aaad8b9b407aaec.js",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/js/vendor/webflow.achunk.36b8fb49256177c8.js",
+      "legacyPath": "js/vendor/webflow.achunk.36b8fb49256177c8.js",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/js/vendor/webflow.achunk.496d56dd8c063ec0.js",
+      "legacyPath": "js/vendor/webflow.achunk.496d56dd8c063ec0.js",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/js/vendor/webflow.achunk.58f76f2901951073.js",
+      "legacyPath": "js/vendor/webflow.achunk.58f76f2901951073.js",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/js/vendor/webflow.achunk.5959ac50b3c857f1.js",
+      "legacyPath": "js/vendor/webflow.achunk.5959ac50b3c857f1.js",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/js/vendor/webflow.achunk.64873797e35e968c.js",
+      "legacyPath": "js/vendor/webflow.achunk.64873797e35e968c.js",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/js/vendor/webflow.achunk.65add74e46fe5245.js",
+      "legacyPath": "js/vendor/webflow.achunk.65add74e46fe5245.js",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/js/vendor/webflow.achunk.ad6dcd2fc75b294c.js",
+      "legacyPath": "js/vendor/webflow.achunk.ad6dcd2fc75b294c.js",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/js/vendor/webflow.achunk.ba16934fe1414a74.js",
+      "legacyPath": "js/vendor/webflow.achunk.ba16934fe1414a74.js",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/js/vendor/webflow.achunk.db80639074bc0296.js",
+      "legacyPath": "js/vendor/webflow.achunk.db80639074bc0296.js",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/js/vendor/webflow.achunk.e8e7e6855b442808.js",
+      "legacyPath": "js/vendor/webflow.achunk.e8e7e6855b442808.js",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/js/vendor/webflow.d24778d3.ca47734eea7cf588.js",
+      "legacyPath": "js/vendor/webflow.d24778d3.ca47734eea7cf588.js",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/login.html",
+      "legacyPath": "login.html",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/role-panel.html",
+      "legacyPath": "role-panel.html",
+      "layer": "frontend"
+    },
+    {
+      "path": "server/admin-v2.js",
+      "legacyPath": "server/admin-v2.js",
+      "layer": "server"
+    },
+    {
+      "path": "server/audit-tenant-scope.js",
+      "legacyPath": "server/audit-tenant-scope.js",
+      "layer": "server"
+    },
+    {
+      "path": "server/command-center.js",
+      "legacyPath": "server/command-center.js",
+      "layer": "server"
+    },
+    {
+      "path": "server/control-plane-bridge-auth.js",
+      "legacyPath": "server/control-plane-bridge-auth.js",
+      "layer": "server"
+    },
+    {
+      "path": "server/finance/audit-engine.js",
+      "legacyPath": "server/finance/audit-engine.js",
+      "layer": "server"
+    },
+    {
+      "path": "server/finance/domain-contracts.js",
+      "legacyPath": "server/finance/domain-contracts.js",
+      "layer": "server"
+    },
+    {
+      "path": "server/finance/money.js",
+      "legacyPath": "server/finance/money.js",
+      "layer": "server"
+    },
+    {
+      "path": "server/finance/shamsi.js",
+      "legacyPath": "server/finance/shamsi.js",
+      "layer": "server"
+    },
+    {
+      "path": "server/finance/value-contracts.js",
+      "legacyPath": "server/finance/value-contracts.js",
+      "layer": "server"
+    },
+    {
+      "path": "server/otp-policy.js",
+      "legacyPath": "server/otp-policy.js",
+      "layer": "server"
+    },
+    {
+      "path": "server/postgres-state.js",
+      "legacyPath": "server/postgres-state.js",
+      "layer": "server"
+    },
+    {
+      "path": "server/runtime-readiness.js",
+      "legacyPath": "server/runtime-readiness.js",
+      "layer": "server"
+    },
+    {
+      "path": "server/session-token.js",
+      "legacyPath": "server/session-token.js",
+      "layer": "server"
+    },
+    {
+      "path": "frontend/admin-views.js",
+      "legacyPath": "js/admin/features/platform_core-views.js",
+      "layer": "frontend"
+    }
+  ],
+  "httpRoutes": [
+    {
+      "id": "get-001",
+      "method": "GET",
+      "paths": [
+        "/api/admin/session"
+      ],
+      "path": "server/routes/get-001.js"
+    },
+    {
+      "id": "get-002",
+      "method": "GET",
+      "paths": [
+        "/api/admin/modules"
+      ],
+      "path": "server/routes/get-002.js"
+    },
+    {
+      "id": "get-003",
+      "method": "GET",
+      "paths": [
+        "/api/admin/role-preview"
+      ],
+      "path": "server/routes/get-003.js"
+    },
+    {
+      "id": "get-004",
+      "method": "GET",
+      "paths": [
+        "/api/staff/session/:workspace"
+      ],
+      "path": "server/routes/get-004.js"
+    },
+    {
+      "id": "post-005",
+      "method": "POST",
+      "paths": [
+        "/api/staff/shifts/open"
+      ],
+      "path": "server/routes/post-005.js"
+    },
+    {
+      "id": "post-006",
+      "method": "POST",
+      "paths": [
+        "/api/staff/shifts/close"
+      ],
+      "path": "server/routes/post-006.js"
+    },
+    {
+      "id": "get-011",
+      "method": "GET",
+      "paths": [
+        "/api/tenant/context"
+      ],
+      "path": "server/routes/get-011.js"
+    },
+    {
+      "id": "get-012",
+      "method": "GET",
+      "paths": [
+        "/api/admin/neem-integration"
+      ],
+      "path": "server/routes/get-012.js"
+    },
+    {
+      "id": "post-013",
+      "method": "POST",
+      "paths": [
+        "/api/admin/neem-integration/retry"
+      ],
+      "path": "server/routes/post-013.js"
+    },
+    {
+      "id": "post-014",
+      "method": "POST",
+      "paths": [
+        "/api/admin/neem-integration/backfill"
+      ],
+      "path": "server/routes/post-014.js"
+    },
+    {
+      "id": "get-015",
+      "method": "GET",
+      "paths": [
+        "/ops"
+      ],
+      "path": "server/routes/get-015.js"
+    },
+    {
+      "id": "get-016",
+      "method": "GET",
+      "paths": [
+        "/ops/:view"
+      ],
+      "path": "server/routes/get-016.js"
+    },
+    {
+      "id": "get-017",
+      "method": "GET",
+      "paths": [
+        "/api/admin/command-center"
+      ],
+      "path": "server/routes/get-017.js"
+    },
+    {
+      "id": "get-018",
+      "method": "GET",
+      "paths": [
+        "/api/admin/events"
+      ],
+      "path": "server/routes/get-018.js"
+    },
+    {
+      "id": "get-019",
+      "method": "GET",
+      "paths": [
+        "/api/admin/audit"
+      ],
+      "path": "server/routes/get-019.js"
+    },
+    {
+      "id": "post-020",
+      "method": "POST",
+      "paths": [
+        "/api/auth/request-otp"
+      ],
+      "path": "server/routes/post-020.js"
+    },
+    {
+      "id": "post-021",
+      "method": "POST",
+      "paths": [
+        "/api/auth/verify-otp"
+      ],
+      "path": "server/routes/post-021.js"
+    },
+    {
+      "id": "get-022",
+      "method": "GET",
+      "paths": [
+        "/api/auth/me"
+      ],
+      "path": "server/routes/get-022.js"
+    },
+    {
+      "id": "post-023",
+      "method": "POST",
+      "paths": [
+        "/api/auth/logout"
+      ],
+      "path": "server/routes/post-023.js"
+    },
+    {
+      "id": "post-026",
+      "method": "POST",
+      "paths": [
+        "/api/user/avatar"
+      ],
+      "path": "server/routes/post-026.js"
+    },
+    {
+      "id": "get-027",
+      "method": "GET",
+      "paths": [
+        "/api/user/addresses"
+      ],
+      "path": "server/routes/get-027.js"
+    },
+    {
+      "id": "post-028",
+      "method": "POST",
+      "paths": [
+        "/api/user/addresses"
+      ],
+      "path": "server/routes/post-028.js"
+    },
+    {
+      "id": "put-029",
+      "method": "PUT",
+      "paths": [
+        "/api/user/addresses/:id"
+      ],
+      "path": "server/routes/put-029.js"
+    },
+    {
+      "id": "delete-030",
+      "method": "DELETE",
+      "paths": [
+        "/api/user/addresses/:id"
+      ],
+      "path": "server/routes/delete-030.js"
+    },
+    {
+      "id": "post-031",
+      "method": "POST",
+      "paths": [
+        "/api/user/addresses/:id/default"
+      ],
+      "path": "server/routes/post-031.js"
+    },
+    {
+      "id": "get-039",
+      "method": "GET",
+      "paths": [
+        "/api/staff/menu"
+      ],
+      "path": "server/routes/get-039.js"
+    },
+    {
+      "id": "get-047",
+      "method": "GET",
+      "paths": [
+        "/api/i18n"
+      ],
+      "path": "server/routes/get-047.js"
+    },
+    {
+      "id": "get-048",
+      "method": "GET",
+      "paths": [
+        "/api/admin/i18n"
+      ],
+      "path": "server/routes/get-048.js"
+    },
+    {
+      "id": "put-049",
+      "method": "PUT",
+      "paths": [
+        "/api/admin/i18n"
+      ],
+      "path": "server/routes/put-049.js"
+    },
+    {
+      "id": "post-050",
+      "method": "POST",
+      "paths": [
+        "/api/admin/translate/menu"
+      ],
+      "path": "server/routes/post-050.js"
+    },
+    {
+      "id": "post-051",
+      "method": "POST",
+      "paths": [
+        "/api/admin/translate/menu/:id"
+      ],
+      "path": "server/routes/post-051.js"
+    },
+    {
+      "id": "get-052",
+      "method": "GET",
+      "paths": [
+        "/api/allergens"
+      ],
+      "path": "server/routes/get-052.js"
+    },
+    {
+      "id": "get-063",
+      "method": "GET",
+      "paths": [
+        "/api/checkout/meta"
+      ],
+      "path": "server/routes/get-063.js"
+    },
+    {
+      "id": "patch-103",
+      "method": "PATCH",
+      "paths": [
+        "/api/v2/orders/:id/status"
+      ],
+      "path": "server/routes/patch-103.js"
+    },
+    {
+      "id": "get-115",
+      "method": "GET",
+      "paths": [
+        "/api/admin/users"
+      ],
+      "path": "server/routes/get-115.js"
+    },
+    {
+      "id": "get-116",
+      "method": "GET",
+      "paths": [
+        "/api/admin/roles/matrix"
+      ],
+      "path": "server/routes/get-116.js"
+    },
+    {
+      "id": "post-117",
+      "method": "POST",
+      "paths": [
+        "/api/admin/users",
+        "/api/admin/customers"
+      ],
+      "path": "server/routes/post-117.js"
+    },
+    {
+      "id": "patch-118",
+      "method": "PATCH",
+      "paths": [
+        "/api/admin/users/:phone",
+        "/api/admin/customers/:phone"
+      ],
+      "path": "server/routes/patch-118.js"
+    },
+    {
+      "id": "delete-119",
+      "method": "DELETE",
+      "paths": [
+        "/api/admin/users/:phone"
+      ],
+      "path": "server/routes/delete-119.js"
+    },
+    {
+      "id": "get-122",
+      "method": "GET",
+      "paths": [
+        "/api/admin/stats"
+      ],
+      "path": "server/routes/get-122.js"
+    },
+    {
+      "id": "get-123",
+      "method": "GET",
+      "paths": [
+        "/api/admin/notifications"
+      ],
+      "path": "server/routes/get-123.js"
+    },
+    {
+      "id": "post-148",
+      "method": "POST",
+      "paths": [
+        "/api/admin/prices/bulk"
+      ],
+      "path": "server/routes/post-148.js"
+    },
+    {
+      "id": "post-149",
+      "method": "POST",
+      "paths": [
+        "/api/analytics/visit"
+      ],
+      "path": "server/routes/post-149.js"
+    },
+    {
+      "id": "get-157",
+      "method": "GET",
+      "paths": [
+        "/api/admin/settings"
+      ],
+      "path": "server/routes/get-157.js"
+    },
+    {
+      "id": "put-158",
+      "method": "PUT",
+      "paths": [
+        "/api/admin/settings"
+      ],
+      "path": "server/routes/put-158.js"
+    },
+    {
+      "id": "get-203",
+      "method": "GET",
+      "paths": [
+        "/api/admin/whatsapp"
+      ],
+      "path": "server/routes/get-203.js"
+    },
+    {
+      "id": "put-204",
+      "method": "PUT",
+      "paths": [
+        "/api/admin/whatsapp"
+      ],
+      "path": "server/routes/put-204.js"
+    },
+    {
+      "id": "post-205",
+      "method": "POST",
+      "paths": [
+        "/api/admin/whatsapp/order/:id"
+      ],
+      "path": "server/routes/post-205.js"
+    },
+    {
+      "id": "get-211",
+      "method": "GET",
+      "paths": [
+        "/"
+      ],
+      "path": "server/routes/get-211.js"
+    },
+    {
+      "id": "get-215",
+      "method": "GET",
+      "paths": [
+        "/checkout",
+        "/checkout.html"
+      ],
+      "path": "server/routes/get-215.js"
+    },
+    {
+      "id": "get-216",
+      "method": "GET",
+      "paths": [],
+      "path": "server/routes/get-216.js"
+    },
+    {
+      "id": "get-217",
+      "method": "GET",
+      "paths": [
+        "/sw.js"
+      ],
+      "path": "server/routes/get-217.js"
+    },
+    {
+      "id": "get-218",
+      "method": "GET",
+      "paths": [
+        "/manifest.webmanifest"
+      ],
+      "path": "server/routes/get-218.js"
+    }
+  ],
+  "adminViews": [
+    "dashboard",
+    "users",
+    "neem",
+    "salsa",
+    "settings"
+  ]
+}

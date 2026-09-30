@@ -81,6 +81,19 @@ async function staleWhileRevalidate(request) {
   return cached || (await fresh) || Response.error();
 }
 
+// Tenant assignments keep the existing URLs. Check code before reusing the
+// previous assignment's cache; retain the existing offline fallback.
+async function networkFirstCode(request) {
+  const cache = await caches.open(CACHE);
+  try {
+    const response = await fetch(request, { cache: 'no-cache' });
+    if (response && response.ok) cache.put(request, response.clone()).catch(() => {});
+    return response;
+  } catch (_) {
+    return (await cache.match(request)) || Response.error();
+  }
+}
+
 self.addEventListener('fetch', (event) => {
   const request = event.request;
   if (request.method !== 'GET') return;
@@ -104,7 +117,8 @@ self.addEventListener('fetch', (event) => {
     || url.pathname === '/manifest.webmanifest'
     || url.pathname.startsWith('/assets/icons/')
   ) {
-    event.respondWith(staleWhileRevalidate(request));
+    event.respondWith(request.destination === 'script' || request.destination === 'style'
+      ? networkFirstCode(request) : staleWhileRevalidate(request));
   }
 });
 

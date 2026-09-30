@@ -53,11 +53,17 @@ function createTenantContext({
   status = 'active',
   source = 'resolver',
   isPlatform = false,
+  moduleVersions = {},
 } = {}) {
   const canonicalTenantId = requireTenantId(tenantId);
   const canonicalSlug = requireTenantId(tenantSlug);
   if (isPlatform) {
     throw new Error('TENANT_CONTEXT_INVALID: platform requests cannot carry a restaurant tenant context.');
+  }
+  if (!moduleVersions || typeof moduleVersions !== 'object' || Array.isArray(moduleVersions)
+    || Object.entries(moduleVersions).some(([key, version]) => !/^[a-z][a-z0-9_]*$/.test(key)
+      || typeof version !== 'string' || !/^\d+\.\d+\.\d+$/.test(version))) {
+    throw new Error('TENANT_CONTEXT_INVALID: module versions must be explicit releases.');
   }
 
   return Object.freeze({
@@ -70,6 +76,7 @@ function createTenantContext({
     release: release == null ? null : String(release),
     status: String(status || 'active').trim().toLowerCase(),
     source: String(source || 'resolver'),
+    moduleVersions: Object.freeze({ ...moduleVersions }),
   });
 }
 

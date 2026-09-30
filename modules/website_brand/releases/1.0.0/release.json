@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "moduleKey": "website_brand",
+  "version": "1.0.0",
+  "labelFa": "نسخهٔ فعلی وستو",
+  "runtimeApiVersion": "westo-v1",
+  "publishedAt": "2026-09-30T12:34:40.505Z",
+  "changesFa": [
+    "همان رابط و رفتار موجود؛ بدون بازطراحی"
+  ],
+  "digest": "77389aeb7509e6a4eaa39a99714f2de5cf074e6ff039cfe67737cef01c6c5c1a",
+  "assets": [
+    {
+      "legacyPath": "about.html",
+      "sha256": "fa2f8693afbe15aae272a138a24bd496e0557265c215129680f65e0da9917359"
+    },
+    {
+      "legacyPath": "cgu.html",
+      "sha256": "45311228acfea15ed5643195d1dece79993e6d04c9d84158837bbd7f8d66f625"
+    },
+    {
+      "legacyPath": "js/admin/modules/content/content-module.js",
+      "sha256": "701c4b7e67c9dd2f087f46e7437ac42a849cc39ef97e14413ae6636271f87dcf"
+    },
+    {
+      "legacyPath": "js/brand-lockup.js",
+      "sha256": "8a0baf62de7c72b6c63d5d6c48f799692de8175de048722f41fe978953b99afd"
+    },
+    {
+      "legacyPath": "mentions-legales.html",
+      "sha256": "c15006481be7e22851cb579e408534632c3e68199007a396a75adca5580ef6c6"
+    },
+    {
+      "legacyPath": "politique-de-confidentialite.html",
+      "sha256": "d413be076e8506303044b35b33c5a9b78270267eaa009fd4a4c23892eca14d62"
+    },
+    {
+      "legacyPath": "js/admin/features/website_brand-views.js",
+      "sha256": "4d3ac75af08d9e40e53f2a905a3da4d76463d5b5e4f5c9697b380484ef2579c8"
+    }
+  ]
+}

@@ -82,7 +82,10 @@
     "desktop:pack": "electron-builder --dir",
     "desktop:dist": "electron-builder --mac --win",
     "desktop:dist:mac": "electron-builder --mac",
-    "desktop:dist:win": "electron-builder --win"
+    "desktop:dist:win": "electron-builder --win",
+    "modules:build": "node scripts/build-westo-module-release.js",
+    "modules:verify": "node scripts/verify-westo-modules.js",
+    "test:modules": "node --test test/modular-ecosystem.test.js test/modular-tenant-http.test.js"
   },
   "dependencies": {
     "compression": "^1.8.1",

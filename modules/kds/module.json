@@ -1,0 +1,96 @@
+{
+  "schemaVersion": 1,
+  "key": "kds",
+  "nameFa": "آشپزخانه و KDS",
+  "version": "1.0.0",
+  "runtime": "node-commonjs-express",
+  "runtimeApiVersion": "westo-v1",
+  "dependencies": [
+    "pos"
+  ],
+  "technicalFeatures": [
+    "kitchen.kds",
+    "kitchen.stations",
+    "kitchen.expediter"
+  ],
+  "sharedComposition": [
+    "server/server.js",
+    "js/admin.js",
+    "role-panel.html"
+  ],
+  "dataCapture": "always-on-operational-core",
+  "access": "tenant-entitlement-and-user-capability",
+  "files": [
+    {
+      "path": "frontend/css/kitchen-kds.css",
+      "legacyPath": "css/kitchen-kds.css",
+      "layer": "frontend"
+    },
+    {
+      "path": "server/kitchen-queue.js",
+      "legacyPath": "server/kitchen-queue.js",
+      "layer": "server"
+    },
+    {
+      "path": "frontend/admin-views.js",
+      "legacyPath": "js/admin/features/kds-views.js",
+      "layer": "frontend"
+    }
+  ],
+  "httpRoutes": [
+    {
+      "id": "get-104",
+      "method": "GET",
+      "paths": [
+        "/api/kitchen/orders"
+      ],
+      "path": "server/routes/get-104.js"
+    },
+    {
+      "id": "patch-105",
+      "method": "PATCH",
+      "paths": [
+        "/api/kitchen/orders/:id"
+      ],
+      "path": "server/routes/patch-105.js"
+    },
+    {
+      "id": "patch-106",
+      "method": "PATCH",
+      "paths": [
+        "/api/kitchen/items/:id/availability"
+      ],
+      "path": "server/routes/patch-106.js"
+    },
+    {
+      "id": "get-109",
+      "method": "GET",
+      "paths": [
+        "/api/kitchen/calls"
+      ],
+      "path": "server/routes/get-109.js"
+    },
+    {
+      "id": "patch-110",
+      "method": "PATCH",
+      "paths": [
+        "/api/kitchen/calls/:id"
+      ],
+      "path": "server/routes/patch-110.js"
+    },
+    {
+      "id": "get-214",
+      "method": "GET",
+      "paths": [
+        "/kitchen",
+        "/kitchen.html",
+        "/kds",
+        "/kds.html"
+      ],
+      "path": "server/routes/get-214.js"
+    }
+  ],
+  "adminViews": [
+    "kitchen"
+  ]
+}

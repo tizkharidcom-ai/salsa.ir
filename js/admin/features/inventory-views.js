@@ -1,0 +1,1 @@
+../../../modules/inventory/frontend/admin-views.js

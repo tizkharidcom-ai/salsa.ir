@@ -3,6 +3,7 @@
 
 const { getDatabase } = require('../db/database');
 const auditService = require('../audit/audit-service');
+const { defaultVersions } = require('../../../../modules/runtime');
 
 class TenantRegistryService {
   constructor() {
@@ -77,7 +78,9 @@ class TenantRegistryService {
     const commercialMetadata = {
       organization: metadata.organization || displayName,
       branchesCount: Number(metadata.branchesCount || 1),
-      templateCode: metadata.templateCode || 'tpl-blank-cafe-v1'
+      templateCode: metadata.templateCode || 'tpl-blank-cafe-v1',
+      moduleVersions: defaultVersions(),
+      moduleReleaseRevision: 0,
     };
 
     const sql = `

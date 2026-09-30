@@ -45,6 +45,8 @@ function isTenantDatabaseRegistration(registration) {
 
 function toRegistrationContext(registration, host) {
   const tenantId = registration.tenantId || registration.tenant_id;
+  const metadata = typeof registration.metadata === 'string'
+    ? JSON.parse(registration.metadata) : (registration.metadata || {});
   return createTenantContext({
     tenantId,
     tenantSlug: registration.tenantSlug || registration.tenant_slug || tenantId,
@@ -55,6 +57,7 @@ function toRegistrationContext(registration, host) {
     release: registration.release || null,
     status: registration.status || 'active',
     source: registration.source || 'control-db',
+    moduleVersions: registration.moduleVersions || metadata.moduleVersions || {},
   });
 }
 

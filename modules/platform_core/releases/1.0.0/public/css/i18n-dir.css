@@ -1,0 +1,141 @@
+/* Guest i18n layout: chrome stays LTR; text direction is lang-scoped. */
+
+/* --- Stable chrome (never mirror with html.dir) --- */
+.navbar,
+.navbar_content,
+.navbar_container,
+.navbar_sound-wrapper,
+.navbar_menu-wrapper,
+.westo-dish-catbar,
+.westo-dish-catbar__track {
+  direction: ltr;
+}
+
+html.is-lang-fa .navbar_menu-inner,
+html.is-lang-ar .navbar_menu-inner {
+  direction: rtl;
+}
+
+html.is-lang-en .navbar_menu,
+html.is-lang-en .navbar_menu-inner {
+  direction: ltr;
+}
+
+/* Drawers / modals follow guest reading direction without flipping the page shell */
+html.is-lang-en .table-drawer__panel,
+html.is-lang-en .qty-modal__card {
+  direction: ltr;
+  text-align: left;
+}
+
+html.is-lang-fa .table-drawer__panel,
+html.is-lang-ar .table-drawer__panel,
+html.is-lang-fa .qty-modal__card,
+html.is-lang-ar .qty-modal__card {
+  direction: rtl;
+  text-align: right;
+}
+
+/* Classic /menu: header chrome stays LTR like main navbar */
+.classic-menu .cm-header__bar,
+.classic-menu .cm-header__actions,
+.classic-menu .cm-lang-chip {
+  direction: ltr;
+}
+
+html.is-lang-en .classic-menu .cm-drawer__panel {
+  direction: ltr;
+  text-align: left;
+}
+
+html.is-lang-fa .classic-menu .cm-drawer__panel,
+html.is-lang-ar .classic-menu .cm-drawer__panel {
+  direction: rtl;
+  text-align: right;
+}
+
+/* Classic text islands */
+html.is-lang-fa .classic-menu .cm-cats,
+html.is-lang-ar .classic-menu .cm-cats,
+html.is-lang-fa .classic-menu .cm-meta,
+html.is-lang-ar .classic-menu .cm-meta,
+html.is-lang-fa .classic-menu .cm-grid,
+html.is-lang-ar .classic-menu .cm-grid,
+html.is-lang-fa .classic-menu .cm-detail__card,
+html.is-lang-ar .classic-menu .cm-detail__card,
+html.is-lang-fa .classic-menu .cm-search-panel,
+html.is-lang-ar .classic-menu .cm-search-panel {
+  direction: rtl;
+  unicode-bidi: isolate;
+}
+
+html.is-lang-en .classic-menu .cm-cats,
+html.is-lang-en .classic-menu .cm-meta,
+html.is-lang-en .classic-menu .cm-grid,
+html.is-lang-en .classic-menu .cm-detail__card,
+html.is-lang-en .classic-menu .cm-search-panel {
+  direction: ltr;
+  unicode-bidi: isolate;
+}
+
+/* Arabic uses the same text-direction islands as Persian */
+html[lang='ar'] p,
+html[lang='ar'] li,
+html[lang='ar'] .w-richtext,
+html[lang='ar'] blockquote,
+html[lang='ar'] h1,
+html[lang='ar'] h2,
+html[lang='ar'] h3,
+html[lang='ar'] h4,
+html[lang='ar'] h5,
+html[lang='ar'] h6,
+html[lang='ar'] [class*='heading-style'],
+html[lang='ar'] [class*='text-size'],
+html[lang='ar'] [class*='text-style'],
+html[lang='ar'] .faq_question,
+html[lang='ar'] .w-dyn-item,
+html[lang='ar'] .benefits_text,
+html[lang='ar'] .menu-cat-label,
+html[lang='ar'] .entrance-gate,
+html[lang='ar'] .navbar_menu-inner {
+  direction: rtl;
+  unicode-bidi: isolate;
+}
+
+html[lang='ar'] h1,
+html[lang='ar'] h2,
+html[lang='ar'] h3 {
+  font-style: normal;
+}
+
+html[lang='ar'] body,
+html[lang='ar'] .classic-menu {
+  font-family: 'Vazirmatn', 'Geist', system-ui, sans-serif;
+}
+
+/* English text islands stay LTR even if a parent had rtl leftovers */
+html.is-lang-en .benefits_text,
+html.is-lang-en .menu-cat-label,
+html.is-lang-en .benefits_nav.is-menu-rail .benefits_rail-label,
+html.is-lang-en .entrance-gate {
+  direction: ltr;
+  unicode-bidi: isolate;
+}
+
+/* Gate chrome: physical LTR top bar regardless of text lang */
+.entrance-gate .eg-shell,
+.entrance-gate .eg-top {
+  direction: ltr;
+}
+
+html.is-lang-fa .entrance-gate .eg-brand,
+html.is-lang-ar .entrance-gate .eg-brand,
+html.is-lang-fa .entrance-gate .eg-sheet,
+html.is-lang-ar .entrance-gate .eg-sheet {
+  direction: rtl;
+}
+
+html.is-lang-en .entrance-gate .eg-brand,
+html.is-lang-en .entrance-gate .eg-sheet {
+  direction: ltr;
+}

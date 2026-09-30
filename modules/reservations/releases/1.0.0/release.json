@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "moduleKey": "reservations",
+  "version": "1.0.0",
+  "labelFa": "نسخهٔ فعلی وستو",
+  "runtimeApiVersion": "westo-v1",
+  "publishedAt": "2026-09-30T12:34:40.495Z",
+  "changesFa": [
+    "همان رابط و رفتار موجود؛ بدون بازطراحی"
+  ],
+  "digest": "58331d51bedd62665103904dbd3f4462d4956f1abba844ddf0292260a480fe26",
+  "assets": [
+    {
+      "legacyPath": "reserve.html",
+      "sha256": "a0783a8a91cf7f91fcf56d272d7351676310fbcdbadf6674e1a0f73a3b703117"
+    },
+    {
+      "legacyPath": "js/admin/features/reservations-views.js",
+      "sha256": "85bb8939a28d693edf9fde6f58d95a89d040e79543ede4c372c3a1e5e60a8b2b"
+    }
+  ]
+}

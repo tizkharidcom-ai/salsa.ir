@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "moduleKey": "payments",
+  "version": "1.0.0",
+  "labelFa": "نسخهٔ فعلی وستو",
+  "runtimeApiVersion": "westo-v1",
+  "publishedAt": "2026-09-30T12:34:40.496Z",
+  "changesFa": [
+    "همان رابط و رفتار موجود؛ بدون بازطراحی"
+  ],
+  "digest": "75fa460af14db93043d914e92cbac1de368349f3d328e4951ef7bcb6aa31fda1",
+  "assets": [
+    {
+      "legacyPath": "js/order-payment-state.js",
+      "sha256": "a6514abfcbf9b5231ef61c3394550547914a460b6cba38781208964a5298ddf0"
+    }
+  ]
+}

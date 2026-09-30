@@ -1,0 +1,83 @@
+{
+  "schemaVersion": 1,
+  "key": "delivery",
+  "nameFa": "ارسال و ناوگان پیک",
+  "version": "1.0.0",
+  "runtime": "node-commonjs-express",
+  "runtimeApiVersion": "westo-v1",
+  "dependencies": [
+    "menu_qr"
+  ],
+  "technicalFeatures": [
+    "delivery.dispatch",
+    "delivery.zones",
+    "delivery.tracking"
+  ],
+  "sharedComposition": [
+    "server/server.js",
+    "js/admin.js",
+    "role-panel.html"
+  ],
+  "dataCapture": "always-on-operational-core",
+  "access": "tenant-entitlement-and-user-capability",
+  "files": [
+    {
+      "path": "frontend/admin-views.js",
+      "legacyPath": "js/admin/features/delivery-views.js",
+      "layer": "frontend"
+    }
+  ],
+  "httpRoutes": [
+    {
+      "id": "get-095",
+      "method": "GET",
+      "paths": [
+        "/api/admin/delivery-zones"
+      ],
+      "path": "server/routes/get-095.js"
+    },
+    {
+      "id": "post-096",
+      "method": "POST",
+      "paths": [
+        "/api/admin/delivery-zones"
+      ],
+      "path": "server/routes/post-096.js"
+    },
+    {
+      "id": "patch-097",
+      "method": "PATCH",
+      "paths": [
+        "/api/admin/delivery-zones/:id"
+      ],
+      "path": "server/routes/patch-097.js"
+    },
+    {
+      "id": "delete-098",
+      "method": "DELETE",
+      "paths": [
+        "/api/admin/delivery-zones/:id"
+      ],
+      "path": "server/routes/delete-098.js"
+    },
+    {
+      "id": "post-100",
+      "method": "POST",
+      "paths": [
+        "/api/delivery/orders/:id/accept"
+      ],
+      "path": "server/routes/post-100.js"
+    },
+    {
+      "id": "post-101",
+      "method": "POST",
+      "paths": [
+        "/api/delivery/orders/:id/reject"
+      ],
+      "path": "server/routes/post-101.js"
+    }
+  ],
+  "adminViews": [
+    "delivery"
+  ]
+}

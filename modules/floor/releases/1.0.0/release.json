@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "moduleKey": "floor",
+  "version": "1.0.0",
+  "labelFa": "نسخهٔ فعلی وستو",
+  "runtimeApiVersion": "westo-v1",
+  "publishedAt": "2026-09-30T12:34:40.494Z",
+  "changesFa": [
+    "همان رابط و رفتار موجود؛ بدون بازطراحی"
+  ],
+  "digest": "f8762f2019725b08e283cbb32772e0b4a75bb931b50d77f947bc2384acbf43c3",
+  "assets": [
+    {
+      "legacyPath": "css/admin-floor-simple.css",
+      "sha256": "5680a43e43514aed4269b235851039f5ff1f4751186d9d68cb7d973509a066c5"
+    },
+    {
+      "legacyPath": "css/waiter-floor-plan.css",
+      "sha256": "a700ea6d5c3a90fab8a297c132fd26c6206de6e00cc1e03321aac7d0d4971f27"
+    },
+    {
+      "legacyPath": "js/admin/floor-studio.js",
+      "sha256": "318bbb162edf53c4826495745d790dd098f10e3b799f041c9e9ae39418722758"
+    },
+    {
+      "legacyPath": "js/floor-chair-layout.js",
+      "sha256": "b982ed2b378e07ebb489c2cb34775e411a6a41c74c43dbf35a0884278f810859"
+    },
+    {
+      "legacyPath": "js/admin/features/floor-views.js",
+      "sha256": "e148cb4a17d96a418425c75b60916b7a559634f509350e5d2ebf65f88fdda2a5"
+    }
+  ]
+}

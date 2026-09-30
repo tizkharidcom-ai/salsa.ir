@@ -1,0 +1,226 @@
+{
+  "schemaVersion": 1,
+  "moduleKey": "menu_qr",
+  "version": "1.0.0",
+  "labelFa": "نسخهٔ فعلی وستو",
+  "runtimeApiVersion": "westo-v1",
+  "publishedAt": "2026-09-30T13:15:31.278Z",
+  "changesFa": [
+    "همان رابط و رفتار موجود؛ بدون بازطراحی"
+  ],
+  "digest": "222b81a1f2e6cbd0678547669f51b7e185879ba89cb20465cb7d14a046dec334",
+  "assets": [
+    {
+      "legacyPath": "css/checkout.css",
+      "sha256": "70597bcbe1a2e8d8c024a2ded45a9e926ad09e2eba8b5819f70014cf654dab1b"
+    },
+    {
+      "legacyPath": "css/classic-menu-catalogue-v2.css",
+      "sha256": "7bec61e119039b660720beb0ad230140050f3094a8de5a04ac9e52fc42d7f236"
+    },
+    {
+      "legacyPath": "css/classic-menu.css",
+      "sha256": "7ebc30f6a6befdfbc80eb84a1bd32c83323de16866ba4b2be6cecef68546b6b3"
+    },
+    {
+      "legacyPath": "css/entrance-gate-redesign.css",
+      "sha256": "f47cce529c017f110c278b333a3da69778adc0018b5055fdadfa365f4a052d73"
+    },
+    {
+      "legacyPath": "css/entrance-gate.css",
+      "sha256": "06897fc6994b8e1a527a4dd8cfe792b937c49067214acbfc65e022eb8af55b49"
+    },
+    {
+      "legacyPath": "css/entrance-promo-deck.css",
+      "sha256": "54d90d693f47b23edb39621793d89b4e7beaf906cf9fba96a6505d9ba63eac77"
+    },
+    {
+      "legacyPath": "css/menu-promo-deck.css",
+      "sha256": "75a934a248eea2c87f11fea4ff84c873ebaccf3c7219dcfef6eb556da06a6dc9"
+    },
+    {
+      "legacyPath": "css/menu-story.css",
+      "sha256": "923e3296590da4d430109c12b9f2cf62645bd705a2803dcdfc746f69b6fbae46"
+    },
+    {
+      "legacyPath": "css/promo-slider.css",
+      "sha256": "344dd135f90e73d9d9277d519dd59be74c255880960f3b796b61c211833a05cd"
+    },
+    {
+      "legacyPath": "css/westo-critical.smart.css",
+      "sha256": "a768c6355fb6bf6e888ab60571579cacb7e119d09ed0349cce5de6bd86c66b96"
+    },
+    {
+      "legacyPath": "css/westo-dish-card-premium.css",
+      "sha256": "09d257d65f5b20746991754598ec1233ce655d5729f1411c70ba40d4a605a49f"
+    },
+    {
+      "legacyPath": "css/westo-glass.css",
+      "sha256": "f19f6417f0e4e3c1cff1fa68903fe326d745651a27581d5cbf0bb5bad0125eae"
+    },
+    {
+      "legacyPath": "css/westo-landscape-recovery.css",
+      "sha256": "838c75886f63fe9fb0777e5041d2514e1e50650f75fb0304444df1dff3484625"
+    },
+    {
+      "legacyPath": "css/westo-production-v11.css",
+      "sha256": "2f8cb240c647e6ba7f38177433dc646cc0cd7c14d5ffcb89e9134435932f2819"
+    },
+    {
+      "legacyPath": "css/westo-production-v12.css",
+      "sha256": "461afe90edbeff4e6d4c82d1741c64b8406cf83d6f7f7d7bea0c9a954205fed7"
+    },
+    {
+      "legacyPath": "css/westo-pwa.css",
+      "sha256": "6c36673ae08859a6f6b968adf1a8f6ac31a290d3358b3cc03d9319c49f2557ee"
+    },
+    {
+      "legacyPath": "css/westo-ultra-fine-v1.2.css",
+      "sha256": "220268221c2fa27f38d455347110fcb769b6d499469d32b42e50a1a807d6a6ce"
+    },
+    {
+      "legacyPath": "css/westo-v14.1-experience-polish.css",
+      "sha256": "298b5ccbdb73a2455936f1047061abdad53ff83c9c2539e4b919f7e8a43694d6"
+    },
+    {
+      "legacyPath": "css/westo-v14.3-ultra-fine.css",
+      "sha256": "172d22bbb3a0b68810b9f32505e2f168d5a122b9b76677570d18255e5ed4ee86"
+    },
+    {
+      "legacyPath": "css/westo.webflow.shared.min.css",
+      "sha256": "89fa9242d9009509898b3f1413eea327545aef0fd9b70023790c22d53d090ce5"
+    },
+    {
+      "legacyPath": "index.html",
+      "sha256": "4f8e38cac87021045ea4427b8d15ace84a3c900d226c0a794698203636a6b980"
+    },
+    {
+      "legacyPath": "js/admin/modules/catalog/menu-module.js",
+      "sha256": "57fc1beb5226f22b803af49d99cab2b36c3bf873405423fdaf76cb63d78f5ab7"
+    },
+    {
+      "legacyPath": "js/category-neon-indicator.js",
+      "sha256": "898bd4c74c6066403986a7975cc18a3a9aa6b49672826bdbad8e0f9fc81e6c5e"
+    },
+    {
+      "legacyPath": "js/category-theme.js",
+      "sha256": "3a591e861f73c9fbf51716d7dcfa8ccbbda920748706ea073f42633986d7443b"
+    },
+    {
+      "legacyPath": "js/checkout.js",
+      "sha256": "5fb8eee4330f79b47cb1fff23ffa564f27f9b1b51b31ee0c83ee660297f5f73d"
+    },
+    {
+      "legacyPath": "js/classic-menu.js",
+      "sha256": "271aae126ca03a874a510fd5adf4a7f26f58656be4980715ae6ce58807739888"
+    },
+    {
+      "legacyPath": "js/content-overrides.js",
+      "sha256": "e42ef289db1f6ceb0ab3ec9c88a98bda96ee918c60f7fc62d4f9943abd161cfa"
+    },
+    {
+      "legacyPath": "js/entrance-promo-deck.js",
+      "sha256": "a2a63b6e31659f27d7a60a68135c396ba884e941c5e14bd8649805ce6e5e4a6d"
+    },
+    {
+      "legacyPath": "js/language-switch-rescue.js",
+      "sha256": "3046b2adb7e2291b71c6e2ac5f7284aaa8d6cdb9678f370ad11880cadc2f0766"
+    },
+    {
+      "legacyPath": "js/menu-promo-deck.js",
+      "sha256": "df8f801db1d1484d8bf3b28995ba31cdc8a58d48236f22998aab5a15e88bf811"
+    },
+    {
+      "legacyPath": "js/menu-store.js",
+      "sha256": "554d4d2340740a8bf92c6bae4193580d18a32cd9474d9a1f63e4a90231a34bf3"
+    },
+    {
+      "legacyPath": "js/promo-slider.js",
+      "sha256": "f1e5b56f5856d655c5bd1b09313f96158825d7d58139ea206c937b26f6d0979f"
+    },
+    {
+      "legacyPath": "js/subcategory-kill-switch.js",
+      "sha256": "223742c470b28df7ad3fc801a6ede2bf4b2df205184ebe86433e8b7a4b0e49b4"
+    },
+    {
+      "legacyPath": "js/table-cart.js",
+      "sha256": "2c4b1b3c08fff6c3edbf0a90e1e8ac1db7d336a0ac9509b1fe9790e65a6e8196"
+    },
+    {
+      "legacyPath": "js/three-scene.js",
+      "sha256": "7b43f98ef9d8798f74ad5c1b7b5d1f13cefd598930b59c937f9287b0f87190dc"
+    },
+    {
+      "legacyPath": "js/vendor/three/westo-postprocessing.bundle.mjs",
+      "sha256": "c03ccaf9b168449ce54b3feccbf6cd468a4cf38fc1caff835a38e6fcbb1120de"
+    },
+    {
+      "legacyPath": "js/vendor/westo-liquid-shader.bundle.mjs",
+      "sha256": "115489d6718b23a333a3a310e700e65d86062a0aefee8b730f6d8319f7265ec1"
+    },
+    {
+      "legacyPath": "js/westo-app.smart.js",
+      "sha256": "481e4246264a0c6828a90c102be1f47766aa6ec74bfb0ddeafd19d6750ba7126"
+    },
+    {
+      "legacyPath": "js/westo-background.smart.js",
+      "sha256": "97d1f46ce23fb905c47e785e7242ca2678d8ad5d03cbdba2a82b52fb8078982a"
+    },
+    {
+      "legacyPath": "js/westo-entrance.js",
+      "sha256": "1374234891211e8eb9372f6ecc80e794512b0ce70fe1382fc9b8ef616d5a6162"
+    },
+    {
+      "legacyPath": "js/westo-foundation.smart.js",
+      "sha256": "7f84930b359af923d81ca03a5d253869b38cfb8da8156347282dd7cd62e91aa7"
+    },
+    {
+      "legacyPath": "js/westo-hero.smart.js",
+      "sha256": "60c4c6e244d70ded3d001080bc9f4b4e04bd168076bb0bb0865d58ec651574f6"
+    },
+    {
+      "legacyPath": "js/westo-liquid-rail.js",
+      "sha256": "bbfff4be300e551d51efab933cc532225acfc63b28b0a60c54cea4913ad19c81"
+    },
+    {
+      "legacyPath": "js/westo-menu.smart.js",
+      "sha256": "1f2ec4b033d393961f6a3a08901f26a29cb81ad860aa90078ff93d2cc9dfe52f"
+    },
+    {
+      "legacyPath": "js/westo-motion.smart.js",
+      "sha256": "9a52435034429d75a2f7a997d7a2fdbef35e64e58dc5f993d66448c913993a73"
+    },
+    {
+      "legacyPath": "js/westo-production-v11.js",
+      "sha256": "00e83357a251c682b24e639165f3f8c4078750d2ce82d1952b6bca26be302480"
+    },
+    {
+      "legacyPath": "js/westo-production-v12.js",
+      "sha256": "fa13494cc829a818247ba034d3a4d21a7e364ce111304e04161c17adbe823835"
+    },
+    {
+      "legacyPath": "js/westo-smart-loader.js",
+      "sha256": "8223ddcdc4e034304d2e9ffdd906f916c01ed16666901eddbb71f5cd2dfb49c0"
+    },
+    {
+      "legacyPath": "js/westo-v14.3-ultra-fine.js",
+      "sha256": "bbacc525d15ef52db22d202728892bb39f9499fc4059541c73a881f35306779e"
+    },
+    {
+      "legacyPath": "menu-print.html",
+      "sha256": "58b9479f0efb638e014f15d226f48c613cd14bcafcfd7c828ae40bb836e35512"
+    },
+    {
+      "legacyPath": "menu.html",
+      "sha256": "8a6e88492fd09111e60e2eb71d4e13b8caad8e3f8a094ae0d14d8f90fa4e2c1d"
+    },
+    {
+      "legacyPath": "order.html",
+      "sha256": "a24d903b92d9a05920c42ea9a2b2f557a374d8f437cbf12813a676aadd1e83cd"
+    },
+    {
+      "legacyPath": "js/admin/features/menu_qr-views.js",
+      "sha256": "643120fd244812ba1d3c86572dc59ce088914463593cad7163cb13e097394678"
+    }
+  ]
+}

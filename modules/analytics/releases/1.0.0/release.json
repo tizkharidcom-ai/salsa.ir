@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "moduleKey": "analytics",
+  "version": "1.0.0",
+  "labelFa": "نسخهٔ فعلی وستو",
+  "runtimeApiVersion": "westo-v1",
+  "publishedAt": "2026-09-30T12:34:40.506Z",
+  "changesFa": [
+    "همان رابط و رفتار موجود؛ بدون بازطراحی"
+  ],
+  "digest": "6800a8f2ac0bade9ef4483be3835b56cdcf3024e14259498c5727eb37e3a6240",
+  "assets": [
+    {
+      "legacyPath": "js/admin/modules/insights/dashboard-view.js",
+      "sha256": "5337928cbafea2340358609e559f183c283d871f2f4a038b75a96fe8e15702ca"
+    },
+    {
+      "legacyPath": "js/admin/modules/insights/reports-module.js",
+      "sha256": "f1d868763f5bbd3a4ec0aeca23fe2a9b518cce7d3686a0a6b0397d7526c01158"
+    },
+    {
+      "legacyPath": "js/analytics-beacon.js",
+      "sha256": "69cd13806c20605c3275a6dd8326214c0278d763c7b9ba711c2856f39fbbca88"
+    }
+  ]
+}

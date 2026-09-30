@@ -1,0 +1,1 @@
+../../../modules/pos/frontend/admin-views.js

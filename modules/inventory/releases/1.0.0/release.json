@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "moduleKey": "inventory",
+  "version": "1.0.0",
+  "labelFa": "نسخهٔ فعلی وستو",
+  "runtimeApiVersion": "westo-v1",
+  "publishedAt": "2026-09-30T12:34:40.501Z",
+  "changesFa": [
+    "همان رابط و رفتار موجود؛ بدون بازطراحی"
+  ],
+  "digest": "4db549713f7a4d95050a5441afb020bd9926c909aeb74751ff7d51135b94517a",
+  "assets": [
+    {
+      "legacyPath": "css/admin-inventory-v2.css",
+      "sha256": "b0511c125bd50eb25bcfcfde8c2cf632dcfaf6faccc06d5b07a16fae325cc057"
+    },
+    {
+      "legacyPath": "js/admin/modules/inventory/inventory-module.js",
+      "sha256": "0cce2b9e61d0963b89e705506a4d060fe26681a4231d1b40b697faaae59ade7e"
+    },
+    {
+      "legacyPath": "js/admin/features/inventory-views.js",
+      "sha256": "2dbd6680f173449702bc78bee788c66ba281a6a0841de6d32d28fd9dd4961f36"
+    }
+  ]
+}

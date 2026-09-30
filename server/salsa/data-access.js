@@ -124,6 +124,7 @@ class ControlDataAccess {
         t.database_name,
         t.database_provider,
         t.canonical_domain,
+        t.metadata,
         d.domain_name,
         d.domain_kind,
         d.tls_status,
@@ -143,6 +144,7 @@ class ControlDataAccess {
         t.database_name,
         t.database_provider,
         t.canonical_domain,
+        t.metadata,
         d.domain AS domain_name,
         d.domain_kind,
         NULL::text AS tls_status,
@@ -161,6 +163,7 @@ class ControlDataAccess {
         database_name,
         database_provider,
         canonical_domain,
+        metadata,
         canonical_domain AS domain_name,
         'canonical_domain' AS domain_kind,
         NULL::text AS tls_status,
@@ -177,6 +180,7 @@ class ControlDataAccess {
         database_name,
         database_provider,
         canonical_domain,
+        metadata,
         $1 AS domain_name,
         'platform_subdomain' AS domain_kind,
         NULL::text AS tls_status,
@@ -198,7 +202,7 @@ class ControlDataAccess {
     const canonical = requireTenantId(tenantId);
     const result = await this.query(`
       SELECT tenant_id, display_name, status, cell_id, database_name,
-             database_provider, canonical_domain
+             database_provider, canonical_domain, metadata
       FROM neem_tenants
       WHERE tenant_id = $1
       LIMIT 1

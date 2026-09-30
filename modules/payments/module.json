@@ -1,0 +1,78 @@
+{
+  "schemaVersion": 1,
+  "key": "payments",
+  "nameFa": "پرداخت و اتصال کارتخوان",
+  "version": "1.0.0",
+  "runtime": "node-commonjs-express",
+  "runtimeApiVersion": "westo-v1",
+  "dependencies": [
+    "pos",
+    "menu_qr"
+  ],
+  "technicalFeatures": [
+    "payments.gateway",
+    "payments.terminal_link"
+  ],
+  "sharedComposition": [
+    "server/server.js",
+    "js/admin.js",
+    "role-panel.html"
+  ],
+  "dataCapture": "always-on-operational-core",
+  "access": "tenant-entitlement-and-user-capability",
+  "files": [
+    {
+      "path": "frontend/js/order-payment-state.js",
+      "legacyPath": "js/order-payment-state.js",
+      "layer": "frontend"
+    },
+    {
+      "path": "server/payment-attempt-transitions.js",
+      "legacyPath": "server/payment-attempt-transitions.js",
+      "layer": "server"
+    },
+    {
+      "path": "server/payment-provider-status.js",
+      "legacyPath": "server/payment-provider-status.js",
+      "layer": "server"
+    },
+    {
+      "path": "server/settlement-amounts.js",
+      "legacyPath": "server/settlement-amounts.js",
+      "layer": "server"
+    },
+    {
+      "path": "server/settlement-in-flight-key.js",
+      "legacyPath": "server/settlement-in-flight-key.js",
+      "layer": "server"
+    },
+    {
+      "path": "server/settlement-persistence-gate.js",
+      "legacyPath": "server/settlement-persistence-gate.js",
+      "layer": "server"
+    },
+    {
+      "path": "server/settlement-reference.js",
+      "legacyPath": "server/settlement-reference.js",
+      "layer": "server"
+    }
+  ],
+  "httpRoutes": [
+    {
+      "id": "post-068",
+      "method": "POST",
+      "paths": [
+        "/api/payments/webhook/:provider"
+      ],
+      "path": "server/routes/post-068.js"
+    },
+    {
+      "id": "get-099",
+      "method": "GET",
+      "paths": [
+        "/api/admin/payments"
+      ],
+      "path": "server/routes/get-099.js"
+    }
+  ]
+}

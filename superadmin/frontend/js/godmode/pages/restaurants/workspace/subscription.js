@@ -18,6 +18,8 @@
       .replace(/'/g, '&#39;');
   }
 
+  const releaseStates = new Map();
+
   async function renderSubscriptionTab(restaurant, params) {
     const entitlementsRepo = global.EntitlementsRepository;
     const commercialRepo = global.CommercialRepository;
@@ -34,6 +36,13 @@
       }
     } catch (_) {}
 
+    let releaseState = null;
+    try {
+      const response = await global.ControlPlaneClient.get(`/api/control/policy/module-releases/${encodeURIComponent(restaurant.id)}`);
+      releaseState = response?.data || null;
+      if (releaseState) releaseStates.set(restaurant.id, releaseState);
+    } catch (_) { releaseStates.delete(restaurant.id); }
+    const releasesByKey = new Map((releaseState?.modules || []).map(module => [module.key, module]));
     const modules = evalData?.modules || [];
     const activeCount = modules.filter(m => m.isEnabled).length;
     const totalCount = modules.length;
@@ -113,6 +122,7 @@
               const badgeHtml = StatusBadge ? StatusBadge.renderModuleStateBadge(mod.state) : esc(mod.state);
               const filterCat = (mod.category === 'scale' || mod.category === 'brand' || mod.category === 'management') ? 'scale_brand' : mod.category;
               const isChecked = Boolean(mod.isEnabled);
+              const release = releasesByKey.get(mod.key);
 
               return `
                 <div class="card module-card" data-category="${esc(filterCat)}" data-module="${esc(mod.key)}" style="padding: 1.25rem; border-radius: 12px; border: 1px solid var(--border, #E5E7EB); background: var(--card, #FFF); display: flex; flex-direction: column; justify-content: space-between; transition: box-shadow 0.2s, border-color 0.2s;">
@@ -148,6 +158,18 @@
                     <p style="font-size: 0.82rem; color: var(--text-secondary, #666); line-height: 1.5; margin: 0 0 0.75rem 0;">
                       ${esc(mod.descriptionFa)}
                     </p>
+
+                    <div class="module-release-selection" style="margin-bottom:0.75rem;">
+                      <label style="display:block;font-size:0.8rem;">نسخهٔ این ماژول
+                        <select data-tenant="${esc(restaurant.id)}" data-module="${esc(mod.key)}"
+                          aria-label="نسخهٔ ${esc(mod.nameFa)}"
+                          ${!release || release.releases.length < 2 ? 'disabled' : ''}
+                          onchange="window.GodModeSubscription.selectVersion(this)">
+                          ${release ? release.releases.map(item => `<option value="${esc(item.version)}" ${item.version === release.currentVersion ? 'selected' : ''}>${esc(item.labelFa)} (${esc(item.version)})</option>`).join('') : '<option>اطلاعات نسخه دریافت نشد</option>'}
+                        </select>
+                      </label>
+                      <small style="color:var(--text-secondary,#666);">${release ? 'انتخاب نسخه، دسترسی اشتراک و داده‌های رستوران را تغییر نمی‌دهد.' : 'برای انتخاب نسخه، اتصال به کنترل‌پلن لازم است.'}</small>
+                    </div>
 
                     <!-- Technical Sub-Feature Keys -->
                     <div style="margin-bottom: 0.75rem;">
@@ -230,6 +252,34 @@
   }
 
   const GodModeSubscription = {
+    selectVersion(input) {
+      const tenantId = input.dataset.tenant;
+      const moduleKey = input.dataset.module;
+      const state = releaseStates.get(tenantId);
+      const previous = state?.moduleVersions?.[moduleKey];
+      const version = input.value;
+      input.value = previous || input.value;
+      if (!state || !global.GodModeConfirmDialog || version === previous) return;
+      global.GodModeConfirmDialog.show({
+        title: 'انتخاب نسخهٔ ماژول', severity: 'medium',
+        message: `نسخهٔ ${version} برای این رستوران انتخاب شود؟ داده‌ها و وضعیت اشتراک حفظ می‌شوند.`,
+        requireReason: true, reasonPlaceholder: 'دلیل انتخاب نسخه', confirmText: 'انتخاب نسخه',
+        onConfirm: async (reason) => {
+          input.disabled = true;
+          try {
+            const response = await global.ControlPlaneClient.patch(`/api/control/policy/module-releases/${encodeURIComponent(tenantId)}/${encodeURIComponent(moduleKey)}`, {
+              version, expectedRevision: state.revision, reason
+            });
+            if (response?.ok === false || !response?.data?.applied) throw new Error('انتخاب نسخه تأیید نشد.');
+            global.GMToast?.show('نسخه انتخاب شد؛ درخواست بعدی سایت از نسخهٔ انتخاب‌شده استفاده می‌کند.', 'success');
+            await global.GodModeRouter?.handleRoute();
+          } catch (error) {
+            input.disabled = false;
+            global.GMToast?.show(`انتخاب نسخه انجام نشد: ${error.message}`, 'danger');
+          }
+        }
+      });
+    },
     /**
      * 1-Click Toggle for any module or capability
      */

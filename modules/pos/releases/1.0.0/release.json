@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "moduleKey": "pos",
+  "version": "1.0.0",
+  "labelFa": "نسخهٔ فعلی وستو",
+  "runtimeApiVersion": "westo-v1",
+  "publishedAt": "2026-09-30T12:34:40.491Z",
+  "changesFa": [
+    "همان رابط و رفتار موجود؛ بدون بازطراحی"
+  ],
+  "digest": "85f7e16916abcef95ae3163e445824c417d87d364adec0f83c143b52bab2cc8b",
+  "assets": [
+    {
+      "legacyPath": "js/admin/features/pos-views.js",
+      "sha256": "312b6943f90bb20cb77db9c4fad40d9ad611fc391fd779e935b67560a5c86363"
+    }
+  ]
+}

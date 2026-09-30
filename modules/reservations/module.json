@@ -1,0 +1,125 @@
+{
+  "schemaVersion": 1,
+  "key": "reservations",
+  "nameFa": "رزرو و صف انتظار",
+  "version": "1.0.0",
+  "runtime": "node-commonjs-express",
+  "runtimeApiVersion": "westo-v1",
+  "dependencies": [
+    "floor"
+  ],
+  "technicalFeatures": [
+    "booking.reservations",
+    "booking.waitlist",
+    "booking.deposit"
+  ],
+  "sharedComposition": [
+    "server/server.js",
+    "js/admin.js",
+    "role-panel.html"
+  ],
+  "dataCapture": "always-on-operational-core",
+  "access": "tenant-entitlement-and-user-capability",
+  "files": [
+    {
+      "path": "frontend/reserve.html",
+      "legacyPath": "reserve.html",
+      "layer": "frontend"
+    },
+    {
+      "path": "server/waitlist.js",
+      "legacyPath": "server/waitlist.js",
+      "layer": "server"
+    },
+    {
+      "path": "frontend/admin-views.js",
+      "legacyPath": "js/admin/features/reservations-views.js",
+      "layer": "frontend"
+    }
+  ],
+  "httpRoutes": [
+    {
+      "id": "get-089",
+      "method": "GET",
+      "paths": [
+        "/api/waiter/waitlist"
+      ],
+      "path": "server/routes/get-089.js"
+    },
+    {
+      "id": "post-090",
+      "method": "POST",
+      "paths": [
+        "/api/waiter/waitlist"
+      ],
+      "path": "server/routes/post-090.js"
+    },
+    {
+      "id": "patch-091",
+      "method": "PATCH",
+      "paths": [
+        "/api/waiter/waitlist/:id"
+      ],
+      "path": "server/routes/patch-091.js"
+    },
+    {
+      "id": "get-196",
+      "method": "GET",
+      "paths": [
+        "/api/reservations/meta"
+      ],
+      "path": "server/routes/get-196.js"
+    },
+    {
+      "id": "get-197",
+      "method": "GET",
+      "paths": [
+        "/api/reservations/slots"
+      ],
+      "path": "server/routes/get-197.js"
+    },
+    {
+      "id": "post-198",
+      "method": "POST",
+      "paths": [
+        "/api/reservations"
+      ],
+      "path": "server/routes/post-198.js"
+    },
+    {
+      "id": "get-199",
+      "method": "GET",
+      "paths": [
+        "/api/admin/reservations"
+      ],
+      "path": "server/routes/get-199.js"
+    },
+    {
+      "id": "patch-200",
+      "method": "PATCH",
+      "paths": [
+        "/api/admin/reservations/:id"
+      ],
+      "path": "server/routes/patch-200.js"
+    },
+    {
+      "id": "get-201",
+      "method": "GET",
+      "paths": [
+        "/api/admin/reservation-settings"
+      ],
+      "path": "server/routes/get-201.js"
+    },
+    {
+      "id": "put-202",
+      "method": "PUT",
+      "paths": [
+        "/api/admin/reservation-settings"
+      ],
+      "path": "server/routes/put-202.js"
+    }
+  ],
+  "adminViews": [
+    "reservations"
+  ]
+}

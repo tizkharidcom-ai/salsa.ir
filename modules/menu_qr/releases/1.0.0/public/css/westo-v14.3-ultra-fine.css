@@ -1,0 +1,1402 @@
+/* WESTO v14.3 — Ultra Fine: annotated UX corrections + thermal-safe polish. */
+
+/* ── Entrance card / 2:1 promo canvas ───────────────────────────────────── */
+#westo-entrance.has-eg-promo .eg-card {
+  padding-block-start:clamp(1.25rem,2.7vh,1.9rem) !important;
+  padding-block-end:clamp(1.1rem,2.35vh,1.6rem) !important;
+}
+#westo-entrance .eg-promo--experience {
+  width:min(100%,620px) !important;
+  --eg-promo-h:clamp(182px,28vw,285px);
+  --eg-promo-radius:24px;
+}
+#westo-entrance .eg-promo--experience .eg-promo__deck {
+  height:calc(var(--eg-promo-h) + 14px) !important;
+}
+
+/* Media never exposes an empty/broken frame while the scheduler is decoding. */
+#westo-entrance .eg-promo__card { background:#071315 !important; }
+#westo-entrance .eg-promo__placeholder {
+  position:absolute;
+  inset:0;
+  z-index:0;
+  display:grid;
+  place-content:center;
+  justify-items:center;
+  gap:8px;
+  padding:24px;
+  overflow:hidden;
+  color:rgba(222,247,246,.86);
+  background:
+    radial-gradient(circle at 22% 18%,rgba(49,219,224,.16),transparent 36%),
+    radial-gradient(circle at 78% 78%,rgba(93,142,255,.09),transparent 38%),
+    linear-gradient(145deg,#0a1b1e,#061013 72%);
+  transition:opacity .28s ease,visibility .28s ease;
+}
+#westo-entrance .eg-promo__placeholder::after {
+  content:"";
+  position:absolute;
+  inset:12px;
+  border:1px solid rgba(122,219,222,.09);
+  border-radius:calc(var(--eg-promo-radius) - 8px);
+  pointer-events:none;
+}
+#westo-entrance .eg-promo__placeholder-mark {
+  display:grid;
+  place-items:center;
+  width:42px;
+  height:42px;
+  border-radius:14px;
+  border:1px solid rgba(111,226,230,.25);
+  background:rgba(62,211,216,.08);
+  font:800 18px/1 system-ui,sans-serif;
+  letter-spacing:.05em;
+}
+#westo-entrance .eg-promo__placeholder-title {
+  max-width:80%;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  font-size:11px;
+  font-weight:650;
+  opacity:.72;
+}
+#westo-entrance .eg-promo__media {
+  position:relative;
+  z-index:1;
+  opacity:0;
+  transition:opacity .3s ease;
+}
+#westo-entrance .eg-promo__card.is-media-ready .eg-promo__media { opacity:1; }
+#westo-entrance .eg-promo__card.is-media-ready .eg-promo__placeholder {
+  opacity:0;
+  visibility:hidden;
+}
+#westo-entrance .eg-promo__card.is-media-error .eg-promo__placeholder { opacity:1;visibility:visible; }
+html[data-theme='light'] #westo-entrance .eg-promo__placeholder {
+  color:rgba(27,61,59,.8);
+  background:
+    radial-gradient(circle at 22% 18%,rgba(32,176,184,.12),transparent 36%),
+    linear-gradient(145deg,#f8fbf8,#edf3ef 74%);
+}
+
+/* CTA is the visible progress surface. Accessible progress remains SR-only. */
+#westo-entrance .eg-cta-wrap { padding-top:clamp(8px,1.1vh,12px) !important; }
+#westo-entrance .eg-cta {
+  --eg-progress:0%;
+  position:relative !important;
+  isolation:isolate;
+  overflow:hidden !important;
+  padding-bottom:0 !important;
+}
+#westo-entrance .eg-cta::before {
+  content:"";
+  position:absolute;
+  z-index:0;
+  inset-block:0;
+  inset-inline-start:0;
+  width:var(--eg-progress);
+  padding:0 !important;
+  border-radius:inherit;
+  background:linear-gradient(90deg,rgba(21,174,187,.23),rgba(55,222,225,.42));
+  box-shadow:inset -1px 0 0 rgba(111,244,244,.3);
+  -webkit-mask:none !important;
+  mask:none !important;
+  -webkit-mask-composite:initial !important;
+  mask-composite:initial !important;
+  pointer-events:none;
+  transition:width .18s linear;
+}
+html[data-theme='light'] #westo-entrance .eg-cta::before {
+  background:linear-gradient(90deg,rgba(18,154,162,.12),rgba(33,190,194,.24));
+  box-shadow:inset -1px 0 0 rgba(14,131,138,.2);
+}
+#westo-entrance .eg-progress__pct--inside {
+  position:relative;
+  z-index:3;
+  order:-1;
+  min-width:34px;
+  font-size:11px !important;
+  line-height:1;
+  font-variant-numeric:tabular-nums;
+  color:rgba(230,253,252,.88);
+}
+html[data-theme='light'] #westo-entrance .eg-progress__pct--inside { color:rgba(14,81,83,.82); }
+#westo-entrance .eg-cta-label,#westo-entrance .eg-cta-arrow { z-index:3 !important; }
+#westo-entrance .eg-progress--sr {
+  position:absolute !important;
+  width:1px !important;
+  height:1px !important;
+  padding:0 !important;
+  margin:-1px !important;
+  overflow:hidden !important;
+  clip:rect(0,0,0,0) !important;
+  white-space:nowrap !important;
+  border:0 !important;
+}
+#westo-entrance .eg-cta-wrap > .eg-progress:not(.eg-progress--sr) { display:none !important; }
+
+/* ── Entrance bottom nav: one physical row + shaped dark language control ── */
+@media (max-width:767px) {
+  #westo-entrance { overflow-y:auto !important; overscroll-behavior-y:contain; }
+  #westo-entrance .eg-shell {
+    height:auto !important;
+    min-height:100svh !important;
+    grid-template-rows:auto auto auto !important;
+  }
+  #westo-entrance .eg-mid { min-height:auto !important; }
+  #westo-entrance.has-eg-promo .eg-card { max-height:none !important; }
+  #westo-entrance .eg-promo--experience {
+    --eg-promo-h:clamp(172px,46vw,212px);
+    --eg-promo-radius:21px;
+  }
+  #westo-entrance .eg-foot {
+    display:grid !important;
+    grid-template-columns:44px minmax(156px,1fr) minmax(96px,112px) !important;
+    grid-template-rows:52px !important;
+    align-items:center !important;
+    flex-wrap:nowrap !important;
+    white-space:nowrap !important;
+    gap:3px !important;
+  }
+  #westo-entrance .eg-foot > * { min-width:0 !important; }
+  #westo-entrance .eg-theme-toggle { width:44px !important;min-width:44px !important;height:48px !important; }
+  #westo-entrance .eg-dock {
+    width:100% !important;
+    min-width:0 !important;
+    display:grid !important;
+    grid-template-columns:repeat(4,minmax(38px,1fr)) !important;
+    gap:0 !important;
+    padding-inline:0 !important;
+  }
+  #westo-entrance .eg-dock__btn {
+    width:100% !important;
+    min-width:38px !important;
+    height:48px !important;
+    min-height:48px !important;
+  }
+  #westo-entrance .eg-lang-switch {
+    width:100% !important;
+    min-width:96px !important;
+    height:48px !important;
+    min-height:48px !important;
+    display:grid !important;
+    grid-template-columns:1fr auto 1fr auto 1fr !important;
+    align-items:center !important;
+    justify-items:center !important;
+    gap:0 !important;
+    padding:3px !important;
+    border:1px solid rgba(88,216,222,.19) !important;
+    border-radius:17px !important;
+    background:linear-gradient(145deg,rgba(255,255,255,.075),rgba(255,255,255,.025)) !important;
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.08),0 6px 18px rgba(0,0,0,.12) !important;
+  }
+  #westo-entrance .eg-lang-seg {
+    width:100% !important;
+    min-width:0 !important;
+    min-height:40px !important;
+    height:40px !important;
+    padding:0 2px !important;
+    border-radius:13px !important;
+  }
+  #westo-entrance .eg-lang-seg.is-active {
+    color:#73e7ec !important;
+    background:rgba(45,203,211,.11) !important;
+    box-shadow:inset 0 0 0 1px rgba(92,224,229,.15),0 4px 12px rgba(0,0,0,.09) !important;
+  }
+  html[data-theme='light'] #westo-entrance .eg-lang-switch {
+    border-color:rgba(31,86,83,.13) !important;
+    background:linear-gradient(145deg,rgba(255,255,255,.96),rgba(237,242,238,.9)) !important;
+    box-shadow:inset 0 1px 0 #fff,0 6px 16px rgba(42,70,66,.08) !important;
+  }
+  html[data-theme='light'] #westo-entrance .eg-lang-seg.is-active {
+    color:#0e777d !important;
+    background:rgba(20,152,158,.09) !important;
+  }
+}
+@media (max-width:430px) {
+  #westo-entrance .eg-promo--experience { --eg-promo-h:clamp(168px,46vw,198px); }
+  #westo-entrance .eg-foot {
+    width:min(calc(100% - 2px),520px) !important;
+    grid-template-columns:42px minmax(148px,1fr) 94px !important;
+    gap:2px !important;
+    padding-inline:3px !important;
+  }
+  #westo-entrance .eg-theme-toggle { width:42px !important;min-width:42px !important; }
+  #westo-entrance .eg-dock { grid-template-columns:repeat(4,minmax(36px,1fr)) !important; }
+  #westo-entrance .eg-dock__btn { min-width:36px !important; }
+  #westo-entrance .eg-lang-switch { min-width:94px !important;padding-inline:2px !important; }
+  #westo-entrance .eg-step-label { font-size:8.5px !important; }
+}
+@media (max-width:340px) {
+  #westo-entrance .eg-foot { grid-template-columns:40px minmax(140px,1fr) 90px !important; }
+  #westo-entrance .eg-theme-toggle { width:40px !important;min-width:40px !important; }
+  #westo-entrance .eg-dock__btn { min-width:34px !important; }
+  #westo-entrance .eg-lang-switch { min-width:90px !important; }
+}
+@media (max-height:720px) and (orientation:landscape) {
+  #westo-entrance .eg-promo--experience { --eg-promo-h:clamp(112px,22vh,150px); width:min(460px,62vw) !important; }
+}
+
+/* ── Header: true centered lockup; Table + Login left, Menu only right ───── */
+.navbar_container { position:relative !important; }
+.navbar_logo-link {
+  position:absolute !important;
+  left:50% !important;
+  right:auto !important;
+  inset-inline:auto !important;
+  transform:translateX(-50%) !important;
+  justify-self:auto !important;
+  width:clamp(108px,16vw,178px) !important;
+  max-width:178px !important;
+  z-index:5 !important;
+}
+.navbar_sound-wrapper {
+  justify-self:start !important;
+  display:flex !important;
+  align-items:center !important;
+  flex-wrap:nowrap !important;
+  gap:5px !important;
+  z-index:7 !important;
+}
+.navbar_menu-wrapper { justify-self:end !important; z-index:7 !important; }
+.navbar_menu-wrapper #nav-auth-btn { display:none !important; }
+.navbar_sound-wrapper #nav-auth-btn { flex:0 0 auto; }
+@media (max-width:767px) {
+  .navbar_logo-link { width:clamp(92px,24vw,118px) !important;max-width:118px !important;height:46px !important; }
+  .navbar_logo { max-width:100% !important;max-height:42px !important;object-fit:contain !important; }
+  .navbar_sound-wrapper #nav-auth-btn { width:46px !important;min-width:46px !important;height:46px !important;min-height:46px !important; }
+}
+@media (max-width:360px) {
+  .navbar_logo-link { width:86px !important;max-width:86px !important; }
+  .navbar_sound-wrapper { gap:3px !important; }
+  .navbar_sound-wrapper #nav-auth-btn { width:44px !important;min-width:44px !important;height:44px !important;min-height:44px !important; }
+}
+
+/* ── Category header: keep the local static indicator, but stop clipping it ──
+   The optimized chip uses paint containment. That clipped the bottom half of
+   the active chip's neon shadow. Relax paint containment only for the single
+   active chip; the legacy full-bar geometry indicator stays disabled. */
+#westo-dish-catbar .westo-dish-catbar__chip.is-active {
+  contain:layout style !important;
+  overflow:visible !important;
+}
+#westo-dish-catbar .westo-dish-catbar__chip.is-active::after {
+  content:"" !important;
+  display:block !important;
+  left:50% !important;
+  right:auto !important;
+  inset-inline:auto !important;
+  bottom:4px !important;
+  width:2rem !important;
+  height:2px !important;
+  border-radius:999px !important;
+  opacity:.96 !important;
+  transform:translateX(-50%) !important;
+  animation:none !important;
+  filter:none !important;
+  background:var(--cat-accent,var(--prod-cyan)) !important;
+  box-shadow:0 0 5px color-mix(in srgb,var(--cat-accent,var(--prod-cyan)) 48%,transparent) !important;
+}
+#westo-dish-catbar::before { display:none !important;content:none !important; }
+
+/* ── Dish ambient: one static soft light per board, no blur/filter/RAF ───── */
+html.is-dish-boards section.is-benefits .benefits_container {
+  isolation:isolate;
+  overflow:hidden;
+  --westo-dish-light-x:-12vw;
+  --westo-dish-light-y:-7vh;
+}
+html.is-dish-boards section.is-benefits .benefits_container::before {
+  content:"";
+  position:absolute;
+  z-index:0;
+  left:50%;
+  top:48%;
+  width:min(82vmax,980px);
+  height:min(82vmax,980px);
+  border-radius:50%;
+  pointer-events:none;
+  opacity:.78;
+  background:radial-gradient(circle at 50% 50%,color-mix(in srgb,var(--cat-accent,#78d0d8) 22%,transparent) 0%,color-mix(in srgb,var(--cat-accent,#78d0d8) 8%,transparent) 31%,transparent 68%);
+  transform:translate3d(calc(-50% + var(--westo-dish-light-x)),calc(-50% + var(--westo-dish-light-y)),0) scale(.92);
+  transition:transform .72s cubic-bezier(.22,1,.36,1),opacity .38s ease;
+  will-change:auto;
+}
+html.is-dish-boards section.is-benefits.is-dish-active .benefits_container::before { opacity:.86; }
+html.is-dish-boards section.is-benefits[data-westo-light-slot='1'] .benefits_container { --westo-dish-light-x:13vw;--westo-dish-light-y:-10vh; }
+html.is-dish-boards section.is-benefits[data-westo-light-slot='2'] .benefits_container { --westo-dish-light-x:15vw;--westo-dish-light-y:10vh; }
+html.is-dish-boards section.is-benefits[data-westo-light-slot='3'] .benefits_container { --westo-dish-light-x:-14vw;--westo-dish-light-y:12vh; }
+html[data-theme='light'].is-dish-boards section.is-benefits .benefits_container::before { opacity:.5; }
+html[data-perf-tier='economy'].is-dish-boards section.is-benefits .benefits_container::before { opacity:.42; }
+
+/* ── Table close button: larger red-accent glass without backdrop blur ───── */
+.table-drawer__close {
+  width:50px !important;
+  min-width:50px !important;
+  height:50px !important;
+  min-height:50px !important;
+  display:grid !important;
+  place-items:center !important;
+  padding:0 !important;
+  border:1px solid rgba(255,102,112,.42) !important;
+  border-radius:18px !important;
+  color:#ff8b94 !important;
+  font-size:1.7rem !important;
+  font-weight:500 !important;
+  background:linear-gradient(145deg,rgba(255,90,104,.16),rgba(255,255,255,.045)) !important;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.12),0 8px 24px rgba(93,13,22,.18) !important;
+  backdrop-filter:none !important;
+  -webkit-backdrop-filter:none !important;
+  transition:transform .18s ease,background .18s ease,border-color .18s ease !important;
+}
+.table-drawer__close:hover,.table-drawer__close:focus-visible {
+  color:#ffd8db !important;
+  border-color:rgba(255,115,125,.72) !important;
+  background:linear-gradient(145deg,rgba(255,78,93,.26),rgba(255,255,255,.07)) !important;
+  transform:translateY(-1px) scale(1.02);
+}
+html[data-theme='light'] .table-drawer__close {
+  color:#b62938 !important;
+  border-color:rgba(191,44,59,.25) !important;
+  background:linear-gradient(145deg,rgba(255,255,255,.98),rgba(255,225,228,.82)) !important;
+  box-shadow:inset 0 1px 0 #fff,0 8px 20px rgba(132,37,46,.11) !important;
+}
+
+/* ── Hero/classic category toolbar readability + horizontal ergonomics ─── */
+.westo-prod-hero-cats {
+  overflow-x:auto !important;
+  overflow-y:hidden !important;
+  overscroll-behavior-inline:contain;
+  scroll-snap-type:x proximity;
+  scroll-padding-inline:clamp(16px,6vw,72px) !important;
+  -webkit-overflow-scrolling:touch;
+  scrollbar-width:none;
+  touch-action:pan-x !important;
+  cursor:grab;
+}
+.westo-prod-hero-cats:active { cursor:grabbing; }
+.westo-prod-hero-cat {
+  scroll-snap-align:center;
+  scroll-margin-inline:14px;
+  flex-basis:112px !important;
+  min-width:112px !important;
+}
+.westo-prod-hero-cat span {
+  font-size:11px !important;
+  line-height:1.3 !important;
+  font-weight:560 !important;
+  letter-spacing:0 !important;
+  text-wrap:balance;
+}
+@media (max-width:767px) {
+  .westo-prod-hero-cats { padding-inline:10px !important; }
+  .westo-prod-hero-cat { flex-basis:92px !important;min-width:92px !important; }
+  .westo-prod-hero-cat span { font-size:10px !important;line-height:1.28 !important; }
+}
+
+/* Large live backdrop blurs over animated entrance layers are expensive on
+   mobile GPUs. Keep the glass language via translucent surfaces but remove the
+   live sampling pass on coarse/mobile devices. */
+@media (max-width:767px), (pointer:coarse) {
+  #westo-entrance .eg-card,
+  #westo-entrance .eg-status,
+  #westo-entrance .eg-cta,
+  #westo-entrance .eg-dock,
+  #westo-entrance .eg-corner,
+  #westo-entrance .eg-lang-switch {
+    -webkit-backdrop-filter:none !important;
+    backdrop-filter:none !important;
+  }
+  #westo-entrance .eg-card {
+    background:linear-gradient(168deg,rgba(255,255,255,.055),transparent 42%,rgba(51,210,216,.04)),rgba(4,14,17,.94) !important;
+  }
+  #westo-entrance .eg-status { background:rgba(2,10,13,.72) !important; }
+  html[data-theme='light'] #westo-entrance .eg-card {
+    background:linear-gradient(168deg,rgba(255,255,255,.72),transparent 44%,rgba(23,145,151,.035)),rgba(244,247,243,.95) !important;
+  }
+  html[data-theme='light'] #westo-entrance .eg-status { background:rgba(248,250,247,.92) !important; }
+}
+
+/* ── Thermal idle: pause decorative infinite paint loops, not state motion ─ */
+html[data-thermal-idle='true'] #westo-entrance * {
+  animation-play-state:paused !important;
+}
+html[data-thermal-idle='true'] .scroll_discover,
+html[data-thermal-idle='true'] .navbar_menu-mascot {
+  animation-play-state:paused !important;
+}
+/* Balanced/economy avoid long-running text background repaint even before idle. */
+html[data-perf-tier='economy'] .scroll_discover,
+html[data-perf-tier='balanced'] .scroll_discover {
+  animation:none !important;
+  color:rgba(236,232,226,.7) !important;
+  -webkit-text-fill-color:rgba(236,232,226,.7) !important;
+  background-image:none !important;
+}
+html[data-theme='light'][data-perf-tier='economy'] .scroll_discover,
+html[data-theme='light'][data-perf-tier='balanced'] .scroll_discover {
+  color:rgba(26,23,20,.62) !important;
+  -webkit-text-fill-color:rgba(26,23,20,.62) !important;
+}
+html[data-perf-tier='economy'] #westo-entrance .eg-card__reflect,
+html[data-perf-tier='balanced'] #westo-entrance .eg-card__reflect {
+  animation:none !important;
+}
+
+@media (prefers-reduced-motion:reduce) {
+  #westo-entrance .eg-cta::before,
+  #westo-entrance .eg-promo__media,
+  #westo-entrance .eg-promo__placeholder,
+  html.is-dish-boards section.is-benefits .benefits_container::before { transition:none !important; }
+}
+
+
+/* ========================================================================
+   WESTO Ultra Fine v1 — verified screenshot corrections
+   Desktop entrance composition, true header logo lockup, language baseline,
+   and category underline parity. Mobile promo geometry remains authoritative.
+   ======================================================================== */
+
+/* Desktop/tablet entrance: v14.1 moved Promo inside Experience while v14.3
+   increased its height. On >767px that combination could exceed the fixed
+   viewport-owned card and visually collapse/overlap rows. Give desktop an
+   explicit five-row budget and a bounded promo size. */
+@media (min-width:768px) {
+  #westo-entrance.has-eg-promo .eg-card {
+    grid-template-rows:auto auto auto minmax(0,1fr) auto !important;
+    align-content:center !important;
+    row-gap:6px !important;
+    padding:16px clamp(30px,4vw,46px) 15px !important;
+  }
+  #westo-entrance.has-eg-promo .eg-logo-stage {
+    width:96px !important;
+    max-height:142px !important;
+    margin-bottom:0 !important;
+  }
+  #westo-entrance.has-eg-promo .eg-brand-wordmark-img {
+    width:min(270px,32vw) !important;
+    max-height:50px !important;
+  }
+  #westo-entrance.has-eg-promo .eg-tagline {
+    margin-top:3px !important;
+    font-size:12px !important;
+  }
+  #westo-entrance.has-eg-promo .eg-subtitle {
+    margin-top:1px !important;
+    font-size:8px !important;
+  }
+  #westo-entrance.has-eg-promo .eg-status {
+    min-height:34px !important;
+    padding:5px 12px !important;
+    font-size:10px !important;
+  }
+  #westo-entrance.has-eg-promo .eg-experience {
+    min-height:0 !important;
+    align-content:start !important;
+    gap:5px !important;
+  }
+  #westo-entrance.has-eg-promo .eg-experience__lead { font-size:10px !important; }
+  #westo-entrance.has-eg-promo .eg-steps-row {
+    min-height:48px !important;
+    width:min(470px,82%) !important;
+  }
+  #westo-entrance.has-eg-promo .eg-steps-row::before {
+    top:21px !important;
+    inset-inline:30px !important;
+  }
+  #westo-entrance.has-eg-promo .eg-step-icon {
+    width:44px !important;
+    height:44px !important;
+    flex-basis:44px !important;
+  }
+  #westo-entrance.has-eg-promo .eg-step-icon svg { width:17px !important;height:17px !important; }
+  #westo-entrance.has-eg-promo .eg-step-label { font-size:7.5px !important; }
+  #westo-entrance.has-eg-promo .eg-quote { font-size:9.5px !important; }
+  #westo-entrance .eg-promo--experience {
+    width:min(500px,62vw) !important;
+    --eg-promo-h:clamp(185px,23vh,220px);
+    --eg-promo-radius:22px;
+  }
+  #westo-entrance .eg-promo--experience .eg-promo__deck {
+    height:calc(var(--eg-promo-h) + 13px) !important;
+    padding-top:13px !important;
+  }
+  #westo-entrance .eg-promo--experience .eg-promo__card { inset-block-start:13px !important; }
+  #westo-entrance.has-eg-promo .eg-cta {
+    min-height:56px !important;
+    height:56px !important;
+  }
+}
+
+/* Short desktop/tablet viewports get an even tighter bounded composition;
+   mobile rules are intentionally untouched. */
+@media (min-width:768px) and (max-height:850px) {
+  #westo-entrance.has-eg-promo .eg-card {
+    row-gap:4px !important;
+    padding:11px 34px 10px !important;
+  }
+  #westo-entrance.has-eg-promo .eg-logo-stage { width:72px !important;max-height:106px !important; }
+  #westo-entrance.has-eg-promo .eg-brand-wordmark-img { width:min(220px,30vw) !important;max-height:40px !important; }
+  #westo-entrance.has-eg-promo .eg-tagline { font-size:10px !important; }
+  #westo-entrance.has-eg-promo .eg-status { min-height:30px !important;font-size:9px !important; }
+  #westo-entrance.has-eg-promo .eg-steps-row { min-height:40px !important;width:min(420px,78%) !important; }
+  #westo-entrance.has-eg-promo .eg-steps-row::before { top:18px !important; }
+  #westo-entrance.has-eg-promo .eg-step-icon { width:38px !important;height:38px !important;flex-basis:38px !important; }
+  #westo-entrance.has-eg-promo .eg-step-label { font-size:7px !important; }
+  #westo-entrance .eg-promo--experience {
+    width:min(420px,56vw) !important;
+    --eg-promo-h:clamp(140px,18vh,158px);
+  }
+  #westo-entrance.has-eg-promo .eg-cta { min-height:50px !important;height:50px !important; }
+}
+
+/* Header: the source asset was a wide composite lockup and the container was
+   still flex in the Webflow base, so grid-column rules could not guarantee a
+   real center track. Use the approved Persian wordmark and force the actual
+   three-column header geometry. */
+.navbar_container {
+  display:grid !important;
+  grid-template-columns:minmax(0,1fr) auto minmax(0,1fr) !important;
+  align-items:center !important;
+  position:relative !important;
+}
+.navbar_logo-link {
+  position:relative !important;
+  left:auto !important;
+  right:auto !important;
+  inset:auto !important;
+  inset-inline:auto !important;
+  transform:none !important;
+  grid-column:2 !important;
+  justify-self:center !important;
+  align-self:center !important;
+  width:clamp(118px,16vw,178px) !important;
+  max-width:178px !important;
+  height:46px !important;
+  overflow:visible !important;
+  z-index:6 !important;
+}
+.navbar_logo {
+  display:block !important;
+  width:100% !important;
+  height:auto !important;
+  max-width:100% !important;
+  max-height:38px !important;
+  object-fit:contain !important;
+  object-position:center !important;
+}
+.navbar_logo--light { display:none !important; }
+html[data-theme='light'] .navbar_logo--dark { display:none !important; }
+html[data-theme='light'] .navbar_logo--light { display:block !important; }
+.navbar_sound-wrapper { grid-column:1 !important;justify-self:start !important; }
+.navbar_menu-wrapper { grid-column:3 !important;justify-self:end !important; }
+
+@media (max-width:767px) {
+  .navbar_logo-link {
+    width:clamp(78px,22vw,112px) !important;
+    max-width:112px !important;
+    height:44px !important;
+  }
+  .navbar_logo { max-height:30px !important; }
+}
+
+/* In narrow dish mode the back and table actions are the primary contextual
+   controls. Three left-side pills cannot coexist with a centered brand and
+   the menu trigger inside a 320–430px header, so auth moves to the site menu
+   at this breakpoint instead of painting over the wordmark. */
+@media (max-width:430px) {
+  html.is-dish-boards .navbar_sound-wrapper #nav-auth-btn {
+    display:none !important;
+  }
+
+  html.is-dish-boards .navbar_container {
+    grid-template-columns:minmax(96px,1fr) minmax(76px,92px) minmax(74px,1fr) !important;
+    column-gap:4px !important;
+  }
+
+  html.is-dish-boards .navbar_logo-link {
+    width:min(88px,23vw) !important;
+    max-width:88px !important;
+    overflow:hidden !important;
+  }
+
+  html.is-dish-boards .navbar_sound-wrapper {
+    gap:4px !important;
+    /* The cart counter intentionally sits outside the button corner. */
+    overflow:visible !important;
+  }
+
+  html.is-dish-boards .westo-back-categories:not([hidden]),
+  html.is-dish-boards .navbar_table {
+    width:44px !important;
+    min-width:44px !important;
+    max-width:44px !important;
+    height:44px !important;
+    min-height:44px !important;
+  }
+
+  html.is-dish-boards .navbar_menu-button {
+    min-width:70px !important;
+    padding-inline:8px !important;
+  }
+}
+@media (max-width:360px) {
+  .navbar_logo-link { width:74px !important;max-width:74px !important; }
+  .navbar_logo { max-height:27px !important; }
+}
+
+/* Language switch: all three Latin tokens own identical boxes/baselines. The
+   legacy AR rescue no longer uses a different inline-flex baseline. */
+#westo-entrance .eg-lang-switch { align-items:center !important; }
+#westo-entrance .eg-lang-seg,
+#westo-entrance .eg-lang-seg--ar {
+  display:flex !important;
+  align-items:center !important;
+  justify-content:center !important;
+  align-self:center !important;
+  line-height:1 !important;
+  padding-block:0 !important;
+  margin:0 !important;
+  transform:none !important;
+  vertical-align:middle !important;
+}
+
+/* Dish category underline must use the same proportional grammar as the
+   classic lower category toolbar, instead of a fixed 2rem segment. */
+#westo-dish-catbar .westo-dish-catbar__chip.is-active::after {
+  left:auto !important;
+  right:auto !important;
+  inset-inline:28% !important;
+  bottom:3px !important;
+  width:auto !important;
+  height:2px !important;
+  transform:none !important;
+  border-radius:999px !important;
+  opacity:.8 !important;
+  animation:none !important;
+  filter:none !important;
+  background:var(--cat-accent,var(--prod-cyan)) !important;
+  box-shadow:0 0 5px color-mix(in srgb,var(--cat-accent,var(--prod-cyan)) 42%,transparent) !important;
+}
+/* Ultra Fine v1.1 — canonical hero scroll instruction.
+   Reuse the original .scroll_discover node in the v12 hero-copy slot, remove
+   its old absolute/shimmer presentation, and keep one calm instruction only. */
+.westo-v12-hero-copy > .scroll_discover.westo-v12-hero-scroll-copy {
+  position:static !important;
+  inset:auto !important;
+  left:auto !important;
+  right:auto !important;
+  top:auto !important;
+  bottom:auto !important;
+  transform:none !important;
+  display:block !important;
+  width:auto !important;
+  max-width:100% !important;
+  margin:8px auto 0 !important;
+  padding:0 !important;
+  color:var(--prod-muted) !important;
+  -webkit-text-fill-color:var(--prod-muted) !important;
+  background:none !important;
+  background-image:none !important;
+  background-clip:border-box !important;
+  -webkit-background-clip:border-box !important;
+  animation:none !important;
+  filter:none !important;
+  font-size:11px !important;
+  line-height:1.45 !important;
+  text-align:center !important;
+  white-space:normal !important;
+  pointer-events:none !important;
+}
+html[data-theme='light'] .westo-v12-hero-copy > .scroll_discover.westo-v12-hero-scroll-copy {
+  color:rgba(26,23,20,.62) !important;
+  -webkit-text-fill-color:rgba(26,23,20,.62) !important;
+}
+@media (max-width:767px) {
+  .westo-v12-hero-copy > .scroll_discover.westo-v12-hero-scroll-copy {
+    margin-top:5px !important;
+    font-size:9px !important;
+  }
+}
+
+/* Adaptive entrance geometry
+   The previous mobile cascade changed the shell and card to natural-height
+   rows. On short and medium phones the card then grew beyond the middle row
+   and painted underneath the bottom navigation. Keep the three viewport
+   bands authoritative and let the content scale from the available height. */
+@media (max-width:767px) {
+  #westo-entrance {
+    overflow:hidden !important;
+  }
+
+  #westo-entrance .eg-shell {
+    height:100dvh !important;
+    min-height:100svh !important;
+    max-height:100dvh !important;
+    grid-template-rows:
+      clamp(48px,7dvh,58px)
+      minmax(0,1fr)
+      clamp(54px,7.4dvh,62px) !important;
+    gap:clamp(4px,.8dvh,8px) !important;
+    padding:
+      calc(clamp(5px,1dvh,8px) + var(--eg-safe-t))
+      clamp(7px,2.2vw,10px)
+      calc(clamp(5px,1dvh,8px) + var(--eg-safe-b)) !important;
+    overflow:hidden !important;
+  }
+
+  #westo-entrance .eg-top,
+  #westo-entrance .eg-foot {
+    height:100% !important;
+    min-height:0 !important;
+  }
+
+  #westo-entrance .eg-top > .eg-glass-btn:first-child {
+    width:clamp(46px,6.7dvh,56px) !important;
+    min-width:clamp(46px,6.7dvh,56px) !important;
+    height:clamp(46px,6.7dvh,56px) !important;
+    min-height:0 !important;
+  }
+
+  #westo-entrance #eg-site-menu.westo-menu-trigger {
+    min-width:clamp(88px,25vw,108px) !important;
+    min-height:0 !important;
+    height:clamp(44px,6.5dvh,54px) !important;
+  }
+
+  #westo-entrance .eg-mid {
+    min-height:0 !important;
+    height:100% !important;
+    overflow:hidden !important;
+    padding-inline:clamp(0px,1vw,5px) !important;
+  }
+
+  #westo-entrance.has-eg-promo .eg-card,
+  #westo-entrance .eg-card {
+    width:min(100%,520px) !important;
+    height:min(100%,720px) !important;
+    min-height:0 !important;
+    max-height:100% !important;
+    grid-template-rows:auto auto auto minmax(0,1fr) auto !important;
+    row-gap:clamp(3px,.65dvh,6px) !important;
+    padding:
+      clamp(8px,1.45dvh,13px)
+      clamp(10px,3vw,14px)
+      clamp(8px,1.35dvh,12px) !important;
+    overflow:hidden !important;
+  }
+
+  #westo-entrance .eg-logo-stage {
+    width:clamp(60px,11.3dvh,100px) !important;
+    max-height:clamp(88px,15dvh,146px) !important;
+    margin:0 auto !important;
+  }
+
+  #westo-entrance .eg-brand-wordmark-img {
+    width:min(clamp(170px,52vw,240px),68vw) !important;
+    max-height:clamp(34px,5.6dvh,50px) !important;
+  }
+
+  #westo-entrance .eg-tagline {
+    margin-top:clamp(2px,.55dvh,5px) !important;
+    font-size:clamp(9px,1.35dvh,11px) !important;
+  }
+
+  #westo-entrance .eg-subtitle {
+    margin-top:1px !important;
+    font-size:clamp(7px,1dvh,8px) !important;
+  }
+
+  #westo-entrance .eg-status {
+    min-height:clamp(29px,4.3dvh,36px) !important;
+    margin-top:0 !important;
+    padding:4px 9px !important;
+  }
+
+  #westo-entrance .eg-experience {
+    min-height:0 !important;
+    height:100% !important;
+    align-content:start !important;
+    overflow:hidden !important;
+    margin-top:0 !important;
+    gap:clamp(3px,.55dvh,5px) !important;
+  }
+
+  #westo-entrance .eg-promo--experience {
+    --eg-promo-h:clamp(104px,calc(31dvh - 72px),195px) !important;
+    width:min(100%,620px) !important;
+  }
+
+  #westo-entrance .eg-promo--experience .eg-promo__deck {
+    height:calc(var(--eg-promo-h) + 12px) !important;
+    padding-top:12px !important;
+  }
+
+  #westo-entrance .eg-promo--experience .eg-promo__card {
+    inset-block-start:12px !important;
+  }
+
+  #westo-entrance .eg-steps-row {
+    min-height:clamp(38px,6.6dvh,54px) !important;
+  }
+
+  #westo-entrance .eg-step-icon {
+    width:clamp(34px,5.7dvh,46px) !important;
+    height:clamp(34px,5.7dvh,46px) !important;
+    flex-basis:clamp(34px,5.7dvh,46px) !important;
+  }
+
+  #westo-entrance .eg-steps-row::before {
+    top:clamp(17px,2.85dvh,23px) !important;
+  }
+
+  #westo-entrance .eg-cta-wrap {
+    margin-top:0 !important;
+    padding-top:clamp(4px,.8dvh,8px) !important;
+  }
+
+  #westo-entrance .eg-cta {
+    height:clamp(46px,6.9dvh,56px) !important;
+    min-height:0 !important;
+  }
+
+  #westo-entrance .eg-foot {
+    width:min(100%,520px) !important;
+    grid-template-rows:1fr !important;
+  }
+
+  #westo-entrance .eg-foot .eg-corner,
+  #westo-entrance .eg-foot .eg-dock,
+  #westo-entrance .eg-foot .eg-lang-switch,
+  #westo-entrance .eg-dock__btn {
+    height:100% !important;
+    min-height:0 !important;
+  }
+}
+
+/* Very short portrait phones keep all primary actions visible. Secondary copy
+   is removed before any control is allowed to collide or leave the viewport. */
+@media (max-width:430px) and (max-height:650px) and (orientation:portrait) {
+  #westo-entrance .eg-subtitle,
+  #westo-entrance .eg-experience__lead,
+  #westo-entrance .eg-quote,
+  #westo-entrance .eg-promo__pagination {
+    display:none !important;
+  }
+
+  #westo-entrance .eg-logo-stage {
+    width:clamp(52px,10dvh,62px) !important;
+    max-height:92px !important;
+  }
+
+  #westo-entrance .eg-brand-wordmark-img {
+    width:min(170px,58vw) !important;
+    max-height:32px !important;
+  }
+
+  #westo-entrance .eg-promo--experience {
+    --eg-promo-h:94px !important;
+  }
+
+  #westo-entrance .eg-promo--experience .eg-promo__deck {
+    height:102px !important;
+    padding-top:8px !important;
+  }
+
+  #westo-entrance .eg-promo--experience .eg-promo__card {
+    inset-block-start:8px !important;
+  }
+}
+
+/* Phones and small tablets in landscape use the width for a two-column card.
+   This preserves the footer and CTA instead of turning the entrance into a
+   tall scroll page. */
+@media (min-width:568px) and (max-width:1180px) and (max-height:520px) and (orientation:landscape) {
+  #westo-entrance {
+    overflow:hidden !important;
+  }
+
+  #westo-entrance .eg-shell {
+    width:100% !important;
+    height:100dvh !important;
+    min-height:100svh !important;
+    max-height:100dvh !important;
+    grid-template-rows:44px minmax(0,1fr) 50px !important;
+    gap:4px !important;
+    padding:5px 8px !important;
+    overflow:hidden !important;
+  }
+
+  #westo-entrance .eg-top,
+  #westo-entrance .eg-foot {
+    width:min(100%,900px) !important;
+    height:100% !important;
+    min-height:0 !important;
+    margin-inline:auto !important;
+  }
+
+  #westo-entrance .eg-top > .eg-glass-btn:first-child,
+  #westo-entrance #eg-site-menu.westo-menu-trigger {
+    height:42px !important;
+    min-height:0 !important;
+  }
+
+  #westo-entrance .eg-top > .eg-glass-btn:first-child {
+    width:42px !important;
+    min-width:42px !important;
+  }
+
+  #westo-entrance .eg-mid {
+    min-height:0 !important;
+    height:100% !important;
+    overflow:hidden !important;
+  }
+
+  #westo-entrance.has-eg-promo .eg-card,
+  #westo-entrance .eg-card {
+    width:min(100%,900px) !important;
+    height:100% !important;
+    min-height:0 !important;
+    max-height:100% !important;
+    display:grid !important;
+    grid-template-columns:minmax(150px,.72fr) minmax(280px,1.28fr) !important;
+    grid-template-rows:auto auto minmax(0,1fr) auto !important;
+    column-gap:14px !important;
+    row-gap:3px !important;
+    padding:7px 12px !important;
+    overflow:hidden !important;
+  }
+
+  #westo-entrance .eg-logo-stage {
+    grid-column:1 !important;
+    grid-row:1 !important;
+    width:44px !important;
+    max-height:65px !important;
+    margin:0 auto !important;
+  }
+
+  #westo-entrance .eg-brand-copy {
+    grid-column:1 !important;
+    grid-row:2 !important;
+  }
+
+  #westo-entrance .eg-brand-wordmark-img {
+    width:min(130px,18vw) !important;
+    max-height:25px !important;
+  }
+
+  #westo-entrance .eg-tagline {
+    margin-top:1px !important;
+    font-size:8px !important;
+  }
+
+  #westo-entrance .eg-subtitle,
+  #westo-entrance .eg-status,
+  #westo-entrance .eg-experience__lead,
+  #westo-entrance .eg-steps-row,
+  #westo-entrance .eg-quote,
+  #westo-entrance .eg-promo__pagination {
+    display:none !important;
+  }
+
+  #westo-entrance .eg-experience {
+    grid-column:2 !important;
+    grid-row:1 / 5 !important;
+    min-height:0 !important;
+    height:100% !important;
+    align-content:center !important;
+    gap:4px !important;
+    margin:0 !important;
+    overflow:hidden !important;
+  }
+
+  #westo-entrance .eg-promo--experience {
+    --eg-promo-h:clamp(92px,38dvh,142px) !important;
+    width:min(100%,430px) !important;
+  }
+
+  #westo-entrance .eg-promo--experience .eg-promo__deck {
+    height:calc(var(--eg-promo-h) + 8px) !important;
+    padding-top:8px !important;
+  }
+
+  #westo-entrance .eg-promo--experience .eg-promo__card {
+    inset-block-start:8px !important;
+  }
+
+  #westo-entrance .eg-cta-wrap {
+    grid-column:1 !important;
+    grid-row:4 !important;
+    margin:0 !important;
+    padding:0 !important;
+  }
+
+  #westo-entrance .eg-cta {
+    height:42px !important;
+    min-height:0 !important;
+    font-size:11px !important;
+  }
+
+  #westo-entrance .eg-foot {
+    display:grid !important;
+    grid-template-columns:44px minmax(180px,1fr) minmax(112px,150px) !important;
+    grid-template-rows:1fr !important;
+    align-items:center !important;
+    gap:4px !important;
+    padding:3px 6px !important;
+  }
+
+  #westo-entrance .eg-foot .eg-corner,
+  #westo-entrance .eg-foot .eg-dock,
+  #westo-entrance .eg-foot .eg-lang-switch,
+  #westo-entrance .eg-dock__btn {
+    height:100% !important;
+    min-height:0 !important;
+  }
+}
+
+/* iOS Home Screen / standalone viewport safety
+   The home indicator occupies space inside the standalone layout viewport.
+   Keep bottom controls above that gesture zone and use visualViewport height
+   so dynamic viewport changes cannot push the entrance footer off-screen. */
+:root {
+  --westo-bottom-clearance: max(10px, env(safe-area-inset-bottom, 0px));
+}
+
+html.is-standalone {
+  --westo-bottom-clearance: max(
+    24px,
+    calc(env(safe-area-inset-bottom, 0px) + 10px)
+  );
+}
+
+@media (display-mode: standalone) {
+  :root {
+    --westo-bottom-clearance: max(
+      24px,
+      calc(env(safe-area-inset-bottom, 0px) + 10px)
+    );
+  }
+}
+
+@media (max-width:767px) {
+  :root {
+    --v12-hero-dock-b: var(--westo-bottom-clearance) !important;
+  }
+
+  html:not(.is-dish-boards) .westo-prod-hero-cats {
+    position:fixed !important;
+    bottom:var(--westo-bottom-clearance) !important;
+  }
+
+  html:not(.is-dish-boards) .westo-v12-hero-copy {
+    bottom:calc(
+      var(--v12-hero-dock-h) + var(--westo-bottom-clearance) + 17px
+    ) !important;
+  }
+
+  html.is-standalone #westo-entrance,
+  html.is-standalone #westo-entrance .eg-shell {
+    height:var(--dl-vv-height, 100dvh) !important;
+    min-height:var(--dl-vv-height, 100dvh) !important;
+    max-height:var(--dl-vv-height, 100dvh) !important;
+  }
+
+  html.is-standalone #westo-entrance {
+    --eg-safe-b:var(--westo-bottom-clearance) !important;
+  }
+
+  html.is-standalone .navbar_menu {
+    height:var(--dl-vv-height, 100dvh) !important;
+    min-height:0 !important;
+    padding-bottom:var(--westo-bottom-clearance) !important;
+    box-sizing:border-box !important;
+  }
+}
+
+@media (max-width:430px) {
+  html:not(.is-dish-boards) .westo-v12-hero-copy {
+    bottom:calc(
+      var(--v12-hero-dock-h) + var(--westo-bottom-clearance) + 14px
+    ) !important;
+  }
+}
+
+@media (max-width:991px) {
+  html.is-dish-boards {
+    --dish-safe-bottom:var(--westo-bottom-clearance) !important;
+    --menu-card-bottom:var(--westo-bottom-clearance) !important;
+  }
+}
+
+@media (display-mode: standalone) and (max-width:767px) {
+  #westo-entrance,
+  #westo-entrance .eg-shell {
+    height:var(--dl-vv-height, 100dvh) !important;
+    min-height:var(--dl-vv-height, 100dvh) !important;
+    max-height:var(--dl-vv-height, 100dvh) !important;
+  }
+
+  #westo-entrance {
+    --eg-safe-b:var(--westo-bottom-clearance) !important;
+  }
+
+  .navbar_menu {
+    height:var(--dl-vv-height, 100dvh) !important;
+    min-height:0 !important;
+    padding-bottom:var(--westo-bottom-clearance) !important;
+    box-sizing:border-box !important;
+  }
+}
+
+/* Category hero: collision-free copy and restored navigation guides.
+   The WebGL plate owns the upper stage; title, instruction, pagination and
+   category dock own the lower editorial bands. */
+@media (max-width:991px) {
+  html:not(.is-dish-boards) .carousel_nav {
+    display:block !important;
+    visibility:visible !important;
+    opacity:1 !important;
+    position:fixed !important;
+    inset:0 !important;
+    width:100vw !important;
+    height:100dvh !important;
+    max-width:none !important;
+    padding:0 !important;
+    transform:none !important;
+    pointer-events:none !important;
+  }
+
+  html:not(.is-dish-boards) .carousel_arrow {
+    --westo-hero-arrow-size:clamp(34px,5.4dvh,42px);
+    display:grid !important;
+    place-items:center !important;
+    visibility:visible !important;
+    opacity:.9 !important;
+    width:var(--westo-hero-arrow-size) !important;
+    height:var(--westo-hero-arrow-size) !important;
+    top:clamp(150px,44dvh,390px) !important;
+    bottom:auto !important;
+    z-index:240 !important;
+    pointer-events:auto !important;
+  }
+
+  html:not(.is-dish-boards) .carousel_arrow.is-prev {
+    inset-inline:auto !important;
+    left:max(
+      8px,
+      calc(50vw - min(40vw,220px) - var(--westo-hero-arrow-size))
+    ) !important;
+    right:auto !important;
+  }
+
+  html:not(.is-dish-boards) .carousel_arrow.is-next {
+    inset-inline:auto !important;
+    right:max(
+      8px,
+      calc(50vw - min(40vw,220px) - var(--westo-hero-arrow-size))
+    ) !important;
+    left:auto !important;
+  }
+
+  html:not(.is-dish-boards) .hud,
+  html:not(.is-dish-boards) .hud_container,
+  html:not(.is-dish-boards) .hud_left,
+  html:not(.is-dish-boards) .hud_right,
+  html:not(.is-dish-boards) .hud_left-bottom,
+  html:not(.is-dish-boards) .hud_right-bottom {
+    display:block !important;
+    visibility:visible !important;
+    opacity:1 !important;
+    overflow:visible !important;
+    pointer-events:none !important;
+  }
+
+  html:not(.is-dish-boards) .hud .icon-scroll_wrapper {
+    display:flex !important;
+    visibility:visible !important;
+    opacity:.58 !important;
+    position:fixed !important;
+    top:56dvh !important;
+    bottom:auto !important;
+    width:clamp(12px,1.8vw,17px) !important;
+    height:auto !important;
+    transform:translateY(-50%) !important;
+    z-index:225 !important;
+    color:rgba(244,239,230,.76) !important;
+    pointer-events:none !important;
+  }
+
+  html[data-theme='light']:not(.is-dish-boards) .hud .icon-scroll_wrapper {
+    color: #1a2327 !important;
+    opacity: .72 !important;
+  }
+
+  html:not(.is-dish-boards) .hud_left-bottom .icon-scroll_wrapper {
+    left:max(5px,env(safe-area-inset-left,0px)) !important;
+    right:auto !important;
+  }
+
+  html:not(.is-dish-boards) .hud_right-bottom .icon-scroll_wrapper {
+    right:max(5px,env(safe-area-inset-right,0px)) !important;
+    left:auto !important;
+  }
+
+  html:not(.is-dish-boards) .westo-scroll-hint--mobile,
+  html:not(.is-dish-boards) .westo-scroll-hint--mobile-right {
+    display:none !important;
+  }
+}
+
+@media (max-width:767px) and (max-height:650px) {
+  html:not(.is-dish-boards) .westo-v12-hero-copy {
+    width:min(88vw,360px) !important;
+  }
+
+  html:not(.is-dish-boards) .westo-v12-hero-kicker {
+    font-size:7px !important;
+    line-height:1.2 !important;
+  }
+
+  html:not(.is-dish-boards) .westo-v12-hero-title {
+    margin-top:2px !important;
+    font-size:clamp(30px,8.6vw,36px) !important;
+    line-height:.96 !important;
+  }
+
+  html:not(.is-dish-boards) .westo-v12-hero-copy > .scroll_discover.westo-v12-hero-scroll-copy {
+    margin-top:3px !important;
+    font-size:8px !important;
+    line-height:1.3 !important;
+  }
+
+  html:not(.is-dish-boards) .westo-v12-hero-rail {
+    height:10px !important;
+    margin-top:4px !important;
+  }
+}
+
+@media (max-width:991px) and (max-height:560px) and (orientation:landscape) {
+  html:not(.is-dish-boards) .westo-v12-hero-copy {
+    left:74% !important;
+    width:min(44vw,430px) !important;
+    transform:translateX(-50%) !important;
+  }
+
+  html:not(.is-dish-boards) .westo-v12-hero-title {
+    font-size:clamp(28px,5.3vw,38px) !important;
+  }
+
+  html:not(.is-dish-boards) .westo-v12-hero-rail {
+    width:min(38vw,360px) !important;
+  }
+
+  html:not(.is-dish-boards) .carousel_arrow {
+    --westo-hero-arrow-size:clamp(34px,10dvh,42px);
+    top:48dvh !important;
+  }
+
+  html:not(.is-dish-boards) .carousel_arrow.is-prev {
+    left:max(
+      8px,
+      calc(30vw - min(15vw,110px) - var(--westo-hero-arrow-size))
+    ) !important;
+    right:auto !important;
+  }
+
+  html:not(.is-dish-boards) .carousel_arrow.is-next {
+    left:calc(30vw + min(15vw,110px)) !important;
+    right:auto !important;
+  }
+
+  html:not(.is-dish-boards) .hud .icon-scroll_wrapper {
+    top:56dvh !important;
+  }
+}
+
+@media (prefers-reduced-motion:reduce) {
+  html:not(.is-dish-boards) .hud .icon-scroll_wrapper {
+    opacity:.48 !important;
+  }
+}
+
+/* v14.4 promo-deck vertical safety.
+   The stacked cards rise above their active card. Reserve that rise inside the
+   deck itself so neither the experience copy above nor the CTA below becomes
+   a paint target. Coarse-pointer devices are included because iOS/installed
+   web apps can expose a tablet-sized CSS viewport on a phone. */
+#westo-entrance .eg-promo--experience {
+  --eg-promo-stack-rise:38px;
+  --eg-promo-card-inset:12px;
+  /* The deck is visually taller than the active card. Reserve that full
+     footprint in the experience grid so the following CTA cannot overlap it
+     on short portrait screens. */
+  height:calc(var(--eg-promo-h) + var(--eg-promo-stack-rise) + var(--eg-promo-card-inset)) !important;
+}
+#westo-entrance .eg-promo--experience .eg-promo__deck {
+  height:calc(var(--eg-promo-h) + var(--eg-promo-stack-rise) + var(--eg-promo-card-inset)) !important;
+  padding-top:calc(var(--eg-promo-stack-rise) + var(--eg-promo-card-inset)) !important;
+}
+#westo-entrance .eg-promo--experience .eg-promo__card {
+  inset-block-start:calc(var(--eg-promo-stack-rise) + var(--eg-promo-card-inset)) !important;
+}
+
+#westo-entrance .eg-promo--experience.eg-promo--compact {
+  --eg-promo-h:clamp(148px,16dvh,190px) !important;
+  --eg-promo-radius:21px;
+  --eg-promo-stack-rise:24px;
+  --eg-promo-card-inset:10px;
+}
+#westo-entrance .eg-promo--experience.eg-promo--compact.eg-promo--short {
+  --eg-promo-h:94px !important;
+  --eg-promo-stack-rise:18px;
+  --eg-promo-card-inset:8px;
+}
+/* The experience area is itself a grid. Its final row must reserve the whole
+   deck footprint (rather than just the active card), otherwise the CTA can
+   enter the stack on short iPhones. The classes are added at runtime as a
+   fallback for installed iOS web apps with a scaled CSS viewport. */
+#westo-entrance .eg-experience--promo-safe {
+  --eg-promo-reserved-block:calc(clamp(148px,16dvh,190px) + 34px);
+  grid-template-rows:auto auto auto var(--eg-promo-reserved-block) !important;
+  height:auto !important;
+}
+#westo-entrance .eg-experience--promo-safe.eg-experience--promo-short {
+  --eg-promo-reserved-block:120px;
+}
+#westo-entrance .eg-promo--experience.eg-promo--compact .eg-promo__card[data-layer='1'] {
+  transform:translate3d(6px,-10px,0) rotate(-2deg) scale(.965);
+}
+#westo-entrance .eg-promo--experience.eg-promo--compact .eg-promo__card[data-layer='2'] {
+  transform:translate3d(12px,-20px,0) rotate(-4deg) scale(.93);
+}
+#westo-entrance .eg-promo--experience.eg-promo--compact .eg-promo__card[data-layer='hidden'] {
+  transform:translate3d(18px,-30px,0) rotate(-6deg) scale(.895);
+}
+
+@media (max-width:767px), (pointer:coarse) and (max-width:1024px), (max-width:1024px) and (min-height:800px) and (max-aspect-ratio:4/5) {
+  #westo-entrance .eg-promo--experience:not(.eg-promo--compact) {
+    --eg-promo-h:clamp(148px,16dvh,190px) !important;
+    --eg-promo-radius:21px;
+    --eg-promo-stack-rise:24px;
+    --eg-promo-card-inset:10px;
+  }
+  #westo-entrance .eg-promo--experience:not(.eg-promo--compact) .eg-promo__card[data-layer='1'] {
+    transform:translate3d(6px,-10px,0) rotate(-2deg) scale(.965);
+  }
+  #westo-entrance .eg-promo--experience:not(.eg-promo--compact) .eg-promo__card[data-layer='2'] {
+    transform:translate3d(12px,-20px,0) rotate(-4deg) scale(.93);
+  }
+  #westo-entrance .eg-promo--experience:not(.eg-promo--compact) .eg-promo__card[data-layer='hidden'] {
+    transform:translate3d(18px,-30px,0) rotate(-6deg) scale(.895);
+  }
+}
+
+@media (max-width:430px) and (max-height:650px) and (orientation:portrait) {
+  #westo-entrance .eg-promo--experience {
+    --eg-promo-h:clamp(94px,15dvh,128px) !important;
+    --eg-promo-stack-rise:18px;
+    --eg-promo-card-inset:8px;
+  }
+}

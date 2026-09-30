@@ -1,0 +1,2195 @@
+{
+  "schemaVersion": 1,
+  "routes": [
+    {
+      "moduleKey": "platform_core",
+      "id": "get-001",
+      "method": "GET",
+      "paths": [
+        "/api/admin/session"
+      ],
+      "path": "modules/platform_core/server/routes/get-001.js",
+      "originalSha256": "099d11593142e5aa2fba075bc4e0e9cf2239439817e8086b202e20ffb969f9aa"
+    },
+    {
+      "moduleKey": "platform_core",
+      "id": "get-002",
+      "method": "GET",
+      "paths": [
+        "/api/admin/modules"
+      ],
+      "path": "modules/platform_core/server/routes/get-002.js",
+      "originalSha256": "f58078af9fab3917be7f8b56bf0bc3be7ba676b7b5841cce0175173563dc3fae"
+    },
+    {
+      "moduleKey": "platform_core",
+      "id": "get-003",
+      "method": "GET",
+      "paths": [
+        "/api/admin/role-preview"
+      ],
+      "path": "modules/platform_core/server/routes/get-003.js",
+      "originalSha256": "40778e3d268435cc42754d5631ee5affe0600835c921453b0f6bb9892382079c"
+    },
+    {
+      "moduleKey": "platform_core",
+      "id": "get-004",
+      "method": "GET",
+      "paths": [
+        "/api/staff/session/:workspace"
+      ],
+      "path": "modules/platform_core/server/routes/get-004.js",
+      "originalSha256": "2d4a186966129e55822cc88053753df07c49d58ccd94cb70b41e9be98d3111bd"
+    },
+    {
+      "moduleKey": "platform_core",
+      "id": "post-005",
+      "method": "POST",
+      "paths": [
+        "/api/staff/shifts/open"
+      ],
+      "path": "modules/platform_core/server/routes/post-005.js",
+      "originalSha256": "dccaf9a5be14ef175a607e55a565551dcb144cc73ea515683d591a2dbcd93635"
+    },
+    {
+      "moduleKey": "platform_core",
+      "id": "post-006",
+      "method": "POST",
+      "paths": [
+        "/api/staff/shifts/close"
+      ],
+      "path": "modules/platform_core/server/routes/post-006.js",
+      "originalSha256": "612d3d67630701a1f2ecefc66f7140fb510cb332b339a7dead6d1416f4d4225e"
+    },
+    {
+      "moduleKey": "pos",
+      "id": "get-007",
+      "method": "GET",
+      "paths": [
+        "/api/cashier/drawer"
+      ],
+      "path": "modules/pos/server/routes/get-007.js",
+      "originalSha256": "129dd61b64c41c4e2f4d19357e28e08a13763354d2e3d791308843ff664c580a"
+    },
+    {
+      "moduleKey": "pos",
+      "id": "post-008",
+      "method": "POST",
+      "paths": [
+        "/api/cashier/drawer/open"
+      ],
+      "path": "modules/pos/server/routes/post-008.js",
+      "originalSha256": "c1d31103afd382fe0c5c3c2abefedccb11c50e6d363ce9c865e061b08e543d24"
+    },
+    {
+      "moduleKey": "pos",
+      "id": "post-009",
+      "method": "POST",
+      "paths": [
+        "/api/cashier/drawer/movements"
+      ],
+      "path": "modules/pos/server/routes/post-009.js",
+      "originalSha256": "65a119d9553ee2493757447ef5538a4a5c0482abc7cd9f114c02e5e674b89c59"
+    },
+    {
+      "moduleKey": "pos",
+      "id": "post-010",
+      "method": "POST",
+      "paths": [
+        "/api/cashier/drawer/close"
+      ],
+      "path": "modules/pos/server/routes/post-010.js",
+      "originalSha256": "39eef4cf4071ea2ba054e5a7c61791e6e1585975613fb79da572818657092da4"
+    },
+    {
+      "moduleKey": "platform_core",
+      "id": "get-011",
+      "method": "GET",
+      "paths": [
+        "/api/tenant/context"
+      ],
+      "path": "modules/platform_core/server/routes/get-011.js",
+      "originalSha256": "d6f0f089341740abb0265266318e3d9f1a759febe6e131b7721aa6d1bb0644b6"
+    },
+    {
+      "moduleKey": "platform_core",
+      "id": "get-012",
+      "method": "GET",
+      "paths": [
+        "/api/admin/neem-integration"
+      ],
+      "path": "modules/platform_core/server/routes/get-012.js",
+      "originalSha256": "cee6f35fea00e1b27ebd2143fa504748228375ed7ec3b2cf71885eaa93cf032d"
+    },
+    {
+      "moduleKey": "platform_core",
+      "id": "post-013",
+      "method": "POST",
+      "paths": [
+        "/api/admin/neem-integration/retry"
+      ],
+      "path": "modules/platform_core/server/routes/post-013.js",
+      "originalSha256": "36aaab46d67aa3ce88390afc320cb7e8a0be6b4fd7c3ed3af4502441b6ea14fa"
+    },
+    {
+      "moduleKey": "platform_core",
+      "id": "post-014",
+      "method": "POST",
+      "paths": [
+        "/api/admin/neem-integration/backfill"
+      ],
+      "path": "modules/platform_core/server/routes/post-014.js",
+      "originalSha256": "aa5ca2e22cbd75a109b36aa253d40a2910a6a4846c3544c8cecf8dae62831a30"
+    },
+    {
+      "moduleKey": "platform_core",
+      "id": "get-015",
+      "method": "GET",
+      "paths": [
+        "/ops"
+      ],
+      "path": "modules/platform_core/server/routes/get-015.js",
+      "originalSha256": "3c0f94950e751462ebd5f133f99df53fb5466928a32fcff21cb67c04d7410a59"
+    },
+    {
+      "moduleKey": "platform_core",
+      "id": "get-016",
+      "method": "GET",
+      "paths": [
+        "/ops/:view"
+      ],
+      "path": "modules/platform_core/server/routes/get-016.js",
+      "originalSha256": "7acdbf7ee69bc157658f1472a799f7244221220e8d777e013d5ac2f743d18c2b"
+    },
+    {
+      "moduleKey": "platform_core",
+      "id": "get-017",
+      "method": "GET",
+      "paths": [
+        "/api/admin/command-center"
+      ],
+      "path": "modules/platform_core/server/routes/get-017.js",
+      "originalSha256": "bda8089734942fa2692d9b98c92701d1190f13fb18321ec9eaa224964d9c78dd"
+    },
+    {
+      "moduleKey": "platform_core",
+      "id": "get-018",
+      "method": "GET",
+      "paths": [
+        "/api/admin/events"
+      ],
+      "path": "modules/platform_core/server/routes/get-018.js",
+      "originalSha256": "0f65b77634755fb7ceb70a6f961385264d84233f9e972566ba07e19851163286"
+    },
+    {
+      "moduleKey": "platform_core",
+      "id": "get-019",
+      "method": "GET",
+      "paths": [
+        "/api/admin/audit"
+      ],
+      "path": "modules/platform_core/server/routes/get-019.js",
+      "originalSha256": "799dd22f03735e598a6b032de0fa463e7e23fbb7514d790566ace4d56b7e52df"
+    },
+    {
+      "moduleKey": "platform_core",
+      "id": "post-020",
+      "method": "POST",
+      "paths": [
+        "/api/auth/request-otp"
+      ],
+      "path": "modules/platform_core/server/routes/post-020.js",
+      "originalSha256": "9d2cea9af9f38e55cc26aaae87c98260eef84aa44c4018bfeb7513f7ecb81308"
+    },
+    {
+      "moduleKey": "platform_core",
+      "id": "post-021",
+      "method": "POST",
+      "paths": [
+        "/api/auth/verify-otp"
+      ],
+      "path": "modules/platform_core/server/routes/post-021.js",
+      "originalSha256": "353e97d816bd11b94b2c03d7886365a90401fc12fbbe8e62c95aca70ebb07e8a"
+    },
+    {
+      "moduleKey": "platform_core",
+      "id": "get-022",
+      "method": "GET",
+      "paths": [
+        "/api/auth/me"
+      ],
+      "path": "modules/platform_core/server/routes/get-022.js",
+      "originalSha256": "1df7bdef9cc635bcb7ae52f0120e653449f4d21733215f9f5a0392024c746d4f"
+    },
+    {
+      "moduleKey": "platform_core",
+      "id": "post-023",
+      "method": "POST",
+      "paths": [
+        "/api/auth/logout"
+      ],
+      "path": "modules/platform_core/server/routes/post-023.js",
+      "originalSha256": "d433b767df722e30a2bf35acbbb717ae0985f7b2e84d906580b9b47e3a211878"
+    },
+    {
+      "moduleKey": "crm",
+      "id": "patch-024",
+      "method": "PATCH",
+      "paths": [
+        "/api/auth/profile"
+      ],
+      "path": "modules/crm/server/routes/patch-024.js",
+      "originalSha256": "3a5a748cf858d8f6fbe995aa09444024553fb2609be832dbb7b8666ba2d7ca82"
+    },
+    {
+      "moduleKey": "website_brand",
+      "id": "post-025",
+      "method": "POST",
+      "paths": [
+        "/api/user/avatar/upload"
+      ],
+      "path": "modules/website_brand/server/routes/post-025.js",
+      "originalSha256": "5c01994e766fc14dea3b3b5398ee6fc2e9d4995b65e2b7f21e6c2b56cdc04940"
+    },
+    {
+      "moduleKey": "platform_core",
+      "id": "post-026",
+      "method": "POST",
+      "paths": [
+        "/api/user/avatar"
+      ],
+      "path": "modules/platform_core/server/routes/post-026.js",
+      "originalSha256": "365a24fa9b0d483cbe4fb4605962294057605e2019d8901d9128b9f0ff810053"
+    },
+    {
+      "moduleKey": "platform_core",
+      "id": "get-027",
+      "method": "GET",
+      "paths": [
+        "/api/user/addresses"
+      ],
+      "path": "modules/platform_core/server/routes/get-027.js",
+      "originalSha256": "b9e071b2a2d0be4be431e2f134738a832349c06c062163e5d15f3756b97efd12"
+    },
+    {
+      "moduleKey": "platform_core",
+      "id": "post-028",
+      "method": "POST",
+      "paths": [
+        "/api/user/addresses"
+      ],
+      "path": "modules/platform_core/server/routes/post-028.js",
+      "originalSha256": "f3e4e88b23507168fe075b76f68de815f353d2c761a32cabe2e5e3c7bba75f14"
+    },
+    {
+      "moduleKey": "platform_core",
+      "id": "put-029",
+      "method": "PUT",
+      "paths": [
+        "/api/user/addresses/:id"
+      ],
+      "path": "modules/platform_core/server/routes/put-029.js",
+      "originalSha256": "af1a74753f53a9031790677915483338e0f8a9a863ca063ec2eb683dfaf2ba78"
+    },
+    {
+      "moduleKey": "platform_core",
+      "id": "delete-030",
+      "method": "DELETE",
+      "paths": [
+        "/api/user/addresses/:id"
+      ],
+      "path": "modules/platform_core/server/routes/delete-030.js",
+      "originalSha256": "09642843e73a7025d149ea50de36f22266306753f5018919ddb81e78376192c6"
+    },
+    {
+      "moduleKey": "platform_core",
+      "id": "post-031",
+      "method": "POST",
+      "paths": [
+        "/api/user/addresses/:id/default"
+      ],
+      "path": "modules/platform_core/server/routes/post-031.js",
+      "originalSha256": "3f96bb9df8b22d2503df24e07a5f203a0fc3684a5e62930c466ae9f26ea7ed7a"
+    },
+    {
+      "moduleKey": "crm",
+      "id": "post-032",
+      "method": "POST",
+      "paths": [
+        "/api/user/feedback"
+      ],
+      "path": "modules/crm/server/routes/post-032.js",
+      "originalSha256": "84519d56275ae00aa97f1f0e012d2659065c6ba2dac4cb45e8abec7e8af525a0"
+    },
+    {
+      "moduleKey": "menu_qr",
+      "id": "get-033",
+      "method": "GET",
+      "paths": [
+        "/api/content-bootstrap.js"
+      ],
+      "path": "modules/menu_qr/server/routes/get-033.js",
+      "originalSha256": "bc364a11b31c604b471a83c40df7e0c8f452496d6c460d23a0a89a4c51a3d6a8"
+    },
+    {
+      "moduleKey": "menu_qr",
+      "id": "get-034",
+      "method": "GET",
+      "paths": [
+        "/js/content-bootstrap.static.js"
+      ],
+      "path": "modules/menu_qr/server/routes/get-034.js",
+      "originalSha256": "211682b00484b34ef9ba804cef1c96f1848657a9282b8401f9c07fe9c610a462"
+    },
+    {
+      "moduleKey": "website_brand",
+      "id": "get-035",
+      "method": "GET",
+      "paths": [
+        "/api/content"
+      ],
+      "path": "modules/website_brand/server/routes/get-035.js",
+      "originalSha256": "7b28378eadd0e87e47a35a2dad393e030985d8e06864411fb70c574f09cac851"
+    },
+    {
+      "moduleKey": "website_brand",
+      "id": "put-036",
+      "method": "PUT",
+      "paths": [
+        "/api/content"
+      ],
+      "path": "modules/website_brand/server/routes/put-036.js",
+      "originalSha256": "6cc6d6986fabc09603285aa08b79ac9d50a580c8ec029bcf87a9e67fcb62ae0e"
+    },
+    {
+      "moduleKey": "menu_qr",
+      "id": "put-037",
+      "method": "PUT",
+      "paths": [
+        "/api/products/:id"
+      ],
+      "path": "modules/menu_qr/server/routes/put-037.js",
+      "originalSha256": "2fde046426bfda0249a699290f6d79aa1ad81f2e642fb60320cbdd87bfa5806b"
+    },
+    {
+      "moduleKey": "menu_qr",
+      "id": "get-038",
+      "method": "GET",
+      "paths": [
+        "/api/menu"
+      ],
+      "path": "modules/menu_qr/server/routes/get-038.js",
+      "originalSha256": "cf8cd15f975c8ca0b3ecfc2ddb839f87ba6589a3a176e9a8c396cca1203acda2"
+    },
+    {
+      "moduleKey": "platform_core",
+      "id": "get-039",
+      "method": "GET",
+      "paths": [
+        "/api/staff/menu"
+      ],
+      "path": "modules/platform_core/server/routes/get-039.js",
+      "originalSha256": "725ab72ab322814b96f49fac58d6d26eae0ff92f1e34e05a070e0548539ae4c1"
+    },
+    {
+      "moduleKey": "menu_qr",
+      "id": "get-040",
+      "method": "GET",
+      "paths": [
+        "/api/admin/menu-engineering"
+      ],
+      "path": "modules/menu_qr/server/routes/get-040.js",
+      "originalSha256": "40dca947980c80e81c242eab1645c0c5612a23667203b90369bc5be21ff45d30"
+    },
+    {
+      "moduleKey": "menu_qr",
+      "id": "post-041",
+      "method": "POST",
+      "paths": [
+        "/api/admin/menu-complements"
+      ],
+      "path": "modules/menu_qr/server/routes/post-041.js",
+      "originalSha256": "059a1f63f6f48346f81d3603056a4d62ec0a2f9f0a13fb0b08649edfbd85ec8b"
+    },
+    {
+      "moduleKey": "menu_qr",
+      "id": "put-042",
+      "method": "PUT",
+      "paths": [
+        "/api/admin/menu-complements/:id"
+      ],
+      "path": "modules/menu_qr/server/routes/put-042.js",
+      "originalSha256": "9be7946aa7315f1fb993fec9ea419df4fed75e5291958bca04e885047df66779"
+    },
+    {
+      "moduleKey": "menu_qr",
+      "id": "delete-043",
+      "method": "DELETE",
+      "paths": [
+        "/api/admin/menu-complements/:id"
+      ],
+      "path": "modules/menu_qr/server/routes/delete-043.js",
+      "originalSha256": "76a5f63ad94e94226e88561a2180121071d0ac4f60873b38266aee73e532c8e4"
+    },
+    {
+      "moduleKey": "menu_qr",
+      "id": "post-044",
+      "method": "POST",
+      "paths": [
+        "/api/admin/menu-complement-rules"
+      ],
+      "path": "modules/menu_qr/server/routes/post-044.js",
+      "originalSha256": "88c5cf65ed072d2b52fd719b790dd0227f5bc7d4c7d52660937c2ba71e9f974e"
+    },
+    {
+      "moduleKey": "menu_qr",
+      "id": "put-045",
+      "method": "PUT",
+      "paths": [
+        "/api/admin/menu-complement-rules/:id"
+      ],
+      "path": "modules/menu_qr/server/routes/put-045.js",
+      "originalSha256": "655d2ef07243f60fe8c5de2527be69363723122855083c298bbfb84b58505a96"
+    },
+    {
+      "moduleKey": "menu_qr",
+      "id": "delete-046",
+      "method": "DELETE",
+      "paths": [
+        "/api/admin/menu-complement-rules/:id"
+      ],
+      "path": "modules/menu_qr/server/routes/delete-046.js",
+      "originalSha256": "a64173bac95518fb5702a77a0418b28df45a1d08607bc3d974579bcde48e09fd"
+    },
+    {
+      "moduleKey": "platform_core",
+      "id": "get-047",
+      "method": "GET",
+      "paths": [
+        "/api/i18n"
+      ],
+      "path": "modules/platform_core/server/routes/get-047.js",
+      "originalSha256": "07aaae3b2217e4b6d720bc089f6f9c29df56dce8967b82856753f98c735f2169"
+    },
+    {
+      "moduleKey": "platform_core",
+      "id": "get-048",
+      "method": "GET",
+      "paths": [
+        "/api/admin/i18n"
+      ],
+      "path": "modules/platform_core/server/routes/get-048.js",
+      "originalSha256": "24141e22f92f225c7e150a6cc3a1cc302b09ec132485b80b6ce9f3c84e0ad250"
+    },
+    {
+      "moduleKey": "platform_core",
+      "id": "put-049",
+      "method": "PUT",
+      "paths": [
+        "/api/admin/i18n"
+      ],
+      "path": "modules/platform_core/server/routes/put-049.js",
+      "originalSha256": "821458bdd60e11cf48ba827ecca4b25268aa32128442eeed5a7052a86d8902bd"
+    },
+    {
+      "moduleKey": "platform_core",
+      "id": "post-050",
+      "method": "POST",
+      "paths": [
+        "/api/admin/translate/menu"
+      ],
+      "path": "modules/platform_core/server/routes/post-050.js",
+      "originalSha256": "f00baca617e54d8be6999d7fda3546809d0da3d07a79ae30f6d1a72c2704aa8f"
+    },
+    {
+      "moduleKey": "platform_core",
+      "id": "post-051",
+      "method": "POST",
+      "paths": [
+        "/api/admin/translate/menu/:id"
+      ],
+      "path": "modules/platform_core/server/routes/post-051.js",
+      "originalSha256": "1dfce45bb04875736c49731316e415736b9ed730102617b63ae015de662ef3ce"
+    },
+    {
+      "moduleKey": "platform_core",
+      "id": "get-052",
+      "method": "GET",
+      "paths": [
+        "/api/allergens"
+      ],
+      "path": "modules/platform_core/server/routes/get-052.js",
+      "originalSha256": "839150785586acbba1e6db164c2cd48ac87ca386433d128fa5a180aeae0e0c75"
+    },
+    {
+      "moduleKey": "menu_qr",
+      "id": "post-053",
+      "method": "POST",
+      "paths": [
+        "/api/menu/categories"
+      ],
+      "path": "modules/menu_qr/server/routes/post-053.js",
+      "originalSha256": "a6accafc8ec0bffe6a763d2021ac9a98730b09dae041cd1f03fa53516e30e811"
+    },
+    {
+      "moduleKey": "menu_qr",
+      "id": "put-054",
+      "method": "PUT",
+      "paths": [
+        "/api/menu/categories/order"
+      ],
+      "path": "modules/menu_qr/server/routes/put-054.js",
+      "originalSha256": "f696ba56ff8ca6dfff0cc041436a6380f7da0c975a028a15938e541fe729f6f3"
+    },
+    {
+      "moduleKey": "menu_qr",
+      "id": "put-055",
+      "method": "PUT",
+      "paths": [
+        "/api/menu/categories/:id"
+      ],
+      "path": "modules/menu_qr/server/routes/put-055.js",
+      "originalSha256": "9bc83d0abd48cc42e141dc8c0e7840388c3087c5384cd38ac6c6ceab1f31b8ee"
+    },
+    {
+      "moduleKey": "menu_qr",
+      "id": "delete-056",
+      "method": "DELETE",
+      "paths": [
+        "/api/menu/categories/:id"
+      ],
+      "path": "modules/menu_qr/server/routes/delete-056.js",
+      "originalSha256": "7d2c0c92a93f7b7cc07eacd9fbecdf56b6bae19f086e8874a151cefa1a7a02f5"
+    },
+    {
+      "moduleKey": "menu_qr",
+      "id": "put-057",
+      "method": "PUT",
+      "paths": [
+        "/api/menu/:id"
+      ],
+      "path": "modules/menu_qr/server/routes/put-057.js",
+      "originalSha256": "589f8938de680389a886421cb4fe3318c15be106932f358419ee40f554c78cc7"
+    },
+    {
+      "moduleKey": "menu_qr",
+      "id": "patch-058",
+      "method": "PATCH",
+      "paths": [
+        "/api/menu/:id"
+      ],
+      "path": "modules/menu_qr/server/routes/patch-058.js",
+      "originalSha256": "158e0892457f24782eededaaf45c11b5892e1b0bdac9aad32f4c930d7aded3a0"
+    },
+    {
+      "moduleKey": "menu_qr",
+      "id": "post-059",
+      "method": "POST",
+      "paths": [
+        "/api/admin/menu/bulk-adjust-prices"
+      ],
+      "path": "modules/menu_qr/server/routes/post-059.js",
+      "originalSha256": "41b3eaff330263a940d69fa6c8e384539a6620b6524bd147c7e37f8275110ce7"
+    },
+    {
+      "moduleKey": "menu_qr",
+      "id": "post-060",
+      "method": "POST",
+      "paths": [
+        "/api/admin/menu/bulk-undo-prices"
+      ],
+      "path": "modules/menu_qr/server/routes/post-060.js",
+      "originalSha256": "1adc2eaa144819bbde3302d3294aa1ebd41d64f60b75f006d4e8c999f245bbb9"
+    },
+    {
+      "moduleKey": "menu_qr",
+      "id": "post-061",
+      "method": "POST",
+      "paths": [
+        "/api/menu"
+      ],
+      "path": "modules/menu_qr/server/routes/post-061.js",
+      "originalSha256": "9810967f4c316f456c9b383239b1c163c51ab1c7611d2ecc6452bc47445506c1"
+    },
+    {
+      "moduleKey": "menu_qr",
+      "id": "delete-062",
+      "method": "DELETE",
+      "paths": [
+        "/api/menu/:id"
+      ],
+      "path": "modules/menu_qr/server/routes/delete-062.js",
+      "originalSha256": "3a58e5ee0584984b4175ffd44d38d1bc208bccfe731e389881d22d113d9b3ccf"
+    },
+    {
+      "moduleKey": "platform_core",
+      "id": "get-063",
+      "method": "GET",
+      "paths": [
+        "/api/checkout/meta"
+      ],
+      "path": "modules/platform_core/server/routes/get-063.js",
+      "originalSha256": "bca83d04d3efd1e6dece069581b4bb43a0aae3ac82c440fce82e5b41c46d28f8"
+    },
+    {
+      "moduleKey": "menu_qr",
+      "id": "post-064",
+      "method": "POST",
+      "paths": [
+        "/api/checkout/quote"
+      ],
+      "path": "modules/menu_qr/server/routes/post-064.js",
+      "originalSha256": "f64790bbe87427be865f2bf4cfae11c0193be3f56219d7f1a23eb0228083fe1f"
+    },
+    {
+      "moduleKey": "menu_qr",
+      "id": "post-065",
+      "method": "POST",
+      "paths": [
+        "/api/checkout/orders"
+      ],
+      "path": "modules/menu_qr/server/routes/post-065.js",
+      "originalSha256": "1a623404a1128b810fc6eb26cf9045bd57d6d8914615a25c321074bde6c4620d"
+    },
+    {
+      "moduleKey": "menu_qr",
+      "id": "post-066",
+      "method": "POST",
+      "paths": [
+        "/api/checkout/recovery"
+      ],
+      "path": "modules/menu_qr/server/routes/post-066.js",
+      "originalSha256": "a4807777d37fa1225c18b4cb48f85f0df41c282625b51dcefc561f1f3a73db3d"
+    },
+    {
+      "moduleKey": "menu_qr",
+      "id": "post-067",
+      "method": "POST",
+      "paths": [
+        "/api/checkout/payments/:id/sandbox-confirm"
+      ],
+      "path": "modules/menu_qr/server/routes/post-067.js",
+      "originalSha256": "237c0a80d0afe21ac9155b3e9e746242458805e8fd4475e07bfc4db7e3cfc014"
+    },
+    {
+      "moduleKey": "payments",
+      "id": "post-068",
+      "method": "POST",
+      "paths": [
+        "/api/payments/webhook/:provider"
+      ],
+      "path": "modules/payments/server/routes/post-068.js",
+      "originalSha256": "2efd0604d1de4859cb9bbf7408a93305fe4df00e7cfc84aca812827c3a87ccdb"
+    },
+    {
+      "moduleKey": "pos",
+      "id": "get-069",
+      "method": "GET",
+      "paths": [
+        "/api/orders/my-orders"
+      ],
+      "path": "modules/pos/server/routes/get-069.js",
+      "originalSha256": "9154b1a699b5c7c790640bf5376a437254697e3ff4149c780ebaa9e2509dbba9"
+    },
+    {
+      "moduleKey": "crm",
+      "id": "get-070",
+      "method": "GET",
+      "paths": [
+        "/api/profile/orders"
+      ],
+      "path": "modules/crm/server/routes/get-070.js",
+      "originalSha256": "da01e13aea172875d7a27f8dd829505528d200d50b22a6d9f2c77ab67b3e6d21"
+    },
+    {
+      "moduleKey": "pos",
+      "id": "post-071",
+      "method": "POST",
+      "paths": [
+        "/api/orders"
+      ],
+      "path": "modules/pos/server/routes/post-071.js",
+      "originalSha256": "7f4dc814bd5e3632eb191c0c75c6e52bc60021ccf92f59acded7718a57b6ba62"
+    },
+    {
+      "moduleKey": "pos",
+      "id": "get-072",
+      "method": "GET",
+      "paths": [
+        "/api/admin/orders"
+      ],
+      "path": "modules/pos/server/routes/get-072.js",
+      "originalSha256": "b5adc2cd290d17bff5f652cf269400db8d62ea8d2f9375831ffedd92c4a14bf3"
+    },
+    {
+      "moduleKey": "pos",
+      "id": "post-073",
+      "method": "POST",
+      "paths": [
+        "/api/staff/orders"
+      ],
+      "path": "modules/pos/server/routes/post-073.js",
+      "originalSha256": "21134e8557bc3d641a04d000df9e326610807fe49f3147cd51fb7c6a9b19796f"
+    },
+    {
+      "moduleKey": "pos",
+      "id": "patch-074",
+      "method": "PATCH",
+      "paths": [
+        "/api/cashier/orders/:id"
+      ],
+      "path": "modules/pos/server/routes/patch-074.js",
+      "originalSha256": "7924810c82023aeccfda2548dc62f01b19355fceeae308ec126f3292287894d8"
+    },
+    {
+      "moduleKey": "floor",
+      "id": "patch-075",
+      "method": "PATCH",
+      "paths": [
+        "/api/waiter/orders/:id"
+      ],
+      "path": "modules/floor/server/routes/patch-075.js",
+      "originalSha256": "70c99236f188c7931a8ef72b4508870116683679e78f3eccb71b3736fc23023d"
+    },
+    {
+      "moduleKey": "pos",
+      "id": "post-076",
+      "method": "POST",
+      "paths": [
+        "/api/cashier/orders/:id/apply-loyalty"
+      ],
+      "path": "modules/pos/server/routes/post-076.js",
+      "originalSha256": "139e4c912a9022d92b010c876ff2ad49f78627283d08418f1f7a621f6b272e37"
+    },
+    {
+      "moduleKey": "pos",
+      "id": "post-077",
+      "method": "POST",
+      "paths": [
+        "/api/cashier/orders/:id/settle"
+      ],
+      "path": "modules/pos/server/routes/post-077.js",
+      "originalSha256": "ae7f7f71c499cc76f286319fd3aee110f46508e29e6c6ddbf54bcceae004d67b"
+    },
+    {
+      "moduleKey": "pos",
+      "id": "post-078",
+      "method": "POST",
+      "paths": [
+        "/api/staff/orders/:id/settle"
+      ],
+      "path": "modules/pos/server/routes/post-078.js",
+      "originalSha256": "ad580cb21a5cd35ea5e132e6139c6b934260af2b5aa5a883c027a2e616821513"
+    },
+    {
+      "moduleKey": "pos",
+      "id": "get-079",
+      "method": "GET",
+      "paths": [
+        "/api/cashier/printer"
+      ],
+      "path": "modules/pos/server/routes/get-079.js",
+      "originalSha256": "6e4a624c30a198f0f66b61ea6e92b724787a680acbd6cdc97d3b8fc82cf57279"
+    },
+    {
+      "moduleKey": "pos",
+      "id": "get-080",
+      "method": "GET",
+      "paths": [
+        "/api/cashier/printers/system"
+      ],
+      "path": "modules/pos/server/routes/get-080.js",
+      "originalSha256": "08a5025ca93c26654fe1b27dec6dbdac14ccc36a63e1427e18527ad1623051fb"
+    },
+    {
+      "moduleKey": "pos",
+      "id": "put-081",
+      "method": "PUT",
+      "paths": [
+        "/api/cashier/printer"
+      ],
+      "path": "modules/pos/server/routes/put-081.js",
+      "originalSha256": "93733e32a4572ae66d49b346c7ff5186a64ccd52640b949990fb8d9271339eb2"
+    },
+    {
+      "moduleKey": "pos",
+      "id": "post-082",
+      "method": "POST",
+      "paths": [
+        "/api/cashier/printer/test"
+      ],
+      "path": "modules/pos/server/routes/post-082.js",
+      "originalSha256": "7e7891f4a195eb231f50295d912286176251a80ad7aa229793545031e05174b6"
+    },
+    {
+      "moduleKey": "pos",
+      "id": "post-083",
+      "method": "POST",
+      "paths": [
+        "/api/cashier/orders/:id/print"
+      ],
+      "path": "modules/pos/server/routes/post-083.js",
+      "originalSha256": "ce1fb26b6bb7dc6a3f46fa5f041dabe6c6a3d850c0d1e5fe1a1a09f31eeb43aa"
+    },
+    {
+      "moduleKey": "pos",
+      "id": "post-084",
+      "method": "POST",
+      "paths": [
+        "/api/cashier/orders/:id/receipt"
+      ],
+      "path": "modules/pos/server/routes/post-084.js",
+      "originalSha256": "b0890310b2002c7bb4267be47dc901abd342b924ce7bf5459efc3acc9a4a0adb"
+    },
+    {
+      "moduleKey": "pos",
+      "id": "patch-085",
+      "method": "PATCH",
+      "paths": [
+        "/api/cashier/orders/:id/status"
+      ],
+      "path": "modules/pos/server/routes/patch-085.js",
+      "originalSha256": "306a067d6f7d850a69d2d448300b534b8bbf83e2c01bea6e2073eb0d6ce4373c"
+    },
+    {
+      "moduleKey": "floor",
+      "id": "get-086",
+      "method": "GET",
+      "paths": [
+        "/api/waiter/calls"
+      ],
+      "path": "modules/floor/server/routes/get-086.js",
+      "originalSha256": "d6efcca9ea55fb678dce7869f197a23815cad953e686bb8bba76e1c3110ded52"
+    },
+    {
+      "moduleKey": "floor",
+      "id": "patch-087",
+      "method": "PATCH",
+      "paths": [
+        "/api/waiter/calls/:id"
+      ],
+      "path": "modules/floor/server/routes/patch-087.js",
+      "originalSha256": "914b3a3fa844f08d9f40320f137f9de24421fb0d5bbe49ed64f0e8e0375f1704"
+    },
+    {
+      "moduleKey": "floor",
+      "id": "patch-088",
+      "method": "PATCH",
+      "paths": [
+        "/api/waiter/orders/:id/status"
+      ],
+      "path": "modules/floor/server/routes/patch-088.js",
+      "originalSha256": "6d624daff3ae72907f33bb499df7c997e14d58133f8b017b70fea9159cd2df38"
+    },
+    {
+      "moduleKey": "reservations",
+      "id": "get-089",
+      "method": "GET",
+      "paths": [
+        "/api/waiter/waitlist"
+      ],
+      "path": "modules/reservations/server/routes/get-089.js",
+      "originalSha256": "cc4c42983ee254ffc52ee834380c7b2ddacb75985f077d7008cc884d20fad4f5"
+    },
+    {
+      "moduleKey": "reservations",
+      "id": "post-090",
+      "method": "POST",
+      "paths": [
+        "/api/waiter/waitlist"
+      ],
+      "path": "modules/reservations/server/routes/post-090.js",
+      "originalSha256": "b4491a9ed12e8e762c8279886aca300aa2de47133ee52fc4cb8f31fe66aca40a"
+    },
+    {
+      "moduleKey": "reservations",
+      "id": "patch-091",
+      "method": "PATCH",
+      "paths": [
+        "/api/waiter/waitlist/:id"
+      ],
+      "path": "modules/reservations/server/routes/patch-091.js",
+      "originalSha256": "0ca90e39658d7bfb5df74e9da4515a08ac277bdd707b98a63fd072baf6e60ed6"
+    },
+    {
+      "moduleKey": "floor",
+      "id": "patch-092",
+      "method": "PATCH",
+      "paths": [
+        "/api/waiter/orders/:id/fire-course"
+      ],
+      "path": "modules/floor/server/routes/patch-092.js",
+      "originalSha256": "c1c8712a0901b6d17aaa063ddda02e7080cb239d5bd1d398b8d776d703cd1b9e"
+    },
+    {
+      "moduleKey": "floor",
+      "id": "post-093",
+      "method": "POST",
+      "paths": [
+        "/api/waiter/orders/:id/split"
+      ],
+      "path": "modules/floor/server/routes/post-093.js",
+      "originalSha256": "6ab859544b355d8458da16d287c525b11f71688f775f6ef5c99e021819f6bab6"
+    },
+    {
+      "moduleKey": "floor",
+      "id": "patch-094",
+      "method": "PATCH",
+      "paths": [
+        "/api/waiter/orders/:id/move-table"
+      ],
+      "path": "modules/floor/server/routes/patch-094.js",
+      "originalSha256": "865af71a6a6f1971578e4b16c193f3b3b6186f28850b65ce13ddfdc5add6549d"
+    },
+    {
+      "moduleKey": "delivery",
+      "id": "get-095",
+      "method": "GET",
+      "paths": [
+        "/api/admin/delivery-zones"
+      ],
+      "path": "modules/delivery/server/routes/get-095.js",
+      "originalSha256": "275c61be97530689281229ddc4411856c83ed0308d89901de66490c540820c82"
+    },
+    {
+      "moduleKey": "delivery",
+      "id": "post-096",
+      "method": "POST",
+      "paths": [
+        "/api/admin/delivery-zones"
+      ],
+      "path": "modules/delivery/server/routes/post-096.js",
+      "originalSha256": "863feacd1a7e1992cde7c8b687d5808c5bcfb8b9d83c6e0d31ac23dd79809607"
+    },
+    {
+      "moduleKey": "delivery",
+      "id": "patch-097",
+      "method": "PATCH",
+      "paths": [
+        "/api/admin/delivery-zones/:id"
+      ],
+      "path": "modules/delivery/server/routes/patch-097.js",
+      "originalSha256": "21ce5668bfdf667d168567f5b1fd93d30e521efe4b4c5c9f5b7175cf4a86e391"
+    },
+    {
+      "moduleKey": "delivery",
+      "id": "delete-098",
+      "method": "DELETE",
+      "paths": [
+        "/api/admin/delivery-zones/:id"
+      ],
+      "path": "modules/delivery/server/routes/delete-098.js",
+      "originalSha256": "be179c4ca50c8b48761ea7cac2c4db9d76ef06a234709109d26ddc269a664751"
+    },
+    {
+      "moduleKey": "payments",
+      "id": "get-099",
+      "method": "GET",
+      "paths": [
+        "/api/admin/payments"
+      ],
+      "path": "modules/payments/server/routes/get-099.js",
+      "originalSha256": "46f6f9d7fb7b249d4a9d8aeadc517d339fd7087f634bfc8e34b319c108dbed53"
+    },
+    {
+      "moduleKey": "delivery",
+      "id": "post-100",
+      "method": "POST",
+      "paths": [
+        "/api/delivery/orders/:id/accept"
+      ],
+      "path": "modules/delivery/server/routes/post-100.js",
+      "originalSha256": "b1eaa320294228a2ae2514aa5c80a46012fa0c394bc32134c92a63ed2ef1d9d4"
+    },
+    {
+      "moduleKey": "delivery",
+      "id": "post-101",
+      "method": "POST",
+      "paths": [
+        "/api/delivery/orders/:id/reject"
+      ],
+      "path": "modules/delivery/server/routes/post-101.js",
+      "originalSha256": "36714df4f0d224694e7609868e746bc8be74c3538def852b067cc1fdbd0e1026"
+    },
+    {
+      "moduleKey": "pos",
+      "id": "patch-102",
+      "method": "PATCH",
+      "paths": [
+        "/api/admin/orders/:id"
+      ],
+      "path": "modules/pos/server/routes/patch-102.js",
+      "originalSha256": "e303f4ea810297e1ce9a21093984e3afaddb50e1864856a32291138d7ad07c34"
+    },
+    {
+      "moduleKey": "platform_core",
+      "id": "patch-103",
+      "method": "PATCH",
+      "paths": [
+        "/api/v2/orders/:id/status"
+      ],
+      "path": "modules/platform_core/server/routes/patch-103.js",
+      "originalSha256": "00f69f61e2dacf27f7e9d8f0f20142dfb210cd46de3d71fb900084fcb7ba3fe6"
+    },
+    {
+      "moduleKey": "kds",
+      "id": "get-104",
+      "method": "GET",
+      "paths": [
+        "/api/kitchen/orders"
+      ],
+      "path": "modules/kds/server/routes/get-104.js",
+      "originalSha256": "8ee30db4595003e676879607ec49cef8df75c50c01fb57feb031b479adf0d16e"
+    },
+    {
+      "moduleKey": "kds",
+      "id": "patch-105",
+      "method": "PATCH",
+      "paths": [
+        "/api/kitchen/orders/:id"
+      ],
+      "path": "modules/kds/server/routes/patch-105.js",
+      "originalSha256": "a334e5e0a4861cb6930fe3de345bc1d9e897df7a0ced7c17ba756d661b5dbfbc"
+    },
+    {
+      "moduleKey": "kds",
+      "id": "patch-106",
+      "method": "PATCH",
+      "paths": [
+        "/api/kitchen/items/:id/availability"
+      ],
+      "path": "modules/kds/server/routes/patch-106.js",
+      "originalSha256": "1384d56f0f09ec1d0605f3ca3ab4209b87951315f2af547633fb95c75fcea887"
+    },
+    {
+      "moduleKey": "floor",
+      "id": "post-107",
+      "method": "POST",
+      "paths": [
+        "/api/call-waiter"
+      ],
+      "path": "modules/floor/server/routes/post-107.js",
+      "originalSha256": "95db04fb24c524702dfcf4aa891d7dbef8293824cf6491ef64c3f7a6b2d3d2b1"
+    },
+    {
+      "moduleKey": "floor",
+      "id": "post-108",
+      "method": "POST",
+      "paths": [
+        "/api/call-waiter/cancel"
+      ],
+      "path": "modules/floor/server/routes/post-108.js",
+      "originalSha256": "86f47bd0e41ed9be048bd43b84f01de2b8a7c1542be607ee77807d47d1867562"
+    },
+    {
+      "moduleKey": "kds",
+      "id": "get-109",
+      "method": "GET",
+      "paths": [
+        "/api/kitchen/calls"
+      ],
+      "path": "modules/kds/server/routes/get-109.js",
+      "originalSha256": "b120fb95428e6acd9eb25acfa491f76b697de89ea66488c6d06abc77af389b8b"
+    },
+    {
+      "moduleKey": "kds",
+      "id": "patch-110",
+      "method": "PATCH",
+      "paths": [
+        "/api/kitchen/calls/:id"
+      ],
+      "path": "modules/kds/server/routes/patch-110.js",
+      "originalSha256": "9991ba6e745b9cb220fb34978c918c405b1cb1ae819ed3118407cad567817f97"
+    },
+    {
+      "moduleKey": "website_brand",
+      "id": "post-111",
+      "method": "POST",
+      "paths": [
+        "/api/faq"
+      ],
+      "path": "modules/website_brand/server/routes/post-111.js",
+      "originalSha256": "95d0b9b34f2ef402dd1cd0da93c41a47056fb38dfb39599c45f534b039e85a6d"
+    },
+    {
+      "moduleKey": "website_brand",
+      "id": "put-112",
+      "method": "PUT",
+      "paths": [
+        "/api/faq/:id"
+      ],
+      "path": "modules/website_brand/server/routes/put-112.js",
+      "originalSha256": "55c58d398d7f063bc2e5dabb725ba33bb8903c856939d9db705da1989516e836"
+    },
+    {
+      "moduleKey": "website_brand",
+      "id": "delete-113",
+      "method": "DELETE",
+      "paths": [
+        "/api/faq/:id"
+      ],
+      "path": "modules/website_brand/server/routes/delete-113.js",
+      "originalSha256": "13a624fdbd40a0ecbc376e2de1bc8f98215fb7d9e075986b7214e92c7a41038a"
+    },
+    {
+      "moduleKey": "website_brand",
+      "id": "put-114",
+      "method": "PUT",
+      "paths": [
+        "/api/faq-order"
+      ],
+      "path": "modules/website_brand/server/routes/put-114.js",
+      "originalSha256": "9b6991e92ffb6a3c53ac0ea859420aa24406655faa2392a9f3ea66e4ba488eee"
+    },
+    {
+      "moduleKey": "platform_core",
+      "id": "get-115",
+      "method": "GET",
+      "paths": [
+        "/api/admin/users"
+      ],
+      "path": "modules/platform_core/server/routes/get-115.js",
+      "originalSha256": "9555e05290d6a79786bb3d017e199ed2ce01e9aae7e7d07d086445cb81b50ef5"
+    },
+    {
+      "moduleKey": "platform_core",
+      "id": "get-116",
+      "method": "GET",
+      "paths": [
+        "/api/admin/roles/matrix"
+      ],
+      "path": "modules/platform_core/server/routes/get-116.js",
+      "originalSha256": "c34b249b08d1adfdad7038d1ac993e529eef5383c17f38868acca528c75a2668"
+    },
+    {
+      "moduleKey": "platform_core",
+      "id": "post-117",
+      "method": "POST",
+      "paths": [
+        "/api/admin/users",
+        "/api/admin/customers"
+      ],
+      "path": "modules/platform_core/server/routes/post-117.js",
+      "originalSha256": "9614a9d8b70a12e1924743a6c1bd0d4f05a55e046ef71c4b15cf0c756c79c612"
+    },
+    {
+      "moduleKey": "platform_core",
+      "id": "patch-118",
+      "method": "PATCH",
+      "paths": [
+        "/api/admin/users/:phone",
+        "/api/admin/customers/:phone"
+      ],
+      "path": "modules/platform_core/server/routes/patch-118.js",
+      "originalSha256": "7786456b0f1746969dfd7b3345fbc6062db23c4ff7bff7caf032374f71748a32"
+    },
+    {
+      "moduleKey": "platform_core",
+      "id": "delete-119",
+      "method": "DELETE",
+      "paths": [
+        "/api/admin/users/:phone"
+      ],
+      "path": "modules/platform_core/server/routes/delete-119.js",
+      "originalSha256": "320bb51c39f2864d94930a7ce4f14e17756ad827906ce96cfe4d4a71ee43c4b7"
+    },
+    {
+      "moduleKey": "crm",
+      "id": "post-120",
+      "method": "POST",
+      "paths": [
+        "/api/newsletter"
+      ],
+      "path": "modules/crm/server/routes/post-120.js",
+      "originalSha256": "14f4fbecfe6d32453190d52415f0aae3e51dbcfec82a696b3de3f2a013cd255d"
+    },
+    {
+      "moduleKey": "crm",
+      "id": "get-121",
+      "method": "GET",
+      "paths": [
+        "/api/admin/newsletter"
+      ],
+      "path": "modules/crm/server/routes/get-121.js",
+      "originalSha256": "c8a32652330b28f9aaaf9dfe91fd30c7a758caec60208ba4b18daf864e623f6b"
+    },
+    {
+      "moduleKey": "platform_core",
+      "id": "get-122",
+      "method": "GET",
+      "paths": [
+        "/api/admin/stats"
+      ],
+      "path": "modules/platform_core/server/routes/get-122.js",
+      "originalSha256": "f3203f9cfc186b429e183e37f4b9d680057c52340ea877f2536dd59418dddfaf"
+    },
+    {
+      "moduleKey": "platform_core",
+      "id": "get-123",
+      "method": "GET",
+      "paths": [
+        "/api/admin/notifications"
+      ],
+      "path": "modules/platform_core/server/routes/get-123.js",
+      "originalSha256": "caa1a1f0c522ce964d2626d89a8dbb58b841160330da5e001f0a018f37b80ecb"
+    },
+    {
+      "moduleKey": "website_brand",
+      "id": "get-124",
+      "method": "GET",
+      "paths": [
+        "/api/admin/restaurant"
+      ],
+      "path": "modules/website_brand/server/routes/get-124.js",
+      "originalSha256": "a28748459f3b43f7887c640c044f71c7059c07fb5f4b8cbca82f0177761b4940"
+    },
+    {
+      "moduleKey": "website_brand",
+      "id": "put-125",
+      "method": "PUT",
+      "paths": [
+        "/api/admin/restaurant"
+      ],
+      "path": "modules/website_brand/server/routes/put-125.js",
+      "originalSha256": "a5e1933af912646af44f8fbff7a00dab2fef106bb73713627932e47639885578"
+    },
+    {
+      "moduleKey": "website_brand",
+      "id": "put-126",
+      "method": "PUT",
+      "paths": [
+        "/api/admin/hours"
+      ],
+      "path": "modules/website_brand/server/routes/put-126.js",
+      "originalSha256": "12fe30ab0b0fcf129e35cbdf7133b308d6d2a2e2e35d109a88af7345b4d5bc15"
+    },
+    {
+      "moduleKey": "floor",
+      "id": "get-127",
+      "method": "GET",
+      "paths": [
+        "/api/admin/tables"
+      ],
+      "path": "modules/floor/server/routes/get-127.js",
+      "originalSha256": "b23952a37c50b1345e4697e1909a77741a0c62a17d512456bd4a83a868109995"
+    },
+    {
+      "moduleKey": "floor",
+      "id": "put-128",
+      "method": "PUT",
+      "paths": [
+        "/api/admin/tables"
+      ],
+      "path": "modules/floor/server/routes/put-128.js",
+      "originalSha256": "f5457a7887b536b782793e510c6f6269f08f4369d28a173e6d25258c7e6a9c7a"
+    },
+    {
+      "moduleKey": "floor",
+      "id": "post-129",
+      "method": "POST",
+      "paths": [
+        "/api/admin/tables"
+      ],
+      "path": "modules/floor/server/routes/post-129.js",
+      "originalSha256": "c7e21c4b0f2b21e5996a4834ccba493ea958861f2f7cfe32b4d9c0ce823b116b"
+    },
+    {
+      "moduleKey": "floor",
+      "id": "delete-130",
+      "method": "DELETE",
+      "paths": [
+        "/api/admin/tables/:id"
+      ],
+      "path": "modules/floor/server/routes/delete-130.js",
+      "originalSha256": "20ef0039373fd113b4fd4bb2aeea9c0b9207eadd116fd46d59707ee198436cc7"
+    },
+    {
+      "moduleKey": "menu_qr",
+      "id": "get-131",
+      "method": "GET",
+      "paths": [
+        "/api/admin/qr-code"
+      ],
+      "path": "modules/menu_qr/server/routes/get-131.js",
+      "originalSha256": "4411db6c54e3d7638f7a9e4d5761fc809ddd37dbf3d57ee9326afb3328b219b5"
+    },
+    {
+      "moduleKey": "multi_branch",
+      "id": "get-132",
+      "method": "GET",
+      "paths": [
+        "/api/branches"
+      ],
+      "path": "modules/multi_branch/server/routes/get-132.js",
+      "originalSha256": "f45416a0037ea63c56174a9128b9a6fc13eb77e740a6d1635d1c54ec9f732686"
+    },
+    {
+      "moduleKey": "multi_branch",
+      "id": "get-133",
+      "method": "GET",
+      "paths": [
+        "/api/admin/branches"
+      ],
+      "path": "modules/multi_branch/server/routes/get-133.js",
+      "originalSha256": "95b36114a774d3292f092689a9255703f256e7184430578453d503d5045ee9cb"
+    },
+    {
+      "moduleKey": "multi_branch",
+      "id": "post-134",
+      "method": "POST",
+      "paths": [
+        "/api/admin/branches"
+      ],
+      "path": "modules/multi_branch/server/routes/post-134.js",
+      "originalSha256": "58dd8c11cccabec1afbab4a5c85c8c69df986a57d4c032c18e52d2eeb7eab088"
+    },
+    {
+      "moduleKey": "multi_branch",
+      "id": "put-135",
+      "method": "PUT",
+      "paths": [
+        "/api/admin/branches/:id"
+      ],
+      "path": "modules/multi_branch/server/routes/put-135.js",
+      "originalSha256": "3d8ed1db8fbe1e4d763b16ad6e7d461b41ce3ad1d5afd32d16518e95bc5368ac"
+    },
+    {
+      "moduleKey": "multi_branch",
+      "id": "delete-136",
+      "method": "DELETE",
+      "paths": [
+        "/api/admin/branches/:id"
+      ],
+      "path": "modules/multi_branch/server/routes/delete-136.js",
+      "originalSha256": "02251dff272ac8b4b8fd5e71364ce02236f8e3be6df8779f978c1adeaa26fcd6"
+    },
+    {
+      "moduleKey": "pos",
+      "id": "get-137",
+      "method": "GET",
+      "paths": [
+        "/api/admin/promotions"
+      ],
+      "path": "modules/pos/server/routes/get-137.js",
+      "originalSha256": "5f55010b0eeb919a6fc1eddac5220fb068c2e8a90a10c1e5276bad8b911ec816"
+    },
+    {
+      "moduleKey": "pos",
+      "id": "post-138",
+      "method": "POST",
+      "paths": [
+        "/api/admin/promotions"
+      ],
+      "path": "modules/pos/server/routes/post-138.js",
+      "originalSha256": "da735aa5d8cb46e16cfe25d203fc67b7727f79d7cb6e32744ab06cbbe1b6a585"
+    },
+    {
+      "moduleKey": "pos",
+      "id": "patch-139",
+      "method": "PATCH",
+      "paths": [
+        "/api/admin/promotions/:id"
+      ],
+      "path": "modules/pos/server/routes/patch-139.js",
+      "originalSha256": "cda31162c543c94b6e140ac72db1184e25e4319bae1c9c82237fe66c3f3c619b"
+    },
+    {
+      "moduleKey": "pos",
+      "id": "delete-140",
+      "method": "DELETE",
+      "paths": [
+        "/api/admin/promotions/:id"
+      ],
+      "path": "modules/pos/server/routes/delete-140.js",
+      "originalSha256": "ffc2e4d027ea20fb70ce941fcaaefdbed67f17f793a0db0dfb7d8230f832e0ed"
+    },
+    {
+      "moduleKey": "website_brand",
+      "id": "get-141",
+      "method": "GET",
+      "paths": [
+        "/api/admin/promo-slides"
+      ],
+      "path": "modules/website_brand/server/routes/get-141.js",
+      "originalSha256": "6bf1ca947af34aad6527223a0274cbc6a2c11b86cbe14af5983dc844c27e3343"
+    },
+    {
+      "moduleKey": "website_brand",
+      "id": "post-142",
+      "method": "POST",
+      "paths": [
+        "/api/admin/promo-slides"
+      ],
+      "path": "modules/website_brand/server/routes/post-142.js",
+      "originalSha256": "da0d6a52fd0be5098868b389300c9511b970ab578106e593c313e7e6e6fdc66a"
+    },
+    {
+      "moduleKey": "website_brand",
+      "id": "patch-143",
+      "method": "PATCH",
+      "paths": [
+        "/api/admin/promo-slides/:id"
+      ],
+      "path": "modules/website_brand/server/routes/patch-143.js",
+      "originalSha256": "42f6c4cd00a9789dee37282ce9e5af6ded493ea1080482ff531b05de37aa8871"
+    },
+    {
+      "moduleKey": "website_brand",
+      "id": "delete-144",
+      "method": "DELETE",
+      "paths": [
+        "/api/admin/promo-slides/:id"
+      ],
+      "path": "modules/website_brand/server/routes/delete-144.js",
+      "originalSha256": "eb756d6ee501e8a2c58b7912a75e546362547a12473250adc944eca7ad74a439"
+    },
+    {
+      "moduleKey": "website_brand",
+      "id": "post-145",
+      "method": "POST",
+      "paths": [
+        "/api/admin/promo-slides/reorder"
+      ],
+      "path": "modules/website_brand/server/routes/post-145.js",
+      "originalSha256": "95a6b8c2c8506ecf3e59fcb7ec388eaffc8eaecc3cdbb54932e99bee5f05572f"
+    },
+    {
+      "moduleKey": "website_brand",
+      "id": "post-146",
+      "method": "POST",
+      "paths": [
+        "/api/promo-slides/:id/impression"
+      ],
+      "path": "modules/website_brand/server/routes/post-146.js",
+      "originalSha256": "014cc71227ec52baaebae57ecb573b7a361e0d529b4b141e218ff6b012d5839f"
+    },
+    {
+      "moduleKey": "website_brand",
+      "id": "post-147",
+      "method": "POST",
+      "paths": [
+        "/api/promo-slides/:id/click"
+      ],
+      "path": "modules/website_brand/server/routes/post-147.js",
+      "originalSha256": "420271a175355185aa5d7d914853ba7eb5c2e17c9396f3c155ff09b9fae5534b"
+    },
+    {
+      "moduleKey": "platform_core",
+      "id": "post-148",
+      "method": "POST",
+      "paths": [
+        "/api/admin/prices/bulk"
+      ],
+      "path": "modules/platform_core/server/routes/post-148.js",
+      "originalSha256": "ff727eed9591f97c0e7a27a1d06df612dc1a21fa26aa5b0e924c9a80cb7ca3b0"
+    },
+    {
+      "moduleKey": "platform_core",
+      "id": "post-149",
+      "method": "POST",
+      "paths": [
+        "/api/analytics/visit"
+      ],
+      "path": "modules/platform_core/server/routes/post-149.js",
+      "originalSha256": "f898226d9d7402fe1ff4170ec29a687ee973cb886a6528ab633e15d782e1592f"
+    },
+    {
+      "moduleKey": "analytics",
+      "id": "get-150",
+      "method": "GET",
+      "paths": [
+        "/api/admin/analytics"
+      ],
+      "path": "modules/analytics/server/routes/get-150.js",
+      "originalSha256": "321d73274b73fa2f799e264189fee92e7c90e1220bae1cfc26a5645484027ef4"
+    },
+    {
+      "moduleKey": "website_brand",
+      "id": "get-151",
+      "method": "GET",
+      "paths": [
+        "/api/restaurant"
+      ],
+      "path": "modules/website_brand/server/routes/get-151.js",
+      "originalSha256": "8de7b0b4dcba509f11d6ca83aa39a2becb1ab7e6d6a1c7e78ab3f16b6ae08b96"
+    },
+    {
+      "moduleKey": "website_brand",
+      "id": "get-152",
+      "method": "GET",
+      "paths": [
+        "/api/theme"
+      ],
+      "path": "modules/website_brand/server/routes/get-152.js",
+      "originalSha256": "4ebea0affae20c2c29b06498b017399f78d959affedc5d8c26f8f20b46d76154"
+    },
+    {
+      "moduleKey": "website_brand",
+      "id": "get-153",
+      "method": "GET",
+      "paths": [
+        "/api/admin/theme"
+      ],
+      "path": "modules/website_brand/server/routes/get-153.js",
+      "originalSha256": "d96aa349fa31fe765667690aff3231241625c1df5f04b2aed0a4d5897afc8e9a"
+    },
+    {
+      "moduleKey": "website_brand",
+      "id": "put-154",
+      "method": "PUT",
+      "paths": [
+        "/api/admin/theme"
+      ],
+      "path": "modules/website_brand/server/routes/put-154.js",
+      "originalSha256": "0ef1d7745a0cae87dbac6fa83e1481f20d7fa3e72f276bb33485dd88b0efe447"
+    },
+    {
+      "moduleKey": "website_brand",
+      "id": "post-155",
+      "method": "POST",
+      "paths": [
+        "/api/admin/upload"
+      ],
+      "path": "modules/website_brand/server/routes/post-155.js",
+      "originalSha256": "d0a4d80ea270ab987ce0ea13905abeec27a21053e31d8516c586ffed1e8a09f6"
+    },
+    {
+      "moduleKey": "website_brand",
+      "id": "get-156",
+      "method": "GET",
+      "paths": [
+        "/api/admin/uploads"
+      ],
+      "path": "modules/website_brand/server/routes/get-156.js",
+      "originalSha256": "fe39685b1ed149136b8158f5c91c1aa51831bd123dbfd025fc722544d9e55bed"
+    },
+    {
+      "moduleKey": "platform_core",
+      "id": "get-157",
+      "method": "GET",
+      "paths": [
+        "/api/admin/settings"
+      ],
+      "path": "modules/platform_core/server/routes/get-157.js",
+      "originalSha256": "8182e1029bf8b0319503f477d1058fb9c52ca41b8ff6041544fac1ed2610b0d6"
+    },
+    {
+      "moduleKey": "platform_core",
+      "id": "put-158",
+      "method": "PUT",
+      "paths": [
+        "/api/admin/settings"
+      ],
+      "path": "modules/platform_core/server/routes/put-158.js",
+      "originalSha256": "6f0ae7414f42918e9c58d0dd17f3b2f1793470079e3752e1c72706866d35445e"
+    },
+    {
+      "moduleKey": "inventory",
+      "id": "get-159",
+      "method": "GET",
+      "paths": [
+        "/api/admin/inventory"
+      ],
+      "path": "modules/inventory/server/routes/get-159.js",
+      "originalSha256": "77289a1d9a3ea51997a98f33a62432aeb81501c2cdef5da502bcaebac9bc9e9f"
+    },
+    {
+      "moduleKey": "inventory",
+      "id": "post-160",
+      "method": "POST",
+      "paths": [
+        "/api/admin/inventory/adjust"
+      ],
+      "path": "modules/inventory/server/routes/post-160.js",
+      "originalSha256": "8b1a097447f4c37e083b8d81cff857e0c100d782290a003fb1faa630393342a9"
+    },
+    {
+      "moduleKey": "crm",
+      "id": "get-161",
+      "method": "GET",
+      "paths": [
+        "/api/admin/loyalty"
+      ],
+      "path": "modules/crm/server/routes/get-161.js",
+      "originalSha256": "fae57f4728b9c079b066c9bb49bc79a949aa67c51608e47f22a14b2a2df42bda"
+    },
+    {
+      "moduleKey": "crm",
+      "id": "get-162",
+      "method": "GET",
+      "paths": [
+        "/api/admin/club"
+      ],
+      "path": "modules/crm/server/routes/get-162.js",
+      "originalSha256": "53d2adfa530677914b5ffbdbfbc55b6b02701b50b22cd1099146c3f7fafced04"
+    },
+    {
+      "moduleKey": "crm",
+      "id": "get-163",
+      "method": "GET",
+      "paths": [
+        "/api/admin/loyalty/tiers"
+      ],
+      "path": "modules/crm/server/routes/get-163.js",
+      "originalSha256": "7bd7ba6449e23cafb0a4b8e6b2f764393704240cd59d6f98beefa4fe78d910cc"
+    },
+    {
+      "moduleKey": "crm",
+      "id": "put-164",
+      "method": "PUT",
+      "paths": [
+        "/api/admin/loyalty/tiers"
+      ],
+      "path": "modules/crm/server/routes/put-164.js",
+      "originalSha256": "64d41c6fe991d2cc863b3b7ed4b4438e4eb7188247cbc463325f59b6b846e1e9"
+    },
+    {
+      "moduleKey": "crm",
+      "id": "put-165",
+      "method": "PUT",
+      "paths": [
+        "/api/admin/loyalty/achievements"
+      ],
+      "path": "modules/crm/server/routes/put-165.js",
+      "originalSha256": "4dde9361cea258165eb6436f5ae57a88956b2163a1bfe556a7219fad1e67463e"
+    },
+    {
+      "moduleKey": "crm",
+      "id": "post-166",
+      "method": "POST",
+      "paths": [
+        "/api/admin/loyalty/adjust"
+      ],
+      "path": "modules/crm/server/routes/post-166.js",
+      "originalSha256": "c46e7a88884a42c9d4897f2c399de8d4151320c2a53379a6510950158e227ac4"
+    },
+    {
+      "moduleKey": "crm",
+      "id": "get-167",
+      "method": "GET",
+      "paths": [
+        "/api/loyalty/customer"
+      ],
+      "path": "modules/crm/server/routes/get-167.js",
+      "originalSha256": "9faab2c03f8de299ee905fb941ec8666f568d4259b1fa5f5c9dd2ff2eaa56d56"
+    },
+    {
+      "moduleKey": "menu_qr",
+      "id": "get-168",
+      "method": "GET",
+      "paths": [
+        "/api/loyalty/qr-code"
+      ],
+      "path": "modules/menu_qr/server/routes/get-168.js",
+      "originalSha256": "371009433dc3761cba157aa8b2b233ae9ed085f6c4ef36068350608dad38e0ac"
+    },
+    {
+      "moduleKey": "crm",
+      "id": "get-169",
+      "method": "GET",
+      "paths": [
+        "/api/loyalty/me"
+      ],
+      "path": "modules/crm/server/routes/get-169.js",
+      "originalSha256": "3e6e06434e77c86ed433eb849b055107de1d1b0eff4adce999859cf27827beb3"
+    },
+    {
+      "moduleKey": "crm",
+      "id": "post-170",
+      "method": "POST",
+      "paths": [
+        "/api/loyalty/redeem"
+      ],
+      "path": "modules/crm/server/routes/post-170.js",
+      "originalSha256": "f3503f9fdb155d326c0a107279086c3a5076fd04ae2cbb25a9d6cf26c72ba808"
+    },
+    {
+      "moduleKey": "crm",
+      "id": "get-171",
+      "method": "GET",
+      "paths": [
+        "/api/wallet/me"
+      ],
+      "path": "modules/crm/server/routes/get-171.js",
+      "originalSha256": "6af220e0e264602ba0072eb44e8adf56721bd49cd85ab8ee81b9ccca1cdfa265"
+    },
+    {
+      "moduleKey": "crm",
+      "id": "post-172",
+      "method": "POST",
+      "paths": [
+        "/api/wallet/topup/request"
+      ],
+      "path": "modules/crm/server/routes/post-172.js",
+      "originalSha256": "83ad9ed925615227a1c7b9f6854292f6b62af1eb7a5c538327954ed581a51cfa"
+    },
+    {
+      "moduleKey": "crm",
+      "id": "post-173",
+      "method": "POST",
+      "paths": [
+        "/api/wallet/topup/gateway-verify"
+      ],
+      "path": "modules/crm/server/routes/post-173.js",
+      "originalSha256": "e8db89950bc684342874f7fcdc180115eaf4ae1697502d78a7d35e729d7d07e1"
+    },
+    {
+      "moduleKey": "crm",
+      "id": "post-174",
+      "method": "POST",
+      "paths": [
+        "/api/wallet/topup/staff-approve"
+      ],
+      "path": "modules/crm/server/routes/post-174.js",
+      "originalSha256": "460244cbedc37be6c681b377ab1f847dfab76a473988cf6f01d3c7c2d446e733"
+    },
+    {
+      "moduleKey": "crm",
+      "id": "get-175",
+      "method": "GET",
+      "paths": [
+        "/api/wallet/topup-requests/pending"
+      ],
+      "path": "modules/crm/server/routes/get-175.js",
+      "originalSha256": "bc19b2ff4c7c6130db63dc946b3f7233f3d77b42170fa98c548cefdb1e293a7b"
+    },
+    {
+      "moduleKey": "crm",
+      "id": "get-176",
+      "method": "GET",
+      "paths": [
+        "/api/wallet/topup-requests/my"
+      ],
+      "path": "modules/crm/server/routes/get-176.js",
+      "originalSha256": "3219282d53196f027bde37415bfeccbd3ab919a9cfe2b140f960bfb717e6a5b5"
+    },
+    {
+      "moduleKey": "crm",
+      "id": "post-177",
+      "method": "POST",
+      "paths": [
+        "/api/wallet/topup"
+      ],
+      "path": "modules/crm/server/routes/post-177.js",
+      "originalSha256": "37edf756c2ed6f8fcdb26cb06f640a16041baad14922b68550397d8cd7a1a8a8"
+    },
+    {
+      "moduleKey": "pos",
+      "id": "post-178",
+      "method": "POST",
+      "paths": [
+        "/api/orders/:id/pay-wallet"
+      ],
+      "path": "modules/pos/server/routes/post-178.js",
+      "originalSha256": "5b6b025dd8a518619d92ba44ea71be1d70775674103128159c22e814c268caeb"
+    },
+    {
+      "moduleKey": "crm",
+      "id": "get-179",
+      "method": "GET",
+      "paths": [
+        "/api/admin/wallet/summary"
+      ],
+      "path": "modules/crm/server/routes/get-179.js",
+      "originalSha256": "a940dcd340692f8da1bb433b4e45d47e7bfd901c9613017bf555f03ae5c260d5"
+    },
+    {
+      "moduleKey": "crm",
+      "id": "post-180",
+      "method": "POST",
+      "paths": [
+        "/api/admin/wallet/adjust"
+      ],
+      "path": "modules/crm/server/routes/post-180.js",
+      "originalSha256": "b4c9846edaf7261ab16bf91483c800b80b1da6b9ee56f2733e5d89429cdac3da"
+    },
+    {
+      "moduleKey": "crm",
+      "id": "get-181",
+      "method": "GET",
+      "paths": [
+        "/api/admin/wallet/packages"
+      ],
+      "path": "modules/crm/server/routes/get-181.js",
+      "originalSha256": "24c66d8bd626558d5805c5dff664418f498160e89e59dd1fc7d30660c352f4d8"
+    },
+    {
+      "moduleKey": "crm",
+      "id": "put-182",
+      "method": "PUT",
+      "paths": [
+        "/api/admin/wallet/packages"
+      ],
+      "path": "modules/crm/server/routes/put-182.js",
+      "originalSha256": "1d4ef8bc633772f7502611d3ca56f1fb8f4abc4719581cc93c81cc0a450c87e2"
+    },
+    {
+      "moduleKey": "crm",
+      "id": "get-183",
+      "method": "GET",
+      "paths": [
+        "/api/campaigns/status"
+      ],
+      "path": "modules/crm/server/routes/get-183.js",
+      "originalSha256": "b79895c78c2de538314e3c5f57164c8127b4149ca527eaf14b226f483f531081"
+    },
+    {
+      "moduleKey": "crm",
+      "id": "get-184",
+      "method": "GET",
+      "paths": [
+        "/api/referrals/me"
+      ],
+      "path": "modules/crm/server/routes/get-184.js",
+      "originalSha256": "6064fea771a6a96993622c14105f37ac7acfaa535bdb2965f3f026cc52958afa"
+    },
+    {
+      "moduleKey": "crm",
+      "id": "post-185",
+      "method": "POST",
+      "paths": [
+        "/api/referrals/apply"
+      ],
+      "path": "modules/crm/server/routes/post-185.js",
+      "originalSha256": "474b99036a7d31179d5cc1a049d19aa9f54c58ec90f40b53eeb9da7c82308464"
+    },
+    {
+      "moduleKey": "crm",
+      "id": "post-186",
+      "method": "POST",
+      "paths": [
+        "/api/profile/birthday"
+      ],
+      "path": "modules/crm/server/routes/post-186.js",
+      "originalSha256": "738842be841e8b80f828ad645a9573de8ea1e9d2521b1497d92d71e4e1446922"
+    },
+    {
+      "moduleKey": "crm",
+      "id": "post-187",
+      "method": "POST",
+      "paths": [
+        "/api/campaigns/claim-birthday"
+      ],
+      "path": "modules/crm/server/routes/post-187.js",
+      "originalSha256": "6e6d63c2716e83eff989904970f9cbdf5e7ce3e3cc7f5c3bd19a42d45b1e38ca"
+    },
+    {
+      "moduleKey": "crm",
+      "id": "get-188",
+      "method": "GET",
+      "paths": [
+        "/api/admin/campaigns",
+        "/api/admin/campaigns/summary"
+      ],
+      "path": "modules/crm/server/routes/get-188.js",
+      "originalSha256": "9e0f48dd6afe26c31342922e4aabf00c4f0e8a0746d1fc2f6c5e0177916c39ab"
+    },
+    {
+      "moduleKey": "crm",
+      "id": "put-189",
+      "method": "PUT",
+      "paths": [
+        "/api/admin/campaigns",
+        "/api/admin/campaigns/settings"
+      ],
+      "path": "modules/crm/server/routes/put-189.js",
+      "originalSha256": "c7fae20e89a1701bee2686369b2f04596c6553fa4b2a995b7a72861eea2728b7"
+    },
+    {
+      "moduleKey": "crm",
+      "id": "get-190",
+      "method": "GET",
+      "paths": [
+        "/api/admin/sms/stats"
+      ],
+      "path": "modules/crm/server/routes/get-190.js",
+      "originalSha256": "9e6d404d85248e102e44cf69929ea823f9d3617d48dc6eeb56a3d8987932e10b"
+    },
+    {
+      "moduleKey": "crm",
+      "id": "get-191",
+      "method": "GET",
+      "paths": [
+        "/api/admin/sms/rfm"
+      ],
+      "path": "modules/crm/server/routes/get-191.js",
+      "originalSha256": "e235b1dfaeb4fcfb3a5be5f228ae3f38dce19fcf848ec94a4c129c3f4ba3200f"
+    },
+    {
+      "moduleKey": "crm",
+      "id": "put-192",
+      "method": "PUT",
+      "paths": [
+        "/api/admin/sms/settings"
+      ],
+      "path": "modules/crm/server/routes/put-192.js",
+      "originalSha256": "434ea96ed4fbe0a96e952f9bb96c99b7248fa7542835b600826d27531e4491f0"
+    },
+    {
+      "moduleKey": "crm",
+      "id": "post-193",
+      "method": "POST",
+      "paths": [
+        "/api/admin/sms/send-test"
+      ],
+      "path": "modules/crm/server/routes/post-193.js",
+      "originalSha256": "425a5877f1d98820cf519c297859782c52124b8285287825cb491e04ad73e7b8"
+    },
+    {
+      "moduleKey": "crm",
+      "id": "post-194",
+      "method": "POST",
+      "paths": [
+        "/api/admin/sms/send-bulk"
+      ],
+      "path": "modules/crm/server/routes/post-194.js",
+      "originalSha256": "be8060305ac7ecd40e9d90667a3160069ecb6e82a3a6a724cd0f5fb8f6bfb368"
+    },
+    {
+      "moduleKey": "crm",
+      "id": "post-195",
+      "method": "POST",
+      "paths": [
+        "/api/admin/sms/run-winback"
+      ],
+      "path": "modules/crm/server/routes/post-195.js",
+      "originalSha256": "9377750cee28efff30f57d82a08da1f216bc4b5487ac9873c1c3937f23f63764"
+    },
+    {
+      "moduleKey": "reservations",
+      "id": "get-196",
+      "method": "GET",
+      "paths": [
+        "/api/reservations/meta"
+      ],
+      "path": "modules/reservations/server/routes/get-196.js",
+      "originalSha256": "48decf325721eb98d0b657fa1d2f45c60aeb5b156b5054e6a4add34490aacd1c"
+    },
+    {
+      "moduleKey": "reservations",
+      "id": "get-197",
+      "method": "GET",
+      "paths": [
+        "/api/reservations/slots"
+      ],
+      "path": "modules/reservations/server/routes/get-197.js",
+      "originalSha256": "2b8f1458a4de980123ee361185c1b112a3cc7d18e60b92793a5ec34b87e4a8e6"
+    },
+    {
+      "moduleKey": "reservations",
+      "id": "post-198",
+      "method": "POST",
+      "paths": [
+        "/api/reservations"
+      ],
+      "path": "modules/reservations/server/routes/post-198.js",
+      "originalSha256": "d814bbf2c48b55a87896c325fdc191df3bb58522d0275cafed7e00d90c9cc34e"
+    },
+    {
+      "moduleKey": "reservations",
+      "id": "get-199",
+      "method": "GET",
+      "paths": [
+        "/api/admin/reservations"
+      ],
+      "path": "modules/reservations/server/routes/get-199.js",
+      "originalSha256": "8b33697978400777c42dda7c0cf69d764decfb1a1925d4e465e9f4179e34bc41"
+    },
+    {
+      "moduleKey": "reservations",
+      "id": "patch-200",
+      "method": "PATCH",
+      "paths": [
+        "/api/admin/reservations/:id"
+      ],
+      "path": "modules/reservations/server/routes/patch-200.js",
+      "originalSha256": "caa4c47c8d2f89f6a027317da0c5be765a707cbe850f173a45b359378568c9bd"
+    },
+    {
+      "moduleKey": "reservations",
+      "id": "get-201",
+      "method": "GET",
+      "paths": [
+        "/api/admin/reservation-settings"
+      ],
+      "path": "modules/reservations/server/routes/get-201.js",
+      "originalSha256": "d89b140424b4835625655d584df568772228b4190b23a59d2ce6801b43483a3e"
+    },
+    {
+      "moduleKey": "reservations",
+      "id": "put-202",
+      "method": "PUT",
+      "paths": [
+        "/api/admin/reservation-settings"
+      ],
+      "path": "modules/reservations/server/routes/put-202.js",
+      "originalSha256": "fd795e73ee04d77ea32bffa7f763e84f166fda56b765b0d9ad252b644699751f"
+    },
+    {
+      "moduleKey": "platform_core",
+      "id": "get-203",
+      "method": "GET",
+      "paths": [
+        "/api/admin/whatsapp"
+      ],
+      "path": "modules/platform_core/server/routes/get-203.js",
+      "originalSha256": "e108a96cf36e0932c123ee68c933ee9a539b3f378de249480dff096e86a86bcf"
+    },
+    {
+      "moduleKey": "platform_core",
+      "id": "put-204",
+      "method": "PUT",
+      "paths": [
+        "/api/admin/whatsapp"
+      ],
+      "path": "modules/platform_core/server/routes/put-204.js",
+      "originalSha256": "34975bd6c654f06c20b781b883ae5e01db1ed0f641700f99a3de1dc5cb4f8f73"
+    },
+    {
+      "moduleKey": "platform_core",
+      "id": "post-205",
+      "method": "POST",
+      "paths": [
+        "/api/admin/whatsapp/order/:id"
+      ],
+      "path": "modules/platform_core/server/routes/post-205.js",
+      "originalSha256": "e5fc0d8b966508dff07b79eddf6f1346fc50c4e88d609bbabd7afcfc41f0646f"
+    },
+    {
+      "moduleKey": "crm",
+      "id": "get-206",
+      "method": "GET",
+      "paths": [
+        "/api/feedback/meta"
+      ],
+      "path": "modules/crm/server/routes/get-206.js",
+      "originalSha256": "63fd098c37d58c01193ae31762f9473de7026035e69a8888ed0f2bdbf7bf9e85"
+    },
+    {
+      "moduleKey": "crm",
+      "id": "post-207",
+      "method": "POST",
+      "paths": [
+        "/api/feedback"
+      ],
+      "path": "modules/crm/server/routes/post-207.js",
+      "originalSha256": "4601f0af5211b539bed8d9fae7cc100bf85ca960d57ec026298dc2d0fbe78022"
+    },
+    {
+      "moduleKey": "crm",
+      "id": "get-208",
+      "method": "GET",
+      "paths": [
+        "/api/admin/feedback"
+      ],
+      "path": "modules/crm/server/routes/get-208.js",
+      "originalSha256": "4c268dcef3e7b6561dceba31444302bb5acbda9f64d29785e70d97c32946ece9"
+    },
+    {
+      "moduleKey": "crm",
+      "id": "put-209",
+      "method": "PUT",
+      "paths": [
+        "/api/admin/feedback/settings"
+      ],
+      "path": "modules/crm/server/routes/put-209.js",
+      "originalSha256": "ea28f6de9c0804b8932a47d2c8ca9c0fc38567b31c386363c722ce4351a9701e"
+    },
+    {
+      "moduleKey": "crm",
+      "id": "patch-210",
+      "method": "PATCH",
+      "paths": [
+        "/api/admin/feedback/:id"
+      ],
+      "path": "modules/crm/server/routes/patch-210.js",
+      "originalSha256": "b844e502136ce79b4b32bc8e01648434aef90efa86d33851e91fe962cbbe068d"
+    },
+    {
+      "moduleKey": "platform_core",
+      "id": "get-211",
+      "method": "GET",
+      "paths": [
+        "/"
+      ],
+      "path": "modules/platform_core/server/routes/get-211.js",
+      "originalSha256": "6ca6947d08491d456bc87228952bd622cab2f0b1e8054bfad5fb551841bb7535"
+    },
+    {
+      "moduleKey": "pos",
+      "id": "get-212",
+      "method": "GET",
+      "paths": [
+        "/pos",
+        "/pos.html",
+        "/cashier",
+        "/cashier.html"
+      ],
+      "path": "modules/pos/server/routes/get-212.js",
+      "originalSha256": "29241947c324250cc898b96bfd806eadd65ebdda999830234dff160c54387c0c"
+    },
+    {
+      "moduleKey": "floor",
+      "id": "get-213",
+      "method": "GET",
+      "paths": [
+        "/waiter",
+        "/waiter.html"
+      ],
+      "path": "modules/floor/server/routes/get-213.js",
+      "originalSha256": "bd1cc428e8a9428e431b79e92006fcb20f364514f163a2bdc3d910a7178ea201"
+    },
+    {
+      "moduleKey": "kds",
+      "id": "get-214",
+      "method": "GET",
+      "paths": [
+        "/kitchen",
+        "/kitchen.html",
+        "/kds",
+        "/kds.html"
+      ],
+      "path": "modules/kds/server/routes/get-214.js",
+      "originalSha256": "9976d66a6e8a4d8fa7806b96ea09d1919483e942c3d6abd6b22e79ab35495753"
+    },
+    {
+      "moduleKey": "platform_core",
+      "id": "get-215",
+      "method": "GET",
+      "paths": [
+        "/checkout",
+        "/checkout.html"
+      ],
+      "path": "modules/platform_core/server/routes/get-215.js",
+      "originalSha256": "67985fd0f85de2cf447cff77e89d466dbf4364033c5cfb27be6a2f4f996a2622"
+    },
+    {
+      "moduleKey": "platform_core",
+      "id": "get-216",
+      "method": "GET",
+      "paths": [],
+      "path": "modules/platform_core/server/routes/get-216.js",
+      "originalSha256": "436b700d2b128e0a370131b2e46f9a81118b1b8f0abb6ce6eb46cf290bbaed5d"
+    },
+    {
+      "moduleKey": "platform_core",
+      "id": "get-217",
+      "method": "GET",
+      "paths": [
+        "/sw.js"
+      ],
+      "path": "modules/platform_core/server/routes/get-217.js",
+      "originalSha256": "870aadf02b5051d0c967b73aed95209d54f207d5a3e8b4b49abbea1a890cde51"
+    },
+    {
+      "moduleKey": "platform_core",
+      "id": "get-218",
+      "method": "GET",
+      "paths": [
+        "/manifest.webmanifest"
+      ],
+      "path": "modules/platform_core/server/routes/get-218.js",
+      "originalSha256": "41f032980ecb791c77c0d27d3103ef96f3b6a39e1bee2c7bc6887ec5e7812061"
+    }
+  ]
+}

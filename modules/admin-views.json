@@ -1,0 +1,227 @@
+{
+  "schemaVersion": 1,
+  "views": [
+    {
+      "moduleKey": "platform_core",
+      "tab": "dashboard",
+      "path": "modules/platform_core/frontend/admin-views.js",
+      "originalSha256": "5127dcc88153f562839b8db2c30d42e5343d044356387f0adfc90d1ef1ca63c7"
+    },
+    {
+      "moduleKey": "menu_qr",
+      "tab": "printmenu",
+      "path": "modules/menu_qr/frontend/admin-views.js",
+      "originalSha256": "40e36811ba91d3ea5db9926865c0c42ea5d97ad4e6c194235c61e66706143e01"
+    },
+    {
+      "moduleKey": "website_brand",
+      "tab": "restaurant",
+      "path": "modules/website_brand/frontend/admin-views.js",
+      "originalSha256": "5b1eb1d15a5ecaf4ac5cb470c2633dd06a7c61aed639734d336d522f99bc335a"
+    },
+    {
+      "moduleKey": "website_brand",
+      "tab": "theme",
+      "path": "modules/website_brand/frontend/admin-views.js",
+      "originalSha256": "ea6de8f5e7fb544a873292dbf765d59a590a60655618af8e346d1afef140c1c1"
+    },
+    {
+      "moduleKey": "website_brand",
+      "tab": "hours",
+      "path": "modules/website_brand/frontend/admin-views.js",
+      "originalSha256": "6294215b19567b3bfc8c59db3b6de9a0ec77aa4579b6802d41000fb8d9b5d9fd"
+    },
+    {
+      "moduleKey": "floor",
+      "tab": "tables",
+      "path": "modules/floor/frontend/admin-views.js",
+      "originalSha256": "e8f3fa3dc3308fbd18facdf9d36a81c803c860614b5c536fbac21dc0bb9990f5"
+    },
+    {
+      "moduleKey": "multi_branch",
+      "tab": "branches",
+      "path": "modules/multi_branch/frontend/admin-views.js",
+      "originalSha256": "5a9ef12f36a48ccc49657595762245a2f919a4a385ac843e99b8a320619392ae"
+    },
+    {
+      "moduleKey": "menu_qr",
+      "tab": "complements",
+      "path": "modules/menu_qr/frontend/admin-views.js",
+      "originalSha256": "5bffd242152d4ff99bdeac725eb4362a3853a5c0279f55db1f726e7afe3e9429"
+    },
+    {
+      "moduleKey": "inventory",
+      "tab": "costControl",
+      "path": "modules/inventory/frontend/admin-views.js",
+      "originalSha256": "14985869a6eef1ca9558d75e162a53f79fa9933ca752765124fc198c78a6f1ee"
+    },
+    {
+      "moduleKey": "inventory",
+      "tab": "inventory",
+      "path": "modules/inventory/frontend/admin-views.js",
+      "originalSha256": "5289be26786a4c4aa0e8e1fc3eab90d8e67d93a5d69cab868489b422f6120ca0"
+    },
+    {
+      "moduleKey": "accounting",
+      "tab": "expenses",
+      "path": "modules/accounting/frontend/admin-views.js",
+      "originalSha256": "b7e591c9bed2e7645a6ec073451e2edd31692ea05086851ea7ed12717e40152f"
+    },
+    {
+      "moduleKey": "menu_qr",
+      "tab": "prices",
+      "path": "modules/menu_qr/frontend/admin-views.js",
+      "originalSha256": "a1d325d7300150ead322d03f8886f7038b21b414ab534385c2b678795f918260"
+    },
+    {
+      "moduleKey": "pos",
+      "tab": "promotions",
+      "path": "modules/pos/frontend/admin-views.js",
+      "originalSha256": "99943a4dc914839f68c797f55f716d6593368dfd70edda9356d52d32041a0def"
+    },
+    {
+      "moduleKey": "website_brand",
+      "tab": "promoSlides",
+      "path": "modules/website_brand/frontend/admin-views.js",
+      "originalSha256": "3b9f3130b4d9d4cd9f84c5a3f52227ccad4b5b6f9f35e9e24254dabe36d4e7b9"
+    },
+    {
+      "moduleKey": "website_brand",
+      "tab": "content",
+      "path": "modules/website_brand/frontend/admin-views.js",
+      "originalSha256": "d7d37f37e8b2fed19c4558da8df4ed4cff7a85ab4fc1c111cec5415006365d4b"
+    },
+    {
+      "moduleKey": "website_brand",
+      "tab": "media",
+      "path": "modules/website_brand/frontend/admin-views.js",
+      "originalSha256": "3cd1db595d139b4de0a9c094d454acd5954fb70ffac07ae239d8e89206219506"
+    },
+    {
+      "moduleKey": "menu_qr",
+      "tab": "products",
+      "path": "modules/menu_qr/frontend/admin-views.js",
+      "originalSha256": "a62cd548d5ed08f4810e24ad59314a826235103a322f300228615b76267d240f"
+    },
+    {
+      "moduleKey": "menu_qr",
+      "tab": "menu",
+      "path": "modules/menu_qr/frontend/admin-views.js",
+      "originalSha256": "3cbe0a27bb04188b0aae9e7a2f686acfed2dbbbc6186960ad27f94a9102c1506"
+    },
+    {
+      "moduleKey": "menu_qr",
+      "tab": "translate",
+      "path": "modules/menu_qr/frontend/admin-views.js",
+      "originalSha256": "6e6096644c27a14361f5977c8bb060b8b6f5e6116c0e7fdaf6b84775aeaa2b59"
+    },
+    {
+      "moduleKey": "kds",
+      "tab": "kitchen",
+      "path": "modules/kds/frontend/admin-views.js",
+      "originalSha256": "5430e69e26bbb77ac3ee0f21e8ef238689c6e35aff7f5f014d8fb89f1bec3c94"
+    },
+    {
+      "moduleKey": "reservations",
+      "tab": "reservations",
+      "path": "modules/reservations/frontend/admin-views.js",
+      "originalSha256": "f501cd14d59031e7565fedb218398590275f44ea6cc93edf488c7d91f8abe2df"
+    },
+    {
+      "moduleKey": "pos",
+      "tab": "orders",
+      "path": "modules/pos/frontend/admin-views.js",
+      "originalSha256": "fac82078b7e72af8884e3305d7e95817032142f65603724f2a6eca8a7a07cd81"
+    },
+    {
+      "moduleKey": "delivery",
+      "tab": "delivery",
+      "path": "modules/delivery/frontend/admin-views.js",
+      "originalSha256": "69931923f472a27b58492aa1b02ad897a8670dfc6e71ef4dace3dbcd6c5b1320"
+    },
+    {
+      "moduleKey": "website_brand",
+      "tab": "faq",
+      "path": "modules/website_brand/frontend/admin-views.js",
+      "originalSha256": "688fc1adecda8b0113df2e71f7f2a7ead7d1e7d59a613e817311b66ce7c21ee9"
+    },
+    {
+      "moduleKey": "platform_core",
+      "tab": "users",
+      "path": "modules/platform_core/frontend/admin-views.js",
+      "originalSha256": "642a3935fa24fe98b202277dd63609398c4f2a39358f2b9068a4067f5ed02a7c"
+    },
+    {
+      "moduleKey": "crm",
+      "tab": "club",
+      "path": "modules/crm/frontend/admin-views.js",
+      "originalSha256": "f5835abbf84b9de26aae6abf9cf1219e7966255c2b23e487a63d7e61b33a70fa"
+    },
+    {
+      "moduleKey": "crm",
+      "tab": "wallet",
+      "path": "modules/crm/frontend/admin-views.js",
+      "originalSha256": "6d3d00f21d739c6e1a19bc780c52d734c22bbc95b7cb38ec872c1d2932bfa04b"
+    },
+    {
+      "moduleKey": "crm",
+      "tab": "campaigns",
+      "path": "modules/crm/frontend/admin-views.js",
+      "originalSha256": "b50f4b19bb026bc2ffc8c6539271ecd8cc1a61ad6c5482fbb9deb369cd7c5e0a"
+    },
+    {
+      "moduleKey": "crm",
+      "tab": "sms",
+      "path": "modules/crm/frontend/admin-views.js",
+      "originalSha256": "77524cca7b459810c1a4f80cb74723963d1a533213b9eb9c072ff56cb2a049c7"
+    },
+    {
+      "moduleKey": "crm",
+      "tab": "loyalty",
+      "path": "modules/crm/frontend/admin-views.js",
+      "originalSha256": "0f87021a420dcf415eedbf5ff5118957389e1cc143f86e495d913594f1b136dc"
+    },
+    {
+      "moduleKey": "accounting",
+      "tab": "finance",
+      "path": "modules/accounting/frontend/admin-views.js",
+      "originalSha256": "dd383004347be259b1133e22256b850deffbbcdd2f1fa81b305f83bc71f50dd4"
+    },
+    {
+      "moduleKey": "accounting",
+      "tab": "accounting",
+      "path": "modules/accounting/frontend/admin-views.js",
+      "originalSha256": "9f518ddeac2245da0d35907d1750ec4d85c1b67dbeac9bc6666a4b775de9becd"
+    },
+    {
+      "moduleKey": "platform_core",
+      "tab": "neem",
+      "path": "modules/platform_core/frontend/admin-views.js",
+      "originalSha256": "c29aa2e544c55d5b33a3abc31e9bd017d0614b98008dcd9150536d9d3b96d44c"
+    },
+    {
+      "moduleKey": "platform_core",
+      "tab": "salsa",
+      "path": "modules/platform_core/frontend/admin-views.js",
+      "originalSha256": "dc259a02e0ee754a42d230c4de71abea41a50b25b2bc1d16bbaa7cbf9a03a45c"
+    },
+    {
+      "moduleKey": "crm",
+      "tab": "feedback",
+      "path": "modules/crm/frontend/admin-views.js",
+      "originalSha256": "438e8a7e59cf10c6271241170b942a054722f1ea75d88b4281212888d0b9f0ff"
+    },
+    {
+      "moduleKey": "crm",
+      "tab": "newsletter",
+      "path": "modules/crm/frontend/admin-views.js",
+      "originalSha256": "0d9b40cfffbafc1fe562a454dc7bc7eb66009095feb8abb323bebd96074dc98c"
+    },
+    {
+      "moduleKey": "platform_core",
+      "tab": "settings",
+      "path": "modules/platform_core/frontend/admin-views.js",
+      "originalSha256": "df4a154d94f1a31bb530c03f6ea7a8b884d6769a000ec489faa03cff39011980"
+    }
+  ]
+}

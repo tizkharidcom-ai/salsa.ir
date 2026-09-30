@@ -13,3 +13,7 @@ Install dependencies with `npm ci`. For the integrated local stack, run `npm run
 Configure database credentials and signing keys through environment variables. `.env.example` and `deploy/.env.production.example` contain placeholders; replace them locally or through the production secret manager. Do not commit `.env.local` or production credentials.
 
 Deployment examples are in `Caddyfile.production`, `nginx/`, `deploy/nginx/`, and `deploy/systemd/`.
+
+## WESTO modules
+
+The existing WESTO implementation is organized into 14 shared modules with tenant access and compatible frontend releases. See [architecture and next hosting steps](modules/README.md) and [verification evidence](modules/VERIFICATION.md).

@@ -103,19 +103,23 @@ const FEATURE_MAP = new Map(ENRICHED_FEATURES.map((f) => [f.key, f]));
  */
 function resolveFeatureForRoute(reqOrPath, maybeMethod) {
   const p = typeof reqOrPath === 'string'
-    ? reqOrPath.toLowerCase()
-    : String(reqOrPath?.path || reqOrPath?.url || '').toLowerCase();
+    ? reqOrPath.toLowerCase().split('?')[0]
+    : String(reqOrPath?.path || reqOrPath?.url || '').toLowerCase().split('?')[0];
   const m = typeof reqOrPath === 'string'
     ? String(maybeMethod || 'GET').toUpperCase()
     : String(reqOrPath?.method || 'GET').toUpperCase();
 
   // 1. Finance & Accounting
-  if (p.startsWith('/api/admin/finance') || p.startsWith('/api/admin/v2/finance') || p === '/admin/finance.html') {
+  if (p.startsWith('/api/admin/finance') || p.startsWith('/api/admin/v2/finance') || p === '/admin/finance.html'
+    || /^\/v1\/(tax|audit|exports|reports|cfo|settlements|expenses|payroll|bank-transactions|reconciliations|inventory)(?:\/|$)/.test(p)
+    || p.startsWith('/api/tax/')) {
     return 'finance.workspace';
   }
 
   // 2. POS & Cashier
-  if (p.startsWith('/api/cashier') || p.startsWith('/api/staff/orders') || p === '/pos' || p === '/pos.html' || p === '/admin/cashier') {
+  if (p.startsWith('/api/cashier') || p.startsWith('/api/staff/orders') || p.startsWith('/v1/pos/') || p.startsWith('/api/pos/')
+    || p.startsWith('/api/admin/v2/orders') || p === '/api/admin/orders'
+    || p.startsWith('/api/admin/promotions') || p === '/pos' || p === '/pos.html' || p === '/admin/cashier') {
     return 'orders.pos';
   }
 
@@ -136,12 +140,12 @@ function resolveFeatureForRoute(reqOrPath, maybeMethod) {
   }
 
   // 5. Tables & Architectural Floor
-  if (p.startsWith('/api/admin/tables') || p.startsWith('/api/floor/tables')) {
+  if (p.startsWith('/api/admin/tables') || p.startsWith('/api/floor/tables') || p.startsWith('/api/admin/v2/floor')) {
     return 'floor.tables';
   }
 
   // 6. Kitchen & KDS
-  if (p.startsWith('/api/kitchen') && !p.includes('/inventory')) {
+  if ((p.startsWith('/api/kitchen') && !p.includes('/inventory')) || p.startsWith('/api/admin/v2/kitchen')) {
     return 'kitchen.kds';
   }
   if (p === '/kds' || p === '/kitchen' || p === '/kitchen.html' || p === '/admin/kitchen') {
@@ -163,17 +167,33 @@ function resolveFeatureForRoute(reqOrPath, maybeMethod) {
   }
 
   // 9. Loyalty & CRM
-  if (p.startsWith('/api/admin/loyalty') || p.includes('/apply-loyalty')) {
+  if (p.startsWith('/api/admin/loyalty') || p.startsWith('/api/loyalty/') || p.includes('/apply-loyalty')) {
     return 'crm.loyalty';
   }
-  if (p.startsWith('/api/wallet')) {
+  if (p.startsWith('/api/wallet') || p.startsWith('/api/admin/wallet')) {
     return 'crm.wallet';
   }
 
   // 10. Delivery & Dispatch
-  if (p.startsWith('/api/admin/delivery-zones') || p.startsWith('/api/delivery')) {
+  if (p.startsWith('/api/admin/delivery-zones')) {
     return 'delivery.zones';
   }
+  if (p.startsWith('/api/delivery/')) return 'delivery.dispatch';
+  if (p.startsWith('/api/admin/sms')) return 'marketing.sms';
+  if (p.startsWith('/api/admin/campaigns') || p.startsWith('/api/campaigns/') || p.startsWith('/api/referrals/')) return 'marketing.campaigns';
+  if (p.startsWith('/api/admin/club') || p.startsWith('/api/admin/customers') || p.startsWith('/api/admin/v2/crm')
+    || p.startsWith('/api/admin/feedback') || p.startsWith('/api/admin/newsletter')) return 'crm.directory';
+  if (p.startsWith('/api/admin/menu-complement')) return 'catalog.modifiers';
+  if (p.startsWith('/api/admin/prices') || p.startsWith('/api/admin/menu/bulk-')) return 'catalog.pricing';
+  if (p.startsWith('/api/admin/i18n') || p.startsWith('/api/admin/translate')) return 'catalog.languages';
+  if (p === '/menu-print' || p === '/menu-print.html') return 'catalog.print';
+  if (p === '/api/menu' || p.startsWith('/api/menu/') || p.startsWith('/api/products/')
+    || p === '/menu' || p === '/menu.html' || p.startsWith('/api/admin/menu-engineering') || p.startsWith('/api/admin/v2/catalog')) return 'catalog.menu';
+  if (p.startsWith('/api/admin/branches')) return 'core.multi_branch';
+  if (p.startsWith('/api/admin/theme') || p.startsWith('/api/admin/restaurant') || p.startsWith('/api/admin/hours')
+    || p.startsWith('/api/admin/promo-slides') || p.startsWith('/api/admin/upload')
+    || (p === '/api/content' && !['GET', 'HEAD'].includes(m))
+    || (p.startsWith('/api/faq') && !['GET', 'HEAD'].includes(m))) return 'content.website';
 
   // 11. Analytics & Reports
   if (p.startsWith('/api/admin/analytics') || p.startsWith('/api/admin/reports')) {
@@ -189,7 +209,7 @@ function resolveFeatureForRoute(reqOrPath, maybeMethod) {
 function isFeatureEnabledForTenant(tenantDb, featureKey) {
   if (!featureKey) return true;
   const isWestoPilot = tenantDb?.tenantIdentity?.tenantId === 'westo' || !tenantDb?.tenantIdentity?.tenantId;
-  const entitlements = tenantDb?.featureEntitlements || tenantDb?.neemEntitlements || null;
+  const entitlements = tenantDb?.salsaEntitlements || tenantDb?.featureEntitlements || tenantDb?.neemEntitlements || null;
 
   if (!entitlements) {
     return isWestoPilot;
@@ -197,13 +217,18 @@ function isFeatureEnabledForTenant(tenantDb, featureKey) {
 
   const grant = entitlements[featureKey];
   if (grant === true) return true;
-  if (!grant) {
+  if (grant === false) return false;
+  if (grant == null) {
     return isWestoPilot;
   }
 
-  if (grant.active === false || grant.status === 'disabled') return false;
-  if (grant.expiresAt && new Date(grant.expiresAt).getTime() <= Date.now()) return false;
-  return true;
+  if (typeof grant !== 'object' || Array.isArray(grant)) return false;
+  if (grant.active === false || ['disabled', 'expired', 'revoked', 'suspended', 'cancelled'].includes(grant.status)) return false;
+  if (grant.expiresAt) {
+    const expiry = new Date(grant.expiresAt).getTime();
+    if (!Number.isFinite(expiry) || expiry <= Date.now()) return false;
+  }
+  return grant.active === true || grant.status === 'active';
 }
 
 function getFeatureInfo(featureKey) {

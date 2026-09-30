@@ -1,0 +1,169 @@
+{
+  "schemaVersion": 1,
+  "key": "accounting",
+  "nameFa": "حسابداری و مالیات",
+  "version": "1.0.0",
+  "runtime": "node-commonjs-express",
+  "runtimeApiVersion": "westo-v1",
+  "dependencies": [
+    "platform_core"
+  ],
+  "technicalFeatures": [
+    "finance.workspace",
+    "finance.purchases",
+    "finance.reconciliation",
+    "finance.assets",
+    "finance.payroll",
+    "finance.tax_adapter"
+  ],
+  "sharedComposition": [
+    "server/server.js",
+    "js/admin.js",
+    "role-panel.html"
+  ],
+  "dataCapture": "always-on-operational-core",
+  "access": "tenant-entitlement-and-user-capability",
+  "files": [
+    {
+      "path": "frontend/css/admin-accounting-experience.css",
+      "legacyPath": "css/admin-accounting-experience.css",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/css/admin-accounting.css",
+      "legacyPath": "css/admin-accounting.css",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/css/admin-break-even-chart.css",
+      "legacyPath": "css/admin-break-even-chart.css",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/css/admin-finance-tokens.css",
+      "legacyPath": "css/admin-finance-tokens.css",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/js/admin-accounting.js",
+      "legacyPath": "js/admin-accounting.js",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/js/admin/modules/finance/accounting-experience.js",
+      "legacyPath": "js/admin/modules/finance/accounting-experience.js",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/js/admin/modules/finance/break-even-chart.js",
+      "legacyPath": "js/admin/modules/finance/break-even-chart.js",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/js/admin/modules/finance/finance-module.js",
+      "legacyPath": "js/admin/modules/finance/finance-module.js",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/js/admin/modules/finance/finance-ui-model.js",
+      "legacyPath": "js/admin/modules/finance/finance-ui-model.js",
+      "layer": "frontend"
+    },
+    {
+      "path": "server/accounting-engine.js",
+      "legacyPath": "server/accounting-engine.js",
+      "layer": "server"
+    },
+    {
+      "path": "server/accounting-routes.js",
+      "legacyPath": "server/accounting-routes.js",
+      "layer": "server"
+    },
+    {
+      "path": "server/checkout-tax.js",
+      "legacyPath": "server/checkout-tax.js",
+      "layer": "server"
+    },
+    {
+      "path": "server/finance-postgres-repository.js",
+      "legacyPath": "server/finance-postgres-repository.js",
+      "layer": "server"
+    },
+    {
+      "path": "server/finance-v2.js",
+      "legacyPath": "server/finance-v2.js",
+      "layer": "server"
+    },
+    {
+      "path": "server/finance/accrual-engine.js",
+      "legacyPath": "server/finance/accrual-engine.js",
+      "layer": "server"
+    },
+    {
+      "path": "server/finance/approval-engine.js",
+      "legacyPath": "server/finance/approval-engine.js",
+      "layer": "server"
+    },
+    {
+      "path": "server/finance/asset-engine.js",
+      "legacyPath": "server/finance/asset-engine.js",
+      "layer": "server"
+    },
+    {
+      "path": "server/finance/cutover-runbook.js",
+      "legacyPath": "server/finance/cutover-runbook.js",
+      "layer": "server"
+    },
+    {
+      "path": "server/finance/legacy-classifier.js",
+      "legacyPath": "server/finance/legacy-classifier.js",
+      "layer": "server"
+    },
+    {
+      "path": "server/finance/payroll-engine.js",
+      "legacyPath": "server/finance/payroll-engine.js",
+      "layer": "server"
+    },
+    {
+      "path": "server/finance/period-service.js",
+      "legacyPath": "server/finance/period-service.js",
+      "layer": "server"
+    },
+    {
+      "path": "server/finance/reconciliation-engine.js",
+      "legacyPath": "server/finance/reconciliation-engine.js",
+      "layer": "server"
+    },
+    {
+      "path": "server/finance/tax-engine.js",
+      "legacyPath": "server/finance/tax-engine.js",
+      "layer": "server"
+    },
+    {
+      "path": "server/finance/tax-rule-input.js",
+      "legacyPath": "server/finance/tax-rule-input.js",
+      "layer": "server"
+    },
+    {
+      "path": "server/finance/taxpayer-adapter.js",
+      "legacyPath": "server/finance/taxpayer-adapter.js",
+      "layer": "server"
+    },
+    {
+      "path": "server/finance/unified-finance-engine.js",
+      "legacyPath": "server/finance/unified-finance-engine.js",
+      "layer": "server"
+    },
+    {
+      "path": "frontend/admin-views.js",
+      "legacyPath": "js/admin/features/accounting-views.js",
+      "layer": "frontend"
+    }
+  ],
+  "httpRoutes": [],
+  "adminViews": [
+    "expenses",
+    "finance",
+    "accounting"
+  ]
+}

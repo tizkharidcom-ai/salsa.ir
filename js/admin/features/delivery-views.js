@@ -1,0 +1,1 @@
+../../../modules/delivery/frontend/admin-views.js

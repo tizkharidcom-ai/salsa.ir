@@ -23,3 +23,7 @@ docs/*
 lighthouse*.json
 test-results/
 playwright-report/
+
+# Keep module ownership and architecture documentation in Git.
+!modules/README.md
+!modules/*/README.md

@@ -1,0 +1,200 @@
+/* Mobile form UX: prevent iOS Safari auto-zoom on focus (<16px inputs). */
+
+@supports (-webkit-touch-callout: none) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]),
+  textarea,
+  select {
+    font-size: 16px !important;
+  }
+}
+
+@media (max-width: 991px) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]),
+  textarea,
+  select,
+  .table-drawer .field input,
+  .cm-search-panel input,
+  .field input,
+  .otp-boxes input,
+  .qty-modal input {
+    font-size: 16px !important;
+  }
+}
+
+/* Apple Squircle Form Controls & Continuous Curvature */
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]),
+textarea,
+select,
+.table-drawer .field input,
+.cm-search-panel input,
+.field input,
+.otp-boxes input,
+.qty-modal input {
+  border-radius: 12px;
+  corner-shape: squircle;
+}
+
+input[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 6px;
+  corner-shape: squircle;
+  border: 1.5px solid rgba(255, 255, 255, 0.25);
+  background: rgba(255, 255, 255, 0.06);
+  vertical-align: middle;
+  cursor: pointer;
+  display: inline-grid;
+  place-content: center;
+  transition: all 0.16s cubic-bezier(0.16, 1, 0.3, 1);
+}
+input[type="checkbox"]:checked {
+  background: #78d0d8 !important;
+  border-color: #78d0d8 !important;
+}
+input[type="checkbox"]:checked::after {
+  content: "";
+  width: 5px;
+  height: 9px;
+  border: solid #0a1a1c;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg) translate(-0.5px, -1px);
+}
+
+/* Standalone PWA polish */
+
+
+
+
+
+
+/* Keyboard-aware drawer: visualViewport sets --vv-height on #table-drawer */
+#table-drawer.is-keyboard-open .table-drawer__panel {
+  max-height: var(--vv-height, 100dvh);
+  height: var(--vv-height, 100dvh);
+}
+
+.westo-sw-banner {
+  position: fixed;
+  left: 50%;
+  bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
+  transform: translateX(-50%) translateY(120%);
+  z-index: 100050;
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  max-width: min(22rem, calc(100vw - 1.5rem));
+  padding: 0.65rem 0.75rem 0.65rem 1rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(14, 12, 11, 0.94);
+  color: rgba(246, 242, 235, 0.96);
+  font-family: "Vazirmatn", "Geist", system-ui, sans-serif;
+  font-size: 0.82rem;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  box-shadow: 0 0.4rem 1.2rem rgba(0, 0, 0, 0.4);
+  opacity: 0;
+  pointer-events: none;
+  transition: transform 0.28s ease, opacity 0.28s ease;
+}
+
+.westo-sw-banner.is-on {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+  pointer-events: auto;
+}
+
+.westo-sw-banner button {
+  appearance: none;
+  border: 0;
+  border-radius: 999px;
+  min-height: var(--touch-min, 44px);
+  padding: 0.4rem 0.75rem;
+  font: inherit;
+  font-weight: 650;
+  font-size: 0.78rem;
+  cursor: pointer;
+  background: rgba(255, 255, 255, 0.14);
+  color: inherit;
+}
+
+.westo-sw-banner button:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.westo-sw-banner button:disabled {
+  opacity: 0.7;
+  cursor: wait;
+}
+
+.westo-sw-banner span {
+  flex: 1 1 auto;
+  min-width: 0;
+  line-height: 1.35;
+}
+
+/* In the portrait dish experience the primary CTA lives in a fixed card at
+   the bottom of the viewport. Keep the persistent update prompt immediately
+   above that card so it never blocks ordering or card copy. The shared card
+   and this banner use the same geometry variables, so the relationship stays
+   correct across compact phones, browser chrome changes and safe areas. */
+@media (max-width: 991px) and (orientation: portrait) {
+  html.is-dish-boards .westo-sw-banner {
+    bottom: calc(
+      var(--menu-card-bottom, max(0.7rem, env(safe-area-inset-bottom, 0px))) +
+        var(--dish-info-h, 14.5rem) + 0.75rem
+    );
+  }
+}
+
+.eg-install-chip {
+  appearance: none;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(244, 239, 230, 0.88);
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 0.35rem 0.75rem;
+  cursor: pointer;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+}
+
+.eg-install-chip[hidden] {
+  display: none !important;
+}
+
+.eg-install-chip:hover {
+  background: rgba(120, 208, 216, 0.16);
+  border-color: rgba(120, 208, 216, 0.4);
+  color: #78d0d8;
+}
+
+html[data-theme="light"] .eg-install-chip {
+  color: #1a1714;
+  background: rgba(253, 251, 247, 0.88);
+  border-color: rgba(26, 23, 20, 0.12);
+}
+
+html[data-theme="light"] .eg-install-chip:hover {
+  background: rgba(42, 122, 134, 0.14);
+  border-color: rgba(42, 122, 134, 0.4);
+  color: #1f636e;
+}
+
+/* ---- Pass3 stage7: SW banner on guest forms ---- */
+html[data-theme="light"] .westo-sw-banner {
+  background: rgba(26, 23, 20, 0.94);
+  border-color: rgba(255, 255, 255, 0.12);
+  color: #f7f2ea;
+  box-shadow: 0 0.4rem 1.2rem rgba(26, 23, 20, 0.22);
+}
+html[data-theme="light"] .westo-sw-banner button {
+  background: rgba(255, 255, 255, 0.14);
+  color: #f7f2ea;
+}

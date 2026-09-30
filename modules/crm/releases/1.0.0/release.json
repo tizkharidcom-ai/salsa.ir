@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "moduleKey": "crm",
+  "version": "1.0.0",
+  "labelFa": "نسخهٔ فعلی وستو",
+  "runtimeApiVersion": "westo-v1",
+  "publishedAt": "2026-09-30T12:34:40.503Z",
+  "changesFa": [
+    "همان رابط و رفتار موجود؛ بدون بازطراحی"
+  ],
+  "digest": "3dfb16b428053e0c65467a2c438105a278e047366740555baf7568c786e5fa9c",
+  "assets": [
+    {
+      "legacyPath": "css/profile-dashboard.css",
+      "sha256": "6003728a8dda8086bf8f42db58b74ceb45884f087c3654f0615a197d9f160c6e"
+    },
+    {
+      "legacyPath": "feedback.html",
+      "sha256": "3716b4b93e08e6ac1d309fc5b09b8f065bf2af3b05099a231ff4f31e399bf74e"
+    },
+    {
+      "legacyPath": "profile.html",
+      "sha256": "c12aafab8d3115c715198618f5573a0112303dc7dbdfbc74fe35badcd1a14561"
+    },
+    {
+      "legacyPath": "js/admin/features/crm-views.js",
+      "sha256": "7cf59273d89a9de1af2b73e72ec10981cf6d6266a452fb9a6179cf1f18262f79"
+    }
+  ]
+}

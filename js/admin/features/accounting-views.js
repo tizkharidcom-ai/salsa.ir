@@ -1,0 +1,1 @@
+../../../modules/accounting/frontend/admin-views.js

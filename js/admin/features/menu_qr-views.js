@@ -1,0 +1,1 @@
+../../../modules/menu_qr/frontend/admin-views.js

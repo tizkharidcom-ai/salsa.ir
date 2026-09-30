@@ -1,0 +1,1929 @@
+{
+  "schemaVersion": 1,
+  "files": [
+    {
+      "legacyPath": "about.html",
+      "moduleKey": "website_brand",
+      "layer": "frontend",
+      "path": "modules/website_brand/frontend/about.html",
+      "originalSha256": "fa2f8693afbe15aae272a138a24bd496e0557265c215129680f65e0da9917359",
+      "sha256": "fa2f8693afbe15aae272a138a24bd496e0557265c215129680f65e0da9917359"
+    },
+    {
+      "legacyPath": "admin.html",
+      "moduleKey": "platform_core",
+      "layer": "frontend",
+      "path": "modules/platform_core/frontend/admin.html",
+      "originalSha256": "e40b2e000c274ba4cc8044908f7699a7350bcdbaf1ced6908c61c9c59bcf84a6",
+      "sha256": "e40b2e000c274ba4cc8044908f7699a7350bcdbaf1ced6908c61c9c59bcf84a6"
+    },
+    {
+      "legacyPath": "cgu.html",
+      "moduleKey": "website_brand",
+      "layer": "frontend",
+      "path": "modules/website_brand/frontend/cgu.html",
+      "originalSha256": "45311228acfea15ed5643195d1dece79993e6d04c9d84158837bbd7f8d66f625",
+      "sha256": "45311228acfea15ed5643195d1dece79993e6d04c9d84158837bbd7f8d66f625"
+    },
+    {
+      "legacyPath": "css/admin-accounting-experience.css",
+      "moduleKey": "accounting",
+      "layer": "frontend",
+      "path": "modules/accounting/frontend/css/admin-accounting-experience.css",
+      "originalSha256": "262ea249954e0bcb20325f50613409cd5995a16c84cef4aace8d4d07bd6930a3",
+      "sha256": "262ea249954e0bcb20325f50613409cd5995a16c84cef4aace8d4d07bd6930a3"
+    },
+    {
+      "legacyPath": "css/admin-accounting.css",
+      "moduleKey": "accounting",
+      "layer": "frontend",
+      "path": "modules/accounting/frontend/css/admin-accounting.css",
+      "originalSha256": "685c1fcf8816c0fb825cc1ed9a705b1547d0a77ab9561f4db00b5450439270c5",
+      "sha256": "685c1fcf8816c0fb825cc1ed9a705b1547d0a77ab9561f4db00b5450439270c5"
+    },
+    {
+      "legacyPath": "css/admin-break-even-chart.css",
+      "moduleKey": "accounting",
+      "layer": "frontend",
+      "path": "modules/accounting/frontend/css/admin-break-even-chart.css",
+      "originalSha256": "7586da4b9ceb9c6fe1113d527fa01224cd0dcbd17db7878dcb998e9281ea2107",
+      "sha256": "7586da4b9ceb9c6fe1113d527fa01224cd0dcbd17db7878dcb998e9281ea2107"
+    },
+    {
+      "legacyPath": "css/admin-command-center-v2.css",
+      "moduleKey": "platform_core",
+      "layer": "frontend",
+      "path": "modules/platform_core/frontend/css/admin-command-center-v2.css",
+      "originalSha256": "a52ee71e6c19c99bdf8425ca1b091341c7d44fbba798c18f4e74aab487bd628c",
+      "sha256": "a52ee71e6c19c99bdf8425ca1b091341c7d44fbba798c18f4e74aab487bd628c"
+    },
+    {
+      "legacyPath": "css/admin-finance-tokens.css",
+      "moduleKey": "accounting",
+      "layer": "frontend",
+      "path": "modules/accounting/frontend/css/admin-finance-tokens.css",
+      "originalSha256": "e59238195f59911d8e843b088a3b3851b3800b868b5eaeb36dde257d3add9e87",
+      "sha256": "e59238195f59911d8e843b088a3b3851b3800b868b5eaeb36dde257d3add9e87"
+    },
+    {
+      "legacyPath": "css/admin-floor-simple.css",
+      "moduleKey": "floor",
+      "layer": "frontend",
+      "path": "modules/floor/frontend/css/admin-floor-simple.css",
+      "originalSha256": "5680a43e43514aed4269b235851039f5ff1f4751186d9d68cb7d973509a066c5",
+      "sha256": "5680a43e43514aed4269b235851039f5ff1f4751186d9d68cb7d973509a066c5"
+    },
+    {
+      "legacyPath": "css/admin-inventory-v2.css",
+      "moduleKey": "inventory",
+      "layer": "frontend",
+      "path": "modules/inventory/frontend/css/admin-inventory-v2.css",
+      "originalSha256": "b0511c125bd50eb25bcfcfde8c2cf632dcfaf6faccc06d5b07a16fae325cc057",
+      "sha256": "b0511c125bd50eb25bcfcfde8c2cf632dcfaf6faccc06d5b07a16fae325cc057"
+    },
+    {
+      "legacyPath": "css/admin-operations-v3.css",
+      "moduleKey": "platform_core",
+      "layer": "frontend",
+      "path": "modules/platform_core/frontend/css/admin-operations-v3.css",
+      "originalSha256": "62f8bfba4c8f8addb048958d0687accced344de27a5fba31db1068be81badb60",
+      "sha256": "62f8bfba4c8f8addb048958d0687accced344de27a5fba31db1068be81badb60"
+    },
+    {
+      "legacyPath": "css/admin-professional-v4.css",
+      "moduleKey": "platform_core",
+      "layer": "frontend",
+      "path": "modules/platform_core/frontend/css/admin-professional-v4.css",
+      "originalSha256": "1b6887855a1b7bb1ae1a35d54c072dbe2991259cf098ddb862cc52dc5c266e6f",
+      "sha256": "1b6887855a1b7bb1ae1a35d54c072dbe2991259cf098ddb862cc52dc5c266e6f"
+    },
+    {
+      "legacyPath": "css/admin-qr.css",
+      "moduleKey": "platform_core",
+      "layer": "frontend",
+      "path": "modules/platform_core/frontend/css/admin-qr.css",
+      "originalSha256": "2536a920bda692ab690b3333d22c032b7759155e2724bba1ebaa67217901d84d",
+      "sha256": "2536a920bda692ab690b3333d22c032b7759155e2724bba1ebaa67217901d84d"
+    },
+    {
+      "legacyPath": "css/admin-users-roles.css",
+      "moduleKey": "platform_core",
+      "layer": "frontend",
+      "path": "modules/platform_core/frontend/css/admin-users-roles.css",
+      "originalSha256": "f1b8acbecd7f208530e10136fad28e338a604c06b765d101fe2b152f20cfe960",
+      "sha256": "f1b8acbecd7f208530e10136fad28e338a604c06b765d101fe2b152f20cfe960"
+    },
+    {
+      "legacyPath": "css/admin-vitality-v5.css",
+      "moduleKey": "platform_core",
+      "layer": "frontend",
+      "path": "modules/platform_core/frontend/css/admin-vitality-v5.css",
+      "originalSha256": "0ef0f5d132ccce520baccf9915510ddaf92006f4bb255a6a309cb2defdf95b4f",
+      "sha256": "0ef0f5d132ccce520baccf9915510ddaf92006f4bb255a6a309cb2defdf95b4f"
+    },
+    {
+      "legacyPath": "css/checkout.css",
+      "moduleKey": "menu_qr",
+      "layer": "frontend",
+      "path": "modules/menu_qr/frontend/css/checkout.css",
+      "originalSha256": "70597bcbe1a2e8d8c024a2ded45a9e926ad09e2eba8b5819f70014cf654dab1b",
+      "sha256": "70597bcbe1a2e8d8c024a2ded45a9e926ad09e2eba8b5819f70014cf654dab1b"
+    },
+    {
+      "legacyPath": "css/classic-menu-catalogue-v2.css",
+      "moduleKey": "menu_qr",
+      "layer": "frontend",
+      "path": "modules/menu_qr/frontend/css/classic-menu-catalogue-v2.css",
+      "originalSha256": "7bec61e119039b660720beb0ad230140050f3094a8de5a04ac9e52fc42d7f236",
+      "sha256": "7bec61e119039b660720beb0ad230140050f3094a8de5a04ac9e52fc42d7f236"
+    },
+    {
+      "legacyPath": "css/classic-menu.css",
+      "moduleKey": "menu_qr",
+      "layer": "frontend",
+      "path": "modules/menu_qr/frontend/css/classic-menu.css",
+      "originalSha256": "7ebc30f6a6befdfbc80eb84a1bd32c83323de16866ba4b2be6cecef68546b6b3",
+      "sha256": "7ebc30f6a6befdfbc80eb84a1bd32c83323de16866ba4b2be6cecef68546b6b3"
+    },
+    {
+      "legacyPath": "css/design-logic-v13.css",
+      "moduleKey": "platform_core",
+      "layer": "frontend",
+      "path": "modules/platform_core/frontend/css/design-logic-v13.css",
+      "originalSha256": "29855d15fd9c03aa1aec6270411d1077d36fcd0e1c88bb10596d5e85651e2c2d",
+      "sha256": "29855d15fd9c03aa1aec6270411d1077d36fcd0e1c88bb10596d5e85651e2c2d"
+    },
+    {
+      "legacyPath": "css/entrance-gate-redesign.css",
+      "moduleKey": "menu_qr",
+      "layer": "frontend",
+      "path": "modules/menu_qr/frontend/css/entrance-gate-redesign.css",
+      "originalSha256": "f47cce529c017f110c278b333a3da69778adc0018b5055fdadfa365f4a052d73",
+      "sha256": "f47cce529c017f110c278b333a3da69778adc0018b5055fdadfa365f4a052d73"
+    },
+    {
+      "legacyPath": "css/entrance-gate.css",
+      "moduleKey": "menu_qr",
+      "layer": "frontend",
+      "path": "modules/menu_qr/frontend/css/entrance-gate.css",
+      "originalSha256": "06897fc6994b8e1a527a4dd8cfe792b937c49067214acbfc65e022eb8af55b49",
+      "sha256": "06897fc6994b8e1a527a4dd8cfe792b937c49067214acbfc65e022eb8af55b49"
+    },
+    {
+      "legacyPath": "css/entrance-promo-deck.css",
+      "moduleKey": "menu_qr",
+      "layer": "frontend",
+      "path": "modules/menu_qr/frontend/css/entrance-promo-deck.css",
+      "originalSha256": "54d90d693f47b23edb39621793d89b4e7beaf906cf9fba96a6505d9ba63eac77",
+      "sha256": "54d90d693f47b23edb39621793d89b4e7beaf906cf9fba96a6505d9ba63eac77"
+    },
+    {
+      "legacyPath": "css/fa-override.css",
+      "moduleKey": "platform_core",
+      "layer": "frontend",
+      "path": "modules/platform_core/frontend/css/fa-override.css",
+      "originalSha256": "d6a3210b10540fde6f650e92967528333165926561f69fd7dc47c5ec8813880f",
+      "sha256": "d6a3210b10540fde6f650e92967528333165926561f69fd7dc47c5ec8813880f"
+    },
+    {
+      "legacyPath": "css/globals.css",
+      "moduleKey": "platform_core",
+      "layer": "frontend",
+      "path": "modules/platform_core/frontend/css/globals.css",
+      "originalSha256": "88fb90b06b35daf98f647311a91fa6df3d5cd5852c91afbff2ef9d1f23915b28",
+      "sha256": "88fb90b06b35daf98f647311a91fa6df3d5cd5852c91afbff2ef9d1f23915b28"
+    },
+    {
+      "legacyPath": "css/i18n-dir.css",
+      "moduleKey": "platform_core",
+      "layer": "frontend",
+      "path": "modules/platform_core/frontend/css/i18n-dir.css",
+      "originalSha256": "cf8f87a1950910a7a16f7906a06ed40e40edafff1163b115de894ad894db0755",
+      "sha256": "cf8f87a1950910a7a16f7906a06ed40e40edafff1163b115de894ad894db0755"
+    },
+    {
+      "legacyPath": "css/kitchen-kds.css",
+      "moduleKey": "kds",
+      "layer": "frontend",
+      "path": "modules/kds/frontend/css/kitchen-kds.css",
+      "originalSha256": "3a09f98c3544d32911527b2785744e02fc86d2da07e583c3ac48b58fbbc77dd2",
+      "sha256": "3a09f98c3544d32911527b2785744e02fc86d2da07e583c3ac48b58fbbc77dd2"
+    },
+    {
+      "legacyPath": "css/menu-promo-deck.css",
+      "moduleKey": "menu_qr",
+      "layer": "frontend",
+      "path": "modules/menu_qr/frontend/css/menu-promo-deck.css",
+      "originalSha256": "75a934a248eea2c87f11fea4ff84c873ebaccf3c7219dcfef6eb556da06a6dc9",
+      "sha256": "75a934a248eea2c87f11fea4ff84c873ebaccf3c7219dcfef6eb556da06a6dc9"
+    },
+    {
+      "legacyPath": "css/menu-story.css",
+      "moduleKey": "menu_qr",
+      "layer": "frontend",
+      "path": "modules/menu_qr/frontend/css/menu-story.css",
+      "originalSha256": "923e3296590da4d430109c12b9f2cf62645bd705a2803dcdfc746f69b6fbae46",
+      "sha256": "923e3296590da4d430109c12b9f2cf62645bd705a2803dcdfc746f69b6fbae46"
+    },
+    {
+      "legacyPath": "css/mobile-forms.css",
+      "moduleKey": "platform_core",
+      "layer": "frontend",
+      "path": "modules/platform_core/frontend/css/mobile-forms.css",
+      "originalSha256": "746a39139ff0301f59ba000dec27813aeb82e2fc06358d1b7617b8eae1b75c71",
+      "sha256": "746a39139ff0301f59ba000dec27813aeb82e2fc06358d1b7617b8eae1b75c71"
+    },
+    {
+      "legacyPath": "css/panel.css",
+      "moduleKey": "platform_core",
+      "layer": "frontend",
+      "path": "modules/platform_core/frontend/css/panel.css",
+      "originalSha256": "6d81bac4b651bfbe38f4e77e40a79d624e7748258a798d69c5ced7061ff2566f",
+      "sha256": "6d81bac4b651bfbe38f4e77e40a79d624e7748258a798d69c5ced7061ff2566f"
+    },
+    {
+      "legacyPath": "css/profile-dashboard.css",
+      "moduleKey": "crm",
+      "layer": "frontend",
+      "path": "modules/crm/frontend/css/profile-dashboard.css",
+      "originalSha256": "6003728a8dda8086bf8f42db58b74ceb45884f087c3654f0615a197d9f160c6e",
+      "sha256": "6003728a8dda8086bf8f42db58b74ceb45884f087c3654f0615a197d9f160c6e"
+    },
+    {
+      "legacyPath": "css/promo-slider.css",
+      "moduleKey": "menu_qr",
+      "layer": "frontend",
+      "path": "modules/menu_qr/frontend/css/promo-slider.css",
+      "originalSha256": "344dd135f90e73d9d9277d519dd59be74c255880960f3b796b61c211833a05cd",
+      "sha256": "344dd135f90e73d9d9277d519dd59be74c255880960f3b796b61c211833a05cd"
+    },
+    {
+      "legacyPath": "css/responsive-shell.css",
+      "moduleKey": "platform_core",
+      "layer": "frontend",
+      "path": "modules/platform_core/frontend/css/responsive-shell.css",
+      "originalSha256": "cca33dad9e245c1dc19a23626a6078f5cad6937232f13bb4b007030676a0a348",
+      "sha256": "cca33dad9e245c1dc19a23626a6078f5cad6937232f13bb4b007030676a0a348"
+    },
+    {
+      "legacyPath": "css/role-panel.css",
+      "moduleKey": "platform_core",
+      "layer": "frontend",
+      "path": "modules/platform_core/frontend/css/role-panel.css",
+      "originalSha256": "42e1d518d41581a6d79fd48c6298ce4debb1d957c58f08c5c1cfd377e7328cf6",
+      "sha256": "42e1d518d41581a6d79fd48c6298ce4debb1d957c58f08c5c1cfd377e7328cf6"
+    },
+    {
+      "legacyPath": "css/shamsi-datepicker.css",
+      "moduleKey": "platform_core",
+      "layer": "frontend",
+      "path": "modules/platform_core/frontend/css/shamsi-datepicker.css",
+      "originalSha256": "a4358fd8cdb344f5d21d6030234410003c5d4b48b99ea0c12a18de5cb49ab5ff",
+      "sha256": "a4358fd8cdb344f5d21d6030234410003c5d4b48b99ea0c12a18de5cb49ab5ff"
+    },
+    {
+      "legacyPath": "css/shamsi-wheel-picker.css",
+      "moduleKey": "platform_core",
+      "layer": "frontend",
+      "path": "modules/platform_core/frontend/css/shamsi-wheel-picker.css",
+      "originalSha256": "3d19c47ecd9a620623aa261f86645cf9076b7ca0f2c2bea468948cc8e5efed31",
+      "sha256": "3d19c47ecd9a620623aa261f86645cf9076b7ca0f2c2bea468948cc8e5efed31"
+    },
+    {
+      "legacyPath": "css/sib-styles.css",
+      "moduleKey": "platform_core",
+      "layer": "frontend",
+      "path": "modules/platform_core/frontend/css/sib-styles.css",
+      "originalSha256": "509797bc5c5076af22e14fab0a1aa8210506fe44719f530f85fc9511a01d676c",
+      "sha256": "509797bc5c5076af22e14fab0a1aa8210506fe44719f530f85fc9511a01d676c"
+    },
+    {
+      "legacyPath": "css/table.css",
+      "moduleKey": "platform_core",
+      "layer": "frontend",
+      "path": "modules/platform_core/frontend/css/table.css",
+      "originalSha256": "5fd346a03e54c65caf4053c46414398285d10ce541ec33926b966d239b21bf61",
+      "sha256": "5fd346a03e54c65caf4053c46414398285d10ce541ec33926b966d239b21bf61"
+    },
+    {
+      "legacyPath": "css/vazir-system.css",
+      "moduleKey": "platform_core",
+      "layer": "frontend",
+      "path": "modules/platform_core/frontend/css/vazir-system.css",
+      "originalSha256": "2ac0553409b0214d47766e98e8c8de701af01b3235ba7b91ea307d9b92615fd5",
+      "sha256": "2ac0553409b0214d47766e98e8c8de701af01b3235ba7b91ea307d9b92615fd5"
+    },
+    {
+      "legacyPath": "css/waiter-floor-plan.css",
+      "moduleKey": "floor",
+      "layer": "frontend",
+      "path": "modules/floor/frontend/css/waiter-floor-plan.css",
+      "originalSha256": "a700ea6d5c3a90fab8a297c132fd26c6206de6e00cc1e03321aac7d0d4971f27",
+      "sha256": "a700ea6d5c3a90fab8a297c132fd26c6206de6e00cc1e03321aac7d0d4971f27"
+    },
+    {
+      "legacyPath": "css/westo-critical.smart.css",
+      "moduleKey": "menu_qr",
+      "layer": "frontend",
+      "path": "modules/menu_qr/frontend/css/westo-critical.smart.css",
+      "originalSha256": "a768c6355fb6bf6e888ab60571579cacb7e119d09ed0349cce5de6bd86c66b96",
+      "sha256": "a768c6355fb6bf6e888ab60571579cacb7e119d09ed0349cce5de6bd86c66b96"
+    },
+    {
+      "legacyPath": "css/westo-dish-card-premium.css",
+      "moduleKey": "menu_qr",
+      "layer": "frontend",
+      "path": "modules/menu_qr/frontend/css/westo-dish-card-premium.css",
+      "originalSha256": "09d257d65f5b20746991754598ec1233ce655d5729f1411c70ba40d4a605a49f",
+      "sha256": "09d257d65f5b20746991754598ec1233ce655d5729f1411c70ba40d4a605a49f"
+    },
+    {
+      "legacyPath": "css/westo-glass.css",
+      "moduleKey": "menu_qr",
+      "layer": "frontend",
+      "path": "modules/menu_qr/frontend/css/westo-glass.css",
+      "originalSha256": "f19f6417f0e4e3c1cff1fa68903fe326d745651a27581d5cbf0bb5bad0125eae",
+      "sha256": "f19f6417f0e4e3c1cff1fa68903fe326d745651a27581d5cbf0bb5bad0125eae"
+    },
+    {
+      "legacyPath": "css/westo-landscape-recovery.css",
+      "moduleKey": "menu_qr",
+      "layer": "frontend",
+      "path": "modules/menu_qr/frontend/css/westo-landscape-recovery.css",
+      "originalSha256": "838c75886f63fe9fb0777e5041d2514e1e50650f75fb0304444df1dff3484625",
+      "sha256": "838c75886f63fe9fb0777e5041d2514e1e50650f75fb0304444df1dff3484625"
+    },
+    {
+      "legacyPath": "css/westo-production-v11.css",
+      "moduleKey": "menu_qr",
+      "layer": "frontend",
+      "path": "modules/menu_qr/frontend/css/westo-production-v11.css",
+      "originalSha256": "2f8cb240c647e6ba7f38177433dc646cc0cd7c14d5ffcb89e9134435932f2819",
+      "sha256": "2f8cb240c647e6ba7f38177433dc646cc0cd7c14d5ffcb89e9134435932f2819"
+    },
+    {
+      "legacyPath": "css/westo-production-v12.css",
+      "moduleKey": "menu_qr",
+      "layer": "frontend",
+      "path": "modules/menu_qr/frontend/css/westo-production-v12.css",
+      "originalSha256": "461afe90edbeff4e6d4c82d1741c64b8406cf83d6f7f7d7bea0c9a954205fed7",
+      "sha256": "461afe90edbeff4e6d4c82d1741c64b8406cf83d6f7f7d7bea0c9a954205fed7"
+    },
+    {
+      "legacyPath": "css/westo-pwa.css",
+      "moduleKey": "menu_qr",
+      "layer": "frontend",
+      "path": "modules/menu_qr/frontend/css/westo-pwa.css",
+      "originalSha256": "6c36673ae08859a6f6b968adf1a8f6ac31a290d3358b3cc03d9319c49f2557ee",
+      "sha256": "6c36673ae08859a6f6b968adf1a8f6ac31a290d3358b3cc03d9319c49f2557ee"
+    },
+    {
+      "legacyPath": "css/westo-ultra-fine-v1.2.css",
+      "moduleKey": "menu_qr",
+      "layer": "frontend",
+      "path": "modules/menu_qr/frontend/css/westo-ultra-fine-v1.2.css",
+      "originalSha256": "220268221c2fa27f38d455347110fcb769b6d499469d32b42e50a1a807d6a6ce",
+      "sha256": "220268221c2fa27f38d455347110fcb769b6d499469d32b42e50a1a807d6a6ce"
+    },
+    {
+      "legacyPath": "css/westo-v14.1-experience-polish.css",
+      "moduleKey": "menu_qr",
+      "layer": "frontend",
+      "path": "modules/menu_qr/frontend/css/westo-v14.1-experience-polish.css",
+      "originalSha256": "298b5ccbdb73a2455936f1047061abdad53ff83c9c2539e4b919f7e8a43694d6",
+      "sha256": "298b5ccbdb73a2455936f1047061abdad53ff83c9c2539e4b919f7e8a43694d6"
+    },
+    {
+      "legacyPath": "css/westo-v14.3-ultra-fine.css",
+      "moduleKey": "menu_qr",
+      "layer": "frontend",
+      "path": "modules/menu_qr/frontend/css/westo-v14.3-ultra-fine.css",
+      "originalSha256": "172d22bbb3a0b68810b9f32505e2f168d5a122b9b76677570d18255e5ed4ee86",
+      "sha256": "172d22bbb3a0b68810b9f32505e2f168d5a122b9b76677570d18255e5ed4ee86"
+    },
+    {
+      "legacyPath": "css/westo.webflow.shared.min.css",
+      "moduleKey": "menu_qr",
+      "layer": "frontend",
+      "path": "modules/menu_qr/frontend/css/westo.webflow.shared.min.css",
+      "originalSha256": "89fa9242d9009509898b3f1413eea327545aef0fd9b70023790c22d53d090ce5",
+      "sha256": "89fa9242d9009509898b3f1413eea327545aef0fd9b70023790c22d53d090ce5"
+    },
+    {
+      "legacyPath": "feedback.html",
+      "moduleKey": "crm",
+      "layer": "frontend",
+      "path": "modules/crm/frontend/feedback.html",
+      "originalSha256": "3716b4b93e08e6ac1d309fc5b09b8f065bf2af3b05099a231ff4f31e399bf74e",
+      "sha256": "3716b4b93e08e6ac1d309fc5b09b8f065bf2af3b05099a231ff4f31e399bf74e"
+    },
+    {
+      "legacyPath": "index.html",
+      "moduleKey": "menu_qr",
+      "layer": "frontend",
+      "path": "modules/menu_qr/frontend/index.html",
+      "originalSha256": "4f8e38cac87021045ea4427b8d15ace84a3c900d226c0a794698203636a6b980",
+      "sha256": "4f8e38cac87021045ea4427b8d15ace84a3c900d226c0a794698203636a6b980"
+    },
+    {
+      "legacyPath": "js/admin-accounting.js",
+      "moduleKey": "accounting",
+      "layer": "frontend",
+      "path": "modules/accounting/frontend/js/admin-accounting.js",
+      "originalSha256": "433c0bcfc5442c41751ce0081aac6f1fdafbdc892d184504727196f1c89980fe",
+      "sha256": "433c0bcfc5442c41751ce0081aac6f1fdafbdc892d184504727196f1c89980fe"
+    },
+    {
+      "legacyPath": "js/admin-professional-v4.js",
+      "moduleKey": "platform_core",
+      "layer": "frontend",
+      "path": "modules/platform_core/frontend/js/admin-professional-v4.js",
+      "originalSha256": "f895d47da1dbffcdbab4be9fc179e5426a5ddda99e765e4ee923ce6395de0921",
+      "sha256": "f895d47da1dbffcdbab4be9fc179e5426a5ddda99e765e4ee923ce6395de0921"
+    },
+    {
+      "legacyPath": "js/admin.js",
+      "moduleKey": "platform_core",
+      "layer": "frontend",
+      "path": "modules/platform_core/frontend/js/admin.js",
+      "originalSha256": "51aa41f48601e9d222aa11c8fc4c4e5d8b355cf6bc5b1ba4cd96c36bc94e9a55",
+      "sha256": "51aa41f48601e9d222aa11c8fc4c4e5d8b355cf6bc5b1ba4cd96c36bc94e9a55"
+    },
+    {
+      "legacyPath": "js/admin/floor-studio.js",
+      "moduleKey": "floor",
+      "layer": "frontend",
+      "path": "modules/floor/frontend/js/admin/floor-studio.js",
+      "originalSha256": "318bbb162edf53c4826495745d790dd098f10e3b799f041c9e9ae39418722758",
+      "sha256": "318bbb162edf53c4826495745d790dd098f10e3b799f041c9e9ae39418722758"
+    },
+    {
+      "legacyPath": "js/admin/modules/catalog/menu-module.js",
+      "moduleKey": "menu_qr",
+      "layer": "frontend",
+      "path": "modules/menu_qr/frontend/js/admin/modules/catalog/menu-module.js",
+      "originalSha256": "57fc1beb5226f22b803af49d99cab2b36c3bf873405423fdaf76cb63d78f5ab7",
+      "sha256": "57fc1beb5226f22b803af49d99cab2b36c3bf873405423fdaf76cb63d78f5ab7"
+    },
+    {
+      "legacyPath": "js/admin/modules/content/content-module.js",
+      "moduleKey": "website_brand",
+      "layer": "frontend",
+      "path": "modules/website_brand/frontend/js/admin/modules/content/content-module.js",
+      "originalSha256": "701c4b7e67c9dd2f087f46e7437ac42a849cc39ef97e14413ae6636271f87dcf",
+      "sha256": "701c4b7e67c9dd2f087f46e7437ac42a849cc39ef97e14413ae6636271f87dcf"
+    },
+    {
+      "legacyPath": "js/admin/modules/core/registry.js",
+      "moduleKey": "platform_core",
+      "layer": "frontend",
+      "path": "modules/platform_core/frontend/js/admin/modules/core/registry.js",
+      "originalSha256": "d0d826e095f38c80acfe3b63f2e4650a7679f9211be3ab77c18231ec7ad8de42",
+      "sha256": "d0d826e095f38c80acfe3b63f2e4650a7679f9211be3ab77c18231ec7ad8de42"
+    },
+    {
+      "legacyPath": "js/admin/modules/finance/accounting-experience.js",
+      "moduleKey": "accounting",
+      "layer": "frontend",
+      "path": "modules/accounting/frontend/js/admin/modules/finance/accounting-experience.js",
+      "originalSha256": "012fefe3a533224589c45e7b6b88284f4fd5d427e181ce501ccb2a320d4843a2",
+      "sha256": "012fefe3a533224589c45e7b6b88284f4fd5d427e181ce501ccb2a320d4843a2"
+    },
+    {
+      "legacyPath": "js/admin/modules/finance/break-even-chart.js",
+      "moduleKey": "accounting",
+      "layer": "frontend",
+      "path": "modules/accounting/frontend/js/admin/modules/finance/break-even-chart.js",
+      "originalSha256": "bab74cea90f13614995957d6f365f71712e473d6031b2f7e838fd1836f146151",
+      "sha256": "bab74cea90f13614995957d6f365f71712e473d6031b2f7e838fd1836f146151"
+    },
+    {
+      "legacyPath": "js/admin/modules/finance/finance-module.js",
+      "moduleKey": "accounting",
+      "layer": "frontend",
+      "path": "modules/accounting/frontend/js/admin/modules/finance/finance-module.js",
+      "originalSha256": "8f5f50ee0949e2990f99e3a0425b67fec14836512f2ca5ee294a2226296c922d",
+      "sha256": "8f5f50ee0949e2990f99e3a0425b67fec14836512f2ca5ee294a2226296c922d"
+    },
+    {
+      "legacyPath": "js/admin/modules/finance/finance-ui-model.js",
+      "moduleKey": "accounting",
+      "layer": "frontend",
+      "path": "modules/accounting/frontend/js/admin/modules/finance/finance-ui-model.js",
+      "originalSha256": "f56eaf974f9f782c416d03d8eefbad566f50e0c73daa0b3dff2fd5d3e605a71d",
+      "sha256": "f56eaf974f9f782c416d03d8eefbad566f50e0c73daa0b3dff2fd5d3e605a71d"
+    },
+    {
+      "legacyPath": "js/admin/modules/insights/dashboard-view.js",
+      "moduleKey": "analytics",
+      "layer": "frontend",
+      "path": "modules/analytics/frontend/js/admin/modules/insights/dashboard-view.js",
+      "originalSha256": "5337928cbafea2340358609e559f183c283d871f2f4a038b75a96fe8e15702ca",
+      "sha256": "5337928cbafea2340358609e559f183c283d871f2f4a038b75a96fe8e15702ca"
+    },
+    {
+      "legacyPath": "js/admin/modules/insights/reports-module.js",
+      "moduleKey": "analytics",
+      "layer": "frontend",
+      "path": "modules/analytics/frontend/js/admin/modules/insights/reports-module.js",
+      "originalSha256": "f1d868763f5bbd3a4ec0aeca23fe2a9b518cce7d3686a0a6b0397d7526c01158",
+      "sha256": "f1d868763f5bbd3a4ec0aeca23fe2a9b518cce7d3686a0a6b0397d7526c01158"
+    },
+    {
+      "legacyPath": "js/admin/modules/inventory/inventory-module.js",
+      "moduleKey": "inventory",
+      "layer": "frontend",
+      "path": "modules/inventory/frontend/js/admin/modules/inventory/inventory-module.js",
+      "originalSha256": "0cce2b9e61d0963b89e705506a4d060fe26681a4231d1b40b697faaae59ade7e",
+      "sha256": "0cce2b9e61d0963b89e705506a4d060fe26681a4231d1b40b697faaae59ade7e"
+    },
+    {
+      "legacyPath": "js/admin/modules/operations/operations-module.js",
+      "moduleKey": "platform_core",
+      "layer": "frontend",
+      "path": "modules/platform_core/frontend/js/admin/modules/operations/operations-module.js",
+      "originalSha256": "18dbec1580c5a33955d3626c1d9e45111a605b18459035c0831a7930b6b88110",
+      "sha256": "18dbec1580c5a33955d3626c1d9e45111a605b18459035c0831a7930b6b88110"
+    },
+    {
+      "legacyPath": "js/admin/modules/settings/settings-module.js",
+      "moduleKey": "platform_core",
+      "layer": "frontend",
+      "path": "modules/platform_core/frontend/js/admin/modules/settings/settings-module.js",
+      "originalSha256": "68f1ec76791ae56400aa36f96a3587bd9facc98066ab89fd10659752100ac8ac",
+      "sha256": "68f1ec76791ae56400aa36f96a3587bd9facc98066ab89fd10659752100ac8ac"
+    },
+    {
+      "legacyPath": "js/analytics-beacon.js",
+      "moduleKey": "analytics",
+      "layer": "frontend",
+      "path": "modules/analytics/frontend/js/analytics-beacon.js",
+      "originalSha256": "69cd13806c20605c3275a6dd8326214c0278d763c7b9ba711c2856f39fbbca88",
+      "sha256": "69cd13806c20605c3275a6dd8326214c0278d763c7b9ba711c2856f39fbbca88"
+    },
+    {
+      "legacyPath": "js/animations.js",
+      "moduleKey": "platform_core",
+      "layer": "frontend",
+      "path": "modules/platform_core/frontend/js/animations.js",
+      "originalSha256": "79c4b1a993045a34ed62f77928116cbcf80f393ac80a13af5ab967e6643e9935",
+      "sha256": "79c4b1a993045a34ed62f77928116cbcf80f393ac80a13af5ab967e6643e9935"
+    },
+    {
+      "legacyPath": "js/auth-nav.js",
+      "moduleKey": "platform_core",
+      "layer": "frontend",
+      "path": "modules/platform_core/frontend/js/auth-nav.js",
+      "originalSha256": "09c3164cb9fdd44ad7b20f6d00213cab9d72f9a9ed3985d591c64d95d193b4d9",
+      "sha256": "09c3164cb9fdd44ad7b20f6d00213cab9d72f9a9ed3985d591c64d95d193b4d9"
+    },
+    {
+      "legacyPath": "js/brand-lockup.js",
+      "moduleKey": "website_brand",
+      "layer": "frontend",
+      "path": "modules/website_brand/frontend/js/brand-lockup.js",
+      "originalSha256": "8a0baf62de7c72b6c63d5d6c48f799692de8175de048722f41fe978953b99afd",
+      "sha256": "8a0baf62de7c72b6c63d5d6c48f799692de8175de048722f41fe978953b99afd"
+    },
+    {
+      "legacyPath": "js/buttons.js",
+      "moduleKey": "platform_core",
+      "layer": "frontend",
+      "path": "modules/platform_core/frontend/js/buttons.js",
+      "originalSha256": "bedb9e8a373a1d245b1ff453536bd8fde3b28082cf326a3ae402c6673da00817",
+      "sha256": "bedb9e8a373a1d245b1ff453536bd8fde3b28082cf326a3ae402c6673da00817"
+    },
+    {
+      "legacyPath": "js/category-neon-indicator.js",
+      "moduleKey": "menu_qr",
+      "layer": "frontend",
+      "path": "modules/menu_qr/frontend/js/category-neon-indicator.js",
+      "originalSha256": "898bd4c74c6066403986a7975cc18a3a9aa6b49672826bdbad8e0f9fc81e6c5e",
+      "sha256": "898bd4c74c6066403986a7975cc18a3a9aa6b49672826bdbad8e0f9fc81e6c5e"
+    },
+    {
+      "legacyPath": "js/category-theme.js",
+      "moduleKey": "menu_qr",
+      "layer": "frontend",
+      "path": "modules/menu_qr/frontend/js/category-theme.js",
+      "originalSha256": "3a591e861f73c9fbf51716d7dcfa8ccbbda920748706ea073f42633986d7443b",
+      "sha256": "3a591e861f73c9fbf51716d7dcfa8ccbbda920748706ea073f42633986d7443b"
+    },
+    {
+      "legacyPath": "js/checkout.js",
+      "moduleKey": "menu_qr",
+      "layer": "frontend",
+      "path": "modules/menu_qr/frontend/js/checkout.js",
+      "originalSha256": "5fb8eee4330f79b47cb1fff23ffa564f27f9b1b51b31ee0c83ee660297f5f73d",
+      "sha256": "5fb8eee4330f79b47cb1fff23ffa564f27f9b1b51b31ee0c83ee660297f5f73d"
+    },
+    {
+      "legacyPath": "js/classic-menu.js",
+      "moduleKey": "menu_qr",
+      "layer": "frontend",
+      "path": "modules/menu_qr/frontend/js/classic-menu.js",
+      "originalSha256": "271aae126ca03a874a510fd5adf4a7f26f58656be4980715ae6ce58807739888",
+      "sha256": "271aae126ca03a874a510fd5adf4a7f26f58656be4980715ae6ce58807739888"
+    },
+    {
+      "legacyPath": "js/content-bootstrap.static.js",
+      "moduleKey": "platform_core",
+      "layer": "frontend",
+      "path": "modules/platform_core/frontend/js/content-bootstrap.static.js",
+      "originalSha256": "3eea8129a20ccd95ccc400a2975196c376109f8a208025be99e9c102cdec38f1",
+      "sha256": "3eea8129a20ccd95ccc400a2975196c376109f8a208025be99e9c102cdec38f1"
+    },
+    {
+      "legacyPath": "js/content-overrides.js",
+      "moduleKey": "menu_qr",
+      "layer": "frontend",
+      "path": "modules/menu_qr/frontend/js/content-overrides.js",
+      "originalSha256": "850e9f29e2245ae07821d4725ba11e70239d082e9299e20fc7302a1db0af2d7a",
+      "sha256": "850e9f29e2245ae07821d4725ba11e70239d082e9299e20fc7302a1db0af2d7a"
+    },
+    {
+      "legacyPath": "js/design-logic-v13.js",
+      "moduleKey": "platform_core",
+      "layer": "frontend",
+      "path": "modules/platform_core/frontend/js/design-logic-v13.js",
+      "originalSha256": "c920121c18605892859868d89c096651e3f09621d53f29c56c7747472c5821ee",
+      "sha256": "c920121c18605892859868d89c096651e3f09621d53f29c56c7747472c5821ee"
+    },
+    {
+      "legacyPath": "js/disable-service-worker.js",
+      "moduleKey": "platform_core",
+      "layer": "frontend",
+      "path": "modules/platform_core/frontend/js/disable-service-worker.js",
+      "originalSha256": "621caf92b5d1f98b1436648d44a5ded2ee12a4450d2658e2112472de9c03a24f",
+      "sha256": "621caf92b5d1f98b1436648d44a5ded2ee12a4450d2658e2112472de9c03a24f"
+    },
+    {
+      "legacyPath": "js/entrance-promo-deck.js",
+      "moduleKey": "menu_qr",
+      "layer": "frontend",
+      "path": "modules/menu_qr/frontend/js/entrance-promo-deck.js",
+      "originalSha256": "a2a63b6e31659f27d7a60a68135c396ba884e941c5e14bd8649805ce6e5e4a6d",
+      "sha256": "a2a63b6e31659f27d7a60a68135c396ba884e941c5e14bd8649805ce6e5e4a6d"
+    },
+    {
+      "legacyPath": "js/floor-chair-layout.js",
+      "moduleKey": "floor",
+      "layer": "frontend",
+      "path": "modules/floor/frontend/js/floor-chair-layout.js",
+      "originalSha256": "b982ed2b378e07ebb489c2cb34775e411a6a41c74c43dbf35a0884278f810859",
+      "sha256": "b982ed2b378e07ebb489c2cb34775e411a6a41c74c43dbf35a0884278f810859"
+    },
+    {
+      "legacyPath": "js/i18n.js",
+      "moduleKey": "platform_core",
+      "layer": "frontend",
+      "path": "modules/platform_core/frontend/js/i18n.js",
+      "originalSha256": "e4b80c9df3c0e4b2156b305030109ab5b54f3ad24bbbe60358b2323fd2f8fa71",
+      "sha256": "e4b80c9df3c0e4b2156b305030109ab5b54f3ad24bbbe60358b2323fd2f8fa71"
+    },
+    {
+      "legacyPath": "js/language-switch-rescue.js",
+      "moduleKey": "menu_qr",
+      "layer": "frontend",
+      "path": "modules/menu_qr/frontend/js/language-switch-rescue.js",
+      "originalSha256": "3046b2adb7e2291b71c6e2ac5f7284aaa8d6cdb9678f370ad11880cadc2f0766",
+      "sha256": "3046b2adb7e2291b71c6e2ac5f7284aaa8d6cdb9678f370ad11880cadc2f0766"
+    },
+    {
+      "legacyPath": "js/menu-promo-deck.js",
+      "moduleKey": "menu_qr",
+      "layer": "frontend",
+      "path": "modules/menu_qr/frontend/js/menu-promo-deck.js",
+      "originalSha256": "df8f801db1d1484d8bf3b28995ba31cdc8a58d48236f22998aab5a15e88bf811",
+      "sha256": "df8f801db1d1484d8bf3b28995ba31cdc8a58d48236f22998aab5a15e88bf811"
+    },
+    {
+      "legacyPath": "js/menu-store.js",
+      "moduleKey": "menu_qr",
+      "layer": "frontend",
+      "path": "modules/menu_qr/frontend/js/menu-store.js",
+      "originalSha256": "554d4d2340740a8bf92c6bae4193580d18a32cd9474d9a1f63e4a90231a34bf3",
+      "sha256": "554d4d2340740a8bf92c6bae4193580d18a32cd9474d9a1f63e4a90231a34bf3"
+    },
+    {
+      "legacyPath": "js/order-payment-state.js",
+      "moduleKey": "payments",
+      "layer": "frontend",
+      "path": "modules/payments/frontend/js/order-payment-state.js",
+      "originalSha256": "a6514abfcbf9b5231ef61c3394550547914a460b6cba38781208964a5298ddf0",
+      "sha256": "a6514abfcbf9b5231ef61c3394550547914a460b6cba38781208964a5298ddf0"
+    },
+    {
+      "legacyPath": "js/persian-format.js",
+      "moduleKey": "platform_core",
+      "layer": "frontend",
+      "path": "modules/platform_core/frontend/js/persian-format.js",
+      "originalSha256": "0d26da48eef4cddd27b13a282e8cb8bf9b3e01526a488708835f2c83e58e2152",
+      "sha256": "0d26da48eef4cddd27b13a282e8cb8bf9b3e01526a488708835f2c83e58e2152"
+    },
+    {
+      "legacyPath": "js/promo-slider.js",
+      "moduleKey": "menu_qr",
+      "layer": "frontend",
+      "path": "modules/menu_qr/frontend/js/promo-slider.js",
+      "originalSha256": "f1e5b56f5856d655c5bd1b09313f96158825d7d58139ea206c937b26f6d0979f",
+      "sha256": "f1e5b56f5856d655c5bd1b09313f96158825d7d58139ea206c937b26f6d0979f"
+    },
+    {
+      "legacyPath": "js/pwa-bootstrap.js",
+      "moduleKey": "platform_core",
+      "layer": "frontend",
+      "path": "modules/platform_core/frontend/js/pwa-bootstrap.js",
+      "originalSha256": "06a8d5c741fd22d810e028a2be9fe6ef3ad3d4f8c078bb854cb6db01ec54668b",
+      "sha256": "06a8d5c741fd22d810e028a2be9fe6ef3ad3d4f8c078bb854cb6db01ec54668b"
+    },
+    {
+      "legacyPath": "js/role-panel.js",
+      "moduleKey": "platform_core",
+      "layer": "frontend",
+      "path": "modules/platform_core/frontend/js/role-panel.js",
+      "originalSha256": "d38cc5f36bb306cc775d683b4b6cff51d1fe77dfb9fd5583cfcb0d87888103b3",
+      "sha256": "d38cc5f36bb306cc775d683b4b6cff51d1fe77dfb9fd5583cfcb0d87888103b3"
+    },
+    {
+      "legacyPath": "js/shamsi-core.js",
+      "moduleKey": "platform_core",
+      "layer": "frontend",
+      "path": "modules/platform_core/frontend/js/shamsi-core.js",
+      "originalSha256": "679ff9d37cab4f0372934b7331c552c99305935f2b8d109b248af555d387346d",
+      "sha256": "679ff9d37cab4f0372934b7331c552c99305935f2b8d109b248af555d387346d"
+    },
+    {
+      "legacyPath": "js/shamsi-datepicker.js",
+      "moduleKey": "platform_core",
+      "layer": "frontend",
+      "path": "modules/platform_core/frontend/js/shamsi-datepicker.js",
+      "originalSha256": "3ee964471e63c1b7fce3587aa4e555a2645fb57e5d4e2433316a01a8b7adbefe",
+      "sha256": "3ee964471e63c1b7fce3587aa4e555a2645fb57e5d4e2433316a01a8b7adbefe"
+    },
+    {
+      "legacyPath": "js/shamsi-wheel-picker.js",
+      "moduleKey": "platform_core",
+      "layer": "frontend",
+      "path": "modules/platform_core/frontend/js/shamsi-wheel-picker.js",
+      "originalSha256": "9962ae7746ad2c2803266182d81bf493efc2fe80429bc6495641eac7043e8626",
+      "sha256": "9962ae7746ad2c2803266182d81bf493efc2fe80429bc6495641eac7043e8626"
+    },
+    {
+      "legacyPath": "js/sounds.js",
+      "moduleKey": "platform_core",
+      "layer": "frontend",
+      "path": "modules/platform_core/frontend/js/sounds.js",
+      "originalSha256": "0fe7d58068ad33f999c44eeac10b1cb64fbd5a0044ed6c218a6235f928c9b4a9",
+      "sha256": "0fe7d58068ad33f999c44eeac10b1cb64fbd5a0044ed6c218a6235f928c9b4a9"
+    },
+    {
+      "legacyPath": "js/subcategory-kill-switch.js",
+      "moduleKey": "menu_qr",
+      "layer": "frontend",
+      "path": "modules/menu_qr/frontend/js/subcategory-kill-switch.js",
+      "originalSha256": "223742c470b28df7ad3fc801a6ede2bf4b2df205184ebe86433e8b7a4b0e49b4",
+      "sha256": "223742c470b28df7ad3fc801a6ede2bf4b2df205184ebe86433e8b7a4b0e49b4"
+    },
+    {
+      "legacyPath": "js/table-cart.js",
+      "moduleKey": "menu_qr",
+      "layer": "frontend",
+      "path": "modules/menu_qr/frontend/js/table-cart.js",
+      "originalSha256": "2c4b1b3c08fff6c3edbf0a90e1e8ac1db7d336a0ac9509b1fe9790e65a6e8196",
+      "sha256": "2c4b1b3c08fff6c3edbf0a90e1e8ac1db7d336a0ac9509b1fe9790e65a6e8196"
+    },
+    {
+      "legacyPath": "js/theme.js",
+      "moduleKey": "platform_core",
+      "layer": "frontend",
+      "path": "modules/platform_core/frontend/js/theme.js",
+      "originalSha256": "fc3d7d0dc85e4c0cbbe371aa2a48ee145cb68c8bc21f6a365db24dea1943f70a",
+      "sha256": "fc3d7d0dc85e4c0cbbe371aa2a48ee145cb68c8bc21f6a365db24dea1943f70a"
+    },
+    {
+      "legacyPath": "js/three-scene.js",
+      "moduleKey": "menu_qr",
+      "layer": "frontend",
+      "path": "modules/menu_qr/frontend/js/three-scene.js",
+      "originalSha256": "7b43f98ef9d8798f74ad5c1b7b5d1f13cefd598930b59c937f9287b0f87190dc",
+      "sha256": "7b43f98ef9d8798f74ad5c1b7b5d1f13cefd598930b59c937f9287b0f87190dc"
+    },
+    {
+      "legacyPath": "js/vendor/ScrollTrigger.min.js",
+      "moduleKey": "platform_core",
+      "layer": "frontend",
+      "path": "modules/platform_core/frontend/js/vendor/ScrollTrigger.min.js",
+      "originalSha256": "b0b14d67b55b0c43c756ac0b106cfcb09d0879945f6ead64451065b0672916a2",
+      "sha256": "b0b14d67b55b0c43c756ac0b106cfcb09d0879945f6ead64451065b0672916a2"
+    },
+    {
+      "legacyPath": "js/vendor/SplitText.min.js",
+      "moduleKey": "platform_core",
+      "layer": "frontend",
+      "path": "modules/platform_core/frontend/js/vendor/SplitText.min.js",
+      "originalSha256": "419f7027a5f086a12cb7988736d8fdd3a6ed2200229661de25b6628ca7ced344",
+      "sha256": "419f7027a5f086a12cb7988736d8fdd3a6ed2200229661de25b6628ca7ced344"
+    },
+    {
+      "legacyPath": "js/vendor/gsap.min.js",
+      "moduleKey": "platform_core",
+      "layer": "frontend",
+      "path": "modules/platform_core/frontend/js/vendor/gsap.min.js",
+      "originalSha256": "92bb9a96476f983d212a2bc4f54c889039c1696dd4461d40a736860938570fbb",
+      "sha256": "92bb9a96476f983d212a2bc4f54c889039c1696dd4461d40a736860938570fbb"
+    },
+    {
+      "legacyPath": "js/vendor/jquery-3.5.1.min.js",
+      "moduleKey": "platform_core",
+      "layer": "frontend",
+      "path": "modules/platform_core/frontend/js/vendor/jquery-3.5.1.min.js",
+      "originalSha256": "f7f6a5894f1d19ddad6fa392b2ece2c5e578cbf7da4ea805b6885eb6985b6e3d",
+      "sha256": "f7f6a5894f1d19ddad6fa392b2ece2c5e578cbf7da4ea805b6885eb6985b6e3d"
+    },
+    {
+      "legacyPath": "js/vendor/lenis.mjs",
+      "moduleKey": "platform_core",
+      "layer": "frontend",
+      "path": "modules/platform_core/frontend/js/vendor/lenis.mjs",
+      "originalSha256": "630aa9889dd07bd0e477585ffd3c627934783a3105e5813668b2a5630062fcff",
+      "sha256": "630aa9889dd07bd0e477585ffd3c627934783a3105e5813668b2a5630062fcff"
+    },
+    {
+      "legacyPath": "js/vendor/qrcode.min.js",
+      "moduleKey": "platform_core",
+      "layer": "frontend",
+      "path": "modules/platform_core/frontend/js/vendor/qrcode.min.js",
+      "originalSha256": "b054bbeb191ad4c130b53f534e2ebd18b805f903d8fb4b7f2b4ea5b25c27b5d6",
+      "sha256": "b054bbeb191ad4c130b53f534e2ebd18b805f903d8fb4b7f2b4ea5b25c27b5d6"
+    },
+    {
+      "legacyPath": "js/vendor/three/addons/postprocessing/EffectComposer.js",
+      "moduleKey": "platform_core",
+      "layer": "frontend",
+      "path": "modules/platform_core/frontend/js/vendor/three/addons/postprocessing/EffectComposer.js",
+      "originalSha256": "d234e578618fa816955ebdc059c049c577e203e650e33cf22bde3f232c29e669",
+      "sha256": "d234e578618fa816955ebdc059c049c577e203e650e33cf22bde3f232c29e669"
+    },
+    {
+      "legacyPath": "js/vendor/three/addons/postprocessing/MaskPass.js",
+      "moduleKey": "platform_core",
+      "layer": "frontend",
+      "path": "modules/platform_core/frontend/js/vendor/three/addons/postprocessing/MaskPass.js",
+      "originalSha256": "328cf7db0da5d9be83ffe39d54b01d5ac1fddf108cc98182ddbb056f5c8b537f",
+      "sha256": "328cf7db0da5d9be83ffe39d54b01d5ac1fddf108cc98182ddbb056f5c8b537f"
+    },
+    {
+      "legacyPath": "js/vendor/three/addons/postprocessing/OutputPass.js",
+      "moduleKey": "platform_core",
+      "layer": "frontend",
+      "path": "modules/platform_core/frontend/js/vendor/three/addons/postprocessing/OutputPass.js",
+      "originalSha256": "13817fc7a87f662d29d2c5e00f44d3a4588c9afac4a372de0cacb0e44e368ffd",
+      "sha256": "13817fc7a87f662d29d2c5e00f44d3a4588c9afac4a372de0cacb0e44e368ffd"
+    },
+    {
+      "legacyPath": "js/vendor/three/addons/postprocessing/Pass.js",
+      "moduleKey": "platform_core",
+      "layer": "frontend",
+      "path": "modules/platform_core/frontend/js/vendor/three/addons/postprocessing/Pass.js",
+      "originalSha256": "b3c6128340eaa37e40a6a2f1b738e894c855239417d50959759b34a2b5e89f92",
+      "sha256": "b3c6128340eaa37e40a6a2f1b738e894c855239417d50959759b34a2b5e89f92"
+    },
+    {
+      "legacyPath": "js/vendor/three/addons/postprocessing/RenderPass.js",
+      "moduleKey": "platform_core",
+      "layer": "frontend",
+      "path": "modules/platform_core/frontend/js/vendor/three/addons/postprocessing/RenderPass.js",
+      "originalSha256": "1c90c085312871c4bcdccfcf519499c6276dd503363fcf7cb7f703add45cf4a2",
+      "sha256": "1c90c085312871c4bcdccfcf519499c6276dd503363fcf7cb7f703add45cf4a2"
+    },
+    {
+      "legacyPath": "js/vendor/three/addons/postprocessing/SMAAPass.js",
+      "moduleKey": "platform_core",
+      "layer": "frontend",
+      "path": "modules/platform_core/frontend/js/vendor/three/addons/postprocessing/SMAAPass.js",
+      "originalSha256": "f3508e3e17f40c1358921b5c7eb3ab60460d97b06fdadf6b0d40b52d3842c44a",
+      "sha256": "f3508e3e17f40c1358921b5c7eb3ab60460d97b06fdadf6b0d40b52d3842c44a"
+    },
+    {
+      "legacyPath": "js/vendor/three/addons/postprocessing/ShaderPass.js",
+      "moduleKey": "platform_core",
+      "layer": "frontend",
+      "path": "modules/platform_core/frontend/js/vendor/three/addons/postprocessing/ShaderPass.js",
+      "originalSha256": "3b28a1ee27e0eb96c0eab137a1f442ccf127a926904eced2d51e125ec44af781",
+      "sha256": "3b28a1ee27e0eb96c0eab137a1f442ccf127a926904eced2d51e125ec44af781"
+    },
+    {
+      "legacyPath": "js/vendor/three/addons/shaders/CopyShader.js",
+      "moduleKey": "platform_core",
+      "layer": "frontend",
+      "path": "modules/platform_core/frontend/js/vendor/three/addons/shaders/CopyShader.js",
+      "originalSha256": "4e3346db194db56a596cd074e9bdb39fb5eb52040c333e0d29dc4eb1324d3b1d",
+      "sha256": "4e3346db194db56a596cd074e9bdb39fb5eb52040c333e0d29dc4eb1324d3b1d"
+    },
+    {
+      "legacyPath": "js/vendor/three/addons/shaders/OutputShader.js",
+      "moduleKey": "platform_core",
+      "layer": "frontend",
+      "path": "modules/platform_core/frontend/js/vendor/three/addons/shaders/OutputShader.js",
+      "originalSha256": "53a52e430c27bc36ceaab8ae90a2b4af7b02672d7ee4b29d6ba3c28e09c92c2a",
+      "sha256": "53a52e430c27bc36ceaab8ae90a2b4af7b02672d7ee4b29d6ba3c28e09c92c2a"
+    },
+    {
+      "legacyPath": "js/vendor/three/addons/shaders/SMAAShader.js",
+      "moduleKey": "platform_core",
+      "layer": "frontend",
+      "path": "modules/platform_core/frontend/js/vendor/three/addons/shaders/SMAAShader.js",
+      "originalSha256": "3c7e942a25cb09dd431e395e6e91904715a834b2a6e62ec0b9b77c2f8655c369",
+      "sha256": "3c7e942a25cb09dd431e395e6e91904715a834b2a6e62ec0b9b77c2f8655c369"
+    },
+    {
+      "legacyPath": "js/vendor/three/three.module.js",
+      "moduleKey": "platform_core",
+      "layer": "frontend",
+      "path": "modules/platform_core/frontend/js/vendor/three/three.module.js",
+      "originalSha256": "e7348ab8c7bf7a41f7afc5fe503c20a0ed090d9536aacf1ee975d7aaee24d394",
+      "sha256": "e7348ab8c7bf7a41f7afc5fe503c20a0ed090d9536aacf1ee975d7aaee24d394"
+    },
+    {
+      "legacyPath": "js/vendor/three/westo-postprocessing.bundle.mjs",
+      "moduleKey": "menu_qr",
+      "layer": "frontend",
+      "path": "modules/menu_qr/frontend/js/vendor/three/westo-postprocessing.bundle.mjs",
+      "originalSha256": "c03ccaf9b168449ce54b3feccbf6cd468a4cf38fc1caff835a38e6fcbb1120de",
+      "sha256": "c03ccaf9b168449ce54b3feccbf6cd468a4cf38fc1caff835a38e6fcbb1120de"
+    },
+    {
+      "legacyPath": "js/vendor/webflow.9a82b613.50fbdd53e3da9960.js",
+      "moduleKey": "platform_core",
+      "layer": "frontend",
+      "path": "modules/platform_core/frontend/js/vendor/webflow.9a82b613.50fbdd53e3da9960.js",
+      "originalSha256": "9479e140c6916d047aaf9d79d52774491a310b8c83f49c22edadbdb9ba5bf1bc",
+      "sha256": "9479e140c6916d047aaf9d79d52774491a310b8c83f49c22edadbdb9ba5bf1bc"
+    },
+    {
+      "legacyPath": "js/vendor/webflow.achunk.22b66e874d42861f.js",
+      "moduleKey": "platform_core",
+      "layer": "frontend",
+      "path": "modules/platform_core/frontend/js/vendor/webflow.achunk.22b66e874d42861f.js",
+      "originalSha256": "7ca0ff5643a44cc9e6064ac82a22de24c906962a533224000861d68d0a59b451",
+      "sha256": "7ca0ff5643a44cc9e6064ac82a22de24c906962a533224000861d68d0a59b451"
+    },
+    {
+      "legacyPath": "js/vendor/webflow.achunk.2aaad8b9b407aaec.js",
+      "moduleKey": "platform_core",
+      "layer": "frontend",
+      "path": "modules/platform_core/frontend/js/vendor/webflow.achunk.2aaad8b9b407aaec.js",
+      "originalSha256": "3c665380a8ec94e99c5f4b50680adbb05315ca4b2aaf43de9644062dc29bc093",
+      "sha256": "3c665380a8ec94e99c5f4b50680adbb05315ca4b2aaf43de9644062dc29bc093"
+    },
+    {
+      "legacyPath": "js/vendor/webflow.achunk.36b8fb49256177c8.js",
+      "moduleKey": "platform_core",
+      "layer": "frontend",
+      "path": "modules/platform_core/frontend/js/vendor/webflow.achunk.36b8fb49256177c8.js",
+      "originalSha256": "8b7d0de9f3df9103d70ed000c17b348240623ac4e4053d56fa0d5cfd8d74d79d",
+      "sha256": "8b7d0de9f3df9103d70ed000c17b348240623ac4e4053d56fa0d5cfd8d74d79d"
+    },
+    {
+      "legacyPath": "js/vendor/webflow.achunk.496d56dd8c063ec0.js",
+      "moduleKey": "platform_core",
+      "layer": "frontend",
+      "path": "modules/platform_core/frontend/js/vendor/webflow.achunk.496d56dd8c063ec0.js",
+      "originalSha256": "61f96d33eb412c13b56791c76ead48cfee4777b780be49e0c13d10ac2774dd3b",
+      "sha256": "61f96d33eb412c13b56791c76ead48cfee4777b780be49e0c13d10ac2774dd3b"
+    },
+    {
+      "legacyPath": "js/vendor/webflow.achunk.58f76f2901951073.js",
+      "moduleKey": "platform_core",
+      "layer": "frontend",
+      "path": "modules/platform_core/frontend/js/vendor/webflow.achunk.58f76f2901951073.js",
+      "originalSha256": "9e21768e457bf6912c256e1051dfb523d136ffa9d2cc473cf1f68f748a6448cd",
+      "sha256": "9e21768e457bf6912c256e1051dfb523d136ffa9d2cc473cf1f68f748a6448cd"
+    },
+    {
+      "legacyPath": "js/vendor/webflow.achunk.5959ac50b3c857f1.js",
+      "moduleKey": "platform_core",
+      "layer": "frontend",
+      "path": "modules/platform_core/frontend/js/vendor/webflow.achunk.5959ac50b3c857f1.js",
+      "originalSha256": "188fda5fe1c48401a0e1a9da355668fe960781435153380a08604dfe73f399da",
+      "sha256": "188fda5fe1c48401a0e1a9da355668fe960781435153380a08604dfe73f399da"
+    },
+    {
+      "legacyPath": "js/vendor/webflow.achunk.64873797e35e968c.js",
+      "moduleKey": "platform_core",
+      "layer": "frontend",
+      "path": "modules/platform_core/frontend/js/vendor/webflow.achunk.64873797e35e968c.js",
+      "originalSha256": "75302eb25693db697503c777280f40abc1d74ea83d441ab6c0ab073572399c7b",
+      "sha256": "75302eb25693db697503c777280f40abc1d74ea83d441ab6c0ab073572399c7b"
+    },
+    {
+      "legacyPath": "js/vendor/webflow.achunk.65add74e46fe5245.js",
+      "moduleKey": "platform_core",
+      "layer": "frontend",
+      "path": "modules/platform_core/frontend/js/vendor/webflow.achunk.65add74e46fe5245.js",
+      "originalSha256": "b7e97fd075138494c3b1dd2d042317b5f32dbd68d6a444bb195b90a11aff64f1",
+      "sha256": "b7e97fd075138494c3b1dd2d042317b5f32dbd68d6a444bb195b90a11aff64f1"
+    },
+    {
+      "legacyPath": "js/vendor/webflow.achunk.ad6dcd2fc75b294c.js",
+      "moduleKey": "platform_core",
+      "layer": "frontend",
+      "path": "modules/platform_core/frontend/js/vendor/webflow.achunk.ad6dcd2fc75b294c.js",
+      "originalSha256": "08f4ec04403306a8551208e13a438a3e32694815c398e1fb71d1e5182935dee3",
+      "sha256": "08f4ec04403306a8551208e13a438a3e32694815c398e1fb71d1e5182935dee3"
+    },
+    {
+      "legacyPath": "js/vendor/webflow.achunk.ba16934fe1414a74.js",
+      "moduleKey": "platform_core",
+      "layer": "frontend",
+      "path": "modules/platform_core/frontend/js/vendor/webflow.achunk.ba16934fe1414a74.js",
+      "originalSha256": "14ba5469df8067887904d3af5977ccd140a5fc1a5fd51b13665081c6714ce681",
+      "sha256": "14ba5469df8067887904d3af5977ccd140a5fc1a5fd51b13665081c6714ce681"
+    },
+    {
+      "legacyPath": "js/vendor/webflow.achunk.db80639074bc0296.js",
+      "moduleKey": "platform_core",
+      "layer": "frontend",
+      "path": "modules/platform_core/frontend/js/vendor/webflow.achunk.db80639074bc0296.js",
+      "originalSha256": "0e1e5e2caf9990969a70b433524e579a793b5dd41ee9af05866b30760afe2c63",
+      "sha256": "0e1e5e2caf9990969a70b433524e579a793b5dd41ee9af05866b30760afe2c63"
+    },
+    {
+      "legacyPath": "js/vendor/webflow.achunk.e8e7e6855b442808.js",
+      "moduleKey": "platform_core",
+      "layer": "frontend",
+      "path": "modules/platform_core/frontend/js/vendor/webflow.achunk.e8e7e6855b442808.js",
+      "originalSha256": "3aba51bd181a572879d668d7d1d70350f41996f9e0223d9dce7f336a7ad3b84a",
+      "sha256": "3aba51bd181a572879d668d7d1d70350f41996f9e0223d9dce7f336a7ad3b84a"
+    },
+    {
+      "legacyPath": "js/vendor/webflow.d24778d3.ca47734eea7cf588.js",
+      "moduleKey": "platform_core",
+      "layer": "frontend",
+      "path": "modules/platform_core/frontend/js/vendor/webflow.d24778d3.ca47734eea7cf588.js",
+      "originalSha256": "5716bd98e949f65febb1660deb438e9a80cf790f36da9ae789386368b2c4e2e3",
+      "sha256": "5716bd98e949f65febb1660deb438e9a80cf790f36da9ae789386368b2c4e2e3"
+    },
+    {
+      "legacyPath": "js/vendor/westo-liquid-shader.bundle.mjs",
+      "moduleKey": "menu_qr",
+      "layer": "frontend",
+      "path": "modules/menu_qr/frontend/js/vendor/westo-liquid-shader.bundle.mjs",
+      "originalSha256": "115489d6718b23a333a3a310e700e65d86062a0aefee8b730f6d8319f7265ec1",
+      "sha256": "115489d6718b23a333a3a310e700e65d86062a0aefee8b730f6d8319f7265ec1"
+    },
+    {
+      "legacyPath": "js/westo-app.smart.js",
+      "moduleKey": "menu_qr",
+      "layer": "frontend",
+      "path": "modules/menu_qr/frontend/js/westo-app.smart.js",
+      "originalSha256": "481e4246264a0c6828a90c102be1f47766aa6ec74bfb0ddeafd19d6750ba7126",
+      "sha256": "481e4246264a0c6828a90c102be1f47766aa6ec74bfb0ddeafd19d6750ba7126"
+    },
+    {
+      "legacyPath": "js/westo-background.smart.js",
+      "moduleKey": "menu_qr",
+      "layer": "frontend",
+      "path": "modules/menu_qr/frontend/js/westo-background.smart.js",
+      "originalSha256": "97d1f46ce23fb905c47e785e7242ca2678d8ad5d03cbdba2a82b52fb8078982a",
+      "sha256": "97d1f46ce23fb905c47e785e7242ca2678d8ad5d03cbdba2a82b52fb8078982a"
+    },
+    {
+      "legacyPath": "js/westo-entrance.js",
+      "moduleKey": "menu_qr",
+      "layer": "frontend",
+      "path": "modules/menu_qr/frontend/js/westo-entrance.js",
+      "originalSha256": "1374234891211e8eb9372f6ecc80e794512b0ce70fe1382fc9b8ef616d5a6162",
+      "sha256": "1374234891211e8eb9372f6ecc80e794512b0ce70fe1382fc9b8ef616d5a6162"
+    },
+    {
+      "legacyPath": "js/westo-foundation.smart.js",
+      "moduleKey": "menu_qr",
+      "layer": "frontend",
+      "path": "modules/menu_qr/frontend/js/westo-foundation.smart.js",
+      "originalSha256": "7f84930b359af923d81ca03a5d253869b38cfb8da8156347282dd7cd62e91aa7",
+      "sha256": "7f84930b359af923d81ca03a5d253869b38cfb8da8156347282dd7cd62e91aa7"
+    },
+    {
+      "legacyPath": "js/westo-hero.smart.js",
+      "moduleKey": "menu_qr",
+      "layer": "frontend",
+      "path": "modules/menu_qr/frontend/js/westo-hero.smart.js",
+      "originalSha256": "60c4c6e244d70ded3d001080bc9f4b4e04bd168076bb0bb0865d58ec651574f6",
+      "sha256": "60c4c6e244d70ded3d001080bc9f4b4e04bd168076bb0bb0865d58ec651574f6"
+    },
+    {
+      "legacyPath": "js/westo-liquid-rail.js",
+      "moduleKey": "menu_qr",
+      "layer": "frontend",
+      "path": "modules/menu_qr/frontend/js/westo-liquid-rail.js",
+      "originalSha256": "bbfff4be300e551d51efab933cc532225acfc63b28b0a60c54cea4913ad19c81",
+      "sha256": "bbfff4be300e551d51efab933cc532225acfc63b28b0a60c54cea4913ad19c81"
+    },
+    {
+      "legacyPath": "js/westo-menu.smart.js",
+      "moduleKey": "menu_qr",
+      "layer": "frontend",
+      "path": "modules/menu_qr/frontend/js/westo-menu.smart.js",
+      "originalSha256": "1f2ec4b033d393961f6a3a08901f26a29cb81ad860aa90078ff93d2cc9dfe52f",
+      "sha256": "1f2ec4b033d393961f6a3a08901f26a29cb81ad860aa90078ff93d2cc9dfe52f"
+    },
+    {
+      "legacyPath": "js/westo-motion.smart.js",
+      "moduleKey": "menu_qr",
+      "layer": "frontend",
+      "path": "modules/menu_qr/frontend/js/westo-motion.smart.js",
+      "originalSha256": "9a52435034429d75a2f7a997d7a2fdbef35e64e58dc5f993d66448c913993a73",
+      "sha256": "9a52435034429d75a2f7a997d7a2fdbef35e64e58dc5f993d66448c913993a73"
+    },
+    {
+      "legacyPath": "js/westo-production-v11.js",
+      "moduleKey": "menu_qr",
+      "layer": "frontend",
+      "path": "modules/menu_qr/frontend/js/westo-production-v11.js",
+      "originalSha256": "00e83357a251c682b24e639165f3f8c4078750d2ce82d1952b6bca26be302480",
+      "sha256": "00e83357a251c682b24e639165f3f8c4078750d2ce82d1952b6bca26be302480"
+    },
+    {
+      "legacyPath": "js/westo-production-v12.js",
+      "moduleKey": "menu_qr",
+      "layer": "frontend",
+      "path": "modules/menu_qr/frontend/js/westo-production-v12.js",
+      "originalSha256": "fa13494cc829a818247ba034d3a4d21a7e364ce111304e04161c17adbe823835",
+      "sha256": "fa13494cc829a818247ba034d3a4d21a7e364ce111304e04161c17adbe823835"
+    },
+    {
+      "legacyPath": "js/westo-smart-loader.js",
+      "moduleKey": "menu_qr",
+      "layer": "frontend",
+      "path": "modules/menu_qr/frontend/js/westo-smart-loader.js",
+      "originalSha256": "8223ddcdc4e034304d2e9ffdd906f916c01ed16666901eddbb71f5cd2dfb49c0",
+      "sha256": "8223ddcdc4e034304d2e9ffdd906f916c01ed16666901eddbb71f5cd2dfb49c0"
+    },
+    {
+      "legacyPath": "js/westo-v14.3-ultra-fine.js",
+      "moduleKey": "menu_qr",
+      "layer": "frontend",
+      "path": "modules/menu_qr/frontend/js/westo-v14.3-ultra-fine.js",
+      "originalSha256": "bbacc525d15ef52db22d202728892bb39f9499fc4059541c73a881f35306779e",
+      "sha256": "bbacc525d15ef52db22d202728892bb39f9499fc4059541c73a881f35306779e"
+    },
+    {
+      "legacyPath": "login.html",
+      "moduleKey": "platform_core",
+      "layer": "frontend",
+      "path": "modules/platform_core/frontend/login.html",
+      "originalSha256": "74eedb2af2e7cffc2df02c0b6f11f49a8473bcd93897235bc4d86559863c9f76",
+      "sha256": "74eedb2af2e7cffc2df02c0b6f11f49a8473bcd93897235bc4d86559863c9f76"
+    },
+    {
+      "legacyPath": "mentions-legales.html",
+      "moduleKey": "website_brand",
+      "layer": "frontend",
+      "path": "modules/website_brand/frontend/mentions-legales.html",
+      "originalSha256": "c15006481be7e22851cb579e408534632c3e68199007a396a75adca5580ef6c6",
+      "sha256": "c15006481be7e22851cb579e408534632c3e68199007a396a75adca5580ef6c6"
+    },
+    {
+      "legacyPath": "menu-print.html",
+      "moduleKey": "menu_qr",
+      "layer": "frontend",
+      "path": "modules/menu_qr/frontend/menu-print.html",
+      "originalSha256": "58b9479f0efb638e014f15d226f48c613cd14bcafcfd7c828ae40bb836e35512",
+      "sha256": "58b9479f0efb638e014f15d226f48c613cd14bcafcfd7c828ae40bb836e35512"
+    },
+    {
+      "legacyPath": "menu.html",
+      "moduleKey": "menu_qr",
+      "layer": "frontend",
+      "path": "modules/menu_qr/frontend/menu.html",
+      "originalSha256": "8a6e88492fd09111e60e2eb71d4e13b8caad8e3f8a094ae0d14d8f90fa4e2c1d",
+      "sha256": "8a6e88492fd09111e60e2eb71d4e13b8caad8e3f8a094ae0d14d8f90fa4e2c1d"
+    },
+    {
+      "legacyPath": "order.html",
+      "moduleKey": "menu_qr",
+      "layer": "frontend",
+      "path": "modules/menu_qr/frontend/order.html",
+      "originalSha256": "a24d903b92d9a05920c42ea9a2b2f557a374d8f437cbf12813a676aadd1e83cd",
+      "sha256": "a24d903b92d9a05920c42ea9a2b2f557a374d8f437cbf12813a676aadd1e83cd"
+    },
+    {
+      "legacyPath": "politique-de-confidentialite.html",
+      "moduleKey": "website_brand",
+      "layer": "frontend",
+      "path": "modules/website_brand/frontend/politique-de-confidentialite.html",
+      "originalSha256": "d413be076e8506303044b35b33c5a9b78270267eaa009fd4a4c23892eca14d62",
+      "sha256": "d413be076e8506303044b35b33c5a9b78270267eaa009fd4a4c23892eca14d62"
+    },
+    {
+      "legacyPath": "profile.html",
+      "moduleKey": "crm",
+      "layer": "frontend",
+      "path": "modules/crm/frontend/profile.html",
+      "originalSha256": "c12aafab8d3115c715198618f5573a0112303dc7dbdfbc74fe35badcd1a14561",
+      "sha256": "c12aafab8d3115c715198618f5573a0112303dc7dbdfbc74fe35badcd1a14561"
+    },
+    {
+      "legacyPath": "reserve.html",
+      "moduleKey": "reservations",
+      "layer": "frontend",
+      "path": "modules/reservations/frontend/reserve.html",
+      "originalSha256": "a0783a8a91cf7f91fcf56d272d7351676310fbcdbadf6674e1a0f73a3b703117",
+      "sha256": "a0783a8a91cf7f91fcf56d272d7351676310fbcdbadf6674e1a0f73a3b703117"
+    },
+    {
+      "legacyPath": "role-panel.html",
+      "moduleKey": "platform_core",
+      "layer": "frontend",
+      "path": "modules/platform_core/frontend/role-panel.html",
+      "originalSha256": "2384cb1645eec6bea7108bc364c731202196822b84c1452374dee255e76383cf",
+      "sha256": "2384cb1645eec6bea7108bc364c731202196822b84c1452374dee255e76383cf"
+    },
+    {
+      "legacyPath": "server/accounting-engine.js",
+      "moduleKey": "accounting",
+      "layer": "server",
+      "path": "modules/accounting/server/accounting-engine.js",
+      "originalSha256": "0879b6489da0d5285687cd3493e49ff97c366f3c3fde33a05f29bd877c21bab6",
+      "sha256": "c1ac727859c465dfe71c6bb9265831ffa9c1dd778f38157205085d0981c092bd"
+    },
+    {
+      "legacyPath": "server/accounting-routes.js",
+      "moduleKey": "accounting",
+      "layer": "server",
+      "path": "modules/accounting/server/accounting-routes.js",
+      "originalSha256": "aa213aa2922866d1867ccbcd5c6e2ec693ee1306de110f353ab4a9fb58721d8d",
+      "sha256": "2b2d69a49adf8cc99d87cd7d606b0379ec696b331a02288813e5e6ff2f7951d8"
+    },
+    {
+      "legacyPath": "server/admin-v2.js",
+      "moduleKey": "platform_core",
+      "layer": "server",
+      "path": "modules/platform_core/server/admin-v2.js",
+      "originalSha256": "ec96b74457dd2911d80c6d500a29f0fa3bb3fe7211de17603cc14908f4f9357c",
+      "sha256": "bdec9c1061ea2ed83cee43db51cc8f958fde2520fd7ba2d5609cf423a3fb870c"
+    },
+    {
+      "legacyPath": "server/audit-tenant-scope.js",
+      "moduleKey": "platform_core",
+      "layer": "server",
+      "path": "modules/platform_core/server/audit-tenant-scope.js",
+      "originalSha256": "c88b40389ae752adb6bafa1d06d019db3d6451dfc23d0c5e6eb2b37097bde14b",
+      "sha256": "c88b40389ae752adb6bafa1d06d019db3d6451dfc23d0c5e6eb2b37097bde14b"
+    },
+    {
+      "legacyPath": "server/checkout-quote.js",
+      "moduleKey": "menu_qr",
+      "layer": "server",
+      "path": "modules/menu_qr/server/checkout-quote.js",
+      "originalSha256": "70dffe8222baf50a9fd838dae9a9e173491d2d3a408e19b202ba5b0e4be97584",
+      "sha256": "70dffe8222baf50a9fd838dae9a9e173491d2d3a408e19b202ba5b0e4be97584"
+    },
+    {
+      "legacyPath": "server/checkout-tax.js",
+      "moduleKey": "accounting",
+      "layer": "server",
+      "path": "modules/accounting/server/checkout-tax.js",
+      "originalSha256": "f73719782b6cba34a603261b842d1b3a844e331f3c0555c4ccdcd953dc953210",
+      "sha256": "93cacbcd35af1c5b9175607010815ef9307aaf67926a338da7e2b4e5021ce28b"
+    },
+    {
+      "legacyPath": "server/command-center.js",
+      "moduleKey": "platform_core",
+      "layer": "server",
+      "path": "modules/platform_core/server/command-center.js",
+      "originalSha256": "faafbf0210f1ad00114c93831ede6e9811d0bfd26b8d17ba05bc72bffe5cf164",
+      "sha256": "7f5f83ac758f0f3ea6a5b960d5521a541bb84cf7744af2ed3b913e1672d472f9"
+    },
+    {
+      "legacyPath": "server/control-plane-bridge-auth.js",
+      "moduleKey": "platform_core",
+      "layer": "server",
+      "path": "modules/platform_core/server/control-plane-bridge-auth.js",
+      "originalSha256": "58947a6c13e8ac65c2beb4886493b22107d5620728b5d198a6a1baad88a7901d",
+      "sha256": "58947a6c13e8ac65c2beb4886493b22107d5620728b5d198a6a1baad88a7901d"
+    },
+    {
+      "legacyPath": "server/customer-club.js",
+      "moduleKey": "crm",
+      "layer": "server",
+      "path": "modules/crm/server/customer-club.js",
+      "originalSha256": "91afb960b0ffa8d7d356f7a43146e095d594b37248a88b6ac246e426e1973c12",
+      "sha256": "46901de855eaf0746df8d8db441e9945bdb7d8ce5d9e48c08df715ca30979dea"
+    },
+    {
+      "legacyPath": "server/customer-order-progress.js",
+      "moduleKey": "menu_qr",
+      "layer": "server",
+      "path": "modules/menu_qr/server/customer-order-progress.js",
+      "originalSha256": "7e04bac79caf3fcc4cf7e06ed68461b11b7666151c7c69b44a5df5ead483c926",
+      "sha256": "7e04bac79caf3fcc4cf7e06ed68461b11b7666151c7c69b44a5df5ead483c926"
+    },
+    {
+      "legacyPath": "server/finance-postgres-repository.js",
+      "moduleKey": "accounting",
+      "layer": "server",
+      "path": "modules/accounting/server/finance-postgres-repository.js",
+      "originalSha256": "703fd1a2c2c69efb6816a626fe0c4eed6736b069b0feb0aff7ea3c13e9945383",
+      "sha256": "58fc323c3f9ac73f17183fe3637a6f269f188e32733e1578f6e2f5a6ce151b9e"
+    },
+    {
+      "legacyPath": "server/finance-v2.js",
+      "moduleKey": "accounting",
+      "layer": "server",
+      "path": "modules/accounting/server/finance-v2.js",
+      "originalSha256": "d73aa477744403ef88a912f02493979eaf1493e8ea626f43943cbefaacd00100",
+      "sha256": "7331eeefe2f00ca11b4cb2c1208d714cd6963d3222944afd3bb2e7b413b80560"
+    },
+    {
+      "legacyPath": "server/finance/accrual-engine.js",
+      "moduleKey": "accounting",
+      "layer": "server",
+      "path": "modules/accounting/server/finance/accrual-engine.js",
+      "originalSha256": "371749ae510f419fa278a6f3443641ec28652dc852d6784575a60b5f8e4d0e75",
+      "sha256": "8267d4a1180448cba522d96af370aac57551fad59e2ad5abeb61b100ccb057fe"
+    },
+    {
+      "legacyPath": "server/finance/ai-engine.js",
+      "moduleKey": "analytics",
+      "layer": "server",
+      "path": "modules/analytics/server/finance/ai-engine.js",
+      "originalSha256": "e2b7aded202edf57558632ea89cd37fff5655fc6ad18e581f7ac5f19866c90b6",
+      "sha256": "7bc3a2abb4d6b755f2b2d11f420b58d5ea4dd2800309f3356f6c8add4cbd1bc0"
+    },
+    {
+      "legacyPath": "server/finance/approval-engine.js",
+      "moduleKey": "accounting",
+      "layer": "server",
+      "path": "modules/accounting/server/finance/approval-engine.js",
+      "originalSha256": "7acde16e3bf658819451602041d296a04a03142718e9901d244df909f323db3e",
+      "sha256": "1e24ed5d9e08ddfd7bb99330a6c325e0a663d4ff3a04a9b725a07f9667285446"
+    },
+    {
+      "legacyPath": "server/finance/asset-engine.js",
+      "moduleKey": "accounting",
+      "layer": "server",
+      "path": "modules/accounting/server/finance/asset-engine.js",
+      "originalSha256": "af00445e8d4c7c78482836ae9d03eb8dd22971ed4313d01471ebc77b2fdf4532",
+      "sha256": "cd4ac09288fb57cd0d0d12c63ddf0cdaf3fdabf86e406574a16a183982ffd15d"
+    },
+    {
+      "legacyPath": "server/finance/audit-engine.js",
+      "moduleKey": "platform_core",
+      "layer": "server",
+      "path": "modules/platform_core/server/finance/audit-engine.js",
+      "originalSha256": "d334644869c16b608c632f4eea1d6f7158ad6c4d02d4f23ab08f42850fdd81c5",
+      "sha256": "87a2fefa23b47ca02dfa4ab958962c3f29c20e41fcf1f66c2882bd1450829861"
+    },
+    {
+      "legacyPath": "server/finance/break-even-defaults.js",
+      "moduleKey": "analytics",
+      "layer": "server",
+      "path": "modules/analytics/server/finance/break-even-defaults.js",
+      "originalSha256": "38352de368d22743f9633600fcbf0bf26f655258773fd9c3259d8154caed8135",
+      "sha256": "38352de368d22743f9633600fcbf0bf26f655258773fd9c3259d8154caed8135"
+    },
+    {
+      "legacyPath": "server/finance/break-even-engine.js",
+      "moduleKey": "analytics",
+      "layer": "server",
+      "path": "modules/analytics/server/finance/break-even-engine.js",
+      "originalSha256": "9869622dd60bc1c23fac7cbd88c9235142e08f0744d71d54e451645a7d535ff4",
+      "sha256": "9869622dd60bc1c23fac7cbd88c9235142e08f0744d71d54e451645a7d535ff4"
+    },
+    {
+      "legacyPath": "server/finance/campaigns-engine.js",
+      "moduleKey": "crm",
+      "layer": "server",
+      "path": "modules/crm/server/finance/campaigns-engine.js",
+      "originalSha256": "74f6bc3220216e2733f6924f44557e3b52578baa42c22ea1d62095821971f014",
+      "sha256": "d7202355218ad73d7848cc2d2d527d6ce41be9d03c815bfe88015cc5e33510bf"
+    },
+    {
+      "legacyPath": "server/finance/club-program.js",
+      "moduleKey": "crm",
+      "layer": "server",
+      "path": "modules/crm/server/finance/club-program.js",
+      "originalSha256": "7acde853e7c1ce3e4668c6f65ccfa3db4f416abada04ef63c117cf88ee45e635",
+      "sha256": "c9a1a7abe51c704254a97e3bb6622cbcd966ec5405625a3d448610a48bcd1510"
+    },
+    {
+      "legacyPath": "server/finance/consolidation-engine.js",
+      "moduleKey": "multi_branch",
+      "layer": "server",
+      "path": "modules/multi_branch/server/finance/consolidation-engine.js",
+      "originalSha256": "e76c0d3111168b4e26b732216af2f5f1c00d24f284c7efc7cee4b07b62d1d58c",
+      "sha256": "bc316474f3ea7baa378e9dc4cff96e23d5c1f7eaad26e75e318bf8c5ed3eda30"
+    },
+    {
+      "legacyPath": "server/finance/cutover-runbook.js",
+      "moduleKey": "accounting",
+      "layer": "server",
+      "path": "modules/accounting/server/finance/cutover-runbook.js",
+      "originalSha256": "e10102f7c26b0bff61ae2127b1739674eebfc3a15b3effa4cb6383a4367b9d80",
+      "sha256": "e10102f7c26b0bff61ae2127b1739674eebfc3a15b3effa4cb6383a4367b9d80"
+    },
+    {
+      "legacyPath": "server/finance/domain-contracts.js",
+      "moduleKey": "platform_core",
+      "layer": "server",
+      "path": "modules/platform_core/server/finance/domain-contracts.js",
+      "originalSha256": "b347dfb90888489bbff70daf1502a5ff0a9542a362819e33201a9d8650c0a255",
+      "sha256": "e48ebd371653d8d46605f1c47cac9118a059969d98d96f0113690bb30692d3f9"
+    },
+    {
+      "legacyPath": "server/finance/fnb-cost-optimizer.js",
+      "moduleKey": "analytics",
+      "layer": "server",
+      "path": "modules/analytics/server/finance/fnb-cost-optimizer.js",
+      "originalSha256": "fc11eec3961b2cad196733f5c39eb7773559998da7051b46e91d9d507a3b82b5",
+      "sha256": "3c98280ecc87f5288c015e9f992a5a9800028222f1f8e99737341539a0b15121"
+    },
+    {
+      "legacyPath": "server/finance/inventory-engine.js",
+      "moduleKey": "inventory",
+      "layer": "server",
+      "path": "modules/inventory/server/finance/inventory-engine.js",
+      "originalSha256": "304138fc213b9ae809ee6bd88ad3cd34742efb172a88a6ef8260240e94a5d09b",
+      "sha256": "99e7fa713c92a1306c0919b378bbe691eaa57e48edd75162da955dd43bd9917e"
+    },
+    {
+      "legacyPath": "server/finance/inventory-operations.js",
+      "moduleKey": "inventory",
+      "layer": "server",
+      "path": "modules/inventory/server/finance/inventory-operations.js",
+      "originalSha256": "8a60d77490da25684730aa456f57451859d50bc309391bd2efb8c522b119b350",
+      "sha256": "fb8358432f4c1b56a35fd223e06cf7ad50dee3a7a738d9d601b764ae33d6947a"
+    },
+    {
+      "legacyPath": "server/finance/legacy-classifier.js",
+      "moduleKey": "accounting",
+      "layer": "server",
+      "path": "modules/accounting/server/finance/legacy-classifier.js",
+      "originalSha256": "c62140c6906a5f3a33a144a8d1ccf05b317cd8f9a2ed7395b2d9be672bfe7c95",
+      "sha256": "c62140c6906a5f3a33a144a8d1ccf05b317cd8f9a2ed7395b2d9be672bfe7c95"
+    },
+    {
+      "legacyPath": "server/finance/loyalty-achievements.js",
+      "moduleKey": "crm",
+      "layer": "server",
+      "path": "modules/crm/server/finance/loyalty-achievements.js",
+      "originalSha256": "6f9ea672ff804b319693675affd8ff509deb29f0537c71a51c64ff975e1d968a",
+      "sha256": "6f9ea672ff804b319693675affd8ff509deb29f0537c71a51c64ff975e1d968a"
+    },
+    {
+      "legacyPath": "server/finance/loyalty-engine.js",
+      "moduleKey": "crm",
+      "layer": "server",
+      "path": "modules/crm/server/finance/loyalty-engine.js",
+      "originalSha256": "f35437ba7257e18c8a6876b5955479fca705a99edda514ce7e13e3f617c88488",
+      "sha256": "f35437ba7257e18c8a6876b5955479fca705a99edda514ce7e13e3f617c88488"
+    },
+    {
+      "legacyPath": "server/finance/money.js",
+      "moduleKey": "platform_core",
+      "layer": "server",
+      "path": "modules/platform_core/server/finance/money.js",
+      "originalSha256": "248bacdd06f39858d1d47edaeb78056ac8127bcff1e2698d9edbc9677bfd883d",
+      "sha256": "248bacdd06f39858d1d47edaeb78056ac8127bcff1e2698d9edbc9677bfd883d"
+    },
+    {
+      "legacyPath": "server/finance/order-costing.js",
+      "moduleKey": "inventory",
+      "layer": "server",
+      "path": "modules/inventory/server/finance/order-costing.js",
+      "originalSha256": "4d07606631241487f61b678bcc8ecf08c831b2a0a52bcb195e37fe882e032e5b",
+      "sha256": "d487101323f877f1551d78a6fe1676d287b811c0b084982934977ab47fcbd9ad"
+    },
+    {
+      "legacyPath": "server/finance/payroll-engine.js",
+      "moduleKey": "accounting",
+      "layer": "server",
+      "path": "modules/accounting/server/finance/payroll-engine.js",
+      "originalSha256": "671bd89d7f703a4731185ac0541e52e9b2a23b63dc47c3413369cc8b88cf5ad1",
+      "sha256": "37c201e3f42c9daaf8d490c1f8af0c911ff594d41197e8f1d253df3ca0d38ed4"
+    },
+    {
+      "legacyPath": "server/finance/period-service.js",
+      "moduleKey": "accounting",
+      "layer": "server",
+      "path": "modules/accounting/server/finance/period-service.js",
+      "originalSha256": "c10c39aba0d67edc19f7ef01a814a7b77fc905a82d7aefe7d630d9a04d089c32",
+      "sha256": "c10c39aba0d67edc19f7ef01a814a7b77fc905a82d7aefe7d630d9a04d089c32"
+    },
+    {
+      "legacyPath": "server/finance/predictive-engine.js",
+      "moduleKey": "analytics",
+      "layer": "server",
+      "path": "modules/analytics/server/finance/predictive-engine.js",
+      "originalSha256": "03053c722722f9bef210bb855b22fe26b9902ce23e96501be50e88dbe7e5617e",
+      "sha256": "2ed5c73e7eda379220cdb7399944fc996d8dbd0f63ce440d63b85c83017aaced"
+    },
+    {
+      "legacyPath": "server/finance/procurement-engine.js",
+      "moduleKey": "inventory",
+      "layer": "server",
+      "path": "modules/inventory/server/finance/procurement-engine.js",
+      "originalSha256": "5e9b3efd5290acd73c1944899396e5ba63969f988334a61077757fb29b09b602",
+      "sha256": "a8848ff83c2842f312a64ec82bb07384422844372ee40e7d2a491315ee57e09a"
+    },
+    {
+      "legacyPath": "server/finance/reconciliation-engine.js",
+      "moduleKey": "accounting",
+      "layer": "server",
+      "path": "modules/accounting/server/finance/reconciliation-engine.js",
+      "originalSha256": "7cffb16fa9a781335e7c93216b591f10e2b505e8dd549be4f7d6985eaba800c2",
+      "sha256": "acf0dd171b6e0b28334920962124eacc19172abb990e24cf23c2c8c502ba020c"
+    },
+    {
+      "legacyPath": "server/finance/restaurant-cost-classifier.js",
+      "moduleKey": "analytics",
+      "layer": "server",
+      "path": "modules/analytics/server/finance/restaurant-cost-classifier.js",
+      "originalSha256": "c664cbeea96c35d36623d7154ca3517ec8c80873dc70a06b7d4660ce9d2de4d2",
+      "sha256": "c664cbeea96c35d36623d7154ca3517ec8c80873dc70a06b7d4660ce9d2de4d2"
+    },
+    {
+      "legacyPath": "server/finance/restaurant-intelligence.js",
+      "moduleKey": "inventory",
+      "layer": "server",
+      "path": "modules/inventory/server/finance/restaurant-intelligence.js",
+      "originalSha256": "72ee5058080e25d5554023c2389d711d320ab8c1be2573d3a8da71d3e252b387",
+      "sha256": "bfbe272fbb123e48f349e1ccf2036068f5c02f365316b11f18c6a377aba9c8cc"
+    },
+    {
+      "legacyPath": "server/finance/sales-pos-engine.js",
+      "moduleKey": "pos",
+      "layer": "server",
+      "path": "modules/pos/server/finance/sales-pos-engine.js",
+      "originalSha256": "c0a52dc34a0ab7f72408bc2dfad607d75da1f00d7f8f5008e6778d469db11af3",
+      "sha256": "19d112e16e9340021b3a2f7af272f972302df90628e525cd4af501f1c76f2713"
+    },
+    {
+      "legacyPath": "server/finance/shamsi.js",
+      "moduleKey": "platform_core",
+      "layer": "server",
+      "path": "modules/platform_core/server/finance/shamsi.js",
+      "originalSha256": "0bc02cd11678e0842bc58a979b8d5a9a3b6c13187cf00be015ef3f8753b9bc57",
+      "sha256": "8fe8517e549b550cf0aff780b95dc58cf313ad0595ae9c185f733370f7196919"
+    },
+    {
+      "legacyPath": "server/finance/sms-engine.js",
+      "moduleKey": "crm",
+      "layer": "server",
+      "path": "modules/crm/server/finance/sms-engine.js",
+      "originalSha256": "10d61e4f1ff793a15f3d0112cbdac153505df04a510cc52c5044aee2705ff41c",
+      "sha256": "c8f0c2f9005f19ecfc939614dc342c78d5e69a1b96101a8fd9df800bf028d712"
+    },
+    {
+      "legacyPath": "server/finance/sms-provider.js",
+      "moduleKey": "crm",
+      "layer": "server",
+      "path": "modules/crm/server/finance/sms-provider.js",
+      "originalSha256": "5ac6851bb69e9cdaa2317dadcdadb3cc4ed91bd31013db374e5ca273771f1a72",
+      "sha256": "5ac6851bb69e9cdaa2317dadcdadb3cc4ed91bd31013db374e5ca273771f1a72"
+    },
+    {
+      "legacyPath": "server/finance/tax-engine.js",
+      "moduleKey": "accounting",
+      "layer": "server",
+      "path": "modules/accounting/server/finance/tax-engine.js",
+      "originalSha256": "217b84af5ed7d5b9cb4d9bfd596b275545aef718f6b62b62aea34b5087739ba5",
+      "sha256": "0663cec6daf3b0ec221199e94ded6fe4dad7c36971e92180f842667dad9d04af"
+    },
+    {
+      "legacyPath": "server/finance/tax-rule-input.js",
+      "moduleKey": "accounting",
+      "layer": "server",
+      "path": "modules/accounting/server/finance/tax-rule-input.js",
+      "originalSha256": "fc40733741f30f8bfa95e0763516647b97d349918590b673c32ca7ecb146a5ad",
+      "sha256": "fc40733741f30f8bfa95e0763516647b97d349918590b673c32ca7ecb146a5ad"
+    },
+    {
+      "legacyPath": "server/finance/taxpayer-adapter.js",
+      "moduleKey": "accounting",
+      "layer": "server",
+      "path": "modules/accounting/server/finance/taxpayer-adapter.js",
+      "originalSha256": "1da1ac73dc0eb9153998dfcc1e7a941c2030f36f1afedcc298c04a385a6e784b",
+      "sha256": "a9797e04f8e14fff3ffbb082699f8c6a20a95c7c7ddc1d0d0d691bc3830ba2e0"
+    },
+    {
+      "legacyPath": "server/finance/unified-finance-engine.js",
+      "moduleKey": "accounting",
+      "layer": "server",
+      "path": "modules/accounting/server/finance/unified-finance-engine.js",
+      "originalSha256": "9984d896da23fde613f2a0dd0c18c4390584559494c83b411a5548f8fa337531",
+      "sha256": "a9569d74167b8f9f3bae847114c4618d587ae2c33b80a9333652c731ac0e3630"
+    },
+    {
+      "legacyPath": "server/finance/value-contracts.js",
+      "moduleKey": "platform_core",
+      "layer": "server",
+      "path": "modules/platform_core/server/finance/value-contracts.js",
+      "originalSha256": "6cbd3c4b713e2bb60d4e3fb8588a5a70af3d49574698b7a5daf81e0bce5b1b7e",
+      "sha256": "9eda0d4e8b7b5ce7fd74b6d53d7c9ed920d635ae507044fff11c16250b43e3f0"
+    },
+    {
+      "legacyPath": "server/finance/wallet-engine.js",
+      "moduleKey": "crm",
+      "layer": "server",
+      "path": "modules/crm/server/finance/wallet-engine.js",
+      "originalSha256": "d9e7cc2db89371b2b675264c586428b541e08f6bf4d25155f7c983b859578acc",
+      "sha256": "d9e7cc2db89371b2b675264c586428b541e08f6bf4d25155f7c983b859578acc"
+    },
+    {
+      "legacyPath": "server/kitchen-queue.js",
+      "moduleKey": "kds",
+      "layer": "server",
+      "path": "modules/kds/server/kitchen-queue.js",
+      "originalSha256": "b0709e0357f536b8a9016aaabe3b59b4594ae068b034915466b5807ace31f17d",
+      "sha256": "07e7c9e4ad3ca021abf9116515c4a526f0f85f7625c25a4bc8d49afb70462b73"
+    },
+    {
+      "legacyPath": "server/menu-availability.js",
+      "moduleKey": "menu_qr",
+      "layer": "server",
+      "path": "modules/menu_qr/server/menu-availability.js",
+      "originalSha256": "0273265f3ec5115895b8d44fa26aee9f4db18bad6b1afa00d57f8e0729d0d4c6",
+      "sha256": "0273265f3ec5115895b8d44fa26aee9f4db18bad6b1afa00d57f8e0729d0d4c6"
+    },
+    {
+      "legacyPath": "server/menu-branch-scope.js",
+      "moduleKey": "menu_qr",
+      "layer": "server",
+      "path": "modules/menu_qr/server/menu-branch-scope.js",
+      "originalSha256": "837517292ebe8978e383e6cab43e1c51873e53d43e8dfe9ff977eccb5789edac",
+      "sha256": "837517292ebe8978e383e6cab43e1c51873e53d43e8dfe9ff977eccb5789edac"
+    },
+    {
+      "legacyPath": "server/menu-modifiers.js",
+      "moduleKey": "menu_qr",
+      "layer": "server",
+      "path": "modules/menu_qr/server/menu-modifiers.js",
+      "originalSha256": "2d00880a84e220374eb11f8431c327c425b054505e125a26193777666943c8e4",
+      "sha256": "2d00880a84e220374eb11f8431c327c425b054505e125a26193777666943c8e4"
+    },
+    {
+      "legacyPath": "server/network-printer.js",
+      "moduleKey": "pos",
+      "layer": "server",
+      "path": "modules/pos/server/network-printer.js",
+      "originalSha256": "683bc921e0e17decbaf21bda61fe292ae7effdf6463231ed1bb720abc8e36678",
+      "sha256": "683bc921e0e17decbaf21bda61fe292ae7effdf6463231ed1bb720abc8e36678"
+    },
+    {
+      "legacyPath": "server/operational-order-actions.js",
+      "moduleKey": "pos",
+      "layer": "server",
+      "path": "modules/pos/server/operational-order-actions.js",
+      "originalSha256": "5128d657cfefe77299b9f90982c9547422591f62104c3258e8040735d0189543",
+      "sha256": "2caf686269b2f020a245d87eaaaeb3da455ffa7c56a2298ce8aca4ccf6eb62b7"
+    },
+    {
+      "legacyPath": "server/operational-order-aging.js",
+      "moduleKey": "pos",
+      "layer": "server",
+      "path": "modules/pos/server/operational-order-aging.js",
+      "originalSha256": "37d96e70a20a0b5e761f7588cfee831603d491d7b0aacc20c02f6aa95880acf0",
+      "sha256": "37d96e70a20a0b5e761f7588cfee831603d491d7b0aacc20c02f6aa95880acf0"
+    },
+    {
+      "legacyPath": "server/operational-order-retention.js",
+      "moduleKey": "pos",
+      "layer": "server",
+      "path": "modules/pos/server/operational-order-retention.js",
+      "originalSha256": "070bc8ca5a4f08500e477f196f4eb2118fe6a27ca9df32cf3cfaea716ab41a22",
+      "sha256": "070bc8ca5a4f08500e477f196f4eb2118fe6a27ca9df32cf3cfaea716ab41a22"
+    },
+    {
+      "legacyPath": "server/order-cancellation-guard.js",
+      "moduleKey": "pos",
+      "layer": "server",
+      "path": "modules/pos/server/order-cancellation-guard.js",
+      "originalSha256": "a0fde0638ea241453a21e66db1d1353a7b1b69d6f5504802a4ccccdf1b33d512",
+      "sha256": "a0fde0638ea241453a21e66db1d1353a7b1b69d6f5504802a4ccccdf1b33d512"
+    },
+    {
+      "legacyPath": "server/order-history.js",
+      "moduleKey": "pos",
+      "layer": "server",
+      "path": "modules/pos/server/order-history.js",
+      "originalSha256": "0f0480242b849dff1261d6233af3bab30b915926babad62dbb8faf761ae43879",
+      "sha256": "0f0480242b849dff1261d6233af3bab30b915926babad62dbb8faf761ae43879"
+    },
+    {
+      "legacyPath": "server/order-split-policy.js",
+      "moduleKey": "pos",
+      "layer": "server",
+      "path": "modules/pos/server/order-split-policy.js",
+      "originalSha256": "e1b28174fc55c1c4c6932c8d89b9f1a2974326b62fd8a04d99c1e523e46f8896",
+      "sha256": "e1b28174fc55c1c4c6932c8d89b9f1a2974326b62fd8a04d99c1e523e46f8896"
+    },
+    {
+      "legacyPath": "server/otp-policy.js",
+      "moduleKey": "platform_core",
+      "layer": "server",
+      "path": "modules/platform_core/server/otp-policy.js",
+      "originalSha256": "8a7aeb94263e5f496e4368ce8f1716657d3676fcd1f20889c8cea07931e2e737",
+      "sha256": "8a7aeb94263e5f496e4368ce8f1716657d3676fcd1f20889c8cea07931e2e737"
+    },
+    {
+      "legacyPath": "server/payment-attempt-transitions.js",
+      "moduleKey": "payments",
+      "layer": "server",
+      "path": "modules/payments/server/payment-attempt-transitions.js",
+      "originalSha256": "5ad6f45c54db85b7710e499c4806f1fc370cdd9dc8df6386f6dae2ba853bd673",
+      "sha256": "5ad6f45c54db85b7710e499c4806f1fc370cdd9dc8df6386f6dae2ba853bd673"
+    },
+    {
+      "legacyPath": "server/payment-provider-status.js",
+      "moduleKey": "payments",
+      "layer": "server",
+      "path": "modules/payments/server/payment-provider-status.js",
+      "originalSha256": "a59b60eabe6d4e48eefd23222ef2a3ad763fa292319fd9da433fe94e0b9ee124",
+      "sha256": "a59b60eabe6d4e48eefd23222ef2a3ad763fa292319fd9da433fe94e0b9ee124"
+    },
+    {
+      "legacyPath": "server/postgres-state.js",
+      "moduleKey": "platform_core",
+      "layer": "server",
+      "path": "modules/platform_core/server/postgres-state.js",
+      "originalSha256": "7252fffc640eceb7a956e944964e2190defca97e844614527830f3ea206d29cd",
+      "sha256": "9dff007e6ac2b563c30dd9dc5fed1c14e81de62a061923af977ccf5b350ae1b2"
+    },
+    {
+      "legacyPath": "server/public-checkout-order.js",
+      "moduleKey": "menu_qr",
+      "layer": "server",
+      "path": "modules/menu_qr/server/public-checkout-order.js",
+      "originalSha256": "ebf34e6a43fdb9490567de5ae63bc593e2245a21795f268e08dc5f9b5a53d747",
+      "sha256": "ebf34e6a43fdb9490567de5ae63bc593e2245a21795f268e08dc5f9b5a53d747"
+    },
+    {
+      "legacyPath": "server/runtime-readiness.js",
+      "moduleKey": "platform_core",
+      "layer": "server",
+      "path": "modules/platform_core/server/runtime-readiness.js",
+      "originalSha256": "86bf8fcd9c966ae94330e0d0ff6922764fdbe259f86b0220d6f548adbeff39ef",
+      "sha256": "86bf8fcd9c966ae94330e0d0ff6922764fdbe259f86b0220d6f548adbeff39ef"
+    },
+    {
+      "legacyPath": "server/session-token.js",
+      "moduleKey": "platform_core",
+      "layer": "server",
+      "path": "modules/platform_core/server/session-token.js",
+      "originalSha256": "dad4c31dc4161012a7db24b34695bfb2cf542cbbc94e9fa4a82558c5491625d1",
+      "sha256": "dad4c31dc4161012a7db24b34695bfb2cf542cbbc94e9fa4a82558c5491625d1"
+    },
+    {
+      "legacyPath": "server/settlement-amounts.js",
+      "moduleKey": "payments",
+      "layer": "server",
+      "path": "modules/payments/server/settlement-amounts.js",
+      "originalSha256": "19b5161c298897834c2c722881a52547a808a3c9844ceb4aea4086c3ec8c29a3",
+      "sha256": "5c161e151c9526e7c5a18de27dea5a66b66f3b2906b869fc91067ba1ac8c4334"
+    },
+    {
+      "legacyPath": "server/settlement-in-flight-key.js",
+      "moduleKey": "payments",
+      "layer": "server",
+      "path": "modules/payments/server/settlement-in-flight-key.js",
+      "originalSha256": "2987da0940adee3645784b6dfa5483e15e8d1f0298cb403478dc237a4b6a9199",
+      "sha256": "2987da0940adee3645784b6dfa5483e15e8d1f0298cb403478dc237a4b6a9199"
+    },
+    {
+      "legacyPath": "server/settlement-persistence-gate.js",
+      "moduleKey": "payments",
+      "layer": "server",
+      "path": "modules/payments/server/settlement-persistence-gate.js",
+      "originalSha256": "68344384f0aa226a739f5492bd32eb624d2245f862bc6f9687c5c1bfda420787",
+      "sha256": "68344384f0aa226a739f5492bd32eb624d2245f862bc6f9687c5c1bfda420787"
+    },
+    {
+      "legacyPath": "server/settlement-reference.js",
+      "moduleKey": "payments",
+      "layer": "server",
+      "path": "modules/payments/server/settlement-reference.js",
+      "originalSha256": "36f6f09a180e1752c3e4537bd0ebc65b13e823b602e67d7e70a5659b417f37cd",
+      "sha256": "36f6f09a180e1752c3e4537bd0ebc65b13e823b602e67d7e70a5659b417f37cd"
+    },
+    {
+      "legacyPath": "server/translate.js",
+      "moduleKey": "menu_qr",
+      "layer": "server",
+      "path": "modules/menu_qr/server/translate.js",
+      "originalSha256": "7cae45408cc6c23929d62db0cf07fdd2ddf1b97169b013c1e0c8adc5a44b9533",
+      "sha256": "f1e59f2ebe820f59c0754f66da4ec7a38c71a72444c433b252c644e6aea6d050"
+    },
+    {
+      "legacyPath": "server/waiter-order-invariants.js",
+      "moduleKey": "floor",
+      "layer": "server",
+      "path": "modules/floor/server/waiter-order-invariants.js",
+      "originalSha256": "1d006a7410f05766bbb34ff344cde04f7d0430ff80fa92458e825776207c1265",
+      "sha256": "12103f8f8a9a667e25d9661d9b118eae56f7845e9da79c312494834ea705bfe7"
+    },
+    {
+      "legacyPath": "server/waitlist.js",
+      "moduleKey": "reservations",
+      "layer": "server",
+      "path": "modules/reservations/server/waitlist.js",
+      "originalSha256": "2d8890c0ce94c4d1b2985a4747f256cc2669b612316e577a026424b3a6e5b505",
+      "sha256": "2d8890c0ce94c4d1b2985a4747f256cc2669b612316e577a026424b3a6e5b505"
+    },
+    {
+      "legacyPath": "server/whatsapp-notify.js",
+      "moduleKey": "crm",
+      "layer": "server",
+      "path": "modules/crm/server/whatsapp-notify.js",
+      "originalSha256": "438bd67872417a7e0b4f549231bf97db7aa780d0e4a695118d1228dcf0707ea6",
+      "sha256": "c4be1ff6b6b072b31849cfffec9edf941d29dd342cdc1ccb6357792f4f0c63d2"
+    },
+    {
+      "legacyPath": "js/admin/features/platform_core-views.js",
+      "moduleKey": "platform_core",
+      "layer": "frontend",
+      "path": "modules/platform_core/frontend/admin-views.js",
+      "generatedFrom": "js/admin.js"
+    },
+    {
+      "legacyPath": "js/admin/features/menu_qr-views.js",
+      "moduleKey": "menu_qr",
+      "layer": "frontend",
+      "path": "modules/menu_qr/frontend/admin-views.js",
+      "generatedFrom": "js/admin.js"
+    },
+    {
+      "legacyPath": "js/admin/features/website_brand-views.js",
+      "moduleKey": "website_brand",
+      "layer": "frontend",
+      "path": "modules/website_brand/frontend/admin-views.js",
+      "generatedFrom": "js/admin.js"
+    },
+    {
+      "legacyPath": "js/admin/features/floor-views.js",
+      "moduleKey": "floor",
+      "layer": "frontend",
+      "path": "modules/floor/frontend/admin-views.js",
+      "generatedFrom": "js/admin.js"
+    },
+    {
+      "legacyPath": "js/admin/features/multi_branch-views.js",
+      "moduleKey": "multi_branch",
+      "layer": "frontend",
+      "path": "modules/multi_branch/frontend/admin-views.js",
+      "generatedFrom": "js/admin.js"
+    },
+    {
+      "legacyPath": "js/admin/features/inventory-views.js",
+      "moduleKey": "inventory",
+      "layer": "frontend",
+      "path": "modules/inventory/frontend/admin-views.js",
+      "generatedFrom": "js/admin.js"
+    },
+    {
+      "legacyPath": "js/admin/features/accounting-views.js",
+      "moduleKey": "accounting",
+      "layer": "frontend",
+      "path": "modules/accounting/frontend/admin-views.js",
+      "generatedFrom": "js/admin.js"
+    },
+    {
+      "legacyPath": "js/admin/features/pos-views.js",
+      "moduleKey": "pos",
+      "layer": "frontend",
+      "path": "modules/pos/frontend/admin-views.js",
+      "generatedFrom": "js/admin.js"
+    },
+    {
+      "legacyPath": "js/admin/features/kds-views.js",
+      "moduleKey": "kds",
+      "layer": "frontend",
+      "path": "modules/kds/frontend/admin-views.js",
+      "generatedFrom": "js/admin.js"
+    },
+    {
+      "legacyPath": "js/admin/features/reservations-views.js",
+      "moduleKey": "reservations",
+      "layer": "frontend",
+      "path": "modules/reservations/frontend/admin-views.js",
+      "generatedFrom": "js/admin.js"
+    },
+    {
+      "legacyPath": "js/admin/features/delivery-views.js",
+      "moduleKey": "delivery",
+      "layer": "frontend",
+      "path": "modules/delivery/frontend/admin-views.js",
+      "generatedFrom": "js/admin.js"
+    },
+    {
+      "legacyPath": "js/admin/features/crm-views.js",
+      "moduleKey": "crm",
+      "layer": "frontend",
+      "path": "modules/crm/frontend/admin-views.js",
+      "generatedFrom": "js/admin.js"
+    }
+  ]
+}

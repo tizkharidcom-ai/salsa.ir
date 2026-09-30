@@ -1,0 +1,255 @@
+{
+  "schemaVersion": 1,
+  "key": "website_brand",
+  "nameFa": "وب‌سایت و وایت‌لیبل",
+  "version": "1.0.0",
+  "runtime": "node-commonjs-express",
+  "runtimeApiVersion": "westo-v1",
+  "dependencies": [
+    "platform_core"
+  ],
+  "technicalFeatures": [
+    "content.website",
+    "brand.custom_domain",
+    "brand.white_label"
+  ],
+  "sharedComposition": [
+    "server/server.js",
+    "js/admin.js",
+    "role-panel.html"
+  ],
+  "dataCapture": "always-on-operational-core",
+  "access": "tenant-entitlement-and-user-capability",
+  "files": [
+    {
+      "path": "frontend/about.html",
+      "legacyPath": "about.html",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/cgu.html",
+      "legacyPath": "cgu.html",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/js/admin/modules/content/content-module.js",
+      "legacyPath": "js/admin/modules/content/content-module.js",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/js/brand-lockup.js",
+      "legacyPath": "js/brand-lockup.js",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/mentions-legales.html",
+      "legacyPath": "mentions-legales.html",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/politique-de-confidentialite.html",
+      "legacyPath": "politique-de-confidentialite.html",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/admin-views.js",
+      "legacyPath": "js/admin/features/website_brand-views.js",
+      "layer": "frontend"
+    }
+  ],
+  "httpRoutes": [
+    {
+      "id": "post-025",
+      "method": "POST",
+      "paths": [
+        "/api/user/avatar/upload"
+      ],
+      "path": "server/routes/post-025.js"
+    },
+    {
+      "id": "get-035",
+      "method": "GET",
+      "paths": [
+        "/api/content"
+      ],
+      "path": "server/routes/get-035.js"
+    },
+    {
+      "id": "put-036",
+      "method": "PUT",
+      "paths": [
+        "/api/content"
+      ],
+      "path": "server/routes/put-036.js"
+    },
+    {
+      "id": "post-111",
+      "method": "POST",
+      "paths": [
+        "/api/faq"
+      ],
+      "path": "server/routes/post-111.js"
+    },
+    {
+      "id": "put-112",
+      "method": "PUT",
+      "paths": [
+        "/api/faq/:id"
+      ],
+      "path": "server/routes/put-112.js"
+    },
+    {
+      "id": "delete-113",
+      "method": "DELETE",
+      "paths": [
+        "/api/faq/:id"
+      ],
+      "path": "server/routes/delete-113.js"
+    },
+    {
+      "id": "put-114",
+      "method": "PUT",
+      "paths": [
+        "/api/faq-order"
+      ],
+      "path": "server/routes/put-114.js"
+    },
+    {
+      "id": "get-124",
+      "method": "GET",
+      "paths": [
+        "/api/admin/restaurant"
+      ],
+      "path": "server/routes/get-124.js"
+    },
+    {
+      "id": "put-125",
+      "method": "PUT",
+      "paths": [
+        "/api/admin/restaurant"
+      ],
+      "path": "server/routes/put-125.js"
+    },
+    {
+      "id": "put-126",
+      "method": "PUT",
+      "paths": [
+        "/api/admin/hours"
+      ],
+      "path": "server/routes/put-126.js"
+    },
+    {
+      "id": "get-141",
+      "method": "GET",
+      "paths": [
+        "/api/admin/promo-slides"
+      ],
+      "path": "server/routes/get-141.js"
+    },
+    {
+      "id": "post-142",
+      "method": "POST",
+      "paths": [
+        "/api/admin/promo-slides"
+      ],
+      "path": "server/routes/post-142.js"
+    },
+    {
+      "id": "patch-143",
+      "method": "PATCH",
+      "paths": [
+        "/api/admin/promo-slides/:id"
+      ],
+      "path": "server/routes/patch-143.js"
+    },
+    {
+      "id": "delete-144",
+      "method": "DELETE",
+      "paths": [
+        "/api/admin/promo-slides/:id"
+      ],
+      "path": "server/routes/delete-144.js"
+    },
+    {
+      "id": "post-145",
+      "method": "POST",
+      "paths": [
+        "/api/admin/promo-slides/reorder"
+      ],
+      "path": "server/routes/post-145.js"
+    },
+    {
+      "id": "post-146",
+      "method": "POST",
+      "paths": [
+        "/api/promo-slides/:id/impression"
+      ],
+      "path": "server/routes/post-146.js"
+    },
+    {
+      "id": "post-147",
+      "method": "POST",
+      "paths": [
+        "/api/promo-slides/:id/click"
+      ],
+      "path": "server/routes/post-147.js"
+    },
+    {
+      "id": "get-151",
+      "method": "GET",
+      "paths": [
+        "/api/restaurant"
+      ],
+      "path": "server/routes/get-151.js"
+    },
+    {
+      "id": "get-152",
+      "method": "GET",
+      "paths": [
+        "/api/theme"
+      ],
+      "path": "server/routes/get-152.js"
+    },
+    {
+      "id": "get-153",
+      "method": "GET",
+      "paths": [
+        "/api/admin/theme"
+      ],
+      "path": "server/routes/get-153.js"
+    },
+    {
+      "id": "put-154",
+      "method": "PUT",
+      "paths": [
+        "/api/admin/theme"
+      ],
+      "path": "server/routes/put-154.js"
+    },
+    {
+      "id": "post-155",
+      "method": "POST",
+      "paths": [
+        "/api/admin/upload"
+      ],
+      "path": "server/routes/post-155.js"
+    },
+    {
+      "id": "get-156",
+      "method": "GET",
+      "paths": [
+        "/api/admin/uploads"
+      ],
+      "path": "server/routes/get-156.js"
+    }
+  ],
+  "adminViews": [
+    "restaurant",
+    "theme",
+    "hours",
+    "promoSlides",
+    "content",
+    "media",
+    "faq"
+  ]
+}

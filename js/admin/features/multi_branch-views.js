@@ -1,0 +1,1 @@
+../../../modules/multi_branch/frontend/admin-views.js

@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "moduleKey": "multi_branch",
+  "version": "1.0.0",
+  "labelFa": "نسخهٔ فعلی وستو",
+  "runtimeApiVersion": "westo-v1",
+  "publishedAt": "2026-09-30T12:34:40.503Z",
+  "changesFa": [
+    "همان رابط و رفتار موجود؛ بدون بازطراحی"
+  ],
+  "digest": "4f5feaf748c2bd1cabc66931b5a7e9a68bb8c0bfdd59022c72fbaf16b9a16573",
+  "assets": [
+    {
+      "legacyPath": "js/admin/features/multi_branch-views.js",
+      "sha256": "266880564fdfe97005762ac29bd2d2d084d370c79ac37d24021cfea831e8ff4e"
+    }
+  ]
+}

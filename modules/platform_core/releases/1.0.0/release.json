@@ -1,0 +1,306 @@
+{
+  "schemaVersion": 1,
+  "moduleKey": "platform_core",
+  "version": "1.0.0",
+  "labelFa": "نسخهٔ فعلی وستو",
+  "runtimeApiVersion": "westo-v1",
+  "publishedAt": "2026-09-30T13:34:13.083Z",
+  "changesFa": [
+    "همان رابط و رفتار موجود؛ بدون بازطراحی"
+  ],
+  "digest": "b68cddd91287c9e6451c494a3f925a39f29e90285f56e11a579e1e9e8a491099",
+  "assets": [
+    {
+      "legacyPath": "admin.html",
+      "sha256": "ffd02cdaf743dcb17683903a78fd731be529c07808515c9c7fb6a82d030256b2"
+    },
+    {
+      "legacyPath": "css/admin-command-center-v2.css",
+      "sha256": "a52ee71e6c19c99bdf8425ca1b091341c7d44fbba798c18f4e74aab487bd628c"
+    },
+    {
+      "legacyPath": "css/admin-operations-v3.css",
+      "sha256": "62f8bfba4c8f8addb048958d0687accced344de27a5fba31db1068be81badb60"
+    },
+    {
+      "legacyPath": "css/admin-professional-v4.css",
+      "sha256": "66ce3161a26c22b9415cfdf71d98580997c366eccb8440ce41f356c5cc5fcbc6"
+    },
+    {
+      "legacyPath": "css/admin-qr.css",
+      "sha256": "2536a920bda692ab690b3333d22c032b7759155e2724bba1ebaa67217901d84d"
+    },
+    {
+      "legacyPath": "css/admin-users-roles.css",
+      "sha256": "f1b8acbecd7f208530e10136fad28e338a604c06b765d101fe2b152f20cfe960"
+    },
+    {
+      "legacyPath": "css/admin-vitality-v5.css",
+      "sha256": "0ef0f5d132ccce520baccf9915510ddaf92006f4bb255a6a309cb2defdf95b4f"
+    },
+    {
+      "legacyPath": "css/design-logic-v13.css",
+      "sha256": "29855d15fd9c03aa1aec6270411d1077d36fcd0e1c88bb10596d5e85651e2c2d"
+    },
+    {
+      "legacyPath": "css/fa-override.css",
+      "sha256": "d6a3210b10540fde6f650e92967528333165926561f69fd7dc47c5ec8813880f"
+    },
+    {
+      "legacyPath": "css/globals.css",
+      "sha256": "88fb90b06b35daf98f647311a91fa6df3d5cd5852c91afbff2ef9d1f23915b28"
+    },
+    {
+      "legacyPath": "css/i18n-dir.css",
+      "sha256": "cf8f87a1950910a7a16f7906a06ed40e40edafff1163b115de894ad894db0755"
+    },
+    {
+      "legacyPath": "css/mobile-forms.css",
+      "sha256": "746a39139ff0301f59ba000dec27813aeb82e2fc06358d1b7617b8eae1b75c71"
+    },
+    {
+      "legacyPath": "css/panel.css",
+      "sha256": "6d81bac4b651bfbe38f4e77e40a79d624e7748258a798d69c5ced7061ff2566f"
+    },
+    {
+      "legacyPath": "css/responsive-shell.css",
+      "sha256": "cca33dad9e245c1dc19a23626a6078f5cad6937232f13bb4b007030676a0a348"
+    },
+    {
+      "legacyPath": "css/role-panel.css",
+      "sha256": "42e1d518d41581a6d79fd48c6298ce4debb1d957c58f08c5c1cfd377e7328cf6"
+    },
+    {
+      "legacyPath": "css/shamsi-datepicker.css",
+      "sha256": "a4358fd8cdb344f5d21d6030234410003c5d4b48b99ea0c12a18de5cb49ab5ff"
+    },
+    {
+      "legacyPath": "css/shamsi-wheel-picker.css",
+      "sha256": "3d19c47ecd9a620623aa261f86645cf9076b7ca0f2c2bea468948cc8e5efed31"
+    },
+    {
+      "legacyPath": "css/sib-styles.css",
+      "sha256": "509797bc5c5076af22e14fab0a1aa8210506fe44719f530f85fc9511a01d676c"
+    },
+    {
+      "legacyPath": "css/table.css",
+      "sha256": "5fd346a03e54c65caf4053c46414398285d10ce541ec33926b966d239b21bf61"
+    },
+    {
+      "legacyPath": "css/vazir-system.css",
+      "sha256": "2ac0553409b0214d47766e98e8c8de701af01b3235ba7b91ea307d9b92615fd5"
+    },
+    {
+      "legacyPath": "js/admin-professional-v4.js",
+      "sha256": "f895d47da1dbffcdbab4be9fc179e5426a5ddda99e765e4ee923ce6395de0921"
+    },
+    {
+      "legacyPath": "js/admin.js",
+      "sha256": "8b0419c220545dc1a45ffac026b17af5189c3d3e2978d4c7d4d286d404ae86cf"
+    },
+    {
+      "legacyPath": "js/admin/modules/core/registry.js",
+      "sha256": "7c0794bcfc0da873516f0a5a9c98b1d01a88724a074b804082b2dceb62550bab"
+    },
+    {
+      "legacyPath": "js/admin/modules/operations/operations-module.js",
+      "sha256": "18dbec1580c5a33955d3626c1d9e45111a605b18459035c0831a7930b6b88110"
+    },
+    {
+      "legacyPath": "js/admin/modules/settings/settings-module.js",
+      "sha256": "68f1ec76791ae56400aa36f96a3587bd9facc98066ab89fd10659752100ac8ac"
+    },
+    {
+      "legacyPath": "js/animations.js",
+      "sha256": "79c4b1a993045a34ed62f77928116cbcf80f393ac80a13af5ab967e6643e9935"
+    },
+    {
+      "legacyPath": "js/auth-nav.js",
+      "sha256": "09c3164cb9fdd44ad7b20f6d00213cab9d72f9a9ed3985d591c64d95d193b4d9"
+    },
+    {
+      "legacyPath": "js/buttons.js",
+      "sha256": "bedb9e8a373a1d245b1ff453536bd8fde3b28082cf326a3ae402c6673da00817"
+    },
+    {
+      "legacyPath": "js/design-logic-v13.js",
+      "sha256": "c920121c18605892859868d89c096651e3f09621d53f29c56c7747472c5821ee"
+    },
+    {
+      "legacyPath": "js/disable-service-worker.js",
+      "sha256": "621caf92b5d1f98b1436648d44a5ded2ee12a4450d2658e2112472de9c03a24f"
+    },
+    {
+      "legacyPath": "js/i18n.js",
+      "sha256": "e4b80c9df3c0e4b2156b305030109ab5b54f3ad24bbbe60358b2323fd2f8fa71"
+    },
+    {
+      "legacyPath": "js/persian-format.js",
+      "sha256": "0d26da48eef4cddd27b13a282e8cb8bf9b3e01526a488708835f2c83e58e2152"
+    },
+    {
+      "legacyPath": "js/pwa-bootstrap.js",
+      "sha256": "06a8d5c741fd22d810e028a2be9fe6ef3ad3d4f8c078bb854cb6db01ec54668b"
+    },
+    {
+      "legacyPath": "js/role-panel.js",
+      "sha256": "d38cc5f36bb306cc775d683b4b6cff51d1fe77dfb9fd5583cfcb0d87888103b3"
+    },
+    {
+      "legacyPath": "js/shamsi-core.js",
+      "sha256": "679ff9d37cab4f0372934b7331c552c99305935f2b8d109b248af555d387346d"
+    },
+    {
+      "legacyPath": "js/shamsi-datepicker.js",
+      "sha256": "3ee964471e63c1b7fce3587aa4e555a2645fb57e5d4e2433316a01a8b7adbefe"
+    },
+    {
+      "legacyPath": "js/shamsi-wheel-picker.js",
+      "sha256": "9962ae7746ad2c2803266182d81bf493efc2fe80429bc6495641eac7043e8626"
+    },
+    {
+      "legacyPath": "js/sounds.js",
+      "sha256": "0fe7d58068ad33f999c44eeac10b1cb64fbd5a0044ed6c218a6235f928c9b4a9"
+    },
+    {
+      "legacyPath": "js/theme.js",
+      "sha256": "fc3d7d0dc85e4c0cbbe371aa2a48ee145cb68c8bc21f6a365db24dea1943f70a"
+    },
+    {
+      "legacyPath": "js/vendor/ScrollTrigger.min.js",
+      "sha256": "b0b14d67b55b0c43c756ac0b106cfcb09d0879945f6ead64451065b0672916a2"
+    },
+    {
+      "legacyPath": "js/vendor/SplitText.min.js",
+      "sha256": "419f7027a5f086a12cb7988736d8fdd3a6ed2200229661de25b6628ca7ced344"
+    },
+    {
+      "legacyPath": "js/vendor/gsap.min.js",
+      "sha256": "92bb9a96476f983d212a2bc4f54c889039c1696dd4461d40a736860938570fbb"
+    },
+    {
+      "legacyPath": "js/vendor/jquery-3.5.1.min.js",
+      "sha256": "f7f6a5894f1d19ddad6fa392b2ece2c5e578cbf7da4ea805b6885eb6985b6e3d"
+    },
+    {
+      "legacyPath": "js/vendor/lenis.mjs",
+      "sha256": "630aa9889dd07bd0e477585ffd3c627934783a3105e5813668b2a5630062fcff"
+    },
+    {
+      "legacyPath": "js/vendor/qrcode.min.js",
+      "sha256": "b054bbeb191ad4c130b53f534e2ebd18b805f903d8fb4b7f2b4ea5b25c27b5d6"
+    },
+    {
+      "legacyPath": "js/vendor/three/addons/postprocessing/EffectComposer.js",
+      "sha256": "d234e578618fa816955ebdc059c049c577e203e650e33cf22bde3f232c29e669"
+    },
+    {
+      "legacyPath": "js/vendor/three/addons/postprocessing/MaskPass.js",
+      "sha256": "328cf7db0da5d9be83ffe39d54b01d5ac1fddf108cc98182ddbb056f5c8b537f"
+    },
+    {
+      "legacyPath": "js/vendor/three/addons/postprocessing/OutputPass.js",
+      "sha256": "13817fc7a87f662d29d2c5e00f44d3a4588c9afac4a372de0cacb0e44e368ffd"
+    },
+    {
+      "legacyPath": "js/vendor/three/addons/postprocessing/Pass.js",
+      "sha256": "b3c6128340eaa37e40a6a2f1b738e894c855239417d50959759b34a2b5e89f92"
+    },
+    {
+      "legacyPath": "js/vendor/three/addons/postprocessing/RenderPass.js",
+      "sha256": "1c90c085312871c4bcdccfcf519499c6276dd503363fcf7cb7f703add45cf4a2"
+    },
+    {
+      "legacyPath": "js/vendor/three/addons/postprocessing/SMAAPass.js",
+      "sha256": "f3508e3e17f40c1358921b5c7eb3ab60460d97b06fdadf6b0d40b52d3842c44a"
+    },
+    {
+      "legacyPath": "js/vendor/three/addons/postprocessing/ShaderPass.js",
+      "sha256": "3b28a1ee27e0eb96c0eab137a1f442ccf127a926904eced2d51e125ec44af781"
+    },
+    {
+      "legacyPath": "js/vendor/three/addons/shaders/CopyShader.js",
+      "sha256": "4e3346db194db56a596cd074e9bdb39fb5eb52040c333e0d29dc4eb1324d3b1d"
+    },
+    {
+      "legacyPath": "js/vendor/three/addons/shaders/OutputShader.js",
+      "sha256": "53a52e430c27bc36ceaab8ae90a2b4af7b02672d7ee4b29d6ba3c28e09c92c2a"
+    },
+    {
+      "legacyPath": "js/vendor/three/addons/shaders/SMAAShader.js",
+      "sha256": "3c7e942a25cb09dd431e395e6e91904715a834b2a6e62ec0b9b77c2f8655c369"
+    },
+    {
+      "legacyPath": "js/vendor/three/three.module.js",
+      "sha256": "e7348ab8c7bf7a41f7afc5fe503c20a0ed090d9536aacf1ee975d7aaee24d394"
+    },
+    {
+      "legacyPath": "js/vendor/webflow.9a82b613.50fbdd53e3da9960.js",
+      "sha256": "9479e140c6916d047aaf9d79d52774491a310b8c83f49c22edadbdb9ba5bf1bc"
+    },
+    {
+      "legacyPath": "js/vendor/webflow.achunk.22b66e874d42861f.js",
+      "sha256": "7ca0ff5643a44cc9e6064ac82a22de24c906962a533224000861d68d0a59b451"
+    },
+    {
+      "legacyPath": "js/vendor/webflow.achunk.2aaad8b9b407aaec.js",
+      "sha256": "3c665380a8ec94e99c5f4b50680adbb05315ca4b2aaf43de9644062dc29bc093"
+    },
+    {
+      "legacyPath": "js/vendor/webflow.achunk.36b8fb49256177c8.js",
+      "sha256": "8b7d0de9f3df9103d70ed000c17b348240623ac4e4053d56fa0d5cfd8d74d79d"
+    },
+    {
+      "legacyPath": "js/vendor/webflow.achunk.496d56dd8c063ec0.js",
+      "sha256": "61f96d33eb412c13b56791c76ead48cfee4777b780be49e0c13d10ac2774dd3b"
+    },
+    {
+      "legacyPath": "js/vendor/webflow.achunk.58f76f2901951073.js",
+      "sha256": "9e21768e457bf6912c256e1051dfb523d136ffa9d2cc473cf1f68f748a6448cd"
+    },
+    {
+      "legacyPath": "js/vendor/webflow.achunk.5959ac50b3c857f1.js",
+      "sha256": "188fda5fe1c48401a0e1a9da355668fe960781435153380a08604dfe73f399da"
+    },
+    {
+      "legacyPath": "js/vendor/webflow.achunk.64873797e35e968c.js",
+      "sha256": "75302eb25693db697503c777280f40abc1d74ea83d441ab6c0ab073572399c7b"
+    },
+    {
+      "legacyPath": "js/vendor/webflow.achunk.65add74e46fe5245.js",
+      "sha256": "b7e97fd075138494c3b1dd2d042317b5f32dbd68d6a444bb195b90a11aff64f1"
+    },
+    {
+      "legacyPath": "js/vendor/webflow.achunk.ad6dcd2fc75b294c.js",
+      "sha256": "08f4ec04403306a8551208e13a438a3e32694815c398e1fb71d1e5182935dee3"
+    },
+    {
+      "legacyPath": "js/vendor/webflow.achunk.ba16934fe1414a74.js",
+      "sha256": "14ba5469df8067887904d3af5977ccd140a5fc1a5fd51b13665081c6714ce681"
+    },
+    {
+      "legacyPath": "js/vendor/webflow.achunk.db80639074bc0296.js",
+      "sha256": "0e1e5e2caf9990969a70b433524e579a793b5dd41ee9af05866b30760afe2c63"
+    },
+    {
+      "legacyPath": "js/vendor/webflow.achunk.e8e7e6855b442808.js",
+      "sha256": "3aba51bd181a572879d668d7d1d70350f41996f9e0223d9dce7f336a7ad3b84a"
+    },
+    {
+      "legacyPath": "js/vendor/webflow.d24778d3.ca47734eea7cf588.js",
+      "sha256": "5716bd98e949f65febb1660deb438e9a80cf790f36da9ae789386368b2c4e2e3"
+    },
+    {
+      "legacyPath": "login.html",
+      "sha256": "74eedb2af2e7cffc2df02c0b6f11f49a8473bcd93897235bc4d86559863c9f76"
+    },
+    {
+      "legacyPath": "role-panel.html",
+      "sha256": "2384cb1645eec6bea7108bc364c731202196822b84c1452374dee255e76383cf"
+    },
+    {
+      "legacyPath": "js/admin/features/platform_core-views.js",
+      "sha256": "b5e9b3aaf82728eaacd4e721899fbb422f47fd9cf1a4d66967c8b1f8f03af7ef"
+    }
+  ]
+}

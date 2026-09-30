@@ -156,6 +156,246 @@ const {
   TenantConnectionManager,
 } = require('./salsa/data-access');
 const { tenantMenuRepository } = require('./salsa/tenant-menu-repository');
+const moduleRuntime = require('../modules/runtime');
+const { customerAccessSnapshot, withoutUnsubscribedFinance } = require('../modules/platform_core/server/module-access');
+
+// Lazy getters preserve the original closures and tenant-scoped Proxy.
+const moduleRouteContext = {
+  get ACTIVE_RES_STATUSES() { return ACTIVE_RES_STATUSES; },
+  get ALLERGENS() { return ALLERGENS; },
+  get DAYPARTS() { return DAYPARTS; },
+  get DEFAULT_PRINTER_CONFIG() { return DEFAULT_PRINTER_CONFIG; },
+  get FINANCIAL_PAID_ORDER_STATUSES() { return FINANCIAL_PAID_ORDER_STATUSES; },
+  get IS_NODE_TEST_RUNTIME() { return IS_NODE_TEST_RUNTIME; },
+  get KDS_STATIONS() { return KDS_STATIONS; },
+  get MAX_OTP_ATTEMPTS() { return MAX_OTP_ATTEMPTS; },
+  get ORDER_IDEMPOTENCY_KEY_RE() { return ORDER_IDEMPOTENCY_KEY_RE; },
+  get OTP_COOLDOWN_MS() { return OTP_COOLDOWN_MS; },
+  get PAGES() { return PAGES; },
+  get PHONE_RE() { return PHONE_RE; },
+  get PLATFORM_ONLY_PHONE_IDENTITIES() { return PLATFORM_ONLY_PHONE_IDENTITIES; },
+  get QRCode() { return QRCode; },
+  get ROLE_CAPABILITIES() { return ROLE_CAPABILITIES; },
+  get ROOT() { return ROOT; },
+  get SALSA_OPERATION_VIEWS() { return SALSA_OPERATION_VIEWS; },
+  get SECRET() { return SECRET; },
+  get SESSION_TTL_MS() { return SESSION_TTL_MS; },
+  get STAFF_BRANCH_ROLES() { return STAFF_BRANCH_ROLES; },
+  get STAFF_WORKSPACES() { return STAFF_WORKSPACES; },
+  get TENANT_CONFIG() { return TENANT_CONFIG; },
+  get UPLOADS() { return UPLOADS; },
+  get USER_ROLE_MAP() { return USER_ROLE_MAP; },
+  get activeCashSession() { return activeCashSession; },
+  get activeDineInOrderOnTable() { return activeDineInOrderOnTable; },
+  get activeStaffShift() { return activeStaffShift; },
+  get adjustOrderInventory() { return adjustOrderInventory; },
+  get adminOrderDto() { return adminOrderDto; },
+  get allocateOrderSplitDiscount() { return allocateOrderSplitDiscount; },
+  get allowedOrderTransitions() { return allowedOrderTransitions; },
+  get app() { return app; },
+  get appendAuditAfterCommit() { return appendAuditAfterCommit; },
+  get appendOrderStatus() { return appendOrderStatus; },
+  get applyWalletTopupWithFinance() { return applyWalletTopupWithFinance; },
+  get assertRequestBranchAccess() { return assertRequestBranchAccess; },
+  get assertStaffMutationBoundary() { return assertStaffMutationBoundary; },
+  get assertUserBranchAccess() { return assertUserBranchAccess; },
+  get assertVisibleCategoryCover() { return assertVisibleCategoryCover; },
+  get awardLoyaltyPoints() { return awardLoyaltyPoints; },
+  get branchScopeForUser() { return branchScopeForUser; },
+  get branchScoped() { return branchScoped; },
+  get buildOrderMessage() { return buildOrderMessage; },
+  get calculateCheckoutPricing() { return calculateCheckoutPricing; },
+  get campaignWalletTopupWithFinance() { return campaignWalletTopupWithFinance; },
+  get campaignsEngine() { return campaignsEngine; },
+  get canOpenWorkspace() { return canOpenWorkspace; },
+  get canTransitionOrder() { return canTransitionOrder; },
+  get canonicalTableNo() { return canonicalTableNo; },
+  get cashDrawerMovementFingerprint() { return cashDrawerMovementFingerprint; },
+  get cashDrawerMutationQueueKey() { return cashDrawerMutationQueueKey; },
+  get cashDrawerOpenRetry() { return cashDrawerOpenRetry; },
+  get cashDrawerPayOutExceedsAvailable() { return cashDrawerPayOutExceedsAvailable; },
+  get cashSessionTotals() { return cashSessionTotals; },
+  get checkoutIdempotencyFingerprint() { return checkoutIdempotencyFingerprint; },
+  get checkoutQuoteIntent() { return checkoutQuoteIntent; },
+  get checkoutReceiptIndexKey() { return checkoutReceiptIndexKey; },
+  get checkoutTaxForOrder() { return checkoutTaxForOrder; },
+  get cleanDeliveryZone() { return cleanDeliveryZone; },
+  get commandCenterPayload() { return commandCenterPayload; },
+  get createAndPersistCheckoutOrder() { return createAndPersistCheckoutOrder; },
+  get createCheckoutQuoteToken() { return createCheckoutQuoteToken; },
+  get crypto() { return crypto; },
+  get currentUser() { return currentUser; },
+  get customerAccessSnapshot() { return customerAccessSnapshot; },
+  get customerOrderStatusProjection() { return customerOrderStatusProjection; },
+  get customerOwnsHistoryOrder() { return customerOwnsHistoryOrder; },
+  get db() { return db; },
+  get defaultBranch() { return defaultBranch; },
+  get defaultHoursTemplate() { return defaultHoursTemplate; },
+  get effectiveRole() { return effectiveRole; },
+  get ensureKdsState() { return ensureKdsState; },
+  get ensurePrintingData() { return ensurePrintingData; },
+  get eventHub() { return eventHub; },
+  get feedbackNpsStats() { return feedbackNpsStats; },
+  get financeV2() { return financeV2; },
+  get findCashDrawerMovementRetry() { return findCashDrawerMovementRetry; },
+  get findOrderBranch() { return findOrderBranch; },
+  get fs() { return fs; },
+  get generateShortTrackingCode() { return generateShortTrackingCode; },
+  get guardPublicCheckoutRecovery() { return guardPublicCheckoutRecovery; },
+  get handleEditOrder() { return handleEditOrder; },
+  get handleIntegrationBackfill() { return handleIntegrationBackfill; },
+  get handleIntegrationRetry() { return handleIntegrationRetry; },
+  get handleIntegrationStatus() { return handleIntegrationStatus; },
+  get handleSettleOrder() { return handleSettleOrder; },
+  get hasAcceptedDelivery() { return hasAcceptedDelivery; },
+  get historyPageSize() { return historyPageSize; },
+  get isBirthdateLocked() { return isBirthdateLocked; },
+  get isBrokenEn() { return isBrokenEn; },
+  get isKdsPaymentEligible() { return isKdsPaymentEligible; },
+  get isKitchenOrderPaymentEligible() { return isKitchenOrderPaymentEligible; },
+  get isOtpDemoMode() { return isOtpDemoMode; },
+  get isOwnerActor() { return isOwnerActor; },
+  get isSettlementRequestFingerprint() { return isSettlementRequestFingerprint; },
+  get kdsIdempotent() { return kdsIdempotent; },
+  get kdsLineKey() { return kdsLineKey; },
+  get kdsMenuAvailabilityPayload() { return kdsMenuAvailabilityPayload; },
+  get kdsPerformance() { return kdsPerformance; },
+  get kitchenHeldCourseItems() { return kitchenHeldCourseItems; },
+  get kitchenLines() { return kitchenLines; },
+  get kitchenTicket() { return kitchenTicket; },
+  get listReservationSlots() { return listReservationSlots; },
+  get listSystemPrinters() { return listSystemPrinters; },
+  get loyaltyAchievements() { return loyaltyAchievements; },
+  get loyaltyEngine() { return loyaltyEngine; },
+  get makeToken() { return makeToken; },
+  get maybeAwardOrderLoyalty() { return maybeAwardOrderLoyalty; },
+  get menuItemBelongsToBranch() { return menuItemBelongsToBranch; },
+  get menuItemForResponse() { return menuItemForResponse; },
+  get moduleRuntime() { return moduleRuntime; },
+  get neemBridge() { return neemBridge; },
+  get nextDineInCheckNo() { return nextDineInCheckNo; },
+  get nextId() { return nextId; },
+  get nextOrderStatusAfterDeliveryAcceptance() { return nextOrderStatusAfterDeliveryAcceptance; },
+  get nextOrderStatusAfterPayment() { return nextOrderStatusAfterPayment; },
+  get normalizeAllergens() { return normalizeAllergens; },
+  get normalizeCashDrawerIdempotencyKey() { return normalizeCashDrawerIdempotencyKey; },
+  get normalizeCheckoutReceiptCode() { return normalizeCheckoutReceiptCode; },
+  get normalizeComplementInput() { return normalizeComplementInput; },
+  get normalizeComplementRuleInput() { return normalizeComplementRuleInput; },
+  get normalizeDayparts() { return normalizeDayparts; },
+  get normalizeDigits() { return normalizeDigits; },
+  get normalizeFulfillment() { return normalizeFulfillment; },
+  get normalizeOrderHistoryCursor() { return normalizeOrderHistoryCursor; },
+  get normalizePrinterConfig() { return normalizePrinterConfig; },
+  get normalizeReservationDate() { return normalizeReservationDate; },
+  get notifyReservationWhatsApp() { return notifyReservationWhatsApp; },
+  get operationalOrderResponse() { return operationalOrderResponse; },
+  get operationalPaymentResponse() { return operationalPaymentResponse; },
+  get orderCancellationGuard() { return orderCancellationGuard; },
+  get orderLinesFromRequest() { return orderLinesFromRequest; },
+  get orderSplitLifecycleGuard() { return orderSplitLifecycleGuard; },
+  get otpRequestTimestamps() { return otpRequestTimestamps; },
+  get otps() { return otps; },
+  get paginateCachedClosedOrders() { return paginateCachedClosedOrders; },
+  get parseBranchId() { return parseBranchId; },
+  get parseCashDrawerAmount() { return parseCashDrawerAmount; },
+  get path() { return path; },
+  get paymentProviderPublicStatus() { return paymentProviderPublicStatus; },
+  get paymentStatusFor() { return paymentStatusFor; },
+  get persistAdminConfigMutation() { return persistAdminConfigMutation; },
+  get persistFinanceMutation() { return persistFinanceMutation; },
+  get persistedOrderBranchId() { return persistedOrderBranchId; },
+  get phonesMatch() { return phonesMatch; },
+  get prepareKitchenQueue() { return prepareKitchenQueue; },
+  get printRasterReceipt() { return printRasterReceipt; },
+  get printerForBranch() { return printerForBranch; },
+  get productionPaymentProviderReady() { return productionPaymentProviderReady; },
+  get publicCheckoutOrderView() { return publicCheckoutOrderView; },
+  get publicContentPayload() { return publicContentPayload; },
+  get publicGuestMenuPayload() { return publicGuestMenuPayload; },
+  get publicOrderMutationGuard() { return publicOrderMutationGuard; },
+  get publicPaymentAttempt() { return publicPaymentAttempt; },
+  get publicPrinterConfig() { return publicPrinterConfig; },
+  get publicRestaurantPayload() { return publicRestaurantPayload; },
+  get publicTenantContext() { return publicTenantContext; },
+  get publicUser() { return publicUser; },
+  get publicWaitlistEntry() { return publicWaitlistEntry; },
+  get publishOperationalEvent() { return publishOperationalEvent; },
+  get publishPaymentCommitEffects() { return publishPaymentCommitEffects; },
+  get quoteFulfillment() { return quoteFulfillment; },
+  get receivedAmount() { return receivedAmount; },
+  get recordAudit() { return recordAudit; },
+  get requestBranchValue() { return requestBranchValue; },
+  get requestedBranchAssignments() { return requestedBranchAssignments; },
+  get requestedKdsBranch() { return requestedKdsBranch; },
+  get requireAdmin() { return requireAdmin; },
+  get requireAuth() { return requireAuth; },
+  get requireCapability() { return requireCapability; },
+  get requireCommandCenterAccess() { return requireCommandCenterAccess; },
+  get requireKitchen() { return requireKitchen; },
+  get requireOwner() { return requireOwner; },
+  get reservationDateWithinWindow() { return reservationDateWithinWindow; },
+  get reservationFingerprint() { return reservationFingerprint; },
+  get reservationResponse() { return reservationResponse; },
+  get resolveBranch() { return resolveBranch; },
+  get resolveBranchExact() { return resolveBranchExact; },
+  get resolveNotifyPhone() { return resolveNotifyPhone; },
+  get resolveSettlementAmounts() { return resolveSettlementAmounts; },
+  get respondAdminConfigPersistenceFailure() { return respondAdminConfigPersistenceFailure; },
+  get restoreFinanceMutationState() { return restoreFinanceMutationState; },
+  get reverseCancelledOrderFinancialEffects() { return reverseCancelledOrderFinancialEffects; },
+  get rollbackAuditEntry() { return rollbackAuditEntry; },
+  get sandboxPaymentGuard() { return sandboxPaymentGuard; },
+  get sanitizeCoverImg() { return sanitizeCoverImg; },
+  get sanitizeMenuImg() { return sanitizeMenuImg; },
+  get sanitizePromoSlideInput() { return sanitizePromoSlideInput; },
+  get save() { return save; },
+  get sendOrderToPrinter() { return sendOrderToPrinter; },
+  get serializeAdminConfigMutation() { return serializeAdminConfigMutation; },
+  get serializeBranchOrderMutation() { return serializeBranchOrderMutation; },
+  get serializeOrderMutationRoute() { return serializeOrderMutationRoute; },
+  get serializePaymentOrderMutationRoute() { return serializePaymentOrderMutationRoute; },
+  get serializeReservationCreation() { return serializeReservationCreation; },
+  get serializeWaitlistMutation() { return serializeWaitlistMutation; },
+  get setMenuAvailabilityOverride() { return setMenuAvailabilityOverride; },
+  get settlePaymentAttempt() { return settlePaymentAttempt; },
+  get settlementInFlight() { return settlementInFlight; },
+  get settlementLockKey() { return settlementLockKey; },
+  get settlementPersistenceGate() { return settlementPersistenceGate; },
+  get shamsi() { return shamsi; },
+  get shouldReleaseOrderInventory() { return shouldReleaseOrderInventory; },
+  get smsEngine() { return smsEngine; },
+  get snapshotFinanceMutationState() { return snapshotFinanceMutationState; },
+  get staffMenuPayload() { return staffMenuPayload; },
+  get stateStore() { return stateStore; },
+  get summarizeKdsPaymentReview() { return summarizeKdsPaymentReview; },
+  get syncLegacyHours() { return syncLegacyHours; },
+  get tableBranchId() { return tableBranchId; },
+  get tableForBranch() { return tableForBranch; },
+  get tableNoBelongsToTable() { return tableNoBelongsToTable; },
+  get tenantConnectionManager() { return tenantConnectionManager; },
+  get tenantMenuRepository() { return tenantMenuRepository; },
+  get tenantStorage() { return tenantStorage; },
+  get testPrinter() { return testPrinter; },
+  get toWaDigits() { return toWaDigits; },
+  get translateMenuItem() { return translateMenuItem; },
+  get translationEngine() { return translationEngine; },
+  get upload() { return upload; },
+  get userAvatarUpload() { return userAvatarUpload; },
+  get userCan() { return userCan; },
+  get validateAdminHoursTime() { return validateAdminHoursTime; },
+  get validateDeliveryAcceptance() { return validateDeliveryAcceptance; },
+  get validateExplicitCheckoutSelections() { return validateExplicitCheckoutSelections; },
+  get validateModifierGroupDefinitions() { return validateModifierGroupDefinitions; },
+  get validateStaffBranchAssignments() { return validateStaffBranchAssignments; },
+  get validateWaiterCourseFire() { return validateWaiterCourseFire; },
+  get waMeUrl() { return waMeUrl; },
+  get waitlist() { return waitlist; },
+  get waitlistForBranch() { return waitlistForBranch; },
+  get walletEngine() { return walletEngine; },
+  get withCashDrawerMutationLock() { return withCashDrawerMutationLock; },
+  get withCashDrawerSettlementLock() { return withCashDrawerSettlementLock; },
+};
 
 const ROOT = path.join(__dirname, '..');
 const DB_PATH = process.env.WESTO_DB_PATH || path.join(__dirname, 'data', 'db.json');
@@ -1821,6 +2061,7 @@ app.use((req, res, next) => {
         cellId: TENANT_CONFIG.cellId,
         release: TENANT_CONFIG.release,
         source: 'fixed-local-tenant',
+        moduleVersions: tenantDb.tenantIdentity?.moduleVersions || {},
       });
       req.tenantContext = context;
       req.tenantId = context.tenantId;
@@ -1933,6 +2174,11 @@ app.use((req, res, next) => {
   next();
 });
 if (process.env.TRUST_PROXY === 'true') app.set('trust proxy', 1);
+app.use((req, res, next) => {
+  const json = res.json;
+  res.json = function(payload) { return json.call(this, withoutUnsubscribedFinance(db, payload)); };
+  next();
+});
 app.use(compression({ threshold: 1024, level: 6 }));
 app.use((req, res, next) => {
   const requestId = String(req.headers['x-request-id'] || crypto.randomUUID()).slice(0, 96);
@@ -2104,15 +2350,9 @@ function commandCenterPayload(branchId = null) {
   };
 }
 
-app.get('/api/admin/session', requireCommandCenterAccess, (req, res) => {
-  const allowedBranchIds = branchScopeForUser(req.user, { role: effectiveRole(req.user) });
-  res.json({
-    user: publicUser(req.user),
-    branchId: parseBranchId(req),
-    branches: (db.branches || []).filter((branch) => branch.active !== false
-      && (allowedBranchIds === null || allowedBranchIds.includes(Number(branch.id)))),
-  });
-});
+moduleRuntime.registerHttpRoute('platform_core', 'get-001', moduleRouteContext);
+
+moduleRuntime.registerHttpRoute('platform_core', 'get-002', moduleRouteContext);
 
 const STAFF_WORKSPACES = Object.freeze({
   cashier: { label: 'صندوق', path: '/admin/cashier', capability: 'cash.manage' },
@@ -2191,79 +2431,13 @@ function cashSessionTotals(session) {
   };
 }
 
-app.get('/api/admin/role-preview', requireCapability('role.preview'), (req, res) => {
-  res.json({
-    workspaces: Object.entries(STAFF_WORKSPACES).map(([role, item]) => ({
-      role,
-      label: item.label,
-      path: item.path,
-      capabilities: ROLE_CAPABILITIES[role] || [],
-    })),
-  });
-});
+moduleRuntime.registerHttpRoute('platform_core', 'get-003', moduleRouteContext);
 
-app.get('/api/staff/session/:workspace', requireCommandCenterAccess, (req, res) => {
-  const workspace = String(req.params.workspace || '');
-  if (!canOpenWorkspace(req.user, workspace)) return res.status(403).json({ error: 'workspace_forbidden', workspace });
-  const branchId = parseBranchId(req) || defaultBranch()?.id || null;
-  const actualRole = effectiveRole(req.user);
-  const allowedBranchIds = branchScopeForUser(req.user, { role: actualRole });
-  res.json({
-    user: publicUser(req.user),
-    workspace: {
-      role: workspace,
-      label: STAFF_WORKSPACES[workspace].label,
-      capabilities: ROLE_CAPABILITIES[workspace] || [],
-      preview: actualRole !== workspace,
-      returnPath: actualRole === 'owner' || actualRole === 'manager' ? '/admin' : null,
-    },
-    branchId,
-    branches: (db.branches || []).filter((branch) => branch.active !== false
-      && (allowedBranchIds === null || allowedBranchIds.includes(Number(branch.id)))),
-    shift: activeStaffShift(req.user, branchId),
-  });
-});
+moduleRuntime.registerHttpRoute('platform_core', 'get-004', moduleRouteContext);
 
-app.post('/api/staff/shifts/open', requireCapability('ops.view'), async (req, res) => {
-  const branchId = parseBranchId(req) || defaultBranch()?.id || 1;
-  const existing = activeStaffShift(req.user, branchId);
-  if (existing) return res.json({ ok: true, idempotent: true, shift: existing });
-  const snapshot = snapshotFinanceMutationState();
-  const shift = {
-    id: nextId(db.staffShifts),
-    phone: req.user.phone,
-    role: effectiveRole(req.user),
-    branchId,
-    openedAt: new Date().toISOString(),
-    closedAt: null,
-  };
-  db.staffShifts.unshift(shift);
-  recordAudit(req, 'shift.opened', 'shift', shift.id, {}, branchId);
-  try {
-    await persistFinanceMutation(snapshot);
-    res.status(201).json({ ok: true, shift });
-  } catch (error) {
-    return res.status(error.status || 503).json({ error: error.code || 'shift_persistence_failed' });
-  }
-});
+moduleRuntime.registerHttpRoute('platform_core', 'post-005', moduleRouteContext);
 
-app.post('/api/staff/shifts/close', requireCapability('ops.view'), async (req, res) => {
-  const branchId = parseBranchId(req) || defaultBranch()?.id || 1;
-  return withCashDrawerMutationLock(cashDrawerMutationQueueKey(req, branchId), async () => {
-    const shift = activeStaffShift(req.user, branchId);
-    if (!shift) return res.status(409).json({ error: 'shift_not_open' });
-    if (activeCashSession(req.user, branchId)) return res.status(409).json({ error: 'cash_drawer_still_open' });
-    const snapshot = snapshotFinanceMutationState();
-    shift.closedAt = new Date().toISOString();
-    recordAudit(req, 'shift.closed', 'shift', shift.id, {}, branchId);
-    try {
-      await persistFinanceMutation(snapshot);
-      return res.json({ ok: true, shift });
-    } catch (error) {
-      return res.status(error.status || 503).json({ error: error.code || 'shift_persistence_failed' });
-    }
-  });
-});
+moduleRuntime.registerHttpRoute('platform_core', 'post-006', moduleRouteContext);
 
 // Cash drawer inputs are whole Toman amounts. Reject malformed values instead
 // of silently coercing them to zero, and keep retries tied to a durable key.
@@ -2354,175 +2528,13 @@ async function withCashDrawerSettlementLock(req, orderId, operation) {
   return withCashDrawerMutationLock(cashDrawerMutationQueueKey(req, branchId), operation);
 }
 
-app.get('/api/cashier/drawer', requireCapability('cash.manage'), (req, res) => {
-  const branchId = parseBranchId(req) || defaultBranch()?.id || 1;
-  return withCashDrawerMutationLock(cashDrawerMutationQueueKey(req, branchId), async () => {
-    const session = activeCashSession(req.user, branchId);
-    const totals = session ? cashSessionTotals(session) : null;
-    if (session && !totals) return res.status(409).json({ error: 'cash_drawer_ledger_invalid', message: 'سابقهٔ صندوق قابل جمع‌بندی نیست؛ پیش از ادامه آن را تطبیق دهید.' });
-    return res.json({ session, totals });
-  });
-});
+moduleRuntime.registerHttpRoute('pos', 'get-007', moduleRouteContext);
 
-app.post('/api/cashier/drawer/open', requireCapability('cash.manage'), async (req, res) => {
-  const branchId = parseBranchId(req) || defaultBranch()?.id || 1;
-  const openingAmount = parseCashDrawerAmount(req.body?.openingAmount, { allowZero: true });
-  if (openingAmount == null) return res.status(400).json({ error: 'cash_amount_invalid' });
-  const queueKey = cashDrawerMutationQueueKey(req, branchId);
-  return withCashDrawerMutationLock(queueKey, async () => {
-    if (!activeStaffShift(req.user, branchId)) {
-      return res.status(409).json({ error: 'staff_shift_not_open' });
-    }
-    const existing = activeCashSession(req.user, branchId);
-    const retry = cashDrawerOpenRetry(existing, openingAmount);
-    if (retry.kind === 'conflict') {
-      return res.status(409).json({ error: 'cash_drawer_opening_conflict', session: retry.session });
-    }
-    if (retry.kind === 'duplicate') {
-      const totals = cashSessionTotals(retry.session);
-      if (!totals) return res.status(409).json({ error: 'cash_drawer_ledger_invalid' });
-      return res.json({ ok: true, idempotent: true, session: retry.session, totals });
-    }
-    const snapshot = snapshotFinanceMutationState();
-    const session = {
-      id: nextId(db.cashSessions),
-      phone: req.user.phone,
-      branchId,
-      openingAmount,
-      openedAt: new Date().toISOString(),
-      closedAt: null,
-      movements: [],
-    };
-    try {
-      db.cashSessions.unshift(session);
-      recordAudit(req, 'cash_drawer.opened', 'cash_session', session.id, { openingAmount }, branchId);
-      await persistFinanceMutation(snapshot);
-      return res.status(201).json({ ok: true, session, totals: cashSessionTotals(session) });
-    } catch (error) {
-      restoreFinanceMutationState(snapshot);
-      return res.status(error.status || 503).json({ error: error.code || error.message });
-    }
-  });
-});
+moduleRuntime.registerHttpRoute('pos', 'post-008', moduleRouteContext);
 
-app.post('/api/cashier/drawer/movements', requireCapability('cash.manage'), async (req, res) => {
-  const branchId = parseBranchId(req) || defaultBranch()?.id || 1;
-  const type = String(req.body?.type || '');
-  if (!['pay_in', 'pay_out'].includes(type)) return res.status(400).json({ error: 'cash_movement_invalid' });
-  const rawAmount = parseCashDrawerAmount(req.body?.amount);
-  if (rawAmount == null) return res.status(400).json({ error: 'cash_movement_amount_invalid' });
-  const idempotency = normalizeCashDrawerIdempotencyKey(req.get('Idempotency-Key'), req.body?.idempotencyKey);
-  if (idempotency.error) return res.status(400).json({ error: idempotency.error });
-  const note = String(req.body?.note || '').trim().slice(0, 160);
-  const queueKey = cashDrawerMutationQueueKey(req, branchId);
-  return withCashDrawerMutationLock(queueKey, async () => {
-    const session = activeCashSession(req.user, branchId);
-    if (!session) return res.status(409).json({ error: 'cash_drawer_not_open' });
-    const currentTotals = cashSessionTotals(session);
-    if (!currentTotals) return res.status(409).json({ error: 'cash_drawer_ledger_invalid', message: 'سابقهٔ صندوق معتبر نیست؛ تغییر جدید ثبت نشد.' });
-    const amount = type === 'pay_out' ? -rawAmount : rawAmount;
-    const requestFingerprint = cashDrawerMovementFingerprint({
-      tenantId: req.tenantId, branchId, sessionId: session.id, phone: req.user.phone, type, amount, note,
-    });
-    const retry = findCashDrawerMovementRetry(session, idempotency.key, requestFingerprint);
-    if (retry.kind === 'conflict') return res.status(409).json({ error: 'cash_movement_idempotency_conflict' });
-    if (retry.kind === 'duplicate') {
-      return res.json({
-        ok: true, idempotent: true, movement: retry.movement, session, totals: currentTotals,
-      });
-    }
+moduleRuntime.registerHttpRoute('pos', 'post-009', moduleRouteContext);
 
-    if (type === 'pay_out' && cashDrawerPayOutExceedsAvailable(currentTotals, rawAmount)) {
-      return res.status(409).json({
-        error: 'cash_drawer_insufficient_funds',
-        available: Math.max(0, currentTotals.expected),
-        requested: rawAmount,
-        message: 'مبلغ خروج از وجه نقد قابل‌برداشت صندوق بیشتر است؛ مبلغ را کاهش دهید یا ورود نقدی ثبت کنید.',
-      });
-    }
-
-    const projectedTotals = cashSessionTotals({
-      ...session,
-      movements: [{ type, amount }, ...(Array.isArray(session.movements) ? session.movements : [])],
-    });
-    if (!projectedTotals) return res.status(409).json({ error: 'cash_drawer_ledger_invalid', message: 'جمع صندوق از محدودهٔ معتبر خارج می‌شود؛ تغییر ثبت نشد.' });
-
-    const snapshot = snapshotFinanceMutationState();
-    const movement = {
-      id: nextId(session.movements), type, amount, note,
-      idempotencyKey: idempotency.key, requestFingerprint,
-      at: new Date().toISOString(), by: req.user.phone,
-    };
-    try {
-      session.movements.unshift(movement);
-      recordAudit(req, `cash_drawer.${type}`, 'cash_session', session.id, { amount: movement.amount, note: movement.note }, branchId);
-      const financeResult = financeV2.captureCashMovement(db, session, movement, { actor: req.user.phone });
-      if (financeResult?.event) {
-        movement.financeEventId = financeResult.event.id;
-        movement.financeStatus = financeResult.event.status;
-        movement.financeErrorCode = financeResult.event.error?.code || null;
-      }
-      await persistFinanceMutation(snapshot);
-      return res.status(201).json({ ok: true, movement, session, totals: cashSessionTotals(session), finance: financeResult });
-    } catch (error) {
-      restoreFinanceMutationState(snapshot);
-      return res.status(error.status || 503).json({ error: error.code || error.message });
-    }
-  });
-});
-
-app.post('/api/cashier/drawer/close', requireCapability('cash.manage'), async (req, res) => {
-  const branchId = parseBranchId(req) || defaultBranch()?.id || 1;
-  const countedAmount = parseCashDrawerAmount(req.body?.countedAmount, { allowZero: true });
-  if (countedAmount == null) return res.status(400).json({ error: 'cash_counted_amount_invalid' });
-  const queueKey = cashDrawerMutationQueueKey(req, branchId);
-  return withCashDrawerMutationLock(queueKey, async () => {
-    const session = activeCashSession(req.user, branchId);
-    const requestedSessionId = String(req.body?.sessionId || '').trim();
-    if (session && requestedSessionId && String(session.id) !== requestedSessionId) {
-      return res.status(409).json({ error: 'cash_drawer_session_changed' });
-    }
-    const closedSession = session || (requestedSessionId
-      ? (db.cashSessions || []).find((item) => String(item.id) === requestedSessionId
-        && String(item.phone) === String(req.user.phone)
-        && Number(item.branchId) === Number(branchId)
-        && item.closedAt)
-      : null);
-    if (!closedSession) return res.status(409).json({ error: 'cash_drawer_not_open' });
-    const requestFingerprint = cashDrawerMovementFingerprint({
-      tenantId: req.tenantId, branchId, sessionId: closedSession.id,
-      phone: req.user.phone, type: 'close', amount: countedAmount, note: '',
-    });
-    if (closedSession.closeRequestFingerprint) {
-      if (closedSession.closeRequestFingerprint !== requestFingerprint) {
-        return res.status(409).json({ error: 'cash_drawer_close_idempotency_conflict' });
-      }
-      const closedTotals = cashSessionTotals(closedSession);
-      if (!closedTotals) return res.status(409).json({ error: 'cash_drawer_ledger_invalid' });
-      return res.json({
-        ok: true, idempotent: true, session: closedSession,
-        totals: { ...closedTotals, counted: closedSession.countedAmount, variance: closedSession.variance },
-      });
-    }
-    if (!session) return res.status(409).json({ error: 'cash_drawer_not_open' });
-    const totals = cashSessionTotals(session);
-    if (!totals) return res.status(409).json({ error: 'cash_drawer_ledger_invalid', message: 'سابقهٔ صندوق معتبر نیست؛ بستن صندوق انجام نشد.' });
-    const snapshot = snapshotFinanceMutationState();
-    session.countedAmount = countedAmount;
-    session.variance = session.countedAmount - totals.expected;
-    session.closedAt = new Date().toISOString();
-    session.closeRequestFingerprint = requestFingerprint;
-    recordAudit(req, 'cash_drawer.closed', 'cash_session', session.id, { countedAmount: session.countedAmount, variance: session.variance }, branchId);
-    try {
-      const financeResult = financeV2.captureCashClose(db, session, { actor: req.user.phone });
-      await persistFinanceMutation(snapshot);
-      return res.json({ ok: true, session, totals: { ...totals, counted: session.countedAmount, variance: session.variance }, finance: financeResult });
-    } catch (error) {
-      restoreFinanceMutationState(snapshot);
-      return res.status(error.status || 503).json({ error: error.code || error.message });
-    }
-  });
-});
+moduleRuntime.registerHttpRoute('pos', 'post-010', moduleRouteContext);
 
 registerAdminV2Routes({
   app,
@@ -2584,19 +2596,7 @@ registerAccountingRoutes({
   parseBranchId,
 });
 
-app.get('/api/tenant/context', (req, res) => {
-  const identity = db.tenantIdentity || {};
-  res.json({
-    ok: true,
-    tenant: publicTenantContext({
-      ...TENANT_CONFIG,
-      tenantId: req.tenantId || identity.tenantId || TENANT_CONFIG.tenantId,
-      tenantSlug: req.tenantSlug || identity.tenantSlug || TENANT_CONFIG.tenantSlug,
-      displayName: identity.displayName || db.restaurant?.name || TENANT_CONFIG.displayName,
-      canonicalDomain: identity.canonicalDomain || TENANT_CONFIG.canonicalDomain,
-    }),
-  });
-});
+moduleRuntime.registerHttpRoute('platform_core', 'get-011', moduleRouteContext);
 
 // SALSA remains a separate operations application so its React runtime and
 // finance database can never interfere with the public 3D menu runtime.
@@ -2619,9 +2619,9 @@ app.use((req, res, next) => {
   next();
 });
 
-app.get('/api/admin/neem-integration', requireCapability('admin.access'), handleIntegrationStatus);
-app.post('/api/admin/neem-integration/retry', requireCapability('admin.access'), handleIntegrationRetry);
-app.post('/api/admin/neem-integration/backfill', requireCapability('admin.access'), handleIntegrationBackfill);
+moduleRuntime.registerHttpRoute('platform_core', 'get-012', moduleRouteContext);
+moduleRuntime.registerHttpRoute('platform_core', 'post-013', moduleRouteContext);
+moduleRuntime.registerHttpRoute('platform_core', 'post-014', moduleRouteContext);
 
 // Dynamic Feature Control from SALSA God Mode & Health Check
 app.use((req, res, next) => {
@@ -2884,10 +2884,7 @@ app.use((req, res, next) => {
   next();
 });
 
-app.get('/ops', requireCapability('admin.access'), (req, res) => {
-  const target = process.env.SALSA_OPS_URL || process.env.NEEM_OPS_URL || 'http://127.0.0.1:3050/#overview';
-  res.redirect(302, target);
-});
+moduleRuntime.registerHttpRoute('platform_core', 'get-015', moduleRouteContext);
 
 // Deep links keep the relevant SALSA workspace reachable from the matching
 // WESTO admin section while the two runtimes remain isolated.
@@ -2900,182 +2897,24 @@ const SALSA_OPERATION_VIEWS = new Set([
 ]);
 const NEEM_OPERATION_VIEWS = SALSA_OPERATION_VIEWS;
 
-app.get('/ops/:view', requireCapability('admin.access'), (req, res) => {
-  const view = String(req.params.view || '');
-  if (!SALSA_OPERATION_VIEWS.has(view)) return res.status(404).json({ error: 'unknown_salsa_view' });
-  const base = (process.env.SALSA_OPS_URL || process.env.NEEM_OPS_URL || 'http://127.0.0.1:3050').replace(/\/?(?:#.*)?$/, '');
-  res.redirect(302, `${base}/#${encodeURIComponent(view)}`);
-});
+moduleRuntime.registerHttpRoute('platform_core', 'get-016', moduleRouteContext);
 
-app.get('/api/admin/command-center', requireCapability('command.view'), (req, res) => {
-  res.json(commandCenterPayload(parseBranchId(req)));
-});
+moduleRuntime.registerHttpRoute('platform_core', 'get-017', moduleRouteContext);
 
-app.get('/api/admin/events', requireCapability('ops.view'), (req, res) => {
-  const branchId = parseBranchId(req);
-  eventHub.subscribe(req, res, (event) => {
-    if (event.permission && !userCan(req.user, event.permission)) return false;
-    const eventBranch = event.payload?.branchId;
-    return !branchId || !eventBranch || Number(eventBranch) === Number(branchId);
-  });
-});
+moduleRuntime.registerHttpRoute('platform_core', 'get-018', moduleRouteContext);
 
-app.get('/api/admin/audit', requireCapability('admin.access'), (req, res) => {
-  const branchId = parseBranchId(req);
-  const limit = Math.max(1, Math.min(200, Number(req.query.limit) || 80));
-  const log = branchScoped(db.auditLog || [], branchId).slice(0, limit);
-  res.json({ audit: log, branchId: branchId || null });
-});
+moduleRuntime.registerHttpRoute('platform_core', 'get-019', moduleRouteContext);
 
 // --- auth ---
-app.post('/api/auth/request-otp', (req, res) => {
-  const phone = normalizeDigits(req.body?.phone || '').trim();
-  if (!PHONE_RE.test(phone)) return res.status(400).json({ error: 'شماره موبایل معتبر نیست' });
+moduleRuntime.registerHttpRoute('platform_core', 'post-020', moduleRouteContext);
 
-  // Anti-Spam & Rate-Limiting Cooldown Check
-  const enforceCooldown = !IS_NODE_TEST_RUNTIME || req.headers['x-enforce-cooldown'] === 'true';
-  const now = Date.now();
-  const lastRequested = otpRequestTimestamps.get(phone) || 0;
-  if (enforceCooldown && (now - lastRequested < OTP_COOLDOWN_MS)) {
-    const retryAfter = Math.ceil((lastRequested + OTP_COOLDOWN_MS - now) / 1000);
-    res.setHeader('Retry-After', String(retryAfter));
-    return res.status(429).json({
-      ok: false,
-      error: 'rate_limited',
-      message: `لطفاً پیش از درخواست مجدد کد، ${retryAfter} ثانیه صبر کنید.`,
-      retryAfterSeconds: retryAfter
-    });
-  }
+moduleRuntime.registerHttpRoute('platform_core', 'post-021', moduleRouteContext);
 
-  const code = String(crypto.randomInt(10000, 99999));
-  otps.set(phone, {
-    code,
-    expiresAt: now + (db.settings.otpTtlMs || 120000),
-    attempts: 0,
-    requestedAt: now
-  });
-  otpRequestTimestamps.set(phone, now);
+moduleRuntime.registerHttpRoute('platform_core', 'get-022', moduleRouteContext);
 
-  const demoOtp = isOtpDemoMode(process.env);
-  if (!demoOtp) {
-    otps.delete(phone);
-    return res.status(503).json({ error: 'ارسال OTP در محیط تولید هنوز پیکربندی نشده است' });
-  }
-  console.log(`[OTP:demo] ${phone} -> ${code}`);
-  res.json({ ok: true, demo: true, code, ttlMs: db.settings.otpTtlMs || 120000 });
-});
+moduleRuntime.registerHttpRoute('platform_core', 'post-023', moduleRouteContext);
 
-app.post('/api/auth/verify-otp', (req, res) => {
-  const phone = normalizeDigits(req.body?.phone || '').trim();
-  const code = normalizeDigits(req.body?.code || '').trim();
-  const entry = otps.get(phone);
-  if (!entry || entry.expiresAt < Date.now()) return res.status(400).json({ error: 'کد منقضی شده است؛ دوباره درخواست دهید' });
-
-  // Anti-Brute-Force: Track attempts and destroy code after MAX_OTP_ATTEMPTS
-  entry.attempts = (entry.attempts || 0) + 1;
-  if (entry.attempts > MAX_OTP_ATTEMPTS) {
-    otps.delete(phone);
-    return res.status(429).json({
-      error: 'تعداد تلاش‌های ناموفق بیش از حد مجاز بود؛ کد باطل شد. لطفاً دوباره درخواست کد دهید.',
-      code: 'MAX_ATTEMPTS_EXCEEDED'
-    });
-  }
-
-  if (entry.code !== code) {
-    const remaining = MAX_OTP_ATTEMPTS - entry.attempts;
-    return res.status(400).json({
-      error: remaining > 0
-        ? `کد واردشده درست نیست (${remaining} تلاش باقی‌مانده)`
-        : 'کد واردشده درست نیست'
-    });
-  }
-  otps.delete(phone);
-
-  // [TEMPORARILY DISABLED] platform-admin login restriction
-  // if (PLATFORM_ONLY_PHONE_IDENTITIES.has(phone)
-  //     || (Array.isArray(db.users) && db.users.some((candidate) =>
-  //       normalizeDigits(String(candidate.phone || '')).trim() === phone && candidate.principalType === 'platform_admin'))) {
-  //   return res.status(403).json({ error: 'separate_platform_account_required', message: 'حساب راهبر پلتفرم با حساب مالک رستوران جداست.' });
-  // }
-
-  if (!Array.isArray(db.users)) db.users = [];
-  if (!db.settings) db.settings = { adminPhones: [] };
-  if (!Array.isArray(db.settings.adminPhones)) db.settings.adminPhones = [];
-  if (!Array.isArray(db.loginLog)) db.loginLog = [];
-
-  let user = db.users.find((u) => u.phone === phone);
-  const isAdmin = Array.isArray(db.settings.adminPhones) && db.settings.adminPhones.includes(phone);
-  if (!user) {
-    user = {
-      phone,
-      name: '',
-      email: '',
-      role: isAdmin ? 'owner' : 'user',
-      points: 0,
-      createdAt: new Date().toISOString(),
-      blocked: false,
-    };
-    db.users.push(user);
-    if (db.loyalty && db.loyalty.welcomePoints) {
-      awardLoyaltyPoints(phone, db.loyalty.welcomePoints, 'welcome');
-    }
-  }
-  // [DEV] Sync role with adminPhones on every login
-  if (isAdmin && user.role !== 'owner') user.role = 'owner';
-  user.lastLoginAt = new Date().toISOString();
-  db.loginLog.unshift({ phone, at: user.lastLoginAt });
-  db.loginLog = db.loginLog.slice(0, 200);
-  save();
-  const secureCookie = req.secure || String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim() === 'https';
-  const token = makeToken(phone, req.tenantId || req.tenant?.tenantId || req.tenant?.tenantSlug);
-  res.setHeader('Set-Cookie', `westo_session=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${Math.floor(SESSION_TTL_MS / 1000)}${secureCookie ? '; Secure' : ''}`);
-  res.json({ ok: true, user: publicUser(user), token });
-});
-
-app.get('/api/auth/me', (req, res) => {
-  const user = currentUser(req);
-  // Guests get 200 + null (avoids Chrome "Failed to load resource" 401 noise)
-  if (!user) return res.json({ user: null });
-  res.json({ user: publicUser(user) });
-});
-
-app.post('/api/auth/logout', (req, res) => {
-  res.setHeader('Set-Cookie', 'westo_session=; Path=/; HttpOnly; Max-Age=0');
-  res.json({ ok: true });
-});
-
-app.patch('/api/auth/profile', requireAuth, (req, res) => {
-  const { name, email, birthdate, gender, city, address, preferences, notes, avatar } = req.body || {};
-  const user = (db.users || []).find((u) => u.phone === req.user.phone) || req.user;
-  if (typeof name === 'string') user.name = name.trim().slice(0, 100);
-  if (typeof email === 'string') user.email = email.trim().slice(0, 200);
-
-  if (typeof birthdate === 'string' && birthdate.trim()) {
-    const trimmedBday = birthdate.trim().slice(0, 50);
-    if (trimmedBday !== (user.birthdate || '')) {
-      if (isBirthdateLocked(user)) {
-        return res.status(400).json({
-          error: 'تاریخ تولد قبلاً ثبت شده و امکان تغییر آن تا ۱ سال وجود ندارد. برای تغییر، با مدیریت هماهنگ فرمایید.'
-        });
-      }
-      user.birthdate = trimmedBday;
-      user.birthdateUpdatedAt = new Date().toISOString();
-      try {
-        campaignsEngine.checkBirthdayEligibility(db, user);
-      } catch (_) {}
-    }
-  }
-
-  if (typeof gender === 'string') user.gender = gender.trim().slice(0, 20);
-  if (typeof city === 'string') user.city = city.trim().slice(0, 100);
-  if (typeof address === 'string') user.address = address.trim().slice(0, 300);
-  if (Array.isArray(preferences)) user.preferences = preferences.map((p) => String(p).trim().slice(0, 50)).filter(Boolean);
-  if (typeof notes === 'string') user.notes = notes.trim().slice(0, 500);
-  if (typeof avatar === 'string') user.avatar = avatar.trim().slice(0, 200000);
-
-  save();
-  res.json({ ok: true, user: publicUser(user) });
-});
+moduleRuntime.registerHttpRoute('crm', 'patch-024', moduleRouteContext);
 
 // --- user avatar endpoints ---
 const userAvatarUpload = multer({
@@ -3099,228 +2938,23 @@ const userAvatarUpload = multer({
   }),
 });
 
-app.post('/api/user/avatar/upload', requireAuth, (req, res) => {
-  userAvatarUpload.single('avatar')(req, res, (err) => {
-    if (err) {
-      return res.status(400).json({ ok: false, error: err.message || 'خطا در آپلود تصویر' });
-    }
-    if (!req.file) {
-      return res.status(400).json({ ok: false, error: 'فایل تصویری انتخاب نشده است.' });
-    }
-    const avatarUrl = `uploads/avatars/${req.file.filename}`;
-    const user = (db.users || []).find((u) => phonesMatch(u.phone, req.user.phone)) || req.user;
-    user.avatar = avatarUrl;
-    save();
-    res.json({ ok: true, avatar: avatarUrl, user: publicUser(user) });
-  });
-});
+moduleRuntime.registerHttpRoute('website_brand', 'post-025', moduleRouteContext);
 
-app.post('/api/user/avatar', requireAuth, (req, res) => {
-  const { avatar } = req.body || {};
-  const user = (db.users || []).find((u) => phonesMatch(u.phone, req.user.phone)) || req.user;
-  user.avatar = typeof avatar === 'string' ? avatar.trim().slice(0, 200000) : '';
-  save();
-  res.json({ ok: true, avatar: user.avatar, user: publicUser(user) });
-});
+moduleRuntime.registerHttpRoute('platform_core', 'post-026', moduleRouteContext);
 
 // --- user multi-addresses API ---
-app.get('/api/user/addresses', requireAuth, (req, res) => {
-  const user = (db.users || []).find((u) => u.phone === req.user.phone) || req.user;
-  const addresses = Array.isArray(user.addresses) ? user.addresses : (user.address ? [{
-    id: 'addr_default',
-    title: '🏠 منزل',
-    city: user.city || '',
-    district: '',
-    address: user.address,
-    plaque: '',
-    unit: '',
-    floor: '',
-    receiverName: user.name || '',
-    receiverPhone: user.phone || '',
-    note: user.notes || '',
-    isDefault: true,
-    createdAt: user.createdAt || new Date().toISOString(),
-  }] : []);
-  res.json({ ok: true, addresses });
-});
+moduleRuntime.registerHttpRoute('platform_core', 'get-027', moduleRouteContext);
 
-app.post('/api/user/addresses', requireAuth, (req, res) => {
-  const user = (db.users || []).find((u) => u.phone === req.user.phone) || req.user;
-  user.addresses = Array.isArray(user.addresses) ? user.addresses : [];
+moduleRuntime.registerHttpRoute('platform_core', 'post-028', moduleRouteContext);
 
-  const {
-    title = '🏠 منزل',
-    city = '',
-    district = '',
-    address = '',
-    plaque = '',
-    unit = '',
-    floor = '',
-    receiverName = '',
-    receiverPhone = '',
-    note = '',
-    isDefault = false,
-  } = req.body || {};
+moduleRuntime.registerHttpRoute('platform_core', 'put-029', moduleRouteContext);
 
-  const cleanAddress = String(address).trim();
-  if (!cleanAddress) {
-    return res.status(400).json({ error: 'نشانی پستی الزامی است.' });
-  }
+moduleRuntime.registerHttpRoute('platform_core', 'delete-030', moduleRouteContext);
 
-  const newAddressId = `addr_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
-  const shouldBeDefault = isDefault || user.addresses.length === 0;
-
-  if (shouldBeDefault) {
-    user.addresses.forEach((a) => { a.isDefault = false; });
-  }
-
-  const newAddr = {
-    id: newAddressId,
-    title: String(title).trim().slice(0, 50) || '🏠 منزل',
-    city: String(city).trim().slice(0, 100),
-    district: String(district).trim().slice(0, 100),
-    address: cleanAddress.slice(0, 300),
-    plaque: String(plaque).trim().slice(0, 20),
-    unit: String(unit).trim().slice(0, 20),
-    floor: String(floor).trim().slice(0, 20),
-    receiverName: String(receiverName || user.name || '').trim().slice(0, 100),
-    receiverPhone: String(receiverPhone || user.phone || '').trim().slice(0, 30),
-    note: String(note).trim().slice(0, 300),
-    isDefault: shouldBeDefault,
-    createdAt: new Date().toISOString(),
-  };
-
-  user.addresses.unshift(newAddr);
-  if (shouldBeDefault) {
-    user.address = newAddr.address;
-    user.city = newAddr.city;
-    if (newAddr.note) user.notes = newAddr.note;
-  }
-
-  save();
-  res.json({ ok: true, address: newAddr, addresses: user.addresses });
-});
-
-app.put('/api/user/addresses/:id', requireAuth, (req, res) => {
-  const user = (db.users || []).find((u) => u.phone === req.user.phone) || req.user;
-  user.addresses = Array.isArray(user.addresses) ? user.addresses : [];
-
-  const addr = user.addresses.find((a) => a.id === req.params.id);
-  if (!addr) return res.status(404).json({ error: 'نشانی یافت نشد.' });
-
-  const {
-    title,
-    city,
-    district,
-    address,
-    plaque,
-    unit,
-    floor,
-    receiverName,
-    receiverPhone,
-    note,
-    isDefault,
-  } = req.body || {};
-
-  if (typeof title === 'string') addr.title = title.trim().slice(0, 50);
-  if (typeof city === 'string') addr.city = city.trim().slice(0, 100);
-  if (typeof district === 'string') addr.district = district.trim().slice(0, 100);
-  if (typeof address === 'string') {
-    const trimmed = address.trim();
-    if (!trimmed) return res.status(400).json({ error: 'نشانی پستی نمی‌تواند خالی باشد.' });
-    addr.address = trimmed.slice(0, 300);
-  }
-  if (typeof plaque === 'string') addr.plaque = plaque.trim().slice(0, 20);
-  if (typeof unit === 'string') addr.unit = unit.trim().slice(0, 20);
-  if (typeof floor === 'string') addr.floor = floor.trim().slice(0, 20);
-  if (typeof receiverName === 'string') addr.receiverName = receiverName.trim().slice(0, 100);
-  if (typeof receiverPhone === 'string') addr.receiverPhone = receiverPhone.trim().slice(0, 30);
-  if (typeof note === 'string') addr.note = note.trim().slice(0, 300);
-
-  if (typeof isDefault === 'boolean' && isDefault) {
-    user.addresses.forEach((a) => { a.isDefault = (a.id === addr.id); });
-    user.address = addr.address;
-    user.city = addr.city;
-    if (addr.note) user.notes = addr.note;
-  }
-
-  save();
-  res.json({ ok: true, address: addr, addresses: user.addresses });
-});
-
-app.delete('/api/user/addresses/:id', requireAuth, (req, res) => {
-  const user = (db.users || []).find((u) => u.phone === req.user.phone) || req.user;
-  user.addresses = Array.isArray(user.addresses) ? user.addresses : [];
-
-  const wasDefault = user.addresses.find((a) => a.id === req.params.id)?.isDefault;
-  user.addresses = user.addresses.filter((a) => a.id !== req.params.id);
-
-  if (wasDefault && user.addresses.length > 0) {
-    user.addresses[0].isDefault = true;
-    user.address = user.addresses[0].address;
-    user.city = user.addresses[0].city;
-  } else if (user.addresses.length === 0) {
-    user.address = '';
-  }
-
-  save();
-  res.json({ ok: true, addresses: user.addresses });
-});
-
-app.post('/api/user/addresses/:id/default', requireAuth, (req, res) => {
-  const user = (db.users || []).find((u) => u.phone === req.user.phone) || req.user;
-  user.addresses = Array.isArray(user.addresses) ? user.addresses : [];
-
-  const target = user.addresses.find((a) => a.id === req.params.id);
-  if (!target) return res.status(404).json({ error: 'نشانی یافت نشد.' });
-
-  user.addresses.forEach((a) => { a.isDefault = (a.id === target.id); });
-  user.address = target.address;
-  user.city = target.city;
-  if (target.note) user.notes = target.note;
-
-  save();
-  res.json({ ok: true, addresses: user.addresses, defaultAddress: target });
-});
+moduleRuntime.registerHttpRoute('platform_core', 'post-031', moduleRouteContext);
 
 // --- Customer Feedback & Reviews ---
-app.post('/api/user/feedback', requireAuth, (req, res) => {
-  const { rating, comment, tags, aspectRatings } = req.body || {};
-  const user = (db.users || []).find((u) => u.phone === req.user.phone) || req.user;
-  db.feedbacks = Array.isArray(db.feedbacks) ? db.feedbacks : [];
-
-  const feedbackId = `fb_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
-  const numRating = Math.min(5, Math.max(1, Number(rating) || 5));
-  const newFeedback = {
-    id: feedbackId,
-    phone: user.phone,
-    userName: user.name || 'مشتری وستو',
-    rating: numRating,
-    comment: typeof comment === 'string' ? comment.trim().slice(0, 1000) : '',
-    tags: Array.isArray(tags) ? tags.map((t) => String(t).slice(0, 50)) : [],
-    aspectRatings: typeof aspectRatings === 'object' && aspectRatings ? aspectRatings : {},
-    createdAt: new Date().toISOString(),
-  };
-
-  db.feedbacks.unshift(newFeedback);
-
-  let pointsAwarded = 0;
-  const lastAwardTime = user.lastFeedbackRewardAt ? new Date(user.lastFeedbackRewardAt).getTime() : 0;
-  const monthMs = 30 * 24 * 60 * 60 * 1000;
-  if (Date.now() - lastAwardTime > monthMs) {
-    pointsAwarded = 50;
-    user.points = (Number(user.points) || 0) + pointsAwarded;
-    user.lastFeedbackRewardAt = new Date().toISOString();
-  }
-
-  save();
-  res.json({
-    ok: true,
-    message: 'با تشکر! بازخورد شما با موفقیت ثبت شد.',
-    pointsAwarded,
-    newPoints: user.points,
-  });
-});
+moduleRuntime.registerHttpRoute('crm', 'post-032', moduleRouteContext);
 
 // --- content ---
 // Keep the catalogue response self-contained so every consumer (public menu,
@@ -3413,6 +3047,7 @@ function publicContentPayload({ includeUnavailable = true } = {}) {
   const menu = publicGuestMenuPayload(includeUnavailable ? { all: true } : {});
   const restaurantPayload = publicRestaurantPayload();
   return {
+    tenantId: tenantStorage.getStore()?.tenantId || db.tenantIdentity?.tenantId || TENANT_CONFIG.tenantId,
     content: db.content,
     products: db.products,
     // Keep the historical top-level fields for content-overrides.js and older
@@ -3433,57 +3068,21 @@ function publicContentPayload({ includeUnavailable = true } = {}) {
 
 // Parser-friendly bootstrap: its preload overlaps HTML parsing and replaces
 // the old synchronous XHR without introducing a race with SplitText/Three.
-app.get('/api/content-bootstrap.js', (req, res) => {
-  const json = JSON.stringify(publicContentPayload())
-    .replace(/</g, '\\u003c')
-    .replace(/\u2028/g, '\\u2028')
-    .replace(/\u2029/g, '\\u2029');
-  res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
-  res.setHeader('Cache-Control', 'no-cache');
-  res.send(`window.__WESTO_CONTENT__=${json};`);
-});
+moduleRuntime.registerHttpRoute('menu_qr', 'get-033', moduleRouteContext);
 
-app.get('/api/content', (req, res) => {
-  res.json(publicContentPayload());
-});
+// A new restaurant must never inherit WESTO's offline commercial snapshot.
+// Keep the legacy URL and hydrate the same UI with this request's tenant data.
+moduleRuntime.registerHttpRoute('menu_qr', 'get-034', moduleRouteContext);
 
-app.put('/api/content', requireAdmin, (req, res) => {
-  const updates = req.body.content || {};
-  for (const [k, v] of Object.entries(updates)) {
-    if (typeof v === 'string') db.content[k] = v;
-  }
-  save();
-  res.json({ ok: true, content: db.content });
-});
+moduleRuntime.registerHttpRoute('website_brand', 'get-035', moduleRouteContext);
+
+moduleRuntime.registerHttpRoute('website_brand', 'put-036', moduleRouteContext);
 
 // --- products: read-only derived view (writes go through /api/menu/categories) ---
-app.put('/api/products/:id', requireAdmin, (req, res) => {
-  res.status(410).json({
-    error: 'این مسیر منسوخ است — از مدیریت دسته‌های کاروسل استفاده کنید',
-  });
-});
+moduleRuntime.registerHttpRoute('menu_qr', 'put-037', moduleRouteContext);
 
 // --- menu items (orderable dishes) ---
-app.get('/api/menu', async (req, res) => {
-  try {
-    const requestedBranch = req.query?.branchId || req.query?.branch;
-    if (requestedBranch && !resolveBranchExact(requestedBranch)) {
-      return res.status(400).json({ error: 'branch_invalid', message: 'شعبهٔ انتخاب‌شده معتبر نیست.' });
-    }
-    if (tenantConnectionManager?.baseUrl && req.tenantDataAccess && req.tenantContext?.databaseProvider === 'postgres') {
-      const pgItems = await tenantMenuRepository.listMenuItems(req.tenantDataAccess);
-      db.menuItems = pgItems;
-      const pgCategories = await tenantMenuRepository.listCategories(req.tenantDataAccess);
-      if (pgCategories.length > 0) {
-        db.menuCategories = pgCategories;
-      }
-    }
-    res.json(publicGuestMenuPayload(req.query || {}));
-  } catch (err) {
-    console.error('[Menu GET Error]', err);
-    res.status(500).json({ ok: false, error: 'menu_retrieval_failed', message: 'دریافت منو موقتاً با مشکل روبه‌رو شد.' });
-  }
-});
+moduleRuntime.registerHttpRoute('menu_qr', 'get-038', moduleRouteContext);
 
 function complementRulesForMenuItem(menuItem) {
   if (!menuItem) return [];
@@ -3514,9 +3113,7 @@ function staffMenuPayload(branchToken = null) {
   };
 }
 
-app.get('/api/staff/menu', requireCapability('orders.create'), (req, res) => {
-  res.json(staffMenuPayload(req.query.branchId || req.query.branch));
-});
+moduleRuntime.registerHttpRoute('platform_core', 'get-039', moduleRouteContext);
 
 function normalizeComplementInput(input = {}, current = {}) {
   const parseNum = (v) => {
@@ -3574,182 +3171,31 @@ function normalizeComplementRuleInput(input = {}, current = {}) {
   return { rule };
 }
 
-app.get('/api/admin/menu-engineering', requireCapability('menu.manage'), (req, res) => {
-  res.json({
-    menuCategories: db.menuCategories || [],
-    menuItems: (db.menuItems || []).map(({ id, categoryId, name, img, available }) => ({ id, categoryId, name, img: img || '', available: available !== false })),
-    menuComplements: db.menuComplements || [],
-    menuComplementRules: db.menuComplementRules || [],
-  });
-});
+moduleRuntime.registerHttpRoute('menu_qr', 'get-040', moduleRouteContext);
 
-app.post('/api/admin/menu-complements', requireCapability('menu.manage'), (req, res) => {
-  const normalized = normalizeComplementInput(req.body || {});
-  if (normalized.error) return res.status(400).json(normalized);
-  const complement = { id: Math.max(0, ...(db.menuComplements || []).map((item) => Number(item.id) || 0)) + 1, ...normalized.complement };
-  db.menuComplements.push(complement);
-  save({ bumpMenu: true });
-  res.status(201).json({ ok: true, complement });
-});
+moduleRuntime.registerHttpRoute('menu_qr', 'post-041', moduleRouteContext);
 
-app.put('/api/admin/menu-complements/:id', requireCapability('menu.manage'), (req, res) => {
-  const targetId = Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
-  const complement = (db.menuComplements || []).find((item) => Number(item.id) === targetId);
-  if (!complement) return res.status(404).json({ error: 'مکمل پیدا نشد' });
-  const normalized = normalizeComplementInput(req.body || {}, complement);
-  if (normalized.error) return res.status(400).json(normalized);
-  Object.assign(complement, normalized.complement);
-  save({ bumpMenu: true });
-  res.json({ ok: true, complement });
-});
+moduleRuntime.registerHttpRoute('menu_qr', 'put-042', moduleRouteContext);
 
-app.delete('/api/admin/menu-complements/:id', requireCapability('menu.manage'), (req, res) => {
-  const id = Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
-  if (!(db.menuComplements || []).some((item) => Number(item.id) === id)) return res.status(404).json({ error: 'مکمل پیدا نشد' });
-  db.menuComplements = db.menuComplements.filter((item) => Number(item.id) !== id);
-  for (const rule of db.menuComplementRules || []) rule.complementIds = (rule.complementIds || []).filter((entry) => Number(entry) !== id);
-  db.menuComplementRules = (db.menuComplementRules || []).filter((rule) => (rule.complementIds || []).length);
-  save({ bumpMenu: true });
-  res.json({ ok: true });
-});
+moduleRuntime.registerHttpRoute('menu_qr', 'delete-043', moduleRouteContext);
 
-app.post('/api/admin/menu-complement-rules', requireCapability('menu.manage'), (req, res) => {
-  const normalized = normalizeComplementRuleInput(req.body || {});
-  if (normalized.error) return res.status(400).json(normalized);
-  const rule = { id: Math.max(0, ...(db.menuComplementRules || []).map((item) => Number(item.id) || 0)) + 1, ...normalized.rule };
-  db.menuComplementRules.push(rule);
-  save({ bumpMenu: true });
-  res.status(201).json({ ok: true, rule });
-});
+moduleRuntime.registerHttpRoute('menu_qr', 'post-044', moduleRouteContext);
 
-app.put('/api/admin/menu-complement-rules/:id', requireCapability('menu.manage'), (req, res) => {
-  const targetId = Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
-  const rule = (db.menuComplementRules || []).find((item) => Number(item.id) === targetId);
-  if (!rule) return res.status(404).json({ error: 'قانون مکمل پیدا نشد' });
-  const normalized = normalizeComplementRuleInput(req.body || {}, rule);
-  if (normalized.error) return res.status(400).json(normalized);
-  Object.assign(rule, normalized.rule);
-  save({ bumpMenu: true });
-  res.json({ ok: true, rule });
-});
+moduleRuntime.registerHttpRoute('menu_qr', 'put-045', moduleRouteContext);
 
-app.delete('/api/admin/menu-complement-rules/:id', requireCapability('menu.manage'), (req, res) => {
-  const id = Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
-  if (!(db.menuComplementRules || []).some((item) => Number(item.id) === id)) return res.status(404).json({ error: 'قانون مکمل پیدا نشد' });
-  db.menuComplementRules = db.menuComplementRules.filter((item) => Number(item.id) !== id);
-  save({ bumpMenu: true });
-  res.json({ ok: true });
-});
+moduleRuntime.registerHttpRoute('menu_qr', 'delete-046', moduleRouteContext);
 
-app.get('/api/i18n', (req, res) => {
-  res.json({ i18n: db.i18n || { guestLangEnabled: true, defaultLang: 'fa', supported: ['fa', 'en', 'ar'] } });
-});
+moduleRuntime.registerHttpRoute('platform_core', 'get-047', moduleRouteContext);
 
-app.get('/api/admin/i18n', requireAdmin, (req, res) => {
-  const items = db.menuItems || [];
-  const missingEn = items.filter((m) => !String(m.en || '').trim()).length;
-  const missingDescEn = items.filter((m) => m.desc && !String(m.descEn || '').trim()).length;
-  const missingAr = items.filter((m) => !String(m.ar || '').trim()).length;
-  const missingDescAr = items.filter((m) => m.desc && !String(m.descAr || '').trim()).length;
-  res.json({
-    i18n: db.i18n,
-    stats: {
-      total: items.length,
-      withEn: items.filter((m) => String(m.en || '').trim()).length,
-      missingEn,
-      missingDescEn,
-      withAr: items.filter((m) => String(m.ar || '').trim()).length,
-      missingAr,
-      missingDescAr,
-      engine: translationEngine(),
-    },
-  });
-});
+moduleRuntime.registerHttpRoute('platform_core', 'get-048', moduleRouteContext);
 
-app.put('/api/admin/i18n', requireAdmin, (req, res) => {
-  if (!db.i18n) db.i18n = { guestLangEnabled: true, defaultLang: 'fa', supported: ['fa', 'en', 'ar'] };
-  if (typeof req.body.guestLangEnabled === 'boolean') db.i18n.guestLangEnabled = req.body.guestLangEnabled;
-  if (req.body.defaultLang === 'fa' || req.body.defaultLang === 'en' || req.body.defaultLang === 'ar') {
-    db.i18n.defaultLang = req.body.defaultLang;
-  }
-  db.i18n.supported = ['fa', 'en', 'ar'];
-  save();
-  res.json({ ok: true, i18n: db.i18n });
-});
+moduleRuntime.registerHttpRoute('platform_core', 'put-049', moduleRouteContext);
 
-app.post('/api/admin/translate/menu', requireAdmin, async (req, res) => {
-  const force = !!req.body.force;
-  const onlyMissing = req.body.onlyMissing !== false;
-  const ids = Array.isArray(req.body.ids)
-    ? req.body.ids.map((id) => Number(normalizeDigits(String(id)).replace(/\D/g, ''))).filter(Number.isFinite)
-    : null;
-  const langs = Array.isArray(req.body.langs) && req.body.langs.length
-    ? req.body.langs.map(String)
-    : ['en', 'ar'];
-  let targets = db.menuItems || [];
-  if (ids) targets = targets.filter((m) => ids.includes(Number(m.id)));
-  if (onlyMissing && !force) {
-    targets = targets.filter(
-      (m) =>
-        !String(m.en || '').trim() ||
-        isBrokenEn(m.en) ||
-        (m.desc && (!String(m.descEn || '').trim() || isBrokenEn(m.descEn))) ||
-        !String(m.ar || '').trim() ||
-        (m.desc && !String(m.descAr || '').trim()),
-    );
-  }
-  const updated = [];
-  for (const item of targets) {
-    const tr = await translateMenuItem(item, { force, langs });
-    if (langs.includes('en')) {
-      item.en = tr.en;
-      item.descEn = tr.descEn;
-    }
-    if (langs.includes('ar')) {
-      item.ar = tr.ar;
-      item.descAr = tr.descAr;
-    }
-    updated.push({
-      id: item.id,
-      en: item.en,
-      descEn: item.descEn,
-      ar: item.ar,
-      descAr: item.descAr,
-      engine: tr.engine,
-    });
-  }
-  save();
-  res.json({
-    ok: true,
-    count: updated.length,
-    engine: translationEngine(),
-    items: updated,
-  });
-});
+moduleRuntime.registerHttpRoute('platform_core', 'post-050', moduleRouteContext);
 
-app.post('/api/admin/translate/menu/:id', requireAdmin, async (req, res) => {
-  const targetId = Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
-  const item = (db.menuItems || []).find((m) => Number(m.id) === targetId);
-  if (!item) return res.status(404).json({ error: 'not found' });
-  const langs = Array.isArray(req.body.langs) && req.body.langs.length
-    ? req.body.langs.map(String)
-    : ['en', 'ar'];
-  const tr = await translateMenuItem(item, { force: !!req.body.force, langs });
-  if (langs.includes('en')) {
-    item.en = tr.en;
-    item.descEn = tr.descEn;
-  }
-  if (langs.includes('ar')) {
-    item.ar = tr.ar;
-    item.descAr = tr.descAr;
-  }
-  save();
-  res.json({ ok: true, item, engine: tr.engine });
-});
+moduleRuntime.registerHttpRoute('platform_core', 'post-051', moduleRouteContext);
 
-app.get('/api/allergens', (req, res) => {
-  res.json({ allergens: ALLERGENS, dayparts: DAYPARTS.map(({ id, label }) => ({ id, label })) });
-});
+moduleRuntime.registerHttpRoute('platform_core', 'get-052', moduleRouteContext);
 
 function assertVisibleCategoryCover(cat) {
   if (cat.hiddenOnSite) return null;
@@ -3760,345 +3206,24 @@ function assertVisibleCategoryCover(cat) {
 }
 
 /* Category CRUD — register before /api/menu/:id */
-app.post('/api/menu/categories', requireAdmin, async (req, res) => {
-  if (!Array.isArray(db.menuCategories)) db.menuCategories = [];
-  const title = String(req.body.title || '').trim().slice(0, 80);
-  if (!title) return res.status(400).json({ error: 'عنوان دسته لازم است' });
-  const coverRaw = typeof req.body.coverImg === 'string' ? req.body.coverImg : '';
-  const coverImg = sanitizeCoverImg(coverRaw);
-  if (coverImg === null) {
-    return res.status(400).json({ error: 'مسیر کاور نامعتبر است (لیبل نوشیدنی Giro مجاز نیست)' });
-  }
-  const id = Math.max(0, ...db.menuCategories.map((c) => c.id), 0) + 1;
-  const cat = {
-    id,
-    title,
-    name1: String(req.body.name1 || '').trim().slice(0, 80),
-    name2: String(req.body.name2 || '').trim().slice(0, 80),
-    shortDesc: String(req.body.shortDesc || '').trim().slice(0, 300),
-    longDesc: String(req.body.longDesc || '').trim().slice(0, 800),
-    hiddenOnSite: req.body.hiddenOnSite === true,
-    coverImg,
-  };
-  const coverErr = assertVisibleCategoryCover(cat);
-  if (coverErr) return res.status(400).json({ error: coverErr });
-  db.menuCategories.push(cat);
-  if (tenantConnectionManager?.baseUrl && req.tenantDataAccess && req.tenantContext?.databaseProvider === 'postgres') {
-    try {
-      await tenantMenuRepository.createCategory(req.tenantDataAccess, cat);
-    } catch (err) {
-      console.warn?.('[Tenant Category Persist Warning]', err.message);
-    }
-  }
-  save({ rebuildProducts: true });
-  res.json({ ok: true, category: cat, menuCategories: db.menuCategories, products: db.products });
-});
+moduleRuntime.registerHttpRoute('menu_qr', 'post-053', moduleRouteContext);
 
-app.put('/api/menu/categories/order', requireAdmin, (req, res) => {
-  if (!Array.isArray(db.menuCategories)) db.menuCategories = [];
-  const order = Array.isArray(req.body.order) ? req.body.order.map(Number) : [];
-  if (!order.length) return res.status(400).json({ error: 'ترتیب نامعتبر است' });
-  const byId = Object.fromEntries(db.menuCategories.map((c) => [c.id, c]));
-  const next = [];
-  for (const id of order) {
-    if (byId[id]) {
-      next.push(byId[id]);
-      delete byId[id];
-    }
-  }
-  for (const c of Object.values(byId)) next.push(c);
-  db.menuCategories = next;
-  save({ rebuildProducts: true });
-  res.json({ ok: true, menuCategories: db.menuCategories, products: db.products });
-});
+moduleRuntime.registerHttpRoute('menu_qr', 'put-054', moduleRouteContext);
 
-app.put('/api/menu/categories/:id', requireAdmin, (req, res) => {
-  if (!Array.isArray(db.menuCategories)) db.menuCategories = [];
-  const targetId = Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
-  const cat = db.menuCategories.find((c) => Number(c.id) === targetId);
-  if (!cat) return res.status(404).json({ error: 'دسته پیدا نشد' });
-  if (typeof req.body.title === 'string') {
-    const title = req.body.title.trim().slice(0, 80);
-    if (!title) return res.status(400).json({ error: 'عنوان دسته لازم است' });
-    cat.title = title;
-    cat.name1 = title;
-    cat.name2 = '';
-  }
-  // Ignore legacy name1/name2 writes — title is the single display field.
-  if (typeof req.body.shortDesc === 'string') cat.shortDesc = req.body.shortDesc.trim().slice(0, 300);
-  if (typeof req.body.longDesc === 'string') cat.longDesc = req.body.longDesc.trim().slice(0, 800);
-  if (typeof req.body.hiddenOnSite === 'boolean') cat.hiddenOnSite = req.body.hiddenOnSite;
-  if (typeof req.body.coverImg === 'string') {
-    const coverImg = sanitizeCoverImg(req.body.coverImg);
-    if (coverImg === null) {
-      return res.status(400).json({ error: 'مسیر کاور نامعتبر است (لیبل نوشیدنی Giro مجاز نیست)' });
-    }
-    cat.coverImg = coverImg;
-  }
-  const coverErr = assertVisibleCategoryCover(cat);
-  if (coverErr) return res.status(400).json({ error: coverErr });
-  save({ rebuildProducts: true });
-  res.json({ ok: true, category: cat, menuCategories: db.menuCategories, products: db.products });
-});
+moduleRuntime.registerHttpRoute('menu_qr', 'put-055', moduleRouteContext);
 
-app.delete('/api/menu/categories/:id', requireAdmin, (req, res) => {
-  if (!Array.isArray(db.menuCategories)) db.menuCategories = [];
-  const id = Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
-  const cat = db.menuCategories.find((c) => Number(c.id) === id);
-  if (!cat) return res.status(404).json({ error: 'دسته پیدا نشد' });
-  const inUse = (db.menuItems || []).some((m) => Number(m.categoryId) === id);
-  if (inUse) {
-    return res.status(400).json({ error: 'ابتدا غذاهای این دسته را جابه‌جا یا حذف کنید' });
-  }
-  if (db.menuCategories.length <= 1) {
-    return res.status(400).json({ error: 'حداقل یک دسته باید باقی بماند' });
-  }
-  db.menuCategories = db.menuCategories.filter((c) => Number(c.id) !== id);
-  save({ rebuildProducts: true });
-  res.json({ ok: true, menuCategories: db.menuCategories, products: db.products });
-});
+moduleRuntime.registerHttpRoute('menu_qr', 'delete-056', moduleRouteContext);
 
-app.put('/api/menu/:id', requireAdmin, async (req, res) => {
-  const targetId = Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
-  const item = (db.menuItems || []).find((m) => Number(m.id) === targetId);
-  if (!item) return res.status(404).json({ error: 'not found' });
-  // Simple dirty-lock: reject concurrent price+stock writes with mismatched revisions.
-  const clientRev = req.body._rev != null ? Number(req.body._rev) : null;
-  const itemRev = Number(item.updatedAt) || 0;
-  if (clientRev != null && itemRev && clientRev < itemRev) {
-    return res.status(409).json({
-      error: 'این غذا هم‌زمان از جای دیگری تغییر کرده — صفحه را تازه کنید',
-      item,
-    });
-  }
-  const hasModifierGroupInput = Object.prototype.hasOwnProperty.call(req.body || {}, 'modifierGroups');
-  let validatedModifierGroups = null;
-  if (hasModifierGroupInput) {
-    if (!Array.isArray(req.body.modifierGroups)) {
-      return res.status(400).json({
-        error: 'modifier_groups_invalid',
-        message: 'فهرست گزینه‌های کالا باید به‌صورت آرایه ارسال شود.',
-      });
-    }
-    const validation = validateModifierGroupDefinitions(req.body.modifierGroups);
-    if (!validation.ok) {
-      return res.status(400).json({
-        error: 'modifier_configuration_invalid',
-        message: 'تنظیم گزینه‌های این کالا معتبر نیست؛ گروه‌ها و قیمت گزینه‌ها را بررسی کنید.',
-        details: validation.errors,
-      });
-    }
-    validatedModifierGroups = validation.groups;
-  }
-  const parseNum = (v) => {
-    if (v == null || v === '') return null;
-    if (typeof v === 'number') return isNaN(v) ? null : v;
-    const n = Number(normalizeDigits(String(v)).replace(/[,٬_\s]/g, '').trim());
-    return isNaN(n) ? null : n;
-  };
-  if (typeof req.body.name === 'string') item.name = req.body.name.trim().slice(0, 120);
-  if (typeof req.body.desc === 'string') item.desc = req.body.desc.trim().slice(0, 500);
-  if (typeof req.body.en === 'string') item.en = req.body.en.trim().slice(0, 120);
-  if (typeof req.body.descEn === 'string') item.descEn = req.body.descEn.trim().slice(0, 500);
-  if (typeof req.body.ar === 'string') item.ar = req.body.ar.trim().slice(0, 120);
-  if (typeof req.body.descAr === 'string') item.descAr = req.body.descAr.trim().slice(0, 500);
-  if (typeof req.body.img === 'string') {
-    const img = sanitizeMenuImg(req.body.img);
-    if (img === null) return res.status(400).json({ error: 'مسیر تصویر نامعتبر است' });
-    item.img = img;
-  }
-  if (req.body.categoryId != null) {
-    const cid = Number(normalizeDigits(String(req.body.categoryId)).replace(/\D/g, ''));
-    if ((db.menuCategories || []).some((c) => Number(c.id) === cid)) item.categoryId = cid;
-  }
-  const rawPrice = parseNum(req.body.price);
-  if (rawPrice != null && rawPrice >= 0) item.price = Math.round(rawPrice);
-  if (typeof req.body.available === 'boolean') item.available = req.body.available;
-  if (Array.isArray(req.body.allergens)) item.allergens = normalizeAllergens(req.body.allergens);
-  if (Array.isArray(req.body.dayparts)) item.dayparts = normalizeDayparts(req.body.dayparts);
-  if (hasModifierGroupInput) item.modifierGroups = validatedModifierGroups;
-  if (req.body.stock === null || req.body.stock === '') item.stock = null;
-  else {
-    const rawStock = parseNum(req.body.stock);
-    if (rawStock != null && rawStock >= 0) {
-      item.stock = Math.round(rawStock);
-      if (item.stock === 0) item.available = false;
-    }
-  }
-  const rawLow = parseNum(req.body.lowStockAt);
-  if (rawLow != null && rawLow >= 0) {
-    item.lowStockAt = Math.round(rawLow);
-  }
-  if (Array.isArray(req.body.dietary)) {
-    item.dietary = req.body.dietary.map((t) => String(t || '').trim()).filter(Boolean).slice(0, 10);
-  }
-  const rawPrep = parseNum(req.body.prepTime ?? req.body.prepTimeMinutes);
-  if (rawPrep != null && rawPrep >= 0) {
-    item.prepTime = Math.round(rawPrep);
-  }
-  item.updatedAt = Date.now();
-  if (tenantConnectionManager?.baseUrl && req.tenantDataAccess && req.tenantContext?.databaseProvider === 'postgres') {
-    try {
-      await tenantMenuRepository.updateMenuItem(req.tenantDataAccess, targetId, item);
-    } catch (err) {
-      console.error('[Tenant Menu Update Error]', err);
-      return res.status(500).json({ ok: false, error: 'menu_persist_failed', message: err.message });
-    }
-  }
-  save({ rebuildProducts: true });
-  res.json({ ok: true, item: menuItemForResponse(item) });
-});
+moduleRuntime.registerHttpRoute('menu_qr', 'put-057', moduleRouteContext);
 
-app.patch('/api/menu/:id', requireAdmin, async (req, res) => {
-  const targetId = Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
-  const item = (db.menuItems || []).find((m) => Number(m.id) === targetId);
-  if (!item) return res.status(404).json({ error: 'not found' });
-  const parseNum = (v) => {
-    if (v == null || v === '') return null;
-    if (typeof v === 'number') return isNaN(v) ? null : v;
-    const n = Number(normalizeDigits(String(v)).replace(/[,٬_\s]/g, '').trim());
-    return isNaN(n) ? null : n;
-  };
-  if (typeof req.body.name === 'string') item.name = req.body.name.trim().slice(0, 120);
-  if (typeof req.body.desc === 'string') item.desc = req.body.desc.trim().slice(0, 500);
-  const rawPrice = parseNum(req.body.price);
-  if (rawPrice != null && rawPrice >= 0) item.price = Math.round(rawPrice);
-  if (typeof req.body.available === 'boolean') item.available = req.body.available;
-  if (Array.isArray(req.body.allergens)) item.allergens = normalizeAllergens(req.body.allergens);
-  if (Array.isArray(req.body.dietary)) item.dietary = req.body.dietary.map((t) => String(t || '').trim()).filter(Boolean).slice(0, 10);
-  const rawPrep = parseNum(req.body.prepTime ?? req.body.prepTimeMinutes);
-  if (rawPrep != null && rawPrep >= 0) item.prepTime = Math.round(rawPrep);
-  if (req.body.stock === null || req.body.stock === '') item.stock = null;
-  else {
-    const rawStock = parseNum(req.body.stock);
-    if (rawStock != null && rawStock >= 0) {
-      item.stock = Math.round(rawStock);
-      if (item.stock === 0) item.available = false;
-    }
-  }
-  item.updatedAt = Date.now();
-  save({ rebuildProducts: true });
-  res.json({ ok: true, item: menuItemForResponse(item) });
-});
+moduleRuntime.registerHttpRoute('menu_qr', 'patch-058', moduleRouteContext);
 
-app.post('/api/admin/menu/bulk-adjust-prices', requireAdmin, (req, res) => {
-  const categoryId = req.body.categoryId != null && req.body.categoryId !== '' ? Number(req.body.categoryId) : null;
-  const percentChange = Number(req.body.percentChange) || 0;
-  const roundToNearest = Math.max(100, Number(req.body.roundToNearest) || 1000);
-  if (!percentChange || Math.abs(percentChange) > 100) {
-    return res.status(400).json({ error: 'درصد تغییر نامعتبر است (باید بین -۱۰۰ تا ۱۰۰ باشد)' });
-  }
-  const factor = 1 + (percentChange / 100);
-  const itemsToUpdate = (db.menuItems || []).filter((m) => categoryId == null || Number(m.categoryId) === categoryId);
-  const changes = [];
-  itemsToUpdate.forEach((m) => {
-    const oldPrice = m.price || 0;
-    const newPrice = Math.max(0, Math.round((oldPrice * factor) / roundToNearest) * roundToNearest);
-    m.price = newPrice;
-    m.updatedAt = Date.now();
-    changes.push({ id: m.id, name: m.name, oldPrice, newPrice });
-  });
-  save({ rebuildProducts: true });
-  res.json({ ok: true, updatedCount: changes.length, changes });
-});
+moduleRuntime.registerHttpRoute('menu_qr', 'post-059', moduleRouteContext);
 
-app.post('/api/admin/menu/bulk-undo-prices', requireAdmin, (req, res) => {
-  const changes = Array.isArray(req.body.changes) ? req.body.changes : [];
-  if (!changes.length) return res.status(400).json({ error: 'لیست تغییرات برای بازگردانی خالی است' });
-  let restored = 0;
-  changes.forEach((c) => {
-    const item = (db.menuItems || []).find((m) => Number(m.id) === Number(c.id));
-    if (item && c.oldPrice != null) {
-      item.price = Math.max(0, Math.round(Number(c.oldPrice)));
-      item.updatedAt = Date.now();
-      restored++;
-    }
-  });
-  save({ rebuildProducts: true });
-  res.json({ ok: true, restoredCount: restored });
-});
+moduleRuntime.registerHttpRoute('menu_qr', 'post-060', moduleRouteContext);
 
-app.post('/api/menu', requireAdmin, async (req, res) => {
-  const id = Math.max(0, ...(db.menuItems || []).map((m) => Number(m.id) || 0)) + 1;
-  const parseNum = (v) => {
-    if (v == null || v === '') return null;
-    if (typeof v === 'number') return isNaN(v) ? null : v;
-    const n = Number(normalizeDigits(String(v)).replace(/[,٬_\s]/g, '').trim());
-    return isNaN(n) ? null : n;
-  };
-  const rawStock = parseNum(req.body.stock);
-  const stock = rawStock != null && rawStock >= 0 ? Math.round(rawStock) : null;
-  const imgRaw = typeof req.body.img === 'string' ? sanitizeMenuImg(req.body.img) : '';
-  if (imgRaw === null) return res.status(400).json({ error: 'مسیر تصویر نامعتبر است' });
-  const rawCid = req.body.categoryId != null ? Number(normalizeDigits(String(req.body.categoryId)).replace(/\D/g, '')) : null;
-  const rawPrice = parseNum(req.body.price);
-  const rawLow = parseNum(req.body.lowStockAt);
-  const item = {
-    id,
-    categoryId: rawCid || (db.menuCategories[0] || {}).id || 0,
-    name: String(req.body.name || '').trim().slice(0, 120),
-    en: String(req.body.en || '').trim().slice(0, 120),
-    ar: String(req.body.ar || '').trim().slice(0, 120),
-    desc: String(req.body.desc || '').trim().slice(0, 500),
-    descEn: String(req.body.descEn || '').trim().slice(0, 500),
-    descAr: String(req.body.descAr || '').trim().slice(0, 500),
-    price: Math.max(0, Math.round(rawPrice ?? 0)),
-    available: req.body.available !== false && stock !== 0,
-    allergens: normalizeAllergens(req.body.allergens),
-    dayparts: normalizeDayparts(req.body.dayparts),
-    stock,
-    lowStockAt: rawLow != null && rawLow >= 0 ? Math.round(rawLow) : 5,
-    prepTime: parseNum(req.body.prepTime ?? req.body.prepTimeMinutes) ?? 15,
-    dietary: Array.isArray(req.body.dietary) ? req.body.dietary.map((t) => String(t || '').trim()).filter(Boolean).slice(0, 10) : [],
-  };
-  const hasModifierGroupInput = Object.prototype.hasOwnProperty.call(req.body || {}, 'modifierGroups');
-  if (hasModifierGroupInput && !Array.isArray(req.body.modifierGroups)) {
-    return res.status(400).json({
-      error: 'modifier_groups_invalid',
-      message: 'فهرست گزینه‌های کالا باید به‌صورت آرایه ارسال شود.',
-    });
-  }
-  const modifierGroupsInput = hasModifierGroupInput ? req.body.modifierGroups : [];
-  const modifierGroupValidation = validateModifierGroupDefinitions(modifierGroupsInput);
-  if (!modifierGroupValidation.ok) {
-    return res.status(400).json({
-      error: 'modifier_configuration_invalid',
-      message: 'تنظیم گزینه‌های این کالا معتبر نیست؛ گروه‌ها و قیمت گزینه‌ها را بررسی کنید.',
-      details: modifierGroupValidation.errors,
-    });
-  }
-  item.modifierGroups = modifierGroupValidation.groups;
-  if (imgRaw) item.img = imgRaw;
-  if (!item.name) return res.status(400).json({ error: 'نام را وارد کنید' });
-  if (tenantConnectionManager?.baseUrl && req.tenantDataAccess && req.tenantContext?.databaseProvider === 'postgres') {
-    try {
-      const persisted = await tenantMenuRepository.createMenuItem(req.tenantDataAccess, item);
-      if (persisted?.id != null) {
-        item.id = persisted.id;
-      }
-    } catch (err) {
-      console.error('[Tenant Menu Save Error]', err);
-      return res.status(500).json({ ok: false, error: 'menu_persist_failed', message: err.message });
-    }
-  }
-  db.menuItems.push(item);
-  save({ rebuildProducts: true });
-  res.json({ ok: true, item: menuItemForResponse(item) });
-});
-app.delete('/api/menu/:id', requireAdmin, async (req, res) => {
-  const targetId = Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
-  if (tenantConnectionManager?.baseUrl && req.tenantDataAccess && req.tenantContext?.databaseProvider === 'postgres') {
-    try {
-      await tenantMenuRepository.deleteMenuItem(req.tenantDataAccess, targetId);
-    } catch (err) {
-      console.error('[Tenant Menu Delete Error]', err);
-      return res.status(500).json({ ok: false, error: 'menu_delete_failed', message: err.message });
-    }
-  }
-  db.menuItems = (db.menuItems || []).filter((m) => Number(m.id) !== targetId);
-  save({ rebuildProducts: true });
-  res.json({ ok: true });
-});
+moduleRuntime.registerHttpRoute('menu_qr', 'post-061', moduleRouteContext);
+moduleRuntime.registerHttpRoute('menu_qr', 'delete-062', moduleRouteContext);
 
 // --- orders ---
 function parseOrderTomanAmount(value) {
@@ -5039,204 +4164,17 @@ function publishPaymentCommitEffects(result, status) {
   if (result.order) neemBridge.enqueueOrder(result.order, result.payment);
 }
 
-app.get('/api/checkout/meta', (req, res) => {
-  const requestedBranch = req.query.branchId || req.query.branch;
-  const branch = requestedBranch ? resolveBranchExact(requestedBranch) : defaultBranch();
-  if (requestedBranch && !branch) return res.status(400).json({ error: 'branch_invalid', message: 'شعبهٔ انتخاب‌شده معتبر نیست.' });
-  const paymentProvider = paymentProviderPublicStatus(db.paymentProvider, {
-    nodeEnv: process.env.NODE_ENV,
-    providerReady: productionPaymentProviderReady(),
-  });
-  res.json({
-    payment: {
-      mode: paymentProvider.mode,
-      provider: paymentProvider.provider,
-      onlineEnabled: paymentProvider.enabled,
-    },
-    branches: (db.branches || []).filter((item) => item.active !== false).map((item) => ({ id: item.id, slug: item.slug, name: item.name, address: item.address })),
-    deliveryZones: (db.deliveryZones || [])
-      .filter((item) => item.active !== false && (!branch || Number(item.branchId) === Number(branch.id)))
-      .sort((a, b) => Number(a.sort || 0) - Number(b.sort || 0))
-      .map((item) => ({ id: item.id, branchId: item.branchId, name: item.name, minOrder: item.minOrder, fee: item.fee, etaMinutes: item.etaMinutes })),
-  });
-});
+moduleRuntime.registerHttpRoute('platform_core', 'get-063', moduleRouteContext);
 
-app.post('/api/checkout/quote', (req, res) => {
-  const input = req.body || {};
-  const selectionError = validateExplicitCheckoutSelections(input);
-  if (selectionError) return res.status(selectionError.status).json(selectionError);
-  const tableNo = normalizeDigits(String(input.tableNo || input.table || '')).trim().slice(0, 20);
-  const fulfillment = normalizeFulfillment(input.fulfillment, { tableNo });
-  const branch = findOrderBranch(input, tableNo, fulfillment);
-  if (!branch || branch.active === false) return res.status(400).json({ error: 'table_or_branch_invalid', message: 'میز فعال و شعبهٔ معتبر را انتخاب کنید.' });
-  const zone = fulfillment === 'delivery'
-    ? (db.deliveryZones || []).find((item) => Number(item.id) === Number(input.deliveryZoneId || input.zoneId))
-    : null;
-  const lineResult = orderLinesFromRequest(input.items, { branchId: branch.id });
-  if (lineResult.error) return res.status(400).json(lineResult);
-  const quote = quoteFulfillment({ fulfillment, subtotal: lineResult.subtotal, zone, branchId: branch?.id });
-  if (!quote.ok) return res.status(400).json(quote);
+moduleRuntime.registerHttpRoute('menu_qr', 'post-064', moduleRouteContext);
 
-  const paymentMethod = String(input.paymentMethod || 'cashier').trim() === 'online' ? 'online' : 'cashier';
-  if (paymentMethod === 'online' && !productionPaymentProviderReady()) {
-    return res.status(503).json({ error: 'payment_provider_not_ready', message: 'پرداخت آنلاین اکنون در دسترس نیست؛ روش پرداخت دیگری انتخاب کنید.' });
-  }
-  const pricing = calculateCheckoutPricing({
-    input,
-    actor: req.user,
-    subtotal: lineResult.subtotal,
-    deliveryFee: quote.deliveryFee,
-  });
-  if (pricing.error) return res.status(pricing.status || 400).json(pricing);
+moduleRuntime.registerHttpRoute('menu_qr', 'post-065', moduleRouteContext);
 
-  const finalTotal = pricing.total;
-  const checkoutTax = checkoutTaxForOrder({
-    branch,
-    fulfillment,
-    lines: lineResult.lines,
-    discount: pricing.discount,
-    deliveryFee: quote.deliveryFee,
-    total: finalTotal,
-    date: new Date(),
-  });
-  if (checkoutTax.error) return res.status(checkoutTax.status || 409).json(checkoutTax);
-  const quoteInput = { ...input, tableNo, fulfillment, paymentMethod, phone: pricing.phone };
-  const quoteIntent = checkoutQuoteIntent({
-    input: quoteInput, branch, fulfillment, lines: lineResult.lines,
-    subtotal: lineResult.subtotal, deliveryFee: quote.deliveryFee,
-    discount: pricing.discount, total: finalTotal, phone: pricing.phone, taxSnapshot: checkoutTax.snapshot,
-  });
+moduleRuntime.registerHttpRoute('menu_qr', 'post-066', moduleRouteContext);
 
-  res.json({
-    ok: true,
-    quoteToken: createCheckoutQuoteToken(SECRET, quoteIntent),
-    fulfillment,
-    subtotal: lineResult.subtotal,
-    deliveryFee: quote.deliveryFee,
-    discount: pricing.discount,
-    tierDiscountToman: pricing.discountCalc.tierDiscountToman,
-    tier: pricing.discountCalc.tier,
-    pointsRedeemed: pricing.discountCalc.pointsRedeemed,
-    pointsDiscountToman: pricing.discountCalc.pointsDiscountToman,
-    maxRedeemablePoints: pricing.discountCalc.maxRedeemablePoints,
-    availablePoints: pricing.discountCalc.availablePoints,
-    total: finalTotal,
-    tax: { inclusive: true, totalTaxIrr: checkoutTax.snapshot.totalTaxIrr },
-    minimum: quote.minimum,
-    etaMinutes: quote.etaMinutes,
-    zone: quote.zone,
-    branchId: branch?.id || null,
-  });
-});
+moduleRuntime.registerHttpRoute('menu_qr', 'post-067', moduleRouteContext);
 
-app.post('/api/checkout/orders', publicOrderMutationGuard('orders.online'), async (req, res) => {
-  try {
-    const rawReceiptCode = req.get('Idempotency-Key') || req.body?.idempotencyKey;
-    const receiptCode = normalizeCheckoutReceiptCode(rawReceiptCode);
-    if (!receiptCode) {
-      return res.status(400).json({ error: 'receipt_code_invalid', message: 'کد پیگیری سفارش معتبر نیست.' });
-    }
-    const result = await createAndPersistCheckoutOrder(req.body || {}, {
-      requireQuote: true,
-      requireName: true,
-      idempotencyKey: checkoutReceiptIndexKey(receiptCode),
-      actor: req.user || null,
-    });
-    if (result.error) return res.status(result.status || 400).json(result);
-    res.status(result.idempotent ? 200 : 201).json({
-      ok: true,
-      idempotent: !!result.idempotent,
-      order: publicCheckoutOrderView(result.order),
-      payment: result.payment
-        ? { ...publicPaymentAttempt(result.payment), sandboxToken: result.payment.mode === 'sandbox' ? result.payment.sandboxToken : undefined }
-        : null,
-      whatsapp: null,
-    });
-  } catch (error) {
-    return res.status(error.status || 503).json({ error: error.code || error.message });
-  }
-});
-
-app.post('/api/checkout/recovery', guardPublicCheckoutRecovery, (req, res) => {
-  const receiptCode = normalizeCheckoutReceiptCode(req.body?.receiptCode);
-  if (!receiptCode) return res.status(400).json({ error: 'receipt_code_invalid' });
-  const indexKey = checkoutReceiptIndexKey(receiptCode);
-  const saved = indexKey ? db.checkoutIdempotency?.[indexKey] : null;
-  const order = saved && (db.orders || []).find((item) => Number(item.id) === Number(saved.orderId));
-  if (!order) return res.status(404).json({ error: 'receipt_not_found' });
-  const projection = publicCheckoutOrderView(order);
-  if (!projection) return res.status(404).json({ error: 'receipt_not_found' });
-  return res.json({ ok: true, order: projection });
-});
-
-app.post('/api/checkout/payments/:id/sandbox-confirm', sandboxPaymentGuard, serializePaymentOrderMutationRoute(async (req, res) => {
-  const targetId = Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
-  const payment = (db.paymentAttempts || []).find((item) => Number(item.id) === targetId);
-  if (!payment) return res.status(404).json({ error: 'payment_not_found' });
-  if (payment.mode !== 'sandbox') return res.status(409).json({ error: 'sandbox_disabled' });
-  if (!req.body?.token || req.body.token !== payment.sandboxToken) return res.status(403).json({ error: 'payment_token_invalid' });
-  const status = typeof req.body?.status === 'string' ? req.body.status.trim().toLowerCase() : '';
-  if (!status) return res.status(400).json({ error: 'payment_status_required' });
-  if (!['paid', 'failed', 'cancelled', 'unknown', 'reconciliation_required'].includes(status)) {
-    return res.status(400).json({ error: 'payment_status_invalid' });
-  }
-  const snapshot = snapshotFinanceMutationState();
-  let result;
-  try {
-    result = settlePaymentAttempt(payment, { status, reference: `sandbox-${payment.id}`, source: 'sandbox-confirm' });
-    if (result.error) return res.status(result.status || 400).json(result);
-    await persistFinanceMutation(snapshot);
-  } catch (error) {
-    restoreFinanceMutationState(snapshot);
-    return res.status(error.status || 503).json({ error: error.code || error.message });
-  }
-  try { publishPaymentCommitEffects(result, status); } catch (error) { console.error('[payment-post-commit] integration effect failed', error?.message || error); }
-  res.json({ ok: true, idempotent: result.idempotent, payment: publicPaymentAttempt(result.payment), order: publicCheckoutOrderView(result.order) });
-}));
-
-app.post('/api/payments/webhook/:provider', serializePaymentOrderMutationRoute(async (req, res) => {
-  const payment = (db.paymentAttempts || []).find((item) => Number(item.id) === Number(req.body?.paymentAttemptId));
-  if (!payment || payment.provider !== String(req.params.provider || '')) return res.status(404).json({ error: 'payment_not_found' });
-  // No production gateway adapter or provider-specific raw-body verifier is
-  // installed yet. Never let a configured shared secret or a sandbox token
-  // turn this placeholder endpoint into a production payment authority.
-  if (process.env.NODE_ENV === 'production') {
-    return res.status(503).json({ error: 'payment_webhook_provider_unavailable' });
-  }
-  if (payment.mode !== 'sandbox' || payment.provider !== 'sandbox') {
-    return res.status(503).json({ error: 'payment_webhook_provider_unavailable' });
-  }
-  if (!req.body?.token || req.body.token !== payment.sandboxToken) {
-    return res.status(401).json({ error: 'webhook_unauthorized' });
-  }
-  const status = typeof req.body?.status === 'string' ? req.body.status.trim().toLowerCase() : '';
-  if (!status) return res.status(400).json({ error: 'payment_status_required' });
-  if (!['paid', 'failed', 'cancelled', 'unknown', 'reconciliation_required'].includes(status)) {
-    return res.status(400).json({ error: 'payment_status_invalid' });
-  }
-  const callbackAmountText = normalizeDigits(String(req.body?.amount ?? '')).replace(/[٬,]/g, '').trim();
-  const callbackAmount = Number(callbackAmountText);
-  const expectedAmount = Number(payment.amount);
-  if (!Number.isSafeInteger(callbackAmount) || !Number.isSafeInteger(expectedAmount) || callbackAmount !== expectedAmount) {
-    return res.status(409).json({ error: 'payment_amount_mismatch' });
-  }
-  const snapshot = snapshotFinanceMutationState();
-  let result;
-  try {
-    result = settlePaymentAttempt(payment, {
-      status,
-      reference: req.body?.reference,
-      source: `webhook:${payment.provider}`,
-    });
-    if (result.error) return res.status(result.status || 400).json(result);
-    await persistFinanceMutation(snapshot);
-  } catch (error) {
-    restoreFinanceMutationState(snapshot);
-    return res.status(error.status || 503).json({ error: error.code || error.message });
-  }
-  try { publishPaymentCommitEffects(result, status); } catch (error) { console.error('[payment-post-commit] integration effect failed', error?.message || error); }
-  res.json({ ok: true, idempotent: result.idempotent, payment: publicPaymentAttempt(result.payment), order: publicCheckoutOrderView(result.order) });
-}));
+moduleRuntime.registerHttpRoute('payments', 'post-068', moduleRouteContext);
 
 const CUSTOMER_ORDER_STATUS_LABELS = Object.freeze({
   unknown: 'وضعیت سفارش نامشخص',
@@ -5292,192 +4230,16 @@ function customerOwnsHistoryOrder(order, user) {
   return loyaltyAchievements.orderBelongsToMember(order, user);
 }
 
-app.get('/api/orders/my-orders', requireAuth, (req, res) => {
-  const userOrders = (db.orders || [])
-    .filter((o) => customerOwnsHistoryOrder(o, req.user))
-    .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+moduleRuntime.registerHttpRoute('pos', 'get-069', moduleRouteContext);
 
-  const tierInfo = loyaltyEngine.resolveCustomerTier(db, req.user);
-
-  const mapped = userOrders.map((o) => {
-    const totalAmount = Number(o.total || o.finalTotal || o.subtotal || 0);
-    const calculatedPoints = loyaltyEngine.calculateOrderPointsEarned(db, totalAmount, tierInfo.tier);
-    return {
-      ...customerOrderStatusProjection(o),
-      id: o.id,
-      orderNo: o.orderNo || `W-${o.id}`,
-      createdAt: o.createdAt || new Date().toISOString(),
-      fulfillment: o.fulfillment || 'dine_in',
-      items: Array.isArray(o.items) ? o.items.map((it) => ({
-        id: it.id || it.menuItemId || it.itemId || null,
-        menuItemId: it.menuItemId || it.id || it.itemId || null,
-        name: it.name || it.title || 'محصول منو',
-        quantity: Number(it.quantity || it.qty || 1),
-        price: Number(it.price || 0),
-        total: Number(it.price || 0) * Number(it.quantity || it.qty || 1),
-      })) : [],
-      total: totalAmount,
-      subtotal: Number(o.subtotal || o.total || 0),
-      discount: Number(o.discount || o.loyaltyDiscount || 0),
-      pointsEarned: o.pointsEarned !== undefined ? Number(o.pointsEarned) : calculatedPoints,
-      paymentMethod: o.paymentMethod || o.tender || (o.paidWithWallet ? 'کیف پول' : 'آنلاین'),
-      tableNo: o.tableNo || null,
-      delivery: o.delivery || null,
-    };
-  });
-
-  res.json({ ok: true, orders: mapped });
-});
-
-app.get('/api/profile/orders', requireAuth, (req, res, next) => {
-  req.url = '/api/orders/my-orders';
-  app.handle(req, res, next);
-});
+moduleRuntime.registerHttpRoute('crm', 'get-070', moduleRouteContext);
 
 // Existing table ordering clients keep their endpoint and response shape.
-app.post('/api/orders', publicOrderMutationGuard('orders.pos'), async (req, res) => {
-  try {
-    const result = await createAndPersistCheckoutOrder(req.body || {}, {
-      requireTable: true,
-      requireQuote: true,
-      idempotencyKey: req.get('Idempotency-Key') || req.body?.idempotencyKey || '',
-      actor: req.user || null,
-    });
-    if (result.error) return res.status(result.status || 400).json(result);
-    res.json({ ok: true, order: publicCheckoutOrderView(result.order), whatsapp: null });
-  } catch (error) {
-    return res.status(error.status || 503).json({ error: error.code || error.message });
-  }
-});
+moduleRuntime.registerHttpRoute('pos', 'post-071', moduleRouteContext);
 
-app.get('/api/admin/orders', requireCapability('orders.view'), async (req, res) => {
-  const includePii = userCan(req.user, 'pii.view');
-  const includePaymentReferences = userCan(req.user, 'payments.manage');
-  const orderOptions = {
-    includePii,
-    includePaymentReferences,
-    includeDeliveryReason: userCan(req.user, 'delivery.manage'),
-  };
-  // Owners see a consolidated queue by default. Scoped operators must never
-  // fall back to the owner default branch (or receive every branch) when the
-  // UI omits branchId; resolve the same effective scope used by reports.
-  const requestedBranch = requestBranchValue(req);
-  const allowedBranchIds = branchScopeForUser(req.user, { role: effectiveRole(req.user) });
-  const branchId = requestedBranch != null
-    ? parseBranchId(req)
-    : allowedBranchIds === null
-      ? null
-      : (defaultBranch() && allowedBranchIds.includes(Number(defaultBranch().id))
-        ? defaultBranch().id
-        : allowedBranchIds[0] || null);
+moduleRuntime.registerHttpRoute('pos', 'get-072', moduleRouteContext);
 
-  if (String(req.query?.history || '') === 'closed') {
-    try {
-      const cursor = normalizeOrderHistoryCursor(req.query?.cursor);
-      const limit = historyPageSize(req.query?.limit);
-      const tenantId = tenantStorage.getStore()?.tenantId || TENANT_CONFIG.tenantId || 'westo';
-      if (stateStore.enabled && tenantId === 'westo') {
-        try {
-          const archive = await stateStore.listClosedOrders({ branchId, cursor, limit });
-          if (archive.available) {
-            const invalidRows = Number(archive.invalidRows) || 0;
-            return res.json({
-              orders: (archive.orders || []).map((order) => adminOrderDto(order, orderOptions)),
-              hasMore: archive.hasMore,
-              nextCursor: archive.nextCursor,
-              limit: archive.limit,
-              complete: false,
-              coverage: 'unverified',
-              source: 'postgres',
-              skippedInvalidRows: invalidRows,
-              warning: `آرشیو پایدار سفارش‌ها صفحه‌بندی شده است، اما کامل بودن سوابق پیش از مهاجرت هنوز تأیید نشده است.${invalidRows ? ` ${invalidRows.toLocaleString('fa-IR')} ردیف نامعتبر نیز نمایش داده نشد.` : ''}`,
-              serverTime: new Date().toISOString(),
-            });
-          }
-          if (stateStore.required) {
-            return res.status(503).json({
-              error: 'order_history_store_unavailable',
-              message: 'آرشیو پایدار سفارش‌ها در دسترس نیست؛ برای جلوگیری از نمایش تاریخچهٔ ناقص دوباره تلاش کنید.',
-            });
-          }
-        } catch (error) {
-          if (error.status === 400) return res.status(400).json({ error: error.code || 'order_history_cursor_invalid', message: 'نشانگر صفحهٔ تاریخچه معتبر نیست.' });
-          if (stateStore.required) {
-            console.error('[orders] durable history read failed', error);
-            return res.status(503).json({ error: 'order_history_store_unavailable', message: 'خواندن آرشیو پایدار سفارش‌ها ممکن نیست؛ دوباره تلاش کنید.' });
-          }
-          console.warn('[orders] falling back to bounded closed-order cache', error.message);
-        }
-      }
-
-      const cached = paginateCachedClosedOrders(db.orders || [], { branchId, cursor, limit });
-      const warning = tenantId !== 'westo'
-        ? 'برای این مجموعه آرشیو پایدار سفارش در این سرویس متصل نیست؛ فقط سابقهٔ موجود در حافظهٔ اخیر نمایش داده می‌شود و کامل نیست.'
-        : 'آرشیو پایدار در دسترس نیست؛ فقط سفارش‌های بستهٔ موجود در حافظهٔ اخیر نمایش داده می‌شوند و ممکن است سابقهٔ قدیمی‌تر را شامل نشوند.';
-      return res.json({
-        ...cached,
-        orders: (cached.orders || []).map((order) => adminOrderDto(order, orderOptions)),
-        complete: false,
-        coverage: 'recent-cache-only',
-        source: 'recent-cache',
-        warning,
-        serverTime: new Date().toISOString(),
-      });
-    } catch (error) {
-      return res.status(error.status || 400).json({ error: error.code || 'order_history_invalid', message: 'درخواست تاریخچهٔ سفارش معتبر نیست.' });
-    }
-  }
-
-  let orders = (db.orders || []).slice();
-  if (branchId != null) orders = orders.filter((o) => Number(o.branchId) === Number(branchId));
-  const terminal = new Set(['picked_up', 'delivered', 'done', 'cancelled']);
-  orders.sort((a, b) => {
-    const aClosed = terminal.has(String(a.status));
-    const bClosed = terminal.has(String(b.status));
-    if (aClosed !== bClosed) return aClosed ? 1 : -1;
-    const at = new Date(a.createdAt || 0).getTime() || 0;
-    const bt = new Date(b.createdAt || 0).getTime() || 0;
-    return aClosed ? bt - at : at - bt; // oldest actionable first; newest archived first
-  });
-  res.json({
-    orders: orders.map((order) => operationalOrderResponse(order, req.user)),
-    serverTime: new Date().toISOString(),
-  });
-});
-
-app.post('/api/staff/orders', requireCapability('orders.create'), async (req, res) => {
-  const idempotencyKey = String(req.get('Idempotency-Key') || req.body?.idempotencyKey || '').trim();
-  if (idempotencyKey && !ORDER_IDEMPOTENCY_KEY_RE.test(idempotencyKey)) {
-    return res.status(400).json({ error: 'idempotency_key_invalid', message: 'کلید یکتای سفارش معتبر نیست.' });
-  }
-  if (process.env.NODE_ENV === 'production' && !idempotencyKey) {
-    return res.status(400).json({ error: 'idempotency_key_required', message: 'برای ثبت سفارش، کلید یکتای درخواست لازم است.' });
-  }
-  try {
-    const result = await createAndPersistCheckoutOrder(req.body || {}, {
-      requireTable: String(req.body?.fulfillment || 'dine_in') === 'dine_in',
-      requirePhone: false,
-      idempotencyKey,
-      actor: req.user,
-    }, async ({ order }) => {
-      if (req.body?.sendToKitchen === true && order.paymentMethod !== 'online' && order.status === 'pay_at_cashier'
-          && canTransitionOrder(order, 'sent_to_kitchen')) {
-        appendOrderStatus(order, 'sent_to_kitchen', req.user, { source: 'staff-pos', paymentStatus: order.paymentStatus });
-        recordAudit(req, 'order.sent_to_kitchen', 'order', order.id, { paymentStatus: order.paymentStatus }, order.branchId);
-        return () => publishOperationalEvent('order.updated', { orderId: order.id, branchId: order.branchId, status: order.status });
-      }
-      return null;
-    });
-    if (result.error) return res.status(result.status || 400).json(result);
-    res.status(result.idempotent ? 200 : 201).json({
-      ok: true,
-      idempotent: !!result.idempotent,
-      order: operationalOrderResponse(result.order, req.user),
-    });
-  } catch (error) {
-    return res.status(error.status || 503).json({ error: error.code || error.message });
-  }
-});
+moduleRuntime.registerHttpRoute('pos', 'post-073', moduleRouteContext);
 
 const handleEditOrder = async (req, res) => {
   const targetId = Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
@@ -5661,77 +4423,10 @@ const handleEditOrder = async (req, res) => {
   res.json({ ok: true, order: operationalOrderResponse(order, req.user), editable: canEditOrderBeforeKitchen(order) });
 };
 
-app.patch('/api/cashier/orders/:id', requireCapability('orders.manage'), serializeOrderMutationRoute(handleEditOrder));
-app.patch('/api/waiter/orders/:id', requireCapability('service.manage'), serializeOrderMutationRoute(handleEditOrder));
+moduleRuntime.registerHttpRoute('pos', 'patch-074', moduleRouteContext);
+moduleRuntime.registerHttpRoute('floor', 'patch-075', moduleRouteContext);
 
-app.post('/api/cashier/orders/:id/apply-loyalty', requireCapability('orders.manage'), serializeOrderMutationRoute(async (req, res) => {
-  const targetId = Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
-  const order = (db.orders || []).find((item) => Number(item.id) === targetId);
-  if (!order) return res.status(404).json({ error: 'not found' });
-  // Loyalty preview/apply returns the order and can mutate its total. It must
-  // obey the same branch boundary as settlement and order editing, including
-  // when the caller omits a branchId from the optional body.
-  try {
-    assertUserBranchAccess(req.user, order.branchId);
-  } catch (error) {
-    return res.status(error.status || 403).json({ error: error.code || 'branch_access_denied', message: error.message, requestId: req.requestId });
-  }
-  const phone = normalizeDigits(req.body?.phone || order.phone || '').trim();
-  const redeemPoints = Number(normalizeDigits(String(req.body?.redeemPoints || '0')).replace(/\D/g, '')) || 0;
-  if (redeemPoints > 0) {
-    return res.status(409).json({ error: 'loyalty_redemption_requires_settlement', message: 'استفاده از امتیاز تا زمان پیاده‌سازی رزرو و ثبت اتمیک در تسویه غیرفعال است.' });
-  }
-
-  const authorizedCustomer = phone && (req.user?.phone === phone || userCan(req.user, 'orders.manage'));
-  const user = authorizedCustomer ? (db.users || []).find((u) => u.phone === phone) : null;
-  const discounts = loyaltyEngine.calculateOrderDiscounts(db, {
-    subtotalToman: order.subtotal,
-    phone: user ? phone : '',
-    user,
-    redeemPoints: 0,
-  });
-
-  if (req.body?.apply) {
-    const amountPaid = Math.max(0, Number(order.amountPaid) || 0);
-    const nextTotal = Math.max(0, Number(order.subtotal || 0) + Number(order.deliveryFee || 0) - discounts.totalDiscountToman);
-    if (nextTotal < amountPaid) return res.status(409).json({ error: 'order_edit_refund_required', amountPaid, nextTotal });
-    const snapshot = snapshotFinanceMutationState();
-    try {
-    order.phone = phone || order.phone;
-    if (user?.name && !order.name) order.name = user.name;
-    order.tierDiscountToman = discounts.tierDiscountToman;
-    order.pointsRedeemed = 0;
-    order.pointsDiscountToman = discounts.pointsDiscountToman;
-    order.loyaltyTier = discounts.tier?.id || 'bronze';
-    order.discount = discounts.totalDiscountToman;
-    order.total = nextTotal;
-    order.amountPaid = amountPaid;
-    order.balanceDue = Math.max(0, nextTotal - amountPaid);
-    recordAudit(req, 'order.loyalty_discount_applied', 'order', order.id, { tierDiscountToman: discounts.tierDiscountToman, pointsRedeemed: 0 }, order.branchId);
-    await persistFinanceMutation(snapshot);
-    try { publishOperationalEvent('order.updated', { orderId: order.id, branchId: order.branchId, status: order.status, edited: true }); }
-    catch (eventError) { console.error('[loyalty-discount] post-commit event failed', eventError?.message || eventError); }
-    } catch (error) {
-      restoreFinanceMutationState(snapshot);
-      return res.status(error.status || 503).json({ error: error.code || 'order_persistence_failed', message: error.message });
-    }
-  }
-
-  res.json({
-    ok: true,
-    order: operationalOrderResponse(order, req.user),
-    discounts,
-    customer: user && userCan(req.user, 'pii.view')
-      ? {
-          name: user.name,
-          phone: user.phone,
-          points: user.points,
-          walletBalance: walletEngine.getWalletBalance(db, user.phone),
-          tier: discounts.tier,
-        }
-      : null,
-  });
-}));
+moduleRuntime.registerHttpRoute('pos', 'post-076', moduleRouteContext);
 
 function isSettlementRequestFingerprint(value) {
   return typeof value === 'string' && /^[a-f0-9]{64}$/i.test(value);
@@ -6007,294 +4702,29 @@ const handleSettleOrder = async (req, res, forcedTargetId) => {
   }
 };
 
-app.post('/api/cashier/orders/:id/settle', requireCapability('payments.manage'), serializeOrderMutationRoute(async (req, res) => {
-  const targetId = Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
-  return withCashDrawerSettlementLock(req, targetId, () => handleSettleOrder(req, res, targetId));
-}));
+moduleRuntime.registerHttpRoute('pos', 'post-077', moduleRouteContext);
 
-app.post('/api/staff/orders/:id/settle', requireCapability('payments.collect'), serializeOrderMutationRoute(async (req, res) => {
-  const targetId = Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
-  return withCashDrawerSettlementLock(req, targetId, () => handleSettleOrder(req, res, targetId));
-}));
+moduleRuntime.registerHttpRoute('pos', 'post-078', moduleRouteContext);
 
-app.get('/api/cashier/printer', requireCapability('payments.manage'), (req, res) => {
-  const branchId = parseBranchId(req) || defaultBranch()?.id || 1;
-  const printer = printerForBranch(db, branchId);
-  res.json({ ok: true, branchId, printer: publicPrinterConfig(printer), directPrint: true });
-});
+moduleRuntime.registerHttpRoute('pos', 'get-079', moduleRouteContext);
 
-app.get('/api/cashier/printers/system', requireCapability('payments.manage'), async (req, res) => {
-  try {
-    const result = await listSystemPrinters();
-    return res.json({ ok: true, ...result });
-  } catch (error) {
-    return res.status(error.status || 502).json({ error: error.code || 'system_printer_discovery_failed', message: error.message });
-  }
-});
+moduleRuntime.registerHttpRoute('pos', 'get-080', moduleRouteContext);
 
-app.put('/api/cashier/printer', requireCapability('payments.manage'), (req, res) => {
-  const branchId = parseBranchId(req) || defaultBranch()?.id || 1;
-  const current = printerForBranch(db, branchId);
-  try {
-    const printer = normalizePrinterConfig({ ...(req.body || {}), branchId }, current || { ...DEFAULT_PRINTER_CONFIG, branchId });
-    ensurePrintingData(db, branchId);
-    const existingIndex = db.printing.printers.findIndex((item) => Number(item.branchId) === Number(branchId));
-    if (existingIndex >= 0) db.printing.printers[existingIndex] = printer;
-    else db.printing.printers.push(printer);
-    db.printing.defaultPrinterId = printer.id;
-    recordAudit(req, 'printer.configured', 'printer', printer.id, { transport: printer.transport, host: printer.host, port: printer.port, systemPrinterName: printer.systemPrinterName, protocol: printer.protocol }, branchId);
-    save();
-    res.json({ ok: true, branchId, printer: publicPrinterConfig(printer), directPrint: true });
-  } catch (error) {
-    return res.status(error.status || 400).json({ error: error.code || 'printer_config_invalid', message: error.message, field: error.field || null });
-  }
-});
+moduleRuntime.registerHttpRoute('pos', 'put-081', moduleRouteContext);
 
-app.post('/api/cashier/printer/test', requireCapability('payments.manage'), async (req, res) => {
-  const branchId = parseBranchId(req) || defaultBranch()?.id || 1;
-  const printer = printerForBranch(db, branchId);
-  if (!printer) return res.status(409).json({ error: 'printer_not_configured' });
-  try {
-    const result = req.body?.raster
-      ? await printRasterReceipt(req.body.raster, printer)
-      : await testPrinter(printer);
-    recordAudit(req, 'printer.test_printed', 'printer', printer.id, { transport: printer.transport, host: printer.host, port: printer.port, systemPrinterName: printer.systemPrinterName, bytes: result.bytes }, branchId);
-    save();
-    return res.json({ ok: true, branchId, printed: true, printer: publicPrinterConfig(printer), result });
-  } catch (error) {
-    recordAudit(req, 'printer.test_failed', 'printer', printer.id, { transport: printer.transport, host: printer.host, port: printer.port, systemPrinterName: printer.systemPrinterName, error: error.code || error.message }, branchId);
-    save();
-    return res.status(error.status || 502).json({ error: error.code || 'printer_unreachable', message: error.message, printer: publicPrinterConfig(printer) });
-  }
-});
+moduleRuntime.registerHttpRoute('pos', 'post-082', moduleRouteContext);
 
-app.post('/api/cashier/orders/:id/print', requireCapability('payments.manage'), async (req, res) => {
-  const targetId = Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
-  const order = (db.orders || []).find((item) => Number(item.id) === targetId);
-  if (!order) return res.status(404).json({ error: 'not found' });
-  const branchId = Number(order.branchId) || defaultBranch()?.id || 1;
-  try {
-    assertUserBranchAccess(req.user, branchId);
-  } catch (error) {
-    return res.status(error.status || 403).json({ error: error.code || 'branch_access_denied', message: error.message });
-  }
-  const printer = printerForBranch(db, branchId, req.body?.printerId);
-  if (!printer) return res.status(409).json({ error: 'printer_not_configured' });
-  try {
-    // Official order printouts must be rendered from the authoritative order;
-    // never let a browser-supplied image redefine prices or payment state.
-    const result = await sendOrderToPrinter(order, printer, { restaurantName: db.restaurant?.name || 'وستو' });
-    const printedAt = new Date().toISOString();
-    order.lastPrint = { status: 'printed', printerId: printer.id, printedAt, by: req.user.phone };
-    recordAudit(req, 'order.printed', 'order', order.id, { printerId: printer.id, host: printer.host, port: printer.port, bytes: result.bytes, paid: order.paymentStatus === 'paid' }, branchId);
-    save();
-    return res.json({ ok: true, printed: true, printer: publicPrinterConfig(printer), result, order: operationalOrderResponse(order, req.user) });
-  } catch (error) {
-    order.lastPrint = { status: 'failed', printerId: printer.id, printedAt: new Date().toISOString(), by: req.user.phone, error: error.code || error.message };
-    recordAudit(req, 'order.print_failed', 'order', order.id, { printerId: printer.id, host: printer.host, port: printer.port, error: error.code || error.message }, branchId);
-    save();
-    return res.status(error.status || 502).json({ error: error.code || 'printer_unreachable', message: error.message, printer: publicPrinterConfig(printer) });
-  }
-});
+moduleRuntime.registerHttpRoute('pos', 'post-083', moduleRouteContext);
 
-app.post('/api/cashier/orders/:id/receipt', requireCapability('payments.manage'), async (req, res) => {
-  const targetId = Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
-  const order = (db.orders || []).find((item) => Number(item.id) === targetId);
-  if (!order) return res.status(404).json({ error: 'not found' });
-  const branchId = Number(order.branchId) || defaultBranch()?.id || 1;
-  try {
-    assertUserBranchAccess(req.user, branchId);
-  } catch (error) {
-    return res.status(error.status || 403).json({ error: error.code || 'branch_access_denied', message: error.message });
-  }
-  if (order.paymentStatus !== 'paid') return res.status(409).json({ error: 'order_not_paid' });
-  const method = String(req.body?.method || 'none');
-  if (!['print', 'email', 'sms', 'none'].includes(method)) return res.status(400).json({ error: 'receipt_method_invalid' });
-  if (method === 'print') {
-    const printer = printerForBranch(db, branchId, req.body?.printerId);
-    if (!printer) return res.status(409).json({ error: 'printer_not_configured' });
-    try {
-      // A paid receipt is generated only from the canonical, persisted order.
-      const result = await sendOrderToPrinter(order, printer, { restaurantName: db.restaurant?.name || 'وستو' });
-      const printedAt = new Date().toISOString();
-      order.receipt = {
-        method,
-        status: 'printed',
-        printerId: printer.id,
-        printedAt,
-        selectedAt: printedAt,
-        by: req.user.phone,
-      };
-      order.lastPrint = { status: 'printed', printerId: printer.id, printedAt, by: req.user.phone };
-      recordAudit(req, 'order.receipt_printed', 'order', order.id, { method, printerId: printer.id, host: printer.host, port: printer.port, bytes: result.bytes }, branchId);
-      save();
-      return res.json({ ok: true, order: operationalOrderResponse(order, req.user), printed: true, deliveryConfigured: true, printer: publicPrinterConfig(printer), result });
-    } catch (error) {
-      const failedAt = new Date().toISOString();
-      order.receipt = {
-        method,
-        status: 'failed',
-        printerId: printer.id,
-        selectedAt: failedAt,
-        by: req.user.phone,
-        error: error.code || error.message,
-      };
-      order.lastPrint = {
-        status: 'failed',
-        printerId: printer.id,
-        printedAt: failedAt,
-        by: req.user.phone,
-        error: error.code || error.message,
-      };
-      recordAudit(req, 'order.receipt_print_failed', 'order', order.id, { method, printerId: printer.id, host: printer.host, port: printer.port, error: error.code || error.message }, branchId);
-      save();
-      return res.status(error.status || 502).json({ error: error.code || 'printer_unreachable', message: error.message, printer: publicPrinterConfig(printer) });
-    }
-  }
-  order.receipt = {
-    method,
-    status: 'selected',
-    destination: String(req.body?.destination || '').trim().slice(0, 180),
-    selectedAt: new Date().toISOString(),
-    by: req.user.phone,
-  };
-  recordAudit(req, 'order.receipt_selected', 'order', order.id, { method }, order.branchId);
-  save();
-  res.json({ ok: true, order: operationalOrderResponse(order, req.user), deliveryConfigured: method === 'none' });
-});
+moduleRuntime.registerHttpRoute('pos', 'post-084', moduleRouteContext);
 
-app.patch('/api/cashier/orders/:id/status', requireCapability('orders.manage'), serializeOrderMutationRoute(async (req, res) => {
-  const targetId = Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
-  const order = (db.orders || []).find((item) => Number(item.id) === targetId);
-  if (!order) return res.status(404).json({ error: 'not found' });
-  try {
-    assertUserBranchAccess(req.user, order.branchId);
-  } catch (error) {
-    return res.status(error.status || 403).json({ error: error.code || 'branch_access_denied', message: error.message, requestId: req.requestId });
-  }
-  const next = String(req.body?.status || '');
-  if (next && next === String(order.status || '')) {
-    return res.json({ ok: true, idempotent: true, order: operationalOrderResponse(order, req.user) });
-  }
-  if (normalizeFulfillment(order.fulfillment, { tableNo: order.tableNo }) === 'delivery'
-      && ['dispatched', 'delivered'].includes(next) && !hasAcceptedDelivery(order)) {
-    return res.status(409).json({ error: 'delivery_acceptance_required', message: 'ارسال و تحویل پیک بدون پذیرش ثبت‌شدهٔ رستوران ممکن نیست.' });
-  }
-  const allowed = {
-    pay_at_cashier: ['cancelled'],
-    awaiting_confirmation: ['cancelled'],
-    ready: order.fulfillment === 'delivery' ? ['dispatched'] : order.fulfillment === 'pickup' ? ['picked_up'] : ['done'],
-    dispatched: order.fulfillment === 'delivery' ? ['delivered'] : [],
-  }[String(order.status || '')] || [];
-  if (!allowed.includes(next)) return res.status(409).json({ error: 'cashier_transition_invalid', current: order.status, allowed });
-  if (next === 'cancelled') {
-    const cancellation = orderCancellationGuard(order);
-    if (!cancellation.ok) return res.status(409).json({ error: cancellation.code, message: cancellation.message });
-  }
-  const snapshot = snapshotFinanceMutationState();
-  try {
-  if (next === 'cancelled' && shouldReleaseOrderInventory(order)) {
-    adjustOrderInventory(order.items, 1, order.branchId);
-  }
-  appendOrderStatus(order, next, req.user, { source: 'cashier' });
-  if (['done', 'picked_up', 'delivered'].includes(next)) maybeAwardOrderLoyalty(order);
-  recordAudit(req, 'order.status_changed', 'order', order.id, { status: next, source: 'cashier' }, order.branchId);
-  await persistFinanceMutation(snapshot);
-  try { publishOperationalEvent('order.updated', { orderId: order.id, branchId: order.branchId, status: next }); }
-  catch (eventError) { console.error('[cashier-status] post-commit event failed', eventError?.message || eventError); }
-  res.json({ ok: true, order: operationalOrderResponse(order, req.user) });
-  } catch (error) {
-    restoreFinanceMutationState(snapshot);
-    return res.status(error.status || 503).json({ error: error.code || 'order_persistence_failed', message: error.message });
-  }
-}));
+moduleRuntime.registerHttpRoute('pos', 'patch-085', moduleRouteContext);
 
-app.get('/api/waiter/calls', requireCapability('service.manage'), (req, res) => {
-  const branchId = parseBranchId(req);
-  const calls = branchScoped(db.waiterCalls || [], branchId)
-    .filter((call) => call.status === 'open' || call.status === 'new')
-    .slice(0, 80);
-  res.json({ calls, serverTime: new Date().toISOString() });
-});
+moduleRuntime.registerHttpRoute('floor', 'get-086', moduleRouteContext);
 
-app.patch('/api/waiter/calls/:id', requireCapability('service.manage'), async (req, res) => {
-  const targetId = Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
-  const call = (db.waiterCalls || []).find((item) => Number(item.id) === targetId);
-  if (!call) return res.status(404).json({ error: 'not found' });
-  try {
-    assertUserBranchAccess(req.user, call.branchId);
-  } catch (error) {
-    return res.status(error.status || 403).json({ error: error.code || 'branch_access_denied', message: error.message, requestId: req.requestId });
-  }
-  if (String(req.body?.status || '') !== 'done') return res.status(400).json({ error: 'call_status_invalid' });
-  return serializeAdminConfigMutation(call.branchId, async () => {
-    const current = (db.waiterCalls || []).find((item) => Number(item.id) === targetId);
-    if (!current) return res.status(404).json({ error: 'not found' });
-    try {
-      assertUserBranchAccess(req.user, current.branchId);
-    } catch (error) {
-      return res.status(error.status || 403).json({ error: error.code || 'branch_access_denied', message: error.message, requestId: req.requestId });
-    }
-    if (current.status === 'done') return res.json({ ok: true, idempotent: true, call: current });
-    if (!['open', 'new'].includes(String(current.status || ''))) {
-      return res.status(409).json({ error: 'waiter_call_transition_invalid', current: current.status });
-    }
+moduleRuntime.registerHttpRoute('floor', 'patch-087', moduleRouteContext);
 
-    const snapshot = snapshotFinanceMutationState();
-    current.status = 'done';
-    current.resolvedAt = new Date().toISOString();
-    current.resolvedBy = req.user.phone;
-    const auditEntry = recordAudit(req, 'waiter_call.resolved', 'waiter_call', current.id, { tableNo: current.tableNo }, current.branchId, { deferAppend: true });
-    try {
-      await persistFinanceMutation(snapshot);
-    } catch (error) {
-      return res.status(error.status || 503).json({ error: error.code || 'waiter_call_persistence_failed', message: 'ثبت انجام فراخوان پایدار نشد؛ دوباره همگام‌سازی کنید.' });
-    }
-
-    appendAuditAfterCommit(auditEntry);
-    let eventPublished = true;
-    try {
-      publishOperationalEvent('waiter_call.updated', { callId: current.id, branchId: current.branchId, status: current.status });
-    } catch (error) {
-      eventPublished = false;
-      console.error('[waiter-call] committed event failed', error?.message || error);
-    }
-    return res.json({ ok: true, eventPublished, call: current });
-  }).catch((error) => {
-    if (res.headersSent) return undefined;
-    return res.status(error.status || 503).json({ error: error.code || 'waiter_call_update_failed' });
-  });
-});
-
-app.patch('/api/waiter/orders/:id/status', requireCapability('service.manage'), serializeOrderMutationRoute(async (req, res) => {
-  const targetId = Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
-  const order = (db.orders || []).find((item) => Number(item.id) === targetId);
-  if (!order) return res.status(404).json({ error: 'not found' });
-  try {
-    assertUserBranchAccess(req.user, order.branchId);
-  } catch (error) {
-    return res.status(error.status || 403).json({ error: error.code || 'branch_access_denied', message: error.message, requestId: req.requestId });
-  }
-  const next = String(req.body?.status || '');
-  if (next === 'done' && order.status === 'done') {
-    return res.json({ ok: true, idempotent: true, order: operationalOrderResponse(order, req.user) });
-  }
-  const allowed = order.fulfillment === 'dine_in' && order.status === 'ready' ? ['done'] : [];
-  if (!allowed.includes(next)) return res.status(409).json({ error: 'waiter_transition_invalid', current: order.status, allowed });
-  const snapshot = snapshotFinanceMutationState();
-  try {
-  appendOrderStatus(order, next, req.user, { source: 'waiter' });
-  maybeAwardOrderLoyalty(order);
-  recordAudit(req, 'order.status_changed', 'order', order.id, { status: next, source: 'waiter' }, order.branchId);
-  await persistFinanceMutation(snapshot);
-  try { publishOperationalEvent('order.updated', { orderId: order.id, branchId: order.branchId, status: next }); }
-  catch (eventError) { console.error('[waiter-status] post-commit event failed', eventError?.message || eventError); }
-  res.json({ ok: true, order: operationalOrderResponse(order, req.user) });
-  } catch (error) {
-    restoreFinanceMutationState(snapshot);
-    return res.status(error.status || 503).json({ error: error.code || 'order_persistence_failed', message: error.message });
-  }
-}));
+moduleRuntime.registerHttpRoute('floor', 'patch-088', moduleRouteContext);
 
 // Walk-in reception is deliberately separate from timed reservation editing.
 // A waiter may receive a phone number and later seat the guest, but cannot
@@ -6330,173 +4760,13 @@ async function serializeWaitlistMutation(branchId, operation) {
   }
 }
 
-app.get('/api/waiter/waitlist', requireCapability('reservations.receive'), (req, res) => {
-  const branchId = parseBranchId(req);
-  const entries = waitlistForBranch(branchId, String(req.query.history || '') === '1');
-  const active = entries.filter((entry) => waitlist.ACTIVE_WAITLIST_STATUSES.has(entry.status));
-  res.json({
-    waitlist: entries,
-    summary: {
-      waiting: active.filter((entry) => entry.status === 'waiting').length,
-      called: active.filter((entry) => entry.status === 'called').length,
-      seated: active.filter((entry) => entry.status === 'seated').length,
-      total: active.length,
-    },
-    serverTime: new Date().toISOString(),
-  });
-});
+moduleRuntime.registerHttpRoute('reservations', 'get-089', moduleRouteContext);
 
-app.post('/api/waiter/waitlist', requireCapability('reservations.receive'), async (req, res) => {
-  let branchId;
-  try { branchId = parseBranchId(req); } catch (error) {
-    return res.status(error.status || 400).json({ error: error.code || 'waitlist_branch_invalid', message: error.message });
-  }
-  if (!branchId) return res.status(400).json({ error: 'waitlist_branch_required', message: 'شعبهٔ فعال مشخص نیست.' });
-  return serializeWaitlistMutation(branchId, async () => {
-    db.reservations = Array.isArray(db.reservations) ? db.reservations : [];
-    const reservationsBefore = db.reservations.slice();
-    const hadAuditLog = Array.isArray(db.auditLog);
-    const auditLogBefore = hadAuditLog ? db.auditLog.slice() : null;
-    try {
-      const result = waitlist.createWaitlistEntry({
-        records: db.reservations,
-        branchId,
-        phone: normalizeDigits(req.body?.phone || '').trim(),
-        name: req.body?.name,
-        partySize: req.body?.partySize == null || String(req.body.partySize).trim() === '' ? null : normalizeDigits(req.body.partySize),
-        note: req.body?.note,
-        idempotencyKey: req.get('Idempotency-Key') || req.body?.idempotencyKey,
-        phoneRe: PHONE_RE,
-        nextId: (rows) => Math.max(0, ...rows.map((row) => Number(row.id) || 0), 0) + 1,
-        maxParty: db.reservationSettings?.maxParty || 40,
-      });
-      if (!result.idempotentReplay) {
-        recordAudit(req, 'waitlist.created', 'reservation', result.entry.id, { phone: result.entry.phone, partySize: result.entry.partySize }, branchId);
-        await save({ requireDurable: true });
-        try { publishOperationalEvent('waitlist.created', { waitlistId: result.entry.id, branchId, status: result.entry.status }); }
-        catch (eventError) { console.error('[waitlist-create] post-commit event failed', eventError?.message || eventError); }
-      }
-      return res.status(result.idempotentReplay ? 200 : 201).json({ ok: true, idempotent: result.idempotentReplay, entry: publicWaitlistEntry(result.entry) });
-    } catch (error) {
-      db.reservations = reservationsBefore;
-      if (hadAuditLog) db.auditLog = auditLogBefore;
-      else delete db.auditLog;
-      return res.status(error.status || 503).json({ error: error.code || 'waitlist_create_failed', message: error.message, entry: error.entry ? publicWaitlistEntry(error.entry) : undefined });
-    }
-  });
-});
+moduleRuntime.registerHttpRoute('reservations', 'post-090', moduleRouteContext);
 
-app.patch('/api/waiter/waitlist/:id', requireCapability('reservations.receive'), async (req, res) => {
-  const targetId = Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
-  const entry = (db.reservations || []).find((item) => Number(item.id) === targetId && waitlist.isWaitlist(item));
-  if (!entry) return res.status(404).json({ error: 'waitlist_not_found', message: 'مهمان موردنظر در صف پیدا نشد.' });
-  try { assertUserBranchAccess(req.user, entry.branchId); } catch (error) {
-    return res.status(error.status || 403).json({ error: error.code || 'branch_access_denied', message: error.message, requestId: req.requestId });
-  }
-  return serializeWaitlistMutation(entry.branchId, async () => {
-    const current = (db.reservations || []).find((item) => Number(item.id) === targetId && waitlist.isWaitlist(item));
-    if (!current) return res.status(404).json({ error: 'waitlist_not_found', message: 'مهمان موردنظر در صف پیدا نشد.' });
-    try { assertUserBranchAccess(req.user, current.branchId); } catch (error) {
-      return res.status(error.status || 403).json({ error: error.code || 'branch_access_denied', message: error.message, requestId: req.requestId });
-    }
+moduleRuntime.registerHttpRoute('reservations', 'patch-091', moduleRouteContext);
 
-    let prepared;
-    const operationNow = new Date();
-    try {
-      prepared = waitlist.prepareWaitlistUpdate({
-        entry: current,
-        records: db.reservations || [],
-        tables: db.tables || [],
-        body: req.body || {},
-        maxParty: db.reservationSettings?.maxParty || 40,
-        now: operationNow.toISOString(),
-        isTableBusy: (tableNo, table, candidate) => {
-          const orderBusy = (db.orders || []).some((order) => activeDineInOrderOnTable(order, table.id, candidate.branchId));
-          if (orderBusy) return true;
-          return (db.reservations || []).some((item) => item !== candidate
-            && Number(item.branchId) === Number(candidate.branchId)
-            && waitlist.tableIdsOverlap(item.tableNo, tableNo)
-            && ((waitlist.isWaitlist(item) && item.status === 'seated')
-              || (!waitlist.isWaitlist(item) && waitlist.reservationBlocksTable(
-                item,
-                operationNow,
-                db.reservationSettings?.slotMinutes,
-              ))));
-        },
-      });
-    } catch (error) {
-      return res.status(error.status || 400).json({ error: error.code || 'waitlist_update_invalid', message: error.message, current: current.status });
-    }
-    if (prepared.idempotent) return res.json({ ok: true, idempotent: true, entry: publicWaitlistEntry(current) });
-
-    const before = JSON.parse(JSON.stringify(current));
-    const hadAuditLog = Array.isArray(db.auditLog);
-    const auditLogBefore = hadAuditLog ? db.auditLog.slice() : null;
-    Object.assign(current, prepared.entry);
-    try {
-      recordAudit(req, 'waitlist.updated', 'reservation', current.id, { status: current.status, tableNo: current.tableNo || null }, current.branchId);
-      await save({ requireDurable: true });
-    } catch (error) {
-      Object.assign(current, before);
-      if (hadAuditLog) db.auditLog = auditLogBefore;
-      else delete db.auditLog;
-      return res.status(error.status || 503).json({ error: error.code || 'waitlist_persistence_failed', message: 'تغییر صف پایدار نشد؛ دوباره همگام‌سازی کنید.', current: current.status });
-    }
-    try { publishOperationalEvent('waitlist.updated', { waitlistId: current.id, branchId: current.branchId, status: current.status, tableNo: current.tableNo || null }); }
-    catch (eventError) { console.error('[waitlist-update] post-commit event failed', eventError?.message || eventError); }
-    return res.json({ ok: true, entry: publicWaitlistEntry(current) });
-  });
-});
-
-app.patch('/api/waiter/orders/:id/fire-course', requireCapability('orders.course.manage'), serializeOrderMutationRoute(async (req, res) => {
-  const targetId = Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
-  const order = (db.orders || []).find((item) => Number(item.id) === targetId);
-  if (!order) return res.status(404).json({ error: 'not found' });
-  try {
-    assertUserBranchAccess(req.user, order.branchId);
-  } catch (error) {
-    return res.status(error.status || 403).json({ error: error.code || 'branch_access_denied', message: error.message, requestId: req.requestId });
-  }
-  if (normalizeFulfillment(order.fulfillment, { tableNo: order.tableNo }) === 'delivery' && !hasAcceptedDelivery(order)) {
-    return res.status(409).json({ error: 'delivery_acceptance_required', message: 'پیش از ارسال دورهٔ سفارش، پذیرش رستوران را ثبت کنید.' });
-  }
-  const course = String(req.body?.course || '').trim().toLowerCase();
-  if (!course) return res.status(400).json({ error: 'course_required' });
-  const courseValidation = validateWaiterCourseFire(order, course);
-  if (!courseValidation.ok) {
-    const status = ['order_not_found', 'course_not_found'].includes(courseValidation.error)
-      ? 404
-      : ['course_invalid'].includes(courseValidation.error)
-        ? 400
-        : 409;
-    return res.status(status).json({ error: courseValidation.error, current: order.status });
-  }
-  if (courseValidation.idempotent) {
-    return res.json({ ok: true, idempotent: true, order: operationalOrderResponse(order, req.user), firedCount: 0, course: courseValidation.course });
-  }
-  const snapshot = snapshotFinanceMutationState();
-  const now = new Date().toISOString();
-  let firedCount = 0;
-  (order.items || []).forEach((item) => {
-    if (String(item.course || '').toLowerCase() === course && item.courseStatus === 'hold') {
-      item.courseStatus = 'fired';
-      item.firedAt = now;
-      firedCount++;
-    }
-  });
-  if (firedCount > 0 && order.status === 'pay_at_cashier' && canTransitionOrder(order, 'sent_to_kitchen')) {
-    appendOrderStatus(order, 'sent_to_kitchen', req.user, { source: 'waiter-fire', course });
-  }
-  recordAudit(req, 'order.course_fired', 'order', order.id, { course, firedCount }, order.branchId);
-  try {
-    await persistFinanceMutation(snapshot);
-  } catch (error) {
-    return res.status(error.status || 503).json({ error: error.code || 'course_persistence_failed', message: 'ارسال مرحلهٔ سفارش پایدار نشد؛ وضعیت را تازه کنید و دوباره بررسی کنید.' });
-  }
-  try { publishOperationalEvent('order.updated', { orderId: order.id, branchId: order.branchId, status: order.status, courseFired: course }); }
-  catch (eventError) { console.error('[waiter-course] post-commit event failed', eventError?.message || eventError); }
-  res.json({ ok: true, order: operationalOrderResponse(order, req.user), firedCount, course });
-}));
+moduleRuntime.registerHttpRoute('floor', 'patch-092', moduleRouteContext);
 
 function allocateOrderSplitDiscount(discount, selectedSubtotal, remainingSubtotal) {
   const selected = Number(selectedSubtotal);
@@ -6517,300 +4787,9 @@ function allocateOrderSplitDiscount(discount, selectedSubtotal, remainingSubtota
   };
 }
 
-app.post('/api/waiter/orders/:id/split', requireCapability('orders.split'), serializeOrderMutationRoute(async (req, res) => {
-  const targetId = Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
-  const order = (db.orders || []).find((item) => Number(item.id) === targetId);
-  if (!order) return res.status(404).json({ error: 'not found' });
-  try {
-    assertUserBranchAccess(req.user, order.branchId);
-  } catch (error) {
-    return res.status(error.status || 403).json({ error: error.code || 'branch_access_denied', message: error.message, requestId: req.requestId });
-  }
-  const idempotencyKey = String(req.get('Idempotency-Key') || req.body?.idempotencyKey || '').trim();
-  if (process.env.NODE_ENV === 'production' && !idempotencyKey) {
-    return res.status(400).json({ error: 'order_split_idempotency_required', message: 'برای تفکیک فاکتور در محیط تولید، کلید یکتای درخواست لازم است.' });
-  }
-  if (idempotencyKey && !ORDER_IDEMPOTENCY_KEY_RE.test(idempotencyKey)) {
-    return res.status(400).json({ error: 'order_split_idempotency_invalid' });
-  }
-  const splitMode = req.body?.mode || 'seat';
-  if (!['seat', 'items'].includes(splitMode)) {
-    return res.status(400).json({ error: 'split_mode_invalid' });
-  }
-  const targetSeat = Number(req.body?.seat || 0);
-  const requestedItemIndices = Array.isArray(req.body?.itemIndices)
-    ? [...new Set(req.body.itemIndices.map(Number).filter((index) => Number.isInteger(index) && index >= 0))]
-    : [];
-  const requestFingerprint = idempotencyKey ? checkoutIdempotencyFingerprint({
-    orderId: order.id,
-    branchId: persistedOrderBranchId(order),
-    mode: splitMode,
-    seat: splitMode === 'seat' ? targetSeat : null,
-    itemIndices: splitMode === 'items' ? requestedItemIndices : [],
-  }, req.user) : null;
-  if (idempotencyKey && order.splitOperations != null && !Array.isArray(order.splitOperations)) {
-    return res.status(409).json({ error: 'idempotency_replay_unavailable', message: 'سابقهٔ تفکیک سفارش معتبر نیست؛ پیش از تکرار، فاکتورهای مرتبط را دستی تطبیق دهید.' });
-  }
-  const splitOperations = Array.isArray(order.splitOperations) ? order.splitOperations : [];
-  const priorSplit = idempotencyKey
-    ? splitOperations.find((operation) => operation?.idempotencyKey === idempotencyKey)
-    : null;
-  if (priorSplit) {
-    if (!/^[a-f0-9]{64}$/i.test(String(priorSplit.requestFingerprint || ''))) {
-      return res.status(409).json({ error: 'idempotency_replay_unavailable', message: 'اطلاعات بازیابی تفکیک کامل نیست؛ سفارش‌ها را بررسی کنید و درخواست را تکرار نکنید.' });
-    }
-    if (priorSplit.requestFingerprint !== requestFingerprint) {
-      return res.status(409).json({ error: 'idempotency_key_conflict' });
-    }
-    const replayOrder = (db.orders || []).find((item) => Number(item.id) === Number(priorSplit.splitOrderId));
-    if (!replayOrder || Number(replayOrder.splitFromOrderId) !== Number(order.id)
-        || Number(replayOrder.branchId) !== Number(order.branchId)) {
-      return res.status(409).json({ error: 'idempotency_replay_unavailable', message: 'فاکتور حاصل از تفکیک دیگر در دسترس نیست؛ وضعیت را دستی تطبیق دهید.' });
-    }
-    return res.json({ ok: true, idempotent: true, primaryOrder: operationalOrderResponse(order, req.user), splitOrder: operationalOrderResponse(replayOrder, req.user) });
-  }
-  if (['paid', 'partial', 'pending', 'unknown'].includes(String(order.paymentStatus || '').toLowerCase())
-    || order.status === 'paid'
-    || receivedAmount(order) > 0) {
-    return res.status(409).json({ error: 'order_split_locked', message: 'تا تعیین تکلیف پرداخت یا ثبت دریافت، تفکیک فاکتور ممکن نیست؛ ابتدا وضعیت صندوق را بررسی کنید.' });
-  }
-  const splitLifecycle = orderSplitLifecycleGuard(order);
-  if (!splitLifecycle.ok) {
-    return res.status(409).json({ error: splitLifecycle.code, message: splitLifecycle.message });
-  }
-  if (normalizeFulfillment(order.fulfillment, { tableNo: order.tableNo }) !== 'dine_in') {
-    return res.status(409).json({ error: 'order_split_dine_in_only', message: 'تفکیک فاکتور فقط برای سفارش حضوری مجاز است.' });
-  }
-  if (!Array.isArray(order.items) || order.items.length <= 1) {
-    return res.status(400).json({ error: 'cannot_split_single_item_order' });
-  }
-  const selectedItemIndices = requestedItemIndices.filter((index) => index < order.items.length);
+moduleRuntime.registerHttpRoute('floor', 'post-093', moduleRouteContext);
 
-  const splitItems = [];
-  const remainingItems = [];
-
-  order.items.forEach((item, idx) => {
-    let shouldMove = false;
-    if (splitMode === 'seat' && targetSeat > 0) {
-      shouldMove = Number(item.seat) === targetSeat;
-    } else if (splitMode === 'items') {
-      shouldMove = selectedItemIndices.includes(idx);
-    }
-    if (shouldMove) splitItems.push(item);
-    else remainingItems.push(item);
-  });
-
-  if (!splitItems.length || !remainingItems.length) {
-    return res.status(400).json({ error: 'split_must_leave_items_in_both_orders' });
-  }
-
-  const lineSubtotal = (item) => Number(item.lineTotal) || Number(item.price) * Number(item.qty);
-  const splitSubtotal = splitItems.reduce((sum, item) => sum + lineSubtotal(item), 0);
-  const remainingSubtotal = remainingItems.reduce((sum, item) => sum + lineSubtotal(item), 0);
-  const discountAllocation = allocateOrderSplitDiscount(order.discount || 0, splitSubtotal, remainingSubtotal);
-  if (!discountAllocation) {
-    return res.status(409).json({ error: 'order_split_pricing_invalid', message: 'مبلغ اقلام یا تخفیف سفارش برای تفکیک معتبر نیست.' });
-  }
-
-  const snapshot = snapshotFinanceMutationState();
-  order.items = remainingItems;
-  order.subtotal = remainingSubtotal;
-  order.discount = discountAllocation.remainingDiscount;
-  order.total = remainingSubtotal - discountAllocation.remainingDiscount;
-  order.balanceDue = order.total;
-  order.splitCount = Math.max(0, Number(order.splitCount) || 0) + 1;
-
-  const newSubId = nextId(db.orders);
-  const baseTable = canonicalTableNo(order.tableNo).replace(/-\d+$/u, '') || String(order.tableNo || '').trim();
-  const subTableNo = nextDineInCheckNo(order.branchId, baseTable, `${baseTable}-2`);
-  const subOrder = {
-    ...JSON.parse(JSON.stringify(order)),
-    id: newSubId,
-    orderNo: `W-${String(Date.now()).slice(-6)}-${newSubId}`,
-    tableNo: subTableNo,
-    checkNo: subTableNo,
-    items: splitItems,
-    subtotal: splitSubtotal,
-    discount: discountAllocation.selectedDiscount,
-    total: splitSubtotal - discountAllocation.selectedDiscount,
-    checkNo: subTableNo,
-    createdAt: new Date().toISOString(),
-    statusAt: new Date().toISOString(),
-    paymentStatus: 'unpaid',
-    amountPaid: 0,
-    partialPayments: [],
-    balanceDue: splitSubtotal - discountAllocation.selectedDiscount,
-    splitFromOrderId: order.id,
-    splitMode,
-    splitSeat: splitMode === 'seat' ? targetSeat : null,
-    splitItemIndices: splitMode === 'items' ? selectedItemIndices : [],
-    splitAt: new Date().toISOString(),
-  };
-  db.orders.unshift(subOrder);
-  if (idempotencyKey) {
-    order.splitOperations = [
-      ...splitOperations,
-      {
-        idempotencyKey,
-        requestFingerprint,
-        splitOrderId: subOrder.id,
-        createdAt: subOrder.splitAt,
-      },
-    ];
-  }
-
-  recordAudit(req, 'order.split', 'order', order.id, { newOrderId: subOrder.id, subTableNo }, order.branchId);
-  try {
-    await persistFinanceMutation(snapshot);
-  } catch (error) {
-    return res.status(error.status || 503).json({ error: error.code || 'order_split_persistence_failed', message: 'تفکیک سفارش به‌صورت پایدار ثبت نشد؛ وضعیت را تازه کنید و دوباره بررسی کنید.' });
-  }
-  publishOperationalEvent('order.created', { orderId: subOrder.id, branchId: subOrder.branchId, status: subOrder.status });
-  publishOperationalEvent('order.updated', { orderId: order.id, branchId: order.branchId, status: order.status });
-  res.json({ ok: true, primaryOrder: operationalOrderResponse(order, req.user), splitOrder: operationalOrderResponse(subOrder, req.user) });
-}));
-
-app.patch('/api/waiter/orders/:id/move-table', requireCapability('orders.move_table'), async (req, res) => {
-  const targetId = Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
-  if (!Number.isSafeInteger(targetId) || targetId <= 0) return res.status(400).json({ error: 'order_id_invalid' });
-  const initial = (db.orders || []).find((item) => Number(item.id) === targetId);
-  if (!initial) return res.status(404).json({ error: 'not found' });
-  const initialBranchId = persistedOrderBranchId(initial);
-  if (!initialBranchId) return res.status(409).json({ error: 'order_branch_invalid' });
-  try {
-    assertUserBranchAccess(req.user, initialBranchId);
-  } catch (error) {
-    return res.status(error.status || 403).json({ error: error.code || 'branch_access_denied', message: error.message, requestId: req.requestId });
-  }
-  const nextTable = String(req.body?.tableNo || '').trim();
-  if (!nextTable) return res.status(400).json({ error: 'table_required' });
-  return serializeBranchOrderMutation(initial, async () => {
-    const order = (db.orders || []).find((item) => Number(item.id) === targetId);
-    if (!order) return res.status(404).json({ error: 'not found' });
-    if (persistedOrderBranchId(order) !== initialBranchId) {
-      return res.status(409).json({ error: 'order_branch_changed' });
-    }
-    try {
-      assertUserBranchAccess(req.user, initialBranchId);
-    } catch (error) {
-      return res.status(error.status || 403).json({ error: error.code || 'branch_access_denied', message: error.message, requestId: req.requestId });
-    }
-    if (!(db.branches || []).some((branch) => Number(branch.id) === initialBranchId && branch.active !== false)) {
-      return res.status(409).json({ error: 'order_branch_inactive' });
-    }
-
-    const fulfillment = normalizeFulfillment(order.fulfillment, { tableNo: order.tableNo });
-    const status = String(order.status || '').trim().toLowerCase();
-    const invoiceStatus = String(order.invoiceStatus || '').trim().toLowerCase();
-    const explicitlyClosed = order.closed === true || order.invoiceClosed === true
-      || Boolean(order.closedAt || order.invoiceClosedAt)
-      || ['closed', 'settled', 'paid', 'cancelled', 'canceled', 'void', 'refunded'].includes(invoiceStatus);
-    const serviceComplete = ['done', 'completed', 'picked_up', 'delivered'].includes(status);
-    const unpaidCompletion = ['unpaid', 'partial', 'pending', 'failed', 'unknown'].includes(paymentStatusFor(order));
-    const knownOpenStatus = ['draft', 'pay_at_cashier', 'awaiting_confirmation', 'pending_online',
-      'sent_to_kitchen', 'preparing', 'ready', 'paid', 'dispatched', 'done', 'completed', 'picked_up', 'delivered'];
-    if (fulfillment !== 'dine_in' || explicitlyClosed || !knownOpenStatus.includes(status)
-        || status === 'cancelled' || (serviceComplete && !unpaidCompletion)) {
-      return res.status(409).json({ error: 'order_not_open_dine_in', message: 'فقط سفارش حضوریِ باز و تسویه‌نشده قابل انتقال است.' });
-    }
-
-    const targetTable = tableForBranch(nextTable, initialBranchId);
-    if (!targetTable || Number(tableBranchId(targetTable)) !== initialBranchId) {
-      return res.status(404).json({ error: 'table_not_found', message: 'میز مقصد در شعبهٔ فعال پیدا نشد.' });
-    }
-    if (targetTable.active === false) {
-      return res.status(409).json({ error: 'table_inactive', message: 'میز مقصد غیرفعال است.' });
-    }
-    const oldTable = order.tableNo || null;
-    if (tableNoBelongsToTable(oldTable, targetTable.id)) {
-      const movedAuditExists = (db.auditLog || []).some((entry) => entry.action === 'order.table_moved'
-        && String(entry.targetId) === String(order.id)
-        && String(entry.meta?.nextTable || '') === String(order.tableNo));
-      if (!movedAuditExists) {
-        const auditSnapshot = snapshotFinanceMutationState();
-        const auditEntry = recordAudit(req, 'order.table_moved', 'order', order.id, {
-          oldTable: null, nextTable: String(order.tableNo), recoveredAfterCommit: true,
-        }, initialBranchId, { deferAppend: true });
-        try {
-          await persistFinanceMutation(auditSnapshot);
-        } catch (error) {
-          return res.status(error.status || 503).json({
-            error: error.code || 'order_table_move_audit_persistence_failed',
-            message: 'انتقال انجام شده اما ثبت سابقه کامل نشد؛ وضعیت را تازه و دوباره بررسی کنید.',
-          });
-        }
-        appendAuditAfterCommit(auditEntry);
-      }
-      return res.json({ ok: true, idempotent: true, order: operationalOrderResponse(order, req.user), oldTable, nextTable: oldTable });
-    }
-
-    const occupied = (db.orders || []).some((candidate) => Number(candidate.id) !== targetId
-      && Number(candidate.branchId) === initialBranchId
-      && waitlist.tableIdsOverlap(candidate.tableNo, targetTable.id)
-      && activeDineInOrderOnTable(candidate, candidate.tableNo, initialBranchId));
-    if (occupied || ['busy', 'occupied'].includes(String(targetTable.state || '').trim().toLowerCase())) {
-      return res.status(409).json({ error: 'table_occupied', message: 'میز مقصد در حال سرویس است؛ میز دیگری انتخاب کنید.' });
-    }
-    if (String(targetTable.state || '').trim().toLowerCase() === 'reserved') {
-      return res.status(409).json({ error: 'table_reserved', message: 'میز مقصد رزرو شده است؛ میز دیگری انتخاب کنید.' });
-    }
-
-    const now = new Date();
-    const todayKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-    const reserved = (db.reservations || []).some((entry) => {
-      if (Number(entry.branchId) !== initialBranchId || !waitlist.tableIdsOverlap(entry.tableNo, targetTable.id)) return false;
-      if (waitlist.isWaitlist(entry)) return String(entry.status || '') === 'seated';
-      const reservationStatus = String(entry.status || '').trim().toLowerCase();
-      if (!['pending', 'confirmed', 'seated'].includes(reservationStatus)) return false;
-      const dateKey = String(entry.date || '').slice(0, 10);
-      return reservationStatus === 'seated'
-        || waitlist.reservationBlocksTable(entry, now, db.reservationSettings?.slotMinutes)
-        || !/^\d{4}-\d{2}-\d{2}$/u.test(dateKey)
-        || dateKey > todayKey;
-    });
-    if (reserved) {
-      return res.status(409).json({ error: 'table_reserved', message: 'میز مقصد برای رزرو یا مهمانِ نشسته نگه داشته شده است.' });
-    }
-
-    const snapshot = snapshotFinanceMutationState();
-    const assignedTable = String(targetTable.id);
-    order.tableNo = assignedTable;
-    order.checkNo = nextDineInCheckNo(initialBranchId, assignedTable, assignedTable);
-    try {
-      await persistFinanceMutation(snapshot);
-    } catch (error) {
-      return res.status(error.status || 503).json({
-        error: error.code || 'order_table_move_persistence_failed',
-        message: 'انتقال میز ذخیره نشد؛ وضعیت قبلی سفارش حفظ شد.',
-      });
-    }
-
-    const auditSnapshot = snapshotFinanceMutationState();
-    const auditEntry = recordAudit(req, 'order.table_moved', 'order', order.id, {
-      oldTable, nextTable: assignedTable,
-    }, initialBranchId, { deferAppend: true });
-    try {
-      await persistFinanceMutation(auditSnapshot);
-    } catch (error) {
-      return res.status(error.status || 503).json({
-        error: error.code || 'order_table_move_audit_persistence_failed',
-        message: 'انتقال ذخیره شد اما ثبت سابقه کامل نشد؛ وضعیت را تازه و دوباره بررسی کنید.',
-      });
-    }
-    appendAuditAfterCommit(auditEntry);
-    let eventPublished = true;
-    try {
-      publishOperationalEvent('order.updated', { orderId: order.id, branchId: initialBranchId, tableNo: assignedTable });
-    } catch (error) {
-      eventPublished = false;
-      console.error('[waiter-move-table] committed event failed', error?.message || error);
-    }
-    return res.json({ ok: true, idempotent: false, eventPublished, order: operationalOrderResponse(order, req.user), oldTable, nextTable: assignedTable });
-  }).catch((error) => {
-    if (res.headersSent) return undefined;
-    return res.status(error.status || 503).json({ error: error.code || 'order_table_move_failed', message: error.message });
-  });
-});
+moduleRuntime.registerHttpRoute('floor', 'patch-094', moduleRouteContext);
 
 
 function cleanDeliveryZone(input, current = {}) {
@@ -6838,10 +4817,7 @@ function cleanDeliveryZone(input, current = {}) {
   };
 }
 
-app.get('/api/admin/delivery-zones', requireCapability('delivery.view'), (req, res) => {
-  const branchId = parseBranchId(req);
-  res.json({ zones: branchScoped(db.deliveryZones || [], branchId).sort((a, b) => Number(a.sort || 0) - Number(b.sort || 0)) });
-});
+moduleRuntime.registerHttpRoute('delivery', 'get-095', moduleRouteContext);
 
 function rollbackAuditEntry(entry, auditLogWasPresent) {
   if (entry && Array.isArray(db.auditLog)) db.auditLog = db.auditLog.filter((candidate) => candidate !== entry);
@@ -6862,128 +4838,13 @@ function validateAdminHoursTime(value) {
   return /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(normalized) ? normalized : null;
 }
 
-app.post('/api/admin/delivery-zones', requireCapability('delivery.manage'), async (req, res) => {
-  let branchId;
-  try { branchId = parseBranchId(req); } catch (error) {
-    return res.status(error.status || 400).json({ error: error.code || 'branch_invalid', message: error.message });
-  }
-  if (branchId == null) return res.status(400).json({ error: 'branch_required' });
-  return serializeAdminConfigMutation(branchId, async () => {
-    const zone = cleanDeliveryZone({ ...(req.body || {}), branchId });
-    if (!zone.name) return res.status(400).json({ error: 'نام محدوده لازم است' });
-    const hadZones = Array.isArray(db.deliveryZones);
-    db.deliveryZones = hadZones ? db.deliveryZones : [];
-    db.deliveryZones.push(zone);
-    const auditLogWasPresent = Array.isArray(db.auditLog);
-    let auditEntry;
-    try {
-      auditEntry = recordAudit(req, 'delivery_zone.created', 'delivery_zone', zone.id, { name: zone.name }, zone.branchId, { deferAppend: true });
-      await persistAdminConfigMutation(() => {
-        db.deliveryZones = (db.deliveryZones || []).filter((candidate) => candidate !== zone);
-        if (!hadZones && db.deliveryZones.length === 0) delete db.deliveryZones;
-        rollbackAuditEntry(auditEntry, auditLogWasPresent);
-      });
-    } catch (error) {
-      return respondAdminConfigPersistenceFailure(res, error, 'delivery_zone_persistence_failed');
-    }
-    appendAuditAfterCommit(auditEntry);
-    try { publishOperationalEvent('delivery_zone.updated', { zoneId: zone.id, branchId: zone.branchId }); }
-    catch (eventError) { console.error('[delivery-zone-create] post-commit event failed', eventError?.message || eventError); }
-    return res.status(201).json({ ok: true, zone });
-  });
-});
+moduleRuntime.registerHttpRoute('delivery', 'post-096', moduleRouteContext);
 
-app.patch('/api/admin/delivery-zones/:id', requireCapability('delivery.manage'), async (req, res) => {
-  const targetId = Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
-  const initial = (db.deliveryZones || []).find((item) => Number(item.id) === targetId);
-  if (!initial) return res.status(404).json({ error: 'not found' });
-  const initialBranchId = Number(initial.branchId) || Number(defaultBranch()?.id) || 1;
-  try { assertUserBranchAccess(req.user, initialBranchId); } catch (error) {
-    return res.status(error.status || 403).json({ error: error.code || 'branch_access_denied', message: error.message, requestId: req.requestId });
-  }
-  return serializeAdminConfigMutation(initialBranchId, async () => {
-    const current = (db.deliveryZones || []).find((item) => Number(item.id) === targetId);
-    if (!current) return res.status(404).json({ error: 'not found' });
-    const currentBranchId = Number(current.branchId) || Number(defaultBranch()?.id) || 1;
-    try { assertUserBranchAccess(req.user, currentBranchId); } catch (error) {
-      return res.status(error.status || 403).json({ error: error.code || 'branch_access_denied', message: error.message, requestId: req.requestId });
-    }
-    if (currentBranchId !== initialBranchId) return res.status(409).json({ error: 'delivery_zone_changed', message: 'محدودهٔ ارسال هنگام ویرایش تغییر کرده است؛ صفحه را تازه کنید.' });
-    if (requestBranchValue(req) != null && Number(parseBranchId(req)) !== currentBranchId) {
-      return res.status(409).json({ error: 'delivery_zone_branch_immutable', message: 'محدودهٔ ارسال را نمی‌توان به شعبهٔ دیگری منتقل کرد.' });
-    }
-    const zone = cleanDeliveryZone({ ...(req.body || {}), branchId: currentBranchId }, current);
-    if (!zone.name) return res.status(400).json({ error: 'نام محدوده لازم است' });
-    const before = { ...current };
-    Object.assign(current, zone);
-    const auditLogWasPresent = Array.isArray(db.auditLog);
-    let auditEntry;
-    try {
-      auditEntry = recordAudit(req, 'delivery_zone.updated', 'delivery_zone', current.id, { name: current.name }, current.branchId, { deferAppend: true });
-      await persistAdminConfigMutation(() => {
-        for (const key of Object.keys(current)) delete current[key];
-        Object.assign(current, before);
-        rollbackAuditEntry(auditEntry, auditLogWasPresent);
-      });
-    } catch (error) {
-      return respondAdminConfigPersistenceFailure(res, error, 'delivery_zone_persistence_failed');
-    }
-    appendAuditAfterCommit(auditEntry);
-    try { publishOperationalEvent('delivery_zone.updated', { zoneId: current.id, branchId: current.branchId }); }
-    catch (eventError) { console.error('[delivery-zone-update] post-commit event failed', eventError?.message || eventError); }
-    return res.json({ ok: true, zone: current });
-  });
-});
+moduleRuntime.registerHttpRoute('delivery', 'patch-097', moduleRouteContext);
 
-app.delete('/api/admin/delivery-zones/:id', requireCapability('delivery.manage'), async (req, res) => {
-  const targetId = Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
-  const initial = (db.deliveryZones || []).find((item) => Number(item.id) === targetId);
-  if (!initial) return res.status(404).json({ error: 'not found' });
-  const initialBranchId = Number(initial.branchId) || Number(defaultBranch()?.id) || 1;
-  try { assertUserBranchAccess(req.user, initialBranchId); } catch (error) {
-    return res.status(error.status || 403).json({ error: error.code || 'branch_access_denied', message: error.message, requestId: req.requestId });
-  }
-  return serializeAdminConfigMutation(initialBranchId, async () => {
-    const zones = db.deliveryZones || [];
-    const index = zones.findIndex((item) => Number(item.id) === targetId);
-    if (index < 0) return res.status(404).json({ error: 'not found' });
-    const zone = zones[index];
-    const zoneBranchId = Number(zone.branchId) || Number(defaultBranch()?.id) || 1;
-    try { assertUserBranchAccess(req.user, zoneBranchId); } catch (error) {
-      return res.status(error.status || 403).json({ error: error.code || 'branch_access_denied', message: error.message, requestId: req.requestId });
-    }
-    if (zoneBranchId !== initialBranchId) return res.status(409).json({ error: 'delivery_zone_changed', message: 'محدودهٔ ارسال هنگام حذف تغییر کرده است؛ صفحه را تازه کنید.' });
-    db.deliveryZones = zones.filter((item) => item !== zone);
-    const auditLogWasPresent = Array.isArray(db.auditLog);
-    let auditEntry;
-    try {
-      auditEntry = recordAudit(req, 'delivery_zone.deleted', 'delivery_zone', zone.id, { name: zone.name }, zone.branchId, { deferAppend: true });
-      await persistAdminConfigMutation(() => {
-        const currentZones = db.deliveryZones || (db.deliveryZones = []);
-        if (!currentZones.includes(zone)) currentZones.splice(Math.min(index, currentZones.length), 0, zone);
-        rollbackAuditEntry(auditEntry, auditLogWasPresent);
-      });
-    } catch (error) {
-      return respondAdminConfigPersistenceFailure(res, error, 'delivery_zone_persistence_failed');
-    }
-    appendAuditAfterCommit(auditEntry);
-    try { publishOperationalEvent('delivery_zone.updated', { zoneId: zone.id, branchId: zone.branchId, deleted: true }); }
-    catch (eventError) { console.error('[delivery-zone-delete] post-commit event failed', eventError?.message || eventError); }
-    return res.json({ ok: true });
-  });
-});
+moduleRuntime.registerHttpRoute('delivery', 'delete-098', moduleRouteContext);
 
-app.get('/api/admin/payments', requireCapability('payments.manage'), (req, res) => {
-  const branchId = parseBranchId(req);
-  const limit = Math.max(1, Math.min(200, Number(req.query.limit) || 80));
-  res.json({
-    provider: paymentProviderPublicStatus(db.paymentProvider, {
-      nodeEnv: process.env.NODE_ENV,
-      providerReady: productionPaymentProviderReady(),
-    }),
-    payments: branchScoped(db.paymentAttempts || [], branchId).slice(0, limit).map(publicPaymentAttempt),
-  });
-});
+moduleRuntime.registerHttpRoute('payments', 'get-099', moduleRouteContext);
 
 function maybeAwardOrderLoyalty(order) {
   if (!order) return;
@@ -7084,355 +4945,15 @@ function maybeAwardOrderLoyalty(order) {
   }
 }
 
-app.post('/api/delivery/orders/:id/accept', requireCapability('delivery.manage'), async (req, res) => {
-  const targetId = Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
-  if (!Number.isSafeInteger(targetId) || targetId <= 0) return res.status(400).json({ error: 'order_id_invalid' });
-  const initial = (db.orders || []).find((item) => Number(item.id) === targetId);
-  if (!initial) return res.status(404).json({ error: 'not found' });
-  const initialBranchId = Number(initial.branchId);
-  if (!Number.isSafeInteger(initialBranchId) || initialBranchId <= 0) return res.status(409).json({ error: 'order_branch_invalid' });
-  if (!(db.branches || []).some((branch) => Number(branch.id) === initialBranchId && branch.active !== false)) {
-    return res.status(409).json({ error: 'order_branch_inactive' });
-  }
-  try {
-    assertUserBranchAccess(req.user, initialBranchId);
-  } catch (error) {
-    return res.status(error.status || 403).json({ error: error.code || 'branch_access_denied', message: error.message, requestId: req.requestId });
-  }
-  const idempotencyKey = String(req.get('Idempotency-Key') || req.body?.idempotencyKey || '').trim();
-  if (process.env.NODE_ENV === 'production' && !idempotencyKey) {
-    return res.status(400).json({ error: 'delivery_acceptance_idempotency_required', message: 'برای پذیرش سفارش، کلید یکتای درخواست لازم است.' });
-  }
-  if (idempotencyKey && !ORDER_IDEMPOTENCY_KEY_RE.test(idempotencyKey)) {
-    return res.status(400).json({ error: 'delivery_acceptance_idempotency_invalid' });
-  }
+moduleRuntime.registerHttpRoute('delivery', 'post-100', moduleRouteContext);
 
-  return serializeBranchOrderMutation(initial, async () => {
-    const order = (db.orders || []).find((item) => Number(item.id) === targetId);
-    if (!order) return res.status(404).json({ error: 'not found' });
-    if (Number(order.branchId) !== initialBranchId) return res.status(409).json({ error: 'order_branch_changed' });
-    try {
-      assertUserBranchAccess(req.user, order.branchId);
-    } catch (error) {
-      return res.status(error.status || 403).json({ error: error.code || 'branch_access_denied', message: error.message, requestId: req.requestId });
-    }
-    if (normalizeFulfillment(order.fulfillment, { tableNo: order.tableNo }) !== 'delivery') {
-      return res.status(409).json({ error: 'delivery_acceptance_not_applicable' });
-    }
-    if (order.deliveryAcceptance?.status === 'accepted') {
-      const acceptance = validateDeliveryAcceptance(order);
-      if (!acceptance.ok) {
-        return res.status(409).json({ error: 'delivery_acceptance_provenance_invalid', message: 'پذیرش قبلی قابل انتساب و تأیید نیست؛ این سفارش نیازمند بررسی است.' });
-      }
-      if (idempotencyKey && acceptance.reference !== idempotencyKey) {
-        return res.status(409).json({ error: 'delivery_acceptance_idempotency_conflict' });
-      }
-      return res.json({ ok: true, idempotent: true, order: operationalOrderResponse(order, req.user) });
-    }
-    if (idempotencyKey && (db.orders || []).some((candidate) =>
-      Number(candidate.id) !== targetId
-      && Number(candidate.branchId) === initialBranchId
-      && String(candidate.deliveryAcceptance?.reference || '') === idempotencyKey)) {
-      return res.status(409).json({ error: 'delivery_acceptance_idempotency_conflict' });
-    }
-    if (order.deliveryAcceptance?.status === 'rejected') {
-      return res.status(409).json({ error: 'delivery_acceptance_rejected' });
-    }
-    const status = String(order.status || '');
-    const kitchenWasStarted = Boolean(order.startedAt)
-      || ['sent_to_kitchen', 'preparing', 'ready', 'dispatched', 'delivered'].includes(status)
-      || (Array.isArray(order.statusHistory) && order.statusHistory.some((entry) => ['sent_to_kitchen', 'preparing', 'ready', 'dispatched', 'delivered'].includes(String(entry?.status || ''))));
-    if (kitchenWasStarted) {
-      return res.status(409).json({ error: 'delivery_acceptance_after_kitchen_start', message: 'پذیرش باید پیش از ورود سفارش به آشپزخانه ثبت شود؛ این سفارش نیازمند بررسی سابقه است.' });
-    }
-    if (!['pending_online', 'awaiting_confirmation', 'pay_at_cashier', 'paid'].includes(status)) {
-      return res.status(409).json({ error: 'delivery_acceptance_state_invalid', current: status });
-    }
+moduleRuntime.registerHttpRoute('delivery', 'post-101', moduleRouteContext);
 
-    const snapshot = snapshotFinanceMutationState();
-    const acceptedAt = new Date().toISOString();
-    const requestReference = String(req.requestId || '');
-    const reference = idempotencyKey || (/^[A-Za-z0-9][A-Za-z0-9._:-]{7,159}$/.test(requestReference) ? requestReference : crypto.randomUUID());
-    const deliveryAcceptance = {
-      status: 'accepted',
-      acceptedAt,
-      acceptedBy: { phone: String(req.user.phone || ''), role: effectiveRole(req.user) },
-      source: 'restaurant',
-      reference,
-    };
-    const acceptance = validateDeliveryAcceptance({ fulfillment: 'delivery', deliveryAcceptance });
-    if (!acceptance.ok) {
-      return res.status(403).json({ error: 'delivery_acceptance_actor_invalid', message: 'حساب کاربری مجاز برای پذیرش سفارش معتبر نیست.' });
-    }
-    order.deliveryAcceptance = deliveryAcceptance;
-    const nextStatus = nextOrderStatusAfterDeliveryAcceptance(order);
-    if (nextStatus && canTransitionOrder(order, nextStatus)) {
-      appendOrderStatus(order, nextStatus, req.user, { source: 'restaurant-delivery-acceptance', acceptanceReference: reference });
-    }
-    recordAudit(req, 'delivery.order_accepted', 'order', order.id, {
-      reference,
-      previousStatus: status,
-      resultingStatus: order.status,
-      paymentStatus: paymentStatusFor(order),
-    }, order.branchId);
-    try {
-      await persistFinanceMutation(snapshot);
-    } catch (error) {
-      return res.status(error.status || 503).json({ error: error.code || 'delivery_acceptance_persistence_failed', message: error.message });
-    }
-    try {
-      publishOperationalEvent('order.updated', { orderId: order.id, branchId: order.branchId, status: order.status, deliveryAcceptance: 'accepted' });
-      neemBridge.enqueueOrder(order, (db.paymentAttempts || []).find((item) => Number(item.orderId) === Number(order.id)) || null);
-    } catch (error) {
-      console.error('[delivery-acceptance] post-commit event failed', error?.message || error);
-    }
-    return res.json({ ok: true, idempotent: false, order: operationalOrderResponse(order, req.user) });
-  }).catch((error) => {
-    console.error('[delivery-acceptance] mutation failed', error?.message || error);
-    if (res.headersSent) return undefined;
-    return res.status(error.status || 503).json({ error: error.code || 'delivery_acceptance_failed', message: error.message || 'پذیرش سفارش ثبت نشد.' });
-  });
-});
-
-app.post('/api/delivery/orders/:id/reject', requireCapability('delivery.manage'), async (req, res) => {
-  const targetId = Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
-  if (!Number.isSafeInteger(targetId) || targetId <= 0) return res.status(400).json({ error: 'order_id_invalid' });
-  const initial = (db.orders || []).find((item) => Number(item.id) === targetId);
-  if (!initial) return res.status(404).json({ error: 'not found' });
-  const initialBranchId = persistedOrderBranchId(initial);
-  if (!initialBranchId) return res.status(409).json({ error: 'order_branch_invalid' });
-  if (!(db.branches || []).some((branch) => Number(branch.id) === initialBranchId && branch.active !== false)) {
-    return res.status(409).json({ error: 'order_branch_inactive' });
-  }
-  try {
-    assertUserBranchAccess(req.user, initialBranchId);
-  } catch (error) {
-    return res.status(error.status || 403).json({ error: error.code || 'branch_access_denied', message: error.message, requestId: req.requestId });
-  }
-
-  const rawReason = typeof req.body?.reason === 'string' ? req.body.reason : '';
-  const reason = rawReason.replace(/\r\n?/gu, '\n').trim();
-  if (!reason || reason.length > 500 || /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/u.test(reason)) {
-    return res.status(400).json({ error: 'delivery_rejection_reason_required', message: 'دلیل رد سفارش را کوتاه و روشن وارد کنید.' });
-  }
-  const idempotencyKey = String(req.get?.('Idempotency-Key') || req.body?.idempotencyKey || '').trim();
-  if (idempotencyKey && !ORDER_IDEMPOTENCY_KEY_RE.test(idempotencyKey)) {
-    return res.status(400).json({ error: 'delivery_rejection_idempotency_invalid' });
-  }
-
-  return serializeBranchOrderMutation(initial, async () => {
-    const order = (db.orders || []).find((item) => Number(item.id) === targetId);
-    if (!order) return res.status(404).json({ error: 'not found' });
-    if (persistedOrderBranchId(order) !== initialBranchId) return res.status(409).json({ error: 'order_branch_changed' });
-    try {
-      assertUserBranchAccess(req.user, initialBranchId);
-    } catch (error) {
-      return res.status(error.status || 403).json({ error: error.code || 'branch_access_denied', message: error.message, requestId: req.requestId });
-    }
-    if (normalizeFulfillment(order.fulfillment, { tableNo: order.tableNo }) !== 'delivery') {
-      return res.status(409).json({ error: 'delivery_rejection_not_applicable' });
-    }
-
-    const priorDecision = order.deliveryAcceptance;
-    if (priorDecision?.status === 'rejected') {
-      const provenanceValid = priorDecision.source === 'restaurant'
-        && typeof priorDecision.reason === 'string' && priorDecision.reason.trim()
-        && Number.isFinite(Date.parse(priorDecision.rejectedAt || ''))
-        && /^[A-Za-z0-9][A-Za-z0-9._:-]{7,159}$/u.test(String(priorDecision.reference || ''))
-        && typeof priorDecision.rejectedBy?.phone === 'string' && priorDecision.rejectedBy.phone.trim()
-        && ['owner', 'manager', 'cashier'].includes(String(priorDecision.rejectedBy.role || '').toLowerCase());
-      if (!provenanceValid) return res.status(409).json({ error: 'delivery_rejection_provenance_invalid' });
-      if (priorDecision.reason !== reason || (idempotencyKey && priorDecision.reference !== idempotencyKey)) {
-        return res.status(409).json({ error: 'delivery_rejection_idempotency_conflict' });
-      }
-      const auditExists = (db.auditLog || []).some((entry) => entry.action === 'delivery.order_rejected'
-        && String(entry.targetId) === String(order.id)
-        && String(entry.meta?.reference || '') === String(priorDecision.reference));
-      if (!auditExists) {
-        const auditSnapshot = snapshotFinanceMutationState();
-        const auditEntry = recordAudit(req, 'delivery.order_rejected', 'order', order.id, {
-          reference: priorDecision.reference, reason: priorDecision.reason,
-          recoveredAfterCommit: true,
-        }, initialBranchId, { deferAppend: true });
-        try {
-          await persistFinanceMutation(auditSnapshot);
-        } catch (error) {
-          return res.status(error.status || 503).json({ error: error.code || 'delivery_rejection_audit_persistence_failed' });
-        }
-        appendAuditAfterCommit(auditEntry);
-      }
-      return res.json({ ok: true, idempotent: true, order: operationalOrderResponse(order, req.user) });
-    }
-    if (priorDecision?.status === 'accepted') {
-      return res.status(409).json({ error: 'delivery_already_accepted' });
-    }
-
-    const status = String(order.status || '').trim().toLowerCase();
-    const kitchenWasStarted = Boolean(order.startedAt)
-      || ['sent_to_kitchen', 'preparing', 'ready', 'dispatched', 'delivered'].includes(status)
-      || (Array.isArray(order.statusHistory) && order.statusHistory.some((entry) =>
-        ['sent_to_kitchen', 'preparing', 'ready', 'dispatched', 'delivered'].includes(String(entry?.status || '').toLowerCase())));
-    if (kitchenWasStarted) {
-      return res.status(409).json({ error: 'delivery_rejection_after_kitchen_start' });
-    }
-    if (!['pending_online', 'awaiting_confirmation', 'pay_at_cashier', 'paid'].includes(status)) {
-      return res.status(409).json({ error: 'delivery_rejection_state_invalid', current: order.status });
-    }
-
-    const actorRole = String(effectiveRole(req.user) || '').trim().toLowerCase();
-    const actorPhone = String(req.user?.phone || '').trim();
-    if (!actorPhone || actorPhone.length > 64 || !['owner', 'manager', 'cashier'].includes(actorRole)) {
-      return res.status(403).json({ error: 'delivery_rejection_actor_invalid' });
-    }
-    const referenceFromRequest = String(req.requestId || '');
-    const reference = idempotencyKey
-      || (/^[A-Za-z0-9][A-Za-z0-9._:-]{7,159}$/u.test(referenceFromRequest) ? referenceFromRequest : crypto.randomUUID());
-    if ((db.orders || []).some((candidate) => Number(candidate.id) !== targetId
-      && Number(candidate.branchId) === initialBranchId
-      && String(candidate.deliveryAcceptance?.reference || '') === reference)) {
-      return res.status(409).json({ error: 'delivery_rejection_idempotency_conflict' });
-    }
-
-    const snapshot = snapshotFinanceMutationState();
-    order.deliveryAcceptance = {
-      status: 'rejected',
-      source: 'restaurant',
-      rejectedAt: new Date().toISOString(),
-      rejectedBy: { phone: actorPhone, role: actorRole },
-      reason,
-      reference,
-    };
-    try {
-      await persistFinanceMutation(snapshot);
-    } catch (error) {
-      return res.status(error.status || 503).json({
-        error: error.code || 'delivery_rejection_persistence_failed',
-        message: 'رد سفارش ذخیره نشد؛ وضعیت قبلی حفظ شد.',
-      });
-    }
-
-    const auditSnapshot = snapshotFinanceMutationState();
-    const auditEntry = recordAudit(req, 'delivery.order_rejected', 'order', order.id, {
-      reference, reason, previousStatus: status,
-    }, initialBranchId, { deferAppend: true });
-    try {
-      await persistFinanceMutation(auditSnapshot);
-    } catch (error) {
-      return res.status(error.status || 503).json({
-        error: error.code || 'delivery_rejection_audit_persistence_failed',
-        message: 'رد سفارش ثبت شد اما ثبت سابقه کامل نشد؛ وضعیت را تازه و دوباره بررسی کنید.',
-      });
-    }
-    appendAuditAfterCommit(auditEntry);
-    let eventPublished = true;
-    try {
-      publishOperationalEvent('order.updated', {
-        orderId: order.id, branchId: initialBranchId, status: order.status, deliveryAcceptance: 'rejected',
-      });
-    } catch (error) {
-      eventPublished = false;
-      console.error('[delivery-rejection] committed event failed', error?.message || error);
-    }
-    return res.json({ ok: true, idempotent: false, eventPublished, order: operationalOrderResponse(order, req.user) });
-  }).catch((error) => {
-    if (res.headersSent) return undefined;
-    return res.status(error.status || 503).json({ error: error.code || 'delivery_rejection_failed', message: error.message });
-  });
-});
-
-app.patch('/api/admin/orders/:id', requireCapability('orders.manage'), serializeOrderMutationRoute(async (req, res) => {
-  if (!['owner', 'manager'].includes(effectiveRole(req.user))) return res.status(403).json({ error: 'supervisor_required' });
-  const targetId = Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
-  const order = (db.orders || []).find((o) => Number(o.id) === targetId);
-  if (!order) return res.status(404).json({ error: 'not found' });
-  try {
-    assertUserBranchAccess(req.user, order.branchId);
-  } catch (error) {
-    return res.status(error.status || 403).json({ error: error.code || 'branch_access_denied', message: error.message, requestId: req.requestId });
-  }
-  const allowed = ['pending_online', 'awaiting_confirmation', 'pay_at_cashier', 'sent_to_kitchen', 'paid', 'preparing', 'ready', 'dispatched', 'picked_up', 'delivered', 'done', 'cancelled'];
-  const status = String(req.body?.status || '');
-  if (!allowed.includes(status)) return res.status(400).json({ error: 'order_status_invalid' });
-  if (status === 'paid' && order.paymentStatus !== 'paid') {
-    return res.status(409).json({ error: 'payment_settlement_required', message: 'پرداخت را از مسیر تسویه ثبت کنید؛ تغییر وضعیت سفارش رسید دریافت وجه نیست.' });
-  }
-  if (status === String(order.status || '')) return res.json({ ok: true, idempotent: true, order: operationalOrderResponse(order, req.user) });
-  if (status === 'cancelled') {
-    const cancellation = orderCancellationGuard(order);
-    if (!cancellation.ok) return res.status(409).json({ error: cancellation.code, message: cancellation.message });
-  }
-  if (!canTransitionOrder(order, status)) {
-    return res.status(409).json({ error: 'order_transition_invalid', current: order.status, allowed: allowedOrderTransitions(order) });
-  }
-  const snapshot = snapshotFinanceMutationState();
-  try {
-    if (status === 'cancelled' && shouldReleaseOrderInventory(order)) {
-      adjustOrderInventory(order.items, 1, order.branchId);
-    }
-    appendOrderStatus(order, status, req.user, { source: 'legacy-admin' });
-    if (status === 'cancelled') {
-      reverseCancelledOrderFinancialEffects(order, req.user);
-    }
-    if (['done', 'picked_up', 'delivered'].includes(status)) maybeAwardOrderLoyalty(order);
-    recordAudit(req, 'order.status_changed', 'order', order.id, { status, source: 'legacy-admin' }, order.branchId);
-    await persistFinanceMutation(snapshot);
-  } catch (error) {
-    restoreFinanceMutationState(snapshot);
-    return res.status(error.status || 503).json({ error: error.code || error.message });
-  }
-  try {
-    publishOperationalEvent('order.updated', { orderId: order.id, branchId: order.branchId, status: order.status });
-    neemBridge.enqueueOrder(order, (db.paymentAttempts || []).find((item) => Number(item.orderId) === Number(order.id)) || null);
-  } catch (error) { console.error('[order-post-commit] integration effect failed', error?.message || error); }
-  res.json({ ok: true, order: operationalOrderResponse(order, req.user) });
-}));
+moduleRuntime.registerHttpRoute('pos', 'patch-102', moduleRouteContext);
 
 // Versioned endpoint for new clients: order progress follows the state machine;
 // payment status is only changed by a verified settlement/payment command.
-app.patch('/api/v2/orders/:id/status', requireCapability('orders.manage'), serializeOrderMutationRoute(async (req, res) => {
-  if (!['owner', 'manager'].includes(effectiveRole(req.user))) return res.status(403).json({ error: 'supervisor_required' });
-  const targetId = Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
-  const order = (db.orders || []).find((item) => Number(item.id) === targetId);
-  const status = String(req.body?.status || '');
-  if (!order) return res.status(404).json({ error: 'not found' });
-  try {
-    assertUserBranchAccess(req.user, order.branchId);
-  } catch (error) {
-    return res.status(error.status || 403).json({ error: error.code || 'branch_access_denied', message: error.message, requestId: req.requestId });
-  }
-  if (status === 'paid' && order.paymentStatus !== 'paid') {
-    return res.status(409).json({ error: 'payment_settlement_required', message: 'پرداخت را از مسیر تسویه ثبت کنید؛ تغییر وضعیت سفارش رسید دریافت وجه نیست.' });
-  }
-  if (status === String(order.status || '')) return res.json({ ok: true, idempotent: true, order: operationalOrderResponse(order, req.user) });
-  if (status === 'cancelled') {
-    const cancellation = orderCancellationGuard(order);
-    if (!cancellation.ok) return res.status(409).json({ error: cancellation.code, message: cancellation.message });
-  }
-  if (!canTransitionOrder(order, status)) {
-    return res.status(409).json({ error: 'order_transition_invalid', current: order.status, allowed: allowedOrderTransitions(order) });
-  }
-  const snapshot = snapshotFinanceMutationState();
-  try {
-    if (status === 'cancelled' && shouldReleaseOrderInventory(order)) {
-      adjustOrderInventory(order.items, 1, order.branchId);
-    }
-    appendOrderStatus(order, status, req.user, { source: 'v2' });
-    if (status === 'cancelled') {
-      reverseCancelledOrderFinancialEffects(order, req.user);
-    }
-    if (['done', 'picked_up', 'delivered'].includes(status)) maybeAwardOrderLoyalty(order);
-    recordAudit(req, 'order.status_changed', 'order', order.id, { status, source: 'v2' }, order.branchId);
-    await persistFinanceMutation(snapshot);
-  } catch (error) {
-    restoreFinanceMutationState(snapshot);
-    return res.status(error.status || 503).json({ error: error.code || error.message });
-  }
-  try {
-    publishOperationalEvent('order.updated', { orderId: order.id, branchId: order.branchId, status: order.status });
-    neemBridge.enqueueOrder(order, (db.paymentAttempts || []).find((item) => Number(item.orderId) === Number(order.id)) || null);
-  } catch (error) { console.error('[order-post-commit] integration effect failed', error?.message || error); }
-  res.json({ ok: true, order: operationalOrderResponse(order, req.user) });
-}));
+moduleRuntime.registerHttpRoute('platform_core', 'patch-103', moduleRouteContext);
 
 /* ---- Kitchen Display System (KDS) ---- */
 const KDS_STATIONS = Object.freeze([
@@ -7645,624 +5166,33 @@ function kdsMenuAvailabilityPayload(item, branchId) {
   };
 }
 
-app.get('/api/kitchen/orders', requireKitchen, (req, res) => {
-  // Only confirmed orders reach the kitchen. Cash collection, cancellation and
-  // fulfilment remain cashier/manager actions and cannot be bypassed from KDS.
-  const active = ['sent_to_kitchen', 'paid', 'preparing', 'ready'];
-  const bid = requestedKdsBranch(req);
-  if (!bid) return res.status(400).json({ error: 'branch_invalid' });
-  const now = Date.now();
-  const branchOrders = (db.orders || []).filter((order) => Number(order.branchId) === Number(bid));
-  const queuePaymentEligible = (order) => {
-    if (normalizeFulfillment(order?.fulfillment, { tableNo: order?.tableNo }) === 'delivery' && !hasAcceptedDelivery(order)) return false;
-    return isKdsPaymentEligible(order);
-  };
-  const activeTickets = branchOrders
-    .filter((o) => active.includes(o.status) && queuePaymentEligible(o))
-    .filter((o) => kitchenLines(o).length > 0 || kitchenLines(o, { onlyHeld: true }).length > 0)
-    .map((o) => kitchenTicket(o, now));
-  // Keep active legacy deliveries visible as aggregate blockers, without
-  // putting their customer/order details into the kitchen ticket list.
-  const acceptanceReviewTickets = branchOrders
-    .filter((order) => active.includes(order.status)
-      && normalizeFulfillment(order?.fulfillment, { tableNo: order?.tableNo }) === 'delivery'
-      && !hasAcceptedDelivery(order))
-    .map((order) => ({
-      id: order.id,
-      branchId: order.branchId,
-      status: order.status,
-      fulfillment: 'delivery',
-      paymentStatus: paymentStatusFor(order),
-      deliveryAcceptance: {
-        status: String(order.deliveryAcceptance?.status || 'pending').trim().toLowerCase(),
-      },
-    }));
+moduleRuntime.registerHttpRoute('kds', 'get-104', moduleRouteContext);
 
-  // A cancellation is visible to KDS only if the order had entered a state
-  // that the active kitchen queue accepts. Keep the review window explicit;
-  // undated legacy cancellations remain visible but are labelled as unknown.
-  const cancellationCutoff = now - 24 * 60 * 60 * 1000;
-  const cancelledTicketsForQueue = branchOrders
-    .filter((order) => String(order.status || '').toLowerCase() === 'cancelled')
-    .filter((order) => (Array.isArray(order.statusHistory) && order.statusHistory.some((entry) => active.includes(String(entry?.status || '').toLowerCase())))
-      || !!(order.startedAt || order.readyAt))
-    .map((order) => {
-      const cancellationEvent = [...(Array.isArray(order.statusHistory) ? order.statusHistory : [])]
-        .reverse()
-        .find((entry) => String(entry?.status || '').toLowerCase() === 'cancelled');
-      const statusCancelledAt = order.statusAt ? new Date(order.statusAt).getTime() : NaN;
-      const eventCancelledAt = cancellationEvent?.at ? new Date(cancellationEvent.at).getTime() : NaN;
-      const parsedCancelledAt = Number.isFinite(statusCancelledAt) ? statusCancelledAt : eventCancelledAt;
-      const isRecent = Number.isFinite(parsedCancelledAt)
-        ? parsedCancelledAt >= cancellationCutoff && parsedCancelledAt <= now
-        : true;
-      if (!isRecent) return null;
+moduleRuntime.registerHttpRoute('kds', 'patch-105', moduleRouteContext);
 
-      // kitchenTicket/ensureKdsState normalizes KDS state. Clone this terminal
-      // order's KDS shell so a read of the cancellation lane never mutates db.
-      const snapshot = {
-        ...order,
-        kds: {
-          ...(order.kds && typeof order.kds === 'object' ? order.kds : {}),
-          itemStates: { ...(order.kds?.itemStates && typeof order.kds.itemStates === 'object' ? order.kds.itemStates : {}) },
-        },
-      };
-      const ticket = kitchenTicket(snapshot, now);
-      const items = [...(ticket.items || []), ...(ticket.heldCourseItems || [])];
-      if (!items.length) return null;
-      return {
-        id: order.id,
-        orderNo: order.orderNo || `#${order.id}`,
-        branchId: order.branchId,
-        fulfillment: order.fulfillment || (order.tableNo ? 'dine_in' : 'pickup'),
-        tableNo: order.tableNo || null,
-        createdAt: order.createdAt || null,
-        cancelledAt: Number.isFinite(parsedCancelledAt) ? new Date(parsedCancelledAt).toISOString() : null,
-        note: order.note || '',
-        kitchenNote: order.kitchenNote || '',
-        items,
-        column: 'cancelled',
-      };
-    })
-    .filter(Boolean);
-
-  const queue = prepareKitchenQueue([...activeTickets, ...acceptanceReviewTickets, ...cancelledTicketsForQueue], { branchId: bid });
-  const { tickets, cancelledTickets, counts } = queue;
-  const allDayMap = new Map();
-  for (const ticket of tickets.filter((entry) => entry.column !== 'ready')) {
-    for (const item of ticket.items.filter((entry) => !entry.completedAt)) {
-      const key = `${item.station}:${item.name}`;
-      const current = allDayMap.get(key) || { name: item.name, station: item.station, qty: 0, tickets: [] };
-      current.qty += Math.max(1, Number(item.qty) || 1);
-      current.tickets.push(ticket.id);
-      allDayMap.set(key, current);
-    }
-  }
-  const stationCounts = Object.fromEntries(KDS_STATIONS.filter((entry) => entry.id !== 'expo').map((entry) => [entry.id, 0]));
-  tickets.filter((entry) => entry.column !== 'ready').forEach((ticket) => ticket.items.filter((item) => !item.completedAt).forEach((item) => { stationCounts[item.station] = Number(stationCounts[item.station] || 0) + Math.max(1, Number(item.qty) || 1); }));
-  res.json({
-    tickets,
-    cancelledTickets,
-    cancellationWindowHours: 24,
-    counts,
-    paymentReview: summarizeKdsPaymentReview(branchOrders, bid),
-    stations: KDS_STATIONS.map((entry) => ({ ...entry, count: entry.id === 'expo' ? tickets.filter((ticket) => ticket.column !== 'ready').length : Number(stationCounts[entry.id] || 0) })),
-    allDay: [...allDayMap.values()].sort((a, b) => b.qty - a.qty || String(a.name).localeCompare(String(b.name), 'fa')),
-    availability: (db.menuItems || [])
-      .filter((item) => menuItemBelongsToBranch(item, bid))
-      .map((item) => kdsMenuAvailabilityPayload(item, bid))
-      .sort((a, b) => String(a.name).localeCompare(String(b.name), 'fa')),
-    performance: kdsPerformance((db.orders || []).filter((order) => Number(order.branchId) === Number(bid)), now),
-    summary: {
-      oldestAgeSec: tickets.reduce((m, t) => Math.max(m, Number(t.ageSec) || 0), 0),
-      delayed: tickets.filter((t) => t.column !== 'ready' && Number(t.ageSec) >= 1200).length,
-      warning: tickets.filter((t) => t.column !== 'ready' && Number(t.ageSec) >= 600 && Number(t.ageSec) < 1200).length,
-      itemUnits: tickets.reduce((sum, t) => sum + (t.items || []).reduce((n, item) => n + Math.max(1, Number(item.qty) || 1), 0), 0),
-    },
-    branchId: bid,
-    serverTime: new Date().toISOString(),
-  });
-});
-
-app.patch('/api/kitchen/orders/:id', requireCapability('kitchen.manage'), serializeOrderMutationRoute(async (req, res) => {
-  const branchId = requestedKdsBranch(req);
-  if (!branchId) return res.status(400).json({ error: 'branch_invalid' });
-  const targetId = Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
-  const order = (db.orders || []).find((o) => Number(o.id) === targetId && Number(o.branchId) === Number(branchId));
-  if (!order) return res.status(404).json({ error: 'not found' });
-  if (normalizeFulfillment(order.fulfillment, { tableNo: order.tableNo }) === 'delivery' && !hasAcceptedDelivery(order)) {
-    return res.status(409).json({ error: 'delivery_acceptance_required', message: 'این سفارش تا ثبت پذیرش رستوران وارد آشپزخانه نمی‌شود.' });
-  }
-  if (!isKitchenOrderPaymentEligible(order, paymentStatusFor(order))) {
-    return res.status(409).json({ error: 'payment_reconciliation_required', message: 'وضعیت پرداخت این سفارش باید پیش از ورود به صف آشپزخانه تطبیق شود.' });
-  }
-  const legacyStatus = String(req.body?.status || '');
-  const requestedAction = String(req.body?.action || '');
-  const actionName = requestedAction || (legacyStatus === 'preparing' ? 'start_ticket' : legacyStatus === 'ready' ? 'complete_ticket' : '');
-  const snapshot = snapshotFinanceMutationState();
-  const kds = ensureKdsState(order);
-  const now = new Date().toISOString();
-  const actor = { phone: req.user.phone, name: req.user.name || '' };
-  const lines = kitchenLines(order);
-  const lineKey = String(req.body?.lineKey || '');
-  const line = lines.find((entry) => entry.key === lineKey);
-  const isNew = ['sent_to_kitchen', 'paid'].includes(order.status);
-  if (!['sent_to_kitchen', 'paid', 'preparing', 'ready'].includes(String(order.status || ''))) {
-    return res.status(409).json({ error: 'kitchen_transition_invalid', current: order.status, allowed: [] });
-  }
-  const start = () => {
-    if (isNew && canTransitionOrder(order, 'preparing')) appendOrderStatus(order, 'preparing', req.user, { source: 'kds', action: actionName });
-  };
-  let auditAction = `kds.${actionName || 'invalid'}`;
-
-  if (actionName === 'start_ticket') {
-    if (order.status === 'preparing') return res.json(kdsIdempotent(order));
-    if (!isNew) return res.status(409).json({ error: 'kitchen_transition_invalid', current: order.status, allowed: ['preparing'] });
-    if (!lines.length) return res.status(409).json({ error: 'kds_ticket_incomplete', incomplete: (order.items || []).map((item, index) => kdsLineKey(item, index)) });
-    start();
-  } else if (actionName === 'complete_item') {
-    if (!line) return res.status(409).json({ error: 'kds_item_invalid', lineKey, current: order.status });
-    // A lost response after the final item completed must be safely retryable
-    // even though that completion already moved the ticket to `ready`.
-    if (kds.itemStates[lineKey]?.completedAt) return res.json(kdsIdempotent(order));
-    if (order.status === 'ready') return res.status(409).json({ error: 'kds_item_invalid', lineKey, current: order.status });
-    start();
-    kds.itemStates[lineKey] = { completedAt: now, completedBy: actor };
-    const allComplete = kitchenHeldCourseItems(order).length === 0
-      && kitchenLines(order).every((entry) => kds.itemStates[entry.key]?.completedAt);
-    if (allComplete && order.status === 'preparing' && canTransitionOrder(order, 'ready')) {
-      appendOrderStatus(order, 'ready', req.user, { source: 'kds', action: 'all_items_complete' });
-      kds.completedAt = order.readyAt;
-    }
-  } else if (actionName === 'complete_station') {
-    const station = String(req.body?.station || '');
-    if (!['hot', 'cold', 'bar'].includes(station)) return res.status(409).json({ error: 'kds_station_invalid', station, current: order.status });
-    const stationLines = lines.filter((entry) => entry.station === station);
-    if (!stationLines.length) return res.status(409).json({ error: 'kds_station_empty', station });
-    // A retried station completion is a no-op even when another station is
-    // still working and the whole order remains `preparing`. Do not persist,
-    // audit, or publish the same station completion again.
-    if (stationLines.every((entry) => kds.itemStates[entry.key]?.completedAt)) return res.json(kdsIdempotent(order));
-    if (order.status === 'ready') return res.status(409).json({ error: 'kds_station_invalid', station, current: order.status });
-    start();
-    for (const entry of stationLines) kds.itemStates[entry.key] = kds.itemStates[entry.key] || { completedAt: now, completedBy: actor };
-    const allComplete = kitchenHeldCourseItems(order).length === 0
-      && kitchenLines(order).every((entry) => kds.itemStates[entry.key]?.completedAt);
-    if (allComplete && order.status === 'preparing' && canTransitionOrder(order, 'ready')) {
-      appendOrderStatus(order, 'ready', req.user, { source: 'kds', action: 'all_stations_complete' });
-      kds.completedAt = order.readyAt;
-    }
-  } else if (actionName === 'undo_item') {
-    if (!line || !kds.itemStates[lineKey]?.completedAt) return res.json(kdsIdempotent(order));
-    if (order.status === 'ready') {
-      appendOrderStatus(order, 'preparing', req.user, { source: 'kds', action: 'undo_item' });
-      order.readyAt = null;
-      kds.completedAt = null;
-    }
-    delete kds.itemStates[lineKey];
-  } else if (actionName === 'complete_ticket') {
-    const incomplete = lines.filter((entry) => !kds.itemStates[entry.key]?.completedAt);
-    const heldKeys = (order.items || [])
-      .map((item, index) => String(item.courseStatus || 'fired').toLowerCase() === 'hold' ? kdsLineKey(item, index) : null)
-      .filter(Boolean);
-    if (!lines.length || incomplete.length || heldKeys.length) {
-      return res.status(409).json({ error: 'kds_ticket_incomplete', incomplete: [...incomplete.map((entry) => entry.key), ...heldKeys] });
-    }
-    // Validate the persisted ticket even for a replay. A stale/corrupt `ready`
-    // status must not be acknowledged as complete when its items are not.
-    if (order.status === 'ready') return res.json(kdsIdempotent(order));
-    start();
-    if (order.status !== 'preparing' || !canTransitionOrder(order, 'ready')) return res.status(409).json({ error: 'kitchen_transition_invalid', current: order.status, allowed: ['ready'] });
-    appendOrderStatus(order, 'ready', req.user, { source: 'kds', action: 'complete_ticket' });
-    kds.completedAt = order.readyAt;
-  } else if (actionName === 'recall_ticket') {
-    if (order.status === 'preparing') return res.json(kdsIdempotent(order));
-    if (order.status !== 'ready') return res.status(409).json({ error: 'kitchen_recall_invalid', current: order.status });
-    appendOrderStatus(order, 'preparing', req.user, { source: 'kds', action: 'recall_ticket' });
-    order.readyAt = null;
-    kds.completedAt = null;
-    kds.itemStates = {};
-  } else if (actionName === 'prioritize') {
-    if (order.status === 'ready') return res.status(409).json({ error: 'kitchen_priority_invalid', current: order.status });
-    kds.priority = req.body?.priority !== false;
-    kds.priorityAt = kds.priority ? now : null;
-  } else if (actionName === 'note') {
-    order.kitchenNote = String(req.body?.note || '').trim().slice(0, 240);
-    kds.needsAttention = !!order.kitchenNote;
-  } else {
-    return res.status(409).json({ error: 'kitchen_transition_invalid', current: order.status, allowed: ['start_ticket', 'complete_item', 'complete_station', 'complete_ticket', 'recall_ticket', 'prioritize', 'note'] });
-  }
-
-  recordAudit(req, auditAction, 'order', order.id, { action: actionName, lineKey: lineKey || null, status: order.status }, order.branchId);
-  try {
-    await persistFinanceMutation(snapshot);
-  } catch (error) {
-    return res.status(error.status || 503).json({ error: error.code || 'kds_persistence_failed', message: 'تغییر وضعیت آشپزخانه پایدار نشد؛ دوباره همگام‌سازی کنید.' });
-  }
-  let eventPublished = true;
-  try {
-    publishOperationalEvent('order.updated', { orderId: order.id, branchId: order.branchId, status: order.status, kdsAction: actionName });
-  } catch (error) {
-    eventPublished = false;
-    console.error('[kds] committed state event failed', error?.message || error);
-  }
-  res.json({ ok: true, eventPublished, order: kitchenTicket(order) });
-}));
-
-app.patch('/api/kitchen/items/:id/availability', requireCapability('kitchen.manage'), async (req, res) => {
-  const branchId = requestedKdsBranch(req);
-  if (!branchId) return res.status(400).json({ error: 'branch_invalid' });
-  const targetId = Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
-  if (!Number.isSafeInteger(targetId) || targetId <= 0) return res.status(400).json({ error: 'menu_item_id_invalid' });
-  const item = (db.menuItems || []).find((entry) => Number(entry.id) === targetId);
-  if (!item || !menuItemBelongsToBranch(item, branchId)) return res.status(404).json({ error: 'not found' });
-  if (typeof req.body?.available !== 'boolean') return res.status(400).json({ error: 'availability_invalid' });
-  if (req.body.available && item.available === false) {
-    return res.status(409).json({ error: 'menu_item_globally_unavailable', message: 'این کالا در کاتالوگ اصلی غیرفعال است؛ فعال‌سازی شعبه‌ای کافی نیست.' });
-  }
-
-  return serializeAdminConfigMutation(branchId, async () => {
-    const snapshot = snapshotFinanceMutationState();
-    const mutation = setMenuAvailabilityOverride(db, {
-      menuItemId: item.id,
-      branchId,
-      available: req.body.available,
-    });
-    if (!mutation.ok) return res.status(409).json({ error: mutation.error });
-    const auditEntry = recordAudit(req, 'kds.item_availability_changed', 'menu_item', item.id, {
-      branchId, available: req.body.available,
-    }, branchId, { deferAppend: true });
-    try {
-      await persistFinanceMutation(snapshot, { bumpMenu: true });
-    } catch (error) {
-      return res.status(error.status || 503).json({
-        error: error.code || 'menu_availability_persistence_failed',
-        message: 'تغییر موجودی شعبه ذخیره نشد؛ وضعیت قبلی حفظ شد.',
-      });
-    }
-
-    appendAuditAfterCommit(auditEntry);
-    let eventPublished = true;
-    try {
-      publishOperationalEvent('menu.availability_updated', {
-        menuItemId: item.id, branchId, available: req.body.available,
-      });
-    } catch (error) {
-      eventPublished = false;
-      console.error('[kds] committed availability event failed', error?.message || error);
-    }
-    return res.json({
-      ok: true,
-      eventPublished,
-      branchId,
-      item: kdsMenuAvailabilityPayload(item, branchId),
-    });
-  }).catch((error) => {
-    if (res.headersSent) return undefined;
-    return res.status(error.status || 503).json({ error: error.code || 'menu_availability_update_failed' });
-  });
-});
+moduleRuntime.registerHttpRoute('kds', 'patch-106', moduleRouteContext);
 
 /* ---- Call waiter (فراخوان گارسون) ---- */
-app.post('/api/call-waiter', async (req, res) => {
-  const tableNo = normalizeDigits(String(req.body.tableNo || '')).trim().slice(0, 20);
-  if (!tableNo) return res.status(400).json({ error: 'شماره میز لازم است' });
-  const note = String(req.body.note || '').trim().slice(0, 120);
-  // Older clients omitted requestType; preserve their established meaning as
-  // a service call while rejecting unknown types instead of silently losing
-  // the request's intent.
-  const requestType = String(req.body?.requestType ?? 'service').trim().toLowerCase();
-  if (!['service', 'bill', 'supplies', 'other'].includes(requestType)) {
-    return res.status(400).json({ error: 'waiter_call_request_type_invalid' });
-  }
-  const branchInput = normalizeDigits(String(req.body?.branchId ?? '')).trim();
-  if (branchInput && !/^\d+$/u.test(branchInput)) {
-    return res.status(400).json({ error: 'branch_invalid' });
-  }
-  const branchId = branchInput ? Number(branchInput) : Number(defaultBranch()?.id);
-  if (!Number.isSafeInteger(branchId) || branchId <= 0
-      || !(db.branches || []).some((branch) => Number(branch.id) === branchId && branch.active !== false)) {
-    return res.status(400).json({ error: 'branch_invalid' });
-  }
-  const tableMatch = tableForBranch(tableNo, branchId)
-    || (db.tables || []).find((table) => tableBranchId(table) === branchId
-      && table.active !== false && tableNoBelongsToTable(tableNo, table.id));
-  if (!tableMatch) return res.status(404).json({ error: 'waiter_call_table_not_found', message: 'میز فعال در شعبهٔ انتخاب‌شده پیدا نشد.' });
-  if (tableMatch.active === false) return res.status(409).json({ error: 'waiter_call_table_inactive' });
+moduleRuntime.registerHttpRoute('floor', 'post-107', moduleRouteContext);
 
-  return serializeAdminConfigMutation(branchId, async () => {
-    db.waiterCalls = Array.isArray(db.waiterCalls) ? db.waiterCalls : [];
-    const activeCall = db.waiterCalls.find((call) => Number(call.branchId) === branchId
-      && ['open', 'new'].includes(String(call.status || ''))
-      && tableNoBelongsToTable(call.tableNo, tableMatch.id)
-      && String(call.requestType || 'service').trim().toLowerCase() === requestType
-      && String(call.note || '').trim().slice(0, 120) === note);
-    if (activeCall) return res.json({ ok: true, idempotent: true, call: activeCall });
-
-    const snapshot = snapshotFinanceMutationState();
-    const numericIds = db.waiterCalls.map((call) => Number(call.id)).filter(Number.isSafeInteger);
-    const call = {
-      id: Math.max(0, ...numericIds) + 1,
-      tableNo,
-      requestType,
-      note,
-      branchId,
-      status: 'open',
-      createdAt: new Date().toISOString(),
-    };
-    db.waiterCalls.unshift(call);
-    db.waiterCalls = db.waiterCalls.slice(0, 200);
-    const auditEntry = recordAudit(req, 'waiter_call.created', 'waiter_call', call.id, {
-      tableNo: call.tableNo, requestType: call.requestType, note: call.note,
-    }, branchId, { deferAppend: true });
-    try {
-      await persistFinanceMutation(snapshot);
-    } catch (error) {
-      return res.status(error.status || 503).json({ error: error.code || 'waiter_call_persistence_failed', message: 'فراخوان ذخیره نشد؛ دوباره تلاش کنید.' });
-    }
-
-    appendAuditAfterCommit(auditEntry);
-    let eventPublished = true;
-    try {
-      publishOperationalEvent('waiter_call.created', {
-        callId: call.id,
-        branchId: call.branchId,
-        tableNo: call.tableNo,
-        requestType: call.requestType,
-        note: call.note,
-      });
-    } catch (error) {
-      eventPublished = false;
-      console.error('[waiter-call] committed event failed', error?.message || error);
-    }
-    return res.json({ ok: true, eventPublished, call });
-  }).catch((error) => {
-    if (res.headersSent) return undefined;
-    return res.status(error.status || 503).json({ error: error.code || 'waiter_call_create_failed' });
-  });
-});
-
-app.post('/api/call-waiter/cancel', async (req, res) => {
-  const tableNo = normalizeDigits(String(req.body?.tableNo || '')).trim().slice(0, 20);
-  const rawCallId = normalizeDigits(String(req.body?.callId ?? '')).trim();
-  const branchInput = normalizeDigits(String(req.body?.branchId ?? '')).trim();
-  if (!tableNo) return res.status(400).json({ error: 'شماره میز لازم است' });
-  if (rawCallId && !/^\d+$/u.test(rawCallId)) return res.status(400).json({ error: 'call_id_invalid' });
-  if (branchInput && !/^\d+$/u.test(branchInput)) return res.status(400).json({ error: 'branch_invalid' });
-  const callId = rawCallId ? Number(rawCallId) : null;
-  if (callId !== null && (!Number.isSafeInteger(callId) || callId <= 0)) {
-    return res.status(400).json({ error: 'call_id_invalid' });
-  }
-  const branchId = branchInput ? Number(branchInput) : Number(defaultBranch()?.id);
-  if (!Number.isSafeInteger(branchId) || branchId <= 0
-      || !(db.branches || []).some((branch) => Number(branch.id) === branchId && branch.active !== false)) {
-    return res.status(400).json({ error: 'branch_invalid' });
-  }
-  const tableMatch = tableForBranch(tableNo, branchId)
-    || (db.tables || []).find((table) => tableBranchId(table) === branchId
-      && table.active !== false && tableNoBelongsToTable(tableNo, table.id));
-  if (!tableMatch || tableMatch.active === false) {
-    return res.status(404).json({ error: 'waiter_call_table_not_found' });
-  }
-
-  return serializeAdminConfigMutation(branchId, async () => {
-    db.waiterCalls = Array.isArray(db.waiterCalls) ? db.waiterCalls : [];
-    const tableCallMatches = (call) => Number(call.branchId) === branchId
-      && (tableNoBelongsToTable(call.tableNo, tableMatch.id)
-        || Number(tableForBranch(call.tableNo, branchId)?.id) === Number(tableMatch.id));
-    const call = callId === null
-      ? db.waiterCalls.find((item) => ['open', 'new'].includes(String(item.status || '')) && tableCallMatches(item))
-      : db.waiterCalls.find((item) => Number(item.id) === callId && tableCallMatches(item));
-    if (!call) return res.status(404).json({ error: 'فراخوان بازی یافت نشد' });
-    if (call.status === 'cancelled') return res.json({ ok: true, idempotent: true, call });
-    if (!['open', 'new'].includes(String(call.status || ''))) {
-      return res.status(409).json({ error: 'waiter_call_transition_invalid', current: call.status });
-    }
-
-    const snapshot = snapshotFinanceMutationState();
-    call.status = 'cancelled';
-    call.resolvedAt = new Date().toISOString();
-    call.resolvedBy = 'guest';
-    const auditEntry = recordAudit(req, 'waiter_call.cancelled', 'waiter_call', call.id, {
-      tableNo: call.tableNo,
-    }, branchId, { deferAppend: true });
-    try {
-      await persistFinanceMutation(snapshot);
-    } catch (error) {
-      return res.status(error.status || 503).json({
-        error: error.code || 'waiter_call_persistence_failed',
-        message: 'لغو فراخوان ذخیره نشد؛ دوباره تلاش کنید.',
-      });
-    }
-
-    appendAuditAfterCommit(auditEntry);
-    let eventPublished = true;
-    try {
-      publishOperationalEvent('waiter_call.updated', {
-        callId: call.id, branchId: call.branchId, status: call.status,
-      });
-    } catch (error) {
-      eventPublished = false;
-      console.error('[waiter-call] committed cancellation event failed', error?.message || error);
-    }
-    return res.json({ ok: true, eventPublished, call });
-  }).catch((error) => {
-    if (res.headersSent) return undefined;
-    return res.status(error.status || 503).json({ error: error.code || 'waiter_call_cancel_failed' });
-  });
-});
+moduleRuntime.registerHttpRoute('floor', 'post-108', moduleRouteContext);
 
 
 
-app.get('/api/kitchen/calls', requireCapability('service.manage'), (req, res) => {
-  // Resolve the authenticated kitchen operator's effective branch when the
-  // UI omits branchId; otherwise a scoped operator receives every branch's
-  // open waiter call because the old query-only filter treated omission as a
-  // consolidated view.
-  const allowedBranchIds = branchScopeForUser(req.user, { role: effectiveRole(req.user) });
-  const bid = allowedBranchIds === null
-    ? (req.query.branchId ? Number(req.query.branchId) : null)
-    : parseBranchId(req);
-  const calls = (db.waiterCalls || [])
-    .filter((c) => c.status === 'open')
-    .filter((c) => (bid ? Number(c.branchId) === bid : true))
-    .slice(0, 40);
-  res.json({ calls });
-});
+moduleRuntime.registerHttpRoute('kds', 'get-109', moduleRouteContext);
 
-app.patch('/api/kitchen/calls/:id', requireCapability('service.manage'), (req, res) => {
-  const targetId = Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
-  const call = (db.waiterCalls || []).find((c) => Number(c.id) === targetId);
-  if (!call) return res.status(404).json({ error: 'not found' });
-  try {
-    assertUserBranchAccess(req.user, call.branchId);
-  } catch (error) {
-    return res.status(error.status || 403).json({ error: error.code || 'branch_access_denied', message: error.message, requestId: req.requestId });
-  }
-  const requestedStatus = req.body?.status;
-  if (!['done', 'open'].includes(requestedStatus)) {
-    return res.status(400).json({ error: 'kitchen_call_status_invalid', allowed: ['open', 'done'] });
-  }
-  if (call.status !== requestedStatus) {
-    call.status = requestedStatus;
-    call.resolvedAt = requestedStatus === 'done' ? new Date().toISOString() : null;
-  }
-  save();
-  res.json({ ok: true, call });
-});
+moduleRuntime.registerHttpRoute('kds', 'patch-110', moduleRouteContext);
 
 // --- FAQ ---
-app.post('/api/faq', requireAdmin, (req, res) => {
-  if (!Array.isArray(db.faq)) db.faq = [];
-  const id = Math.max(0, ...db.faq.map((f) => Number(f.id) || 0), 0) + 1;
-  const item = { id, q: String(req.body.q || '').trim(), a: String(req.body.a || '').trim() };
-  db.faq.push(item);
-  save();
-  res.json({ ok: true, item });
-});
-app.put('/api/faq/:id', requireAdmin, (req, res) => {
-  if (!Array.isArray(db.faq)) db.faq = [];
-  const targetId = Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
-  const item = db.faq.find((f) => Number(f.id) === targetId);
-  if (!item) return res.status(404).json({ error: 'not found' });
-  if (typeof req.body.q === 'string') item.q = req.body.q;
-  if (typeof req.body.a === 'string') item.a = req.body.a;
-  save();
-  res.json({ ok: true, item });
-});
-app.delete('/api/faq/:id', requireAdmin, (req, res) => {
-  if (!Array.isArray(db.faq)) db.faq = [];
-  const targetId = Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
-  db.faq = db.faq.filter((f) => Number(f.id) !== targetId);
-  save();
-  res.json({ ok: true });
-});
-app.put('/api/faq-order', requireAdmin, (req, res) => {
-  if (!Array.isArray(db.faq)) db.faq = [];
-  const order = (Array.isArray(req.body.order) ? req.body.order : []).map((id) =>
-    Number(normalizeDigits(String(id || '')).replace(/\D/g, ''))
-  );
-  db.faq.sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
-  save();
-  res.json({ ok: true, faq: db.faq });
-});
+moduleRuntime.registerHttpRoute('website_brand', 'post-111', moduleRouteContext);
+moduleRuntime.registerHttpRoute('website_brand', 'put-112', moduleRouteContext);
+moduleRuntime.registerHttpRoute('website_brand', 'delete-113', moduleRouteContext);
+moduleRuntime.registerHttpRoute('website_brand', 'put-114', moduleRouteContext);
 
 // --- admin: users & roles ---
-app.get('/api/admin/users', requireOwner, (req, res) => {
-  const users = (db.users || []).map((u) => {
-    const pub = publicUser(u);
-    try {
-      const tierInfo = loyaltyEngine.resolveCustomerTier(db, u);
-      pub.tier = tierInfo?.tier || { id: 'bronze', name: 'برنزی', badgeIcon: '🥉' };
-    } catch (_) {
-      pub.tier = { id: 'bronze', name: 'برنزی', badgeIcon: '🥉' };
-    }
-    try {
-      pub.walletBalanceToman = walletEngine.getWalletBalance(db, u.phone);
-    } catch (_) {
-      pub.walletBalanceToman = 0;
-    }
-    const userOrders = (db.orders || []).filter((o) => o.phone === u.phone);
-    pub.ordersCount = userOrders.length;
-    pub.totalSpendToman = userOrders
-      .filter((o) => FINANCIAL_PAID_ORDER_STATUSES.has(String(o.status || '')))
-      .reduce((sum, o) => sum + Number(o.total || 0), 0);
-    return pub;
-  });
-  res.json({ users, branches: db.branches || [] });
-});
+moduleRuntime.registerHttpRoute('platform_core', 'get-115', moduleRouteContext);
 
-app.get('/api/admin/roles/matrix', requireAdmin, (req, res) => {
-  const matrix = {
-    roles: [
-      { id: 'owner', label: 'مالک / مدیر ارشد', category: 'staff', description: 'دسترسی نامحدود به تمامی بخش‌ها، تنظیمات، اسناد مالی و حذف کاربران', icon: '👑', badgeClass: 'role-owner' },
-      { id: 'manager', label: 'مدیر داخلی / سرپرست', category: 'staff', description: 'مدیریت عملیات، سفارش‌ها، رزروها، صندوق، آشپزخانه، انبار، پرسنل و گزارش‌ها', icon: '🧑‍💼', badgeClass: 'role-manager' },
-      { id: 'accountant', label: 'حسابدار / مدیر مالی', category: 'staff', description: 'اسناد دوبل، ترازنامه، صورت سود و زیان، بستن دوره‌های مالی و مغایرت‌گیری', icon: '💰', badgeClass: 'role-accountant' },
-      { id: 'cashier', label: 'صندوقدار / صندوق', category: 'staff', description: 'ثبت سفارش، تسویه فاکتور، مدیریت پوز و وجه نقد، رزرو و وضعیت تحویل', icon: '💵', badgeClass: 'role-cashier' },
-      { id: 'waiter', label: 'گارسون / سالن‌کار', category: 'staff', description: 'سفارش‌گیری سر میز با تبلت، فراخوانی مهمان، وضعیت میزها و سرو', icon: '🤵', badgeClass: 'role-waiter' },
-      { id: 'kitchen', label: 'آشپزخانه / سرآشپز', category: 'staff', description: 'مشاهده صفحه KDS، مدیریت صف پخت، اعلام آماده بودن و ثبت حواله مصرف انبار', icon: '🍳', badgeClass: 'role-kitchen' },
-      { id: 'guest', label: 'مشتری / مهمان', category: 'customer', description: 'ثبت سفارش، رزرو آنلاین، باشگاه مشتریان، کیف پول و ثبت بازخورد', icon: '🌟', badgeClass: 'role-guest' },
-    ],
-    sections: [
-      {
-        id: 'orders',
-        title: 'سفارش‌ها و صندوق',
-        description: 'مشاهده، ثبت و مدیریت سفارش‌های حضوری و آنلاین، تسویه فاکتور',
-        roles: { owner: 'full', manager: 'full', cashier: 'full', waiter: 'create_view', kitchen: 'none', accountant: 'none', guest: 'self_only' },
-      },
-      {
-        id: 'kitchen',
-        title: 'صف آشپزخانه (KDS)',
-        description: 'مشاهده کارت‌های پخت، شروع آماده‌سازی و تغییر به وضعیت آماده',
-        roles: { owner: 'full', manager: 'full', kitchen: 'full', cashier: 'none', waiter: 'none', accountant: 'none', guest: 'none' },
-      },
-      {
-        id: 'tables',
-        title: 'میزها و سالن پذیرایی',
-        description: 'نقشه میزها، اعلام درخواست گارسون و مدیریت ظرفیت سالن',
-        roles: { owner: 'full', manager: 'full', waiter: 'full', cashier: 'full', kitchen: 'none', accountant: 'none', guest: 'call_only' },
-      },
-      {
-        id: 'finance',
-        title: 'مالی و حسابداری',
-        description: 'اسناد دوبل حسابداری، بستن دوره‌ها، مغایرت‌گیری و ترازنامه',
-        roles: { owner: 'full', manager: 'full', accountant: 'full', cashier: 'cash_only', waiter: 'none', kitchen: 'none', guest: 'none' },
-      },
-      {
-        id: 'inventory',
-        title: 'انبار و مواد اولیه',
-        description: 'موجودی انبار، ورود کالا (رسید)، حواله مصرف و بهای تمام‌شده',
-        roles: { owner: 'full', manager: 'full', accountant: 'view_only', kitchen: 'operations_only', cashier: 'none', waiter: 'none', guest: 'none' },
-      },
-      {
-        id: 'menu',
-        title: 'منو، قیمت‌ها و محصولات',
-        description: 'ویرایش غذاها و محصولات، دسته‌بندی‌ها، قیمت‌گذاری و فعال/غیرفعال کردن',
-        roles: { owner: 'full', manager: 'full', accountant: 'none', cashier: 'none', waiter: 'none', kitchen: 'none', guest: 'none' },
-      },
-      {
-        id: 'reports',
-        title: 'گزارش‌های فروش و آمار',
-        description: 'تحلیل روزانه و ماهانه، نمودارهای سودآوری و ترافیک مهمان',
-        roles: { owner: 'full', manager: 'full', accountant: 'full', cashier: 'none', waiter: 'none', kitchen: 'none', guest: 'none' },
-      },
-      {
-        id: 'club',
-        title: 'باشگاه مشتریان و پیامک',
-        description: 'مدیریت اعضای وفادار، سطوح برنزی تا طلایی، کیف پول و کمپین‌ها',
-        roles: { owner: 'full', manager: 'full', accountant: 'none', cashier: 'none', waiter: 'none', kitchen: 'none', guest: 'profile_only' },
-      },
-      {
-        id: 'settings',
-        title: 'تنظیمات و دسترسی کاربران',
-        description: 'مدیریت کاربران، تغییر نقش‌ها، تخصیص شعب و پیکربندی سیستم',
-        roles: { owner: 'full', manager: 'view_manage', accountant: 'none', cashier: 'none', waiter: 'none', kitchen: 'none', guest: 'none' },
-      },
-    ],
-    capabilities: ROLE_CAPABILITIES,
-  };
-  res.json(matrix);
-});
+moduleRuntime.registerHttpRoute('platform_core', 'get-116', moduleRouteContext);
 
 const STAFF_BRANCH_ROLES = new Set(['manager', 'accountant', 'cashier', 'waiter', 'kitchen']);
 const USER_ROLE_MAP = Object.freeze({ admin: 'owner', user: 'guest', owner: 'owner', manager: 'manager', accountant: 'accountant', cashier: 'cashier', waiter: 'waiter', kitchen: 'kitchen', guest: 'guest' });
@@ -8302,1022 +5232,70 @@ function validateStaffBranchAssignments(actor, role, ids) {
   return null;
 }
 
-app.post(['/api/admin/users', '/api/admin/customers'], requireAdmin, (req, res) => {
-  const phone = normalizeDigits(req.body.phone || '').trim();
-  const name = String(req.body.name || '').trim().slice(0, 120);
-  if (!PHONE_RE.test(phone)) return res.status(400).json({ error: 'شماره موبایل معتبر نیست.' });
-  if (!name) return res.status(400).json({ error: 'نام و نام خانوادگی لازم است.' });
-  if (db.users.some((user) => user.phone === phone)) return res.status(409).json({ error: 'کاربری با این شماره قبلاً ثبت شده است.' });
-  
-  const requestedRole = String(req.body.role || 'user').trim().toLowerCase();
-  const role = USER_ROLE_MAP[requestedRole] || 'guest';
-  
-  if (['owner', 'manager'].includes(role) && !isOwnerActor(db, req.user)) {
-    return res.status(403).json({
-      error: role === 'owner' ? 'staff_owner_protected' : 'staff_manager_protected',
-      message: role === 'owner' ? 'حساب مالک فقط توسط مالک قابل ایجاد است.' : 'حساب مدیر فقط توسط مالک قابل ایجاد است.',
-    });
-  }
+moduleRuntime.registerHttpRoute('platform_core', 'post-117', moduleRouteContext);
 
-  const branchRequest = requestedBranchAssignments(req.body || {});
-  if (branchRequest.error) return res.status(branchRequest.error.status).json({ error: branchRequest.error.code, message: branchRequest.error.message });
-  let allowedBranchIds = branchRequest.ids;
-  if (!Array.isArray(req.body?.allowedBranchIds) && !Object.prototype.hasOwnProperty.call(req.body || {}, 'branchId') && role === 'owner') allowedBranchIds = null;
-  if (role !== 'owner') {
-    const assignmentError = validateStaffBranchAssignments(req.user, role, allowedBranchIds || []);
-    if (assignmentError) return res.status(assignmentError.status).json({ error: assignmentError.code, message: assignmentError.message });
-  }
+moduleRuntime.registerHttpRoute('platform_core', 'patch-118', moduleRouteContext);
 
-  const parsePoints = (v) => {
-    if (v == null || v === '') return 0;
-    if (typeof v === 'number') return isNaN(v) ? 0 : v;
-    const n = Number(normalizeDigits(String(v)).replace(/[,٬_\s]/g, '').trim());
-    return isNaN(n) ? 0 : n;
-  };
-
-  const user = {
-    phone,
-    name,
-    email: String(req.body.email || '').trim().slice(0, 160),
-    role,
-    allowedBranchIds,
-    points: Math.max(0, Math.round(parsePoints(req.body.points))),
-    notes: String(req.body.notes || '').trim().slice(0, 500),
-    createdAt: new Date().toISOString(),
-    blocked: false,
-  };
-  db.users.push(user);
-  recordAudit(req, 'user.created', 'user', phone, { name, role, allowedBranchIds });
-  save();
-  res.status(201).json({ ok: true, user: publicUser(user) });
-});
-
-app.patch(['/api/admin/users/:phone', '/api/admin/customers/:phone'], requireAdmin, (req, res) => {
-  const targetPhone = normalizeDigits(decodeURIComponent(String(req.params.phone || ''))).trim();
-  const user = db.users.find((u) => u.phone === targetPhone);
-  if (!user) return res.status(404).json({ error: 'not found' });
-
-  const isSelf = String(req.user?.phone || '') === String(user.phone || '');
-  if (typeof req.body.blocked === 'boolean' && isSelf) {
-    return res.status(400).json({
-      error: 'staff_self_protected',
-      message: 'کاربر جاری را نمی‌توان مسدود یا از حالت مسدود خارج کرد.',
-    });
-  }
-
-  try {
-    assertStaffMutationBoundary(db, req.user, user, { allowSelf: true });
-  } catch (error) {
-    return res.status(error.status || 403).json({ error: error.code || 'staff_mutation_forbidden', message: error.message });
-  }
-
-  const requestedRole = String(req.body.role || '').trim().toLowerCase();
-  const newRole = USER_ROLE_MAP[requestedRole] || null;
-  if (newRole && newRole !== user.role && ['owner', 'manager'].includes(newRole) && !isOwnerActor(db, req.user)) {
-    return res.status(403).json({
-      error: newRole === 'owner' ? 'staff_owner_protected' : 'staff_manager_protected',
-      message: newRole === 'owner' ? 'اعطای نقش مالک فقط توسط مالک امکان‌پذیر است.' : 'اعطای نقش مدیر فقط توسط مالک امکان‌پذیر است.',
-    });
-  }
-  const branchAssignmentSpecified = Object.prototype.hasOwnProperty.call(req.body || {}, 'allowedBranchIds')
-    || Object.prototype.hasOwnProperty.call(req.body || {}, 'branchId');
-  let assignedBranchIds = null;
-  const resultingRole = newRole || user.role;
-  if (branchAssignmentSpecified || (newRole && newRole !== user.role && STAFF_BRANCH_ROLES.has(resultingRole))) {
-    const branchRequest = requestedBranchAssignments(req.body || {}, user);
-    if (branchRequest.error) return res.status(branchRequest.error.status).json({ error: branchRequest.error.code, message: branchRequest.error.message });
-    const assignmentError = validateStaffBranchAssignments(req.user, resultingRole, branchRequest.ids);
-    if (assignmentError) return res.status(assignmentError.status).json({ error: assignmentError.code, message: assignmentError.message });
-    assignedBranchIds = branchRequest.ids;
-  }
-
-  if (typeof req.body.blocked === 'boolean') user.blocked = req.body.blocked;
-  if (typeof req.body.name === 'string') user.name = req.body.name.trim();
-  if (typeof req.body.email === 'string') user.email = req.body.email.trim();
-  if (typeof req.body.notes === 'string') user.notes = req.body.notes.trim().slice(0, 500);
-  if (Array.isArray(req.body.tags)) {
-    user.tags = req.body.tags.map((t) => String(t).trim().slice(0, 30)).filter(Boolean);
-  }
-  if (typeof req.body.vipNote === 'string') {
-    user.vipNote = req.body.vipNote.trim().slice(0, 300);
-  }
-  if (req.body.points != null) {
-    const parsePoints = (v) => {
-      if (v == null || v === '') return null;
-      if (typeof v === 'number') return isNaN(v) ? null : v;
-      const n = Number(normalizeDigits(String(v)).replace(/[,٬_\s]/g, '').trim());
-      return isNaN(n) ? null : n;
-    };
-    const pts = parsePoints(req.body.points);
-    if (pts != null) user.points = Math.max(0, Math.round(pts));
-  }
-  if (assignedBranchIds) user.allowedBranchIds = assignedBranchIds;
-  if (typeof req.body.birthdate === 'string') {
-    user.birthdate = req.body.birthdate.trim().slice(0, 50);
-    user.birthdateUpdatedAt = new Date().toISOString();
-    try { campaignsEngine.checkBirthdayEligibility(db, user); } catch (_) {}
-  }
-  if (newRole) user.role = newRole;
-  recordAudit(req, 'user.access_updated', 'user', user.phone, { role: user.role, blocked: !!user.blocked, birthdate: user.birthdate, allowedBranchIds: user.allowedBranchIds });
-  save();
-  res.json({ ok: true, user: publicUser(user) });
-});
-
-app.delete('/api/admin/users/:phone', requireOwner, (req, res) => {
-  const targetPhone = normalizeDigits(decodeURIComponent(String(req.params.phone || ''))).trim();
-  if (String(req.user?.phone || '') === targetPhone) {
-    return res.status(400).json({ error: 'staff_self_protected', message: 'مالک جاری نمی‌تواند حساب خود را حذف کند.' });
-  }
-  const user = db.users.find((u) => u.phone === targetPhone);
-  db.users = db.users.filter((u) => u.phone !== targetPhone);
-  if (user) recordAudit(req, 'user.deleted', 'user', user.phone, { role: user.role });
-  save();
-  res.json({ ok: true });
-});
+moduleRuntime.registerHttpRoute('platform_core', 'delete-119', moduleRouteContext);
 
 // --- newsletter ---
-app.post('/api/newsletter', (req, res) => {
-  const email = String(req.body.email || '').trim().toLowerCase();
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return res.status(400).json({ error: 'ایمیل معتبر نیست' });
-  if (!Array.isArray(db.newsletter)) db.newsletter = [];
-  if (!db.newsletter.find((n) => n.email === email)) {
-    db.newsletter.push({ email, at: new Date().toISOString() });
-    save();
-  }
-  res.json({ ok: true });
-});
-app.get('/api/admin/newsletter', requireOwner, (req, res) => {
-  res.json({ newsletter: Array.isArray(db.newsletter) ? db.newsletter : [] });
-});
+moduleRuntime.registerHttpRoute('crm', 'post-120', moduleRouteContext);
+moduleRuntime.registerHttpRoute('crm', 'get-121', moduleRouteContext);
 
 // --- admin: stats / uploads / settings ---
-app.get('/api/admin/stats', requireAdmin, (req, res) => {
-  const now = Date.now();
-  const dayMs = 24 * 3600 * 1000;
-  const weekAgo = now - 7 * dayMs;
-  const dayAgo = now - dayMs;
-  // Keep owner analytics consolidated by default, while resolving a scoped
-  // manager/accountant to an allowed branch when the dashboard omits a filter.
-  const requestedBranch = requestBranchValue(req);
-  const allowedBranchIds = branchScopeForUser(req.user, { role: effectiveRole(req.user) });
-  const bid = requestedBranch != null
-    ? parseBranchId(req)
-    : allowedBranchIds === null
-      ? null
-      : (defaultBranch() && allowedBranchIds.includes(Number(defaultBranch().id))
-        ? defaultBranch().id
-        : allowedBranchIds[0] || null);
-  let orders = db.orders || [];
-  if (bid) orders = orders.filter((o) => Number(o.branchId) === bid);
-  // Revenue is an accounting-facing metric. Pending/unpaid/partial orders
-  // belong in the operational queue, never in sales totals; retain the
-  // status fallback only for legacy rows that predate paymentStatus.
-  const paidLike = orders.filter((o) => {
-    if (typeof o?.paymentStatus === 'string') return o.paymentStatus === 'paid';
-    return FINANCIAL_PAID_ORDER_STATUSES.has(String(o?.status || ''));
-  });
-  const revenue = paidLike.reduce((s, o) => s + (Number(o.total) || 0), 0);
-  const revenueToday = paidLike
-    .filter((o) => new Date(o.createdAt).getTime() >= dayAgo)
-    .reduce((s, o) => s + (Number(o.total) || 0), 0);
-  const revenueWeek = paidLike
-    .filter((o) => new Date(o.createdAt).getTime() >= weekAgo)
-    .reduce((s, o) => s + (Number(o.total) || 0), 0);
-  const visits = db.visits || [];
-  const visitsToday = visits.filter((v) => new Date(v.at).getTime() >= dayAgo).length;
-  const visitsWeek = visits.filter((v) => new Date(v.at).getTime() >= weekAgo).length;
-  const uniqueSessions = new Set(visits.filter((v) => new Date(v.at).getTime() >= weekAgo).map((v) => v.sessionId)).size;
+moduleRuntime.registerHttpRoute('platform_core', 'get-122', moduleRouteContext);
 
-  // Top selling items
-  const itemMap = new Map();
-  for (const o of paidLike) {
-    for (const line of o.items || []) {
-      const cur = itemMap.get(line.menuItemId) || { id: line.menuItemId, name: line.name, qty: 0, revenue: 0 };
-      cur.qty += line.qty || 0;
-      cur.revenue += line.lineTotal || (line.price || 0) * (line.qty || 0);
-      itemMap.set(line.menuItemId, cur);
-    }
-  }
-  const topItems = [...itemMap.values()].sort((a, b) => b.qty - a.qty).slice(0, 8);
-
-  // Hourly heatmap (last 7d)
-  const byHour = Array.from({ length: 24 }, () => 0);
-  for (const o of paidLike.filter((o) => new Date(o.createdAt).getTime() >= weekAgo)) {
-    byHour[new Date(o.createdAt).getHours()] += 1;
-  }
-
-  const tablesScoped = (db.tables || []).filter((t) => (bid ? Number(t.branchId) === bid : true));
-  const v2Inventory = financeV2.inventoryItemsView(db, { branchId: bid }).items;
-  const legacyTrackedMenu = (db.menuItems || []).filter((item) => !financeV2.menuItemUsesInventoryV2(db, item.id, bid));
-
-  res.json({
-    users: db.users.length,
-    newsletter: db.newsletter.length,
-    orders: orders.length,
-    openOrders: orders.filter((o) => !['done', 'cancelled', 'paid'].includes(o.status)).length,
-    menuItems: (db.menuItems || []).length,
-    unavailable: (db.menuItems || []).filter((m) => m.available === false).length,
-    lowStock: v2Inventory.filter((item) => Number(item.availableQuantity ?? item.qtyOnHand ?? 0) > 0 && Number(item.minStock || 0) > 0 && Number(item.availableQuantity ?? item.qtyOnHand ?? 0) <= Number(item.minStock)).length + legacyTrackedMenu.filter(
-      (m) => typeof m.stock === 'number' && m.stock > 0 && m.stock <= (m.lowStockAt ?? 5)
-    ).length,
-    outOfStock: v2Inventory.filter((item) => Number(item.availableQuantity ?? item.qtyOnHand ?? 0) <= 0).length + legacyTrackedMenu.filter((m) => m.stock === 0).length,
-    tables: tablesScoped.filter((t) => t.active !== false).length,
-    branchId: bid,
-    branches: (db.branches || []).length,
-    revenue,
-    revenueToday,
-    revenueWeek,
-    visitsToday,
-    visitsWeek,
-    uniqueSessions,
-    topItems,
-    byHour,
-    dailySales30d: (() => {
-      const dailyMap = new Map();
-      for (let i = 29; i >= 0; i--) {
-        const d = new Date(now - i * dayMs).toISOString().slice(0, 10);
-        dailyMap.set(d, { date: d, count: 0, sales: 0 });
-      }
-      for (const o of paidLike) {
-        const d = (o.createdAt || '').slice(0, 10);
-        if (dailyMap.has(d)) {
-          const row = dailyMap.get(d);
-          row.count += 1;
-          row.sales += Number(o.total || 0);
-        }
-      }
-      return [...dailyMap.values()];
-    })(),
-    costStructure: (() => {
-      const be = financeV2.breakEvenDashboard(db, { branchId: bid || 1 });
-      const plan = be.plan || be.suggestedPlan;
-      const assumptions = Array.isArray(plan?.assumptions) ? plan.assumptions : [];
-      const totalFixedCostsToman = assumptions.reduce((sum, a) => sum + Number(a.amountToman || 0), 0)
-        || Number(plan?.monthlyFixedCostIrr ? plan.monthlyFixedCostIrr / 10 : 1_280_000_000);
-      
-      const accountingExpenses = (db.accounting?.expenses || []).filter((e) => !bid || Number(e.branchId) === bid);
-      
-      return {
-        totalFixedCostsToman,
-        totalFixedCostsIrr: totalFixedCostsToman * 10,
-        assumptions: assumptions.map((a) => ({
-          id: a.id,
-          name: a.name || a.categoryName,
-          amountToman: Number(a.amountToman || (a.amountIrr ? a.amountIrr / 10 : 0)),
-          categoryCode: a.categoryCode,
-          headcount: a.headcount,
-          salaryPerPersonToman: a.salaryPerPersonToman,
-        })),
-        actualExpensesCount: accountingExpenses.length,
-      };
-    })(),
-    recentLogins: db.loginLog.slice(0, 10),
-    recentOrders: orders.slice(0, 6),
-    reservationsToday: (db.reservations || []).filter(
-      (r) => r.date === new Date().toISOString().slice(0, 10) && ['pending', 'confirmed', 'seated'].includes(r.status)
-        && (!bid || Number(r.branchId) === bid)
-    ).length,
-    reservationsPending: (db.reservations || []).filter(
-      (r) => r.status === 'pending' && (!bid || Number(r.branchId) === bid)
-    ).length,
-    ...(() => {
-      let fb = db.feedback || [];
-      if (bid) fb = fb.filter((f) => Number(f.branchId) === bid);
-      const week = fb.filter((f) => new Date(f.createdAt).getTime() >= weekAgo);
-      const scores = week.map((f) => Number(f.score)).filter((n) => Number.isFinite(n));
-      const promoters = scores.filter((s) => s >= 9).length;
-      const detractors = scores.filter((s) => s <= 6).length;
-      const nps =
-        scores.length > 0 ? Math.round(((promoters - detractors) / scores.length) * 100) : null;
-      return {
-        feedbackWeek: week.length,
-        npsWeek: nps,
-        feedbackPending: fb.filter((f) => f.status === 'new').length,
-      };
-    })(),
-  });
-});
-
-app.get('/api/admin/notifications', requireAdmin, (req, res) => {
-  const bid = parseBranchId(req) || null;
-  const items = [];
-
-  // 1. Finance & Accounting Approvals
-  let state = null;
-  try {
-    state = financeV2.ensureFinanceV2(db);
-  } catch (_) {}
-
-  if (state) {
-    const approvals = (state.approvals || []).filter(
-      (a) => a.status === 'pending' && (!bid || !a.branchId || Number(a.branchId) === bid)
-    );
-    for (const a of approvals) {
-      let title = `درخواست تأیید مالی (${a.operation || a.entityType})`;
-      let tab = 'accounting';
-      let workspace = 'workbench';
-      if (a.entityType === 'purchase_order') {
-        title = `تأیید فاکتور خرید شماره ${a.entityId}`;
-        workspace = 'purchases';
-      } else if (a.entityType === 'vendor_invoice_match') {
-        title = `مغایرت فاکتور و رسید بار شماره ${a.entityId}`;
-        workspace = 'purchases';
-      } else if (a.entityType === 'recipe_version') {
-        title = 'تأیید نسخه جدید دستور تهیه';
-        tab = 'inventory';
-        workspace = 'costing';
-      } else if (a.entityType === 'cost_accrual' || a.entityType === 'cost_payment') {
-        title = 'تأیید سند هزینه و پرداخت تنخواه';
-        workspace = 'purchases';
-      } else if (a.entityType === 'supplier_payment') {
-        title = 'تأیید پرداخت به تأمین‌کننده';
-        workspace = 'purchases';
-      } else if (a.operation === 'reopen_fiscal_period') {
-        title = 'درخواست بازگشایی دوره مالی';
-        workspace = 'reports';
-      }
-
-      items.push({
-        id: `approval-${a.id}`,
-        category: 'approval',
-        priority: a.operation === 'reopen_fiscal_period' ? 'urgent' : 'high',
-        title,
-        description: `درخواست‌شده توسط ${a.requestedBy || 'کاربر سیستم'} • نیاز به تأیید نهایی مدیر`,
-        tab,
-        workspace,
-        actionLabel: 'بررسی و تأیید',
-        createdAt: a.createdAt || new Date().toISOString(),
-      });
-    }
-
-    // 2. Blocked or failed finance events
-    const unresolvedEvents = (state.events || []).filter(
-      (e) => ['blocked', 'failed'].includes(e.status) && (!bid || !e.branchId || Number(e.branchId) === bid)
-    );
-    if (unresolvedEvents.length > 0) {
-      items.push({
-        id: 'blocked-finance-events',
-        category: 'attention',
-        priority: 'high',
-        title: `${unresolvedEvents.length} رویداد مالی مسدود یا متوقف‌شده`,
-        description: 'اسناد یا تراکنش‌های مالی دارای خطا نیازمند رفع مسدودی در میزکار مالی هستند.',
-        tab: 'accounting',
-        workspace: 'workbench',
-        actionLabel: 'میزکار مالی',
-        createdAt: unresolvedEvents[0]?.occurredAt || new Date().toISOString(),
-      });
-    }
-
-    // 3. Receivable Purchase Orders
-    const pendingPOs = (state.purchaseOrders || []).filter(
-      (po) => ['approved', 'partially_received'].includes(po.status) && (!bid || !po.branchId || Number(po.branchId) === bid)
-    );
-    if (pendingPOs.length > 0) {
-      items.push({
-        id: 'receivable-pos',
-        category: 'attention',
-        priority: 'medium',
-        title: `${pendingPOs.length} محموله خرید آماده تحویل بار`,
-        description: 'کالاهای سفارش‌داده‌شده رسیده به مجموعه نیازمند ثبت رسید بار در بخش انبار هستند.',
-        tab: 'inventory',
-        workspace: 'purchases',
-        actionUrl: `/admin/kitchen?view=inventory${bid ? `&branchId=${bid}` : ''}`,
-        actionLabel: 'ثبت رسید بار',
-        createdAt: pendingPOs[0]?.createdAt || new Date().toISOString(),
-      });
-    }
-
-    // 4. Draft Journal Entries
-    const draftJournals = (state.journalEntries || []).filter(
-      (j) => j.status === 'draft' && (!bid || !j.branchId || Number(j.branchId) === bid)
-    );
-    if (draftJournals.length > 0) {
-      items.push({
-        id: 'draft-journals',
-        category: 'approval',
-        priority: 'medium',
-        title: `${draftJournals.length} سند حسابداری در انتظار ثبت نهایی`,
-        description: 'اسناد پیش‌نویس مالی آماده بررسی تراز و تأیید ثبت در دفتر کل هستند.',
-        tab: 'accounting',
-        workspace: 'reports',
-        actionLabel: 'دفتر اسناد',
-        createdAt: draftJournals[0]?.date || new Date().toISOString(),
-      });
-    }
-  }
-
-  // 5. Critical inventory shortages
-  try {
-    const inv = financeV2.inventoryItemsView(db, { branchId: bid });
-    const lowItems = (inv?.items || []).filter(
-      (item) => Number(item.availableQuantity) <= Number(item.reorderPoint)
-    );
-    if (lowItems.length > 0) {
-      const names = lowItems.slice(0, 3).map((i) => `${i.name} (${i.availableQuantity} ${i.unit})`).join('، ');
-      items.push({
-        id: 'low-stock-alert',
-        category: 'attention',
-        priority: lowItems.some((i) => Number(i.availableQuantity) <= 0) ? 'urgent' : 'high',
-        title: `هشدار کسری موجودی (${lowItems.length} قلم کالا)`,
-        description: `موجودی به زیر نقطهٔ سفارش رسیده است: ${names}${lowItems.length > 3 ? ' و...' : ''}`,
-        tab: 'inventory',
-        actionLabel: 'مشاهده انبار',
-        createdAt: new Date().toISOString(),
-      });
-    }
-  } catch (_) {}
-
-  // 6. Reservations pending confirmation
-  const pendingRes = (db.reservations || []).filter(
-    (r) => r.status === 'pending' && (!bid || Number(r.branchId) === bid)
-  );
-  if (pendingRes.length > 0) {
-    const summaryText = pendingRes
-      .slice(0, 2)
-      .map((r) => `${r.name || 'مهمان'} (${r.partySize || 2} نفر برای ${r.date} ${r.time})`)
-      .join(' | ');
-    items.push({
-      id: 'pending-reservations',
-      category: 'approval',
-      priority: 'high',
-      title: `${pendingRes.length} رزرو میز جدید نیازمند بررسی`,
-      description: summaryText + (pendingRes.length > 2 ? ` و ${pendingRes.length - 2} مورد دیگر` : ''),
-      tab: 'reservations',
-      actionLabel: 'بررسی رزروها',
-      createdAt: pendingRes[0]?.createdAt || new Date().toISOString(),
-    });
-  }
-
-  // 7. Feedback needing attention
-  let fbList = db.feedback || [];
-  if (bid) fbList = fbList.filter((f) => Number(f.branchId) === bid);
-  const newFeedback = fbList.filter((f) => f.status === 'new' || f.reviewed === false);
-  const lowScoreFeedback = fbList.filter((f) => Number(f.score) <= 6 && Number(f.score) > 0);
-  if (newFeedback.length > 0 || lowScoreFeedback.length > 0) {
-    const totalIssues = newFeedback.length || lowScoreFeedback.length;
-    items.push({
-      id: 'feedback-attention',
-      category: 'attention',
-      priority: lowScoreFeedback.length > 0 ? 'high' : 'medium',
-      title: `${totalIssues} بازخورد مشتریان نیازمند توجه`,
-      description: lowScoreFeedback.length > 0
-        ? `${lowScoreFeedback.length} نظر با امتیاز پایین ثبت شده که نیازمند پیگیری و رسیدگی مدیر است.`
-        : 'نظرات جدید دریافت شده توسط مشتریان نیازمند بازبینی است.',
-      tab: 'feedback',
-      actionLabel: 'مشاهده بازخوردها',
-      createdAt: (newFeedback[0] || lowScoreFeedback[0])?.createdAt || new Date().toISOString(),
-    });
-  }
-
-  // 8. Delayed active orders
-  const activeOrders = (db.orders || []).filter(
-    (o) => ['pending', 'preparing'].includes(o.status) && (!bid || Number(o.branchId) === bid)
-  );
-  const delayedOrders = activeOrders.filter((o) => {
-    const ageMin = (Date.now() - new Date(o.createdAt).getTime()) / 60000;
-    return ageMin >= 30;
-  });
-  if (delayedOrders.length > 0) {
-    items.push({
-      id: 'delayed-orders',
-      category: 'attention',
-      priority: 'urgent',
-      title: `${delayedOrders.length} سفارش معطل بیش از ۳۰ دقیقه`,
-      description: 'سفارش‌های ثبت‌شده با زمان انتظار بالا نیازمند تسریع در بخش سفارش‌ها یا آشپزخانه است.',
-      tab: 'orders',
-      actionLabel: 'مشاهده سفارش‌ها',
-      createdAt: delayedOrders[0]?.createdAt || new Date().toISOString(),
-    });
-  }
-
-  // Priority sorting: urgent -> high -> medium -> low
-  const priorityWeight = { urgent: 4, critical: 4, high: 3, medium: 2, low: 1 };
-  items.sort((a, b) => (priorityWeight[b.priority] || 0) - (priorityWeight[a.priority] || 0));
-
-  res.json({
-    ok: true,
-    summary: {
-      total: items.length,
-      approvals: items.filter((i) => i.category === 'approval').length,
-      attention: items.filter((i) => i.category === 'attention').length,
-      critical: items.filter((i) => ['urgent', 'critical', 'high'].includes(i.priority)).length,
-    },
-    items,
-  });
-});
+moduleRuntime.registerHttpRoute('platform_core', 'get-123', moduleRouteContext);
 
 /* ---- Restaurant profile / hours / tables / promos / analytics ---- */
-app.get('/api/admin/restaurant', requireAdmin, (req, res) => {
-  const branch = resolveBranch(req.query.branchId || req.query.branch);
-  res.json({
-    restaurant: db.restaurant,
-    hours: branch?.hours || db.hours,
-    branch,
-    branches: db.branches || [],
-  });
-});
-app.put('/api/admin/restaurant', requireAdmin, (req, res) => {
-  const r = req.body.restaurant || {};
-  const keys = [
-    'name', 'brandName', 'tagline', 'about', 'address', 'phone', 'whatsapp',
-    'instagram', 'website', 'mapUrl', 'currency',
-  ];
-  for (const k of keys) {
-    if (typeof r[k] === 'string') db.restaurant[k] = r[k].trim().slice(0, k === 'about' ? 2000 : 200);
-  }
-  const parsePct = (v) => {
-    if (v == null || v === '') return null;
-    if (typeof v === 'number') return isNaN(v) ? null : v;
-    const n = Number(normalizeDigits(String(v)).replace(/[,٬_\s]/g, '').trim());
-    return isNaN(n) ? null : n;
-  };
-  const taxPct = parsePct(r.taxPercent);
-  if (taxPct != null) db.restaurant.taxPercent = Math.max(0, Math.min(100, taxPct));
-  const svcPct = parsePct(r.servicePercent);
-  if (svcPct != null) db.restaurant.servicePercent = Math.max(0, Math.min(100, svcPct));
-  save();
-  res.json({ ok: true, restaurant: db.restaurant });
-});
-app.put('/api/admin/hours', requireAdmin, async (req, res) => {
-  const days = ['sat', 'sun', 'mon', 'tue', 'wed', 'thu', 'fri'];
-  const incoming = req.body?.hours;
-  if (!incoming || typeof incoming !== 'object' || Array.isArray(incoming)) {
-    return res.status(400).json({ error: 'hours_invalid', message: 'ساختار ساعت کاری معتبر نیست.' });
-  }
-  for (const day of days) {
-    const value = incoming[day];
-    if (value != null && (typeof value !== 'object' || Array.isArray(value))) {
-      return res.status(400).json({ error: 'hours_invalid', message: 'ساختار ساعت کاری معتبر نیست.' });
-    }
-    for (const field of ['open', 'close']) {
-      if (typeof value?.[field] !== 'string') continue;
-      if (!validateAdminHoursTime(value[field])) {
-        return res.status(400).json({ error: 'hours_time_invalid', day, field, message: 'ساعت باید در قالب ۲۴ ساعتهٔ ساعت:دقیقه باشد.' });
-      }
-    }
-  }
-  let branchId;
-  try { branchId = parseBranchId(req); } catch (error) {
-    return res.status(error.status || 400).json({ error: error.code || 'branch_invalid', message: error.message });
-  }
-  const branch = resolveBranchExact(branchId);
-  if (!branch) return res.status(400).json({ error: 'شعبه یافت نشد' });
-  return serializeAdminConfigMutation(branch.id, async () => {
-    const currentBranch = resolveBranchExact(branch.id);
-    if (!currentBranch) return res.status(409).json({ error: 'branch_changed', message: 'شعبه تغییر کرده است؛ صفحه را تازه کنید.' });
-    const hadBranchHours = Object.prototype.hasOwnProperty.call(currentBranch, 'hours');
-    const previousBranchHours = hadBranchHours ? JSON.parse(JSON.stringify(currentBranch.hours)) : undefined;
-    const hadLegacyHours = Object.prototype.hasOwnProperty.call(db, 'hours');
-    const previousLegacyHours = hadLegacyHours ? JSON.parse(JSON.stringify(db.hours)) : undefined;
-    if (!currentBranch.hours || typeof currentBranch.hours !== 'object' || Array.isArray(currentBranch.hours)) {
-      currentBranch.hours = defaultHoursTemplate();
-    }
-    for (const day of days) {
-      if (!incoming[day]) continue;
-      const current = currentBranch.hours[day] || { open: '10:00', close: '23:00', closed: false };
-      if (typeof incoming[day].open === 'string') current.open = validateAdminHoursTime(incoming[day].open);
-      if (typeof incoming[day].close === 'string') current.close = validateAdminHoursTime(incoming[day].close);
-      if (typeof incoming[day].closed === 'boolean') current.closed = incoming[day].closed;
-      currentBranch.hours[day] = current;
-    }
-    syncLegacyHours();
-    const auditLogWasPresent = Array.isArray(db.auditLog);
-    let auditEntry;
-    try {
-      auditEntry = recordAudit(req, 'branch.hours.updated', 'branch', currentBranch.id, { days: days.filter((day) => incoming[day]) }, currentBranch.id, { deferAppend: true });
-      await persistAdminConfigMutation(() => {
-        if (hadBranchHours) currentBranch.hours = previousBranchHours;
-        else delete currentBranch.hours;
-        if (hadLegacyHours) db.hours = previousLegacyHours;
-        else delete db.hours;
-        rollbackAuditEntry(auditEntry, auditLogWasPresent);
-      });
-    } catch (error) {
-      return respondAdminConfigPersistenceFailure(res, error, 'hours_persistence_failed');
-    }
-    appendAuditAfterCommit(auditEntry);
-    return res.json({ ok: true, hours: currentBranch.hours, branchId: currentBranch.id });
-  });
-});
+moduleRuntime.registerHttpRoute('website_brand', 'get-124', moduleRouteContext);
+moduleRuntime.registerHttpRoute('website_brand', 'put-125', moduleRouteContext);
+moduleRuntime.registerHttpRoute('website_brand', 'put-126', moduleRouteContext);
 
-app.get('/api/admin/tables', requireAdmin, (req, res) => {
-  const bid = Number(parseBranchId(req));
-  const allowedBranchIds = branchScopeForUser(req.user, { role: effectiveRole(req.user) });
-  const tables = (db.tables || []).filter((table) => tableBranchId(table) === bid);
-  const branches = allowedBranchIds === null
-    ? (db.branches || [])
-    : (db.branches || []).filter((branch) => allowedBranchIds.includes(Number(branch.id)));
-  res.json({ tables, branches });
-});
-app.put('/api/admin/tables', requireAdmin, async (req, res) => {
-  if (!Array.isArray(req.body.tables)) return res.status(400).json({ error: 'tables required' });
-  const parseNum = (v, fb = 0) => {
-    if (v == null || v === '') return fb;
-    if (typeof v === 'number') return isNaN(v) ? fb : v;
-    const n = Number(normalizeDigits(String(v)).replace(/[,٬_\s]/g, '').trim());
-    return isNaN(n) ? fb : n;
-  };
-  const bid = Number(parseBranchId(req));
-  const requestedIds = req.body.tables.slice(0, 80).map((table, index) => Math.round(parseNum(table.id, index + 1)));
-  if (new Set(requestedIds).size !== requestedIds.length) return res.status(400).json({ error: 'table_id_duplicate' });
-  const existingMap = new Map((db.tables || []).map((t) => [Number(t.id), t]));
-  if (requestedIds.some((id) => existingMap.has(id) && tableBranchId(existingMap.get(id)) !== bid)) {
-    return res.status(403).json({ error: 'branch_access_denied', message: 'نمی‌توان میز شعبهٔ دیگری را با این درخواست جابه‌جا کرد.' });
-  }
-  const before = JSON.parse(JSON.stringify(db.tables || []));
-  const others = (db.tables || []).filter((t) => tableBranchId(t) !== bid);
-  const updated = req.body.tables.slice(0, 80).map((t, i) => {
-    const id = Math.round(parseNum(t.id, i + 1));
-    const prev = existingMap.get(id) || {};
-    const item = {
-      ...prev,
-      id,
-      label: String(t.label || `میز ${i + 1}`).slice(0, 40),
-      seats: Math.max(1, Math.min(24, Math.round(parseNum(t.seats, 4)))),
-      zone: String(t.zone || 'سالن').slice(0, 40),
-      active: t.active !== false,
-      branchId: bid,
-    };
-    if (typeof t.x === 'number') item.x = Math.max(0, Math.min(100, Math.round(t.x * 10) / 10));
-    if (typeof t.y === 'number') item.y = Math.max(0, Math.min(100, Math.round(t.y * 10) / 10));
-    if (t.shape) item.shape = String(t.shape).slice(0, 20);
-    if (t.chairModel) item.chairModel = String(t.chairModel).slice(0, 25);
-    if (typeof t.chairScale === 'number') item.chairScale = Math.max(0.6, Math.min(2.0, Math.round(t.chairScale * 100) / 100));
-    if (typeof t.tableScale === 'number') item.tableScale = Math.max(0.6, Math.min(2.5, Math.round(t.tableScale * 100) / 100));
-    if (typeof t.rotation === 'number') item.rotation = Math.round(t.rotation) % 360;
-    if (t.floorId) item.floorId = String(t.floorId).slice(0, 40);
-    if (Array.isArray(t.mergedWith)) item.mergedWith = t.mergedWith.map((x) => Number(x) || String(x));
-    if (t.mergedInto !== undefined) item.mergedInto = t.mergedInto ? (Number(t.mergedInto) || String(t.mergedInto)) : null;
-    if (Array.isArray(t.tags)) item.tags = t.tags.slice(0, 10).map((x) => String(x).slice(0, 30));
-    return item;
-  });
-  db.tables = [...others, ...updated].sort((a, b) => a.id - b.id);
-  try {
-    await save({ requireDurable: true });
-  } catch (error) {
-    db.tables = before;
-    return res.status(503).json({ error: 'table_persistence_failed', message: 'ذخیرهٔ تغییرات میز انجام نشد؛ وضعیت قبلی حفظ شد.' });
-  }
-  res.json({ ok: true, tables: updated });
-});
-app.post('/api/admin/tables', requireAdmin, async (req, res) => {
-  const parseNum = (v, fb = 0) => {
-    if (v == null || v === '') return fb;
-    if (typeof v === 'number') return isNaN(v) ? fb : v;
-    const n = Number(normalizeDigits(String(v)).replace(/[,٬_\s]/g, '').trim());
-    return isNaN(n) ? fb : n;
-  };
-  const id = Math.max(0, ...db.tables.map((t) => Number(t.id) || 0), 0) + 1;
-  const branchId = Number(parseBranchId(req));
-  const table = {
-    id,
-    label: String(req.body.label || `میز ${id}`).slice(0, 40),
-    seats: Math.max(1, Math.min(24, Math.round(parseNum(req.body.seats, 4)))),
-    zone: String(req.body.zone || 'سالن').slice(0, 40),
-    active: true,
-    branchId,
-  };
-  if (typeof req.body.x === 'number') table.x = Math.max(0, Math.min(100, Math.round(req.body.x * 10) / 10));
-  if (typeof req.body.y === 'number') table.y = Math.max(0, Math.min(100, Math.round(req.body.y * 10) / 10));
-  if (req.body.shape) table.shape = String(req.body.shape).slice(0, 20);
-  if (req.body.chairModel) table.chairModel = String(req.body.chairModel).slice(0, 25);
-  if (typeof req.body.chairScale === 'number') table.chairScale = Math.max(0.6, Math.min(2.0, Math.round(req.body.chairScale * 100) / 100));
-  if (typeof req.body.tableScale === 'number') table.tableScale = Math.max(0.6, Math.min(2.5, Math.round(req.body.tableScale * 100) / 100));
-  if (typeof req.body.rotation === 'number') table.rotation = Math.round(req.body.rotation) % 360;
-  if (req.body.floorId) table.floorId = String(req.body.floorId).slice(0, 40);
-  if (Array.isArray(req.body.tags)) table.tags = req.body.tags.slice(0, 10).map((x) => String(x).slice(0, 30));
-  const before = JSON.parse(JSON.stringify(db.tables || []));
-  db.tables.push(table);
-  try {
-    await save({ requireDurable: true });
-  } catch (error) {
-    db.tables = before;
-    return res.status(503).json({ error: 'table_persistence_failed', message: 'ذخیرهٔ میز انجام نشد؛ وضعیت قبلی حفظ شد.' });
-  }
-  res.json({ ok: true, table });
-});
-app.delete('/api/admin/tables/:id', requireAdmin, async (req, res) => {
-  // The legacy endpoint has no expectedLayoutRevision and cannot join the
-  // floor-layout lock used by /api/admin/v2/floor/tables/delete. Refuse every
-  // legacy delete until it can be routed through that guarded mutation; even
-  // idle-table deletes must not silently bypass revisioning.
-  return res.status(428).json({
-    error: 'floor_layout_revision_required',
-    message: 'حذف میز از این مسیر قدیمی امن نیست. نقشه را از API نسخه‌دار تازه کنید و حذف را همراه نسخهٔ نقشه انجام دهید.',
-    replacement: {
-      read: 'GET /api/admin/v2/floor?branchId={branchId}',
-      delete: 'POST /api/admin/v2/floor/tables/delete',
-      requiredBody: ['expectedLayoutRevision', 'tableIds'],
-    },
-  });
-});
+moduleRuntime.registerHttpRoute('floor', 'get-127', moduleRouteContext);
+moduleRuntime.registerHttpRoute('floor', 'put-128', moduleRouteContext);
+moduleRuntime.registerHttpRoute('floor', 'post-129', moduleRouteContext);
+moduleRuntime.registerHttpRoute('floor', 'delete-130', moduleRouteContext);
 
 // QR artwork is generated on the server so the admin can print/download a
 // standards-compliant PNG without relying on a third-party image service.
-app.get('/api/admin/qr-code', requireCapability('tables.view'), async (req, res) => {
-  const data = String(req.query.data || '').trim();
-  if (!data || data.length > 1200) {
-    return res.status(400).json({ error: 'مقصد QR نامعتبر یا بیش از حد طولانی است' });
-  }
-
-  const hexColor = (value, fallback) => {
-    const candidate = String(value || '').trim();
-    return /^#[0-9a-f]{6}$/i.test(candidate) ? candidate : fallback;
-  };
-  const errorCorrectionLevel = ['L', 'M', 'Q', 'H'].includes(String(req.query.ecl || '').toUpperCase())
-    ? String(req.query.ecl).toUpperCase()
-    : 'M';
-  const width = Math.max(256, Math.min(1600, Math.round(Number(req.query.width) || 768)));
-  const margin = Math.max(2, Math.min(12, Math.round(Number(req.query.margin) || 5)));
-  const dark = hexColor(req.query.dark, '#11181b');
-  const light = hexColor(req.query.light, '#ffffff');
-
-  try {
-    const png = await QRCode.toBuffer(data, {
-      type: 'png',
-      width,
-      margin,
-      errorCorrectionLevel,
-      color: { dark, light },
-    });
-    const filename = String(req.query.filename || 'westo-table-qr')
-      .replace(/[^a-z0-9_-]+/gi, '-')
-      .replace(/^-+|-+$/g, '')
-      .slice(0, 80) || 'westo-table-qr';
-    res.setHeader('Cache-Control', 'private, no-store');
-    res.setHeader('Content-Type', 'image/png');
-    res.setHeader('Content-Disposition', `${req.query.download === '1' ? 'attachment' : 'inline'}; filename="${filename}.png"`);
-    return res.send(png);
-  } catch (error) {
-    return res.status(400).json({ error: error?.message || 'ساخت QR ممکن نشد' });
-  }
-});
+moduleRuntime.registerHttpRoute('menu_qr', 'get-131', moduleRouteContext);
 
 /* ---- Branches (چندشعبه) ---- */
-app.get('/api/branches', (req, res) => {
-  const list = (db.branches || [])
-    .filter((b) => req.query.all === '1' || b.active !== false)
-    .map((b) => ({
-      id: b.id,
-      slug: b.slug,
-      name: b.name,
-      address: b.address,
-      phone: b.phone,
-      active: b.active !== false,
-    }));
-  res.json({ branches: list });
-});
+moduleRuntime.registerHttpRoute('multi_branch', 'get-132', moduleRouteContext);
 
-app.get('/api/admin/branches', requireAdmin, (req, res) => {
-  res.json({ branches: db.branches || [] });
-});
+moduleRuntime.registerHttpRoute('multi_branch', 'get-133', moduleRouteContext);
 
-app.post('/api/admin/branches', requireAdmin, (req, res) => {
-  const id = Math.max(0, ...(db.branches || []).map((b) => b.id), 0) + 1;
-  let slug = String(req.body.slug || `branch-${id}`)
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9-]/g, '-')
-    .slice(0, 40);
-  if (!slug) slug = `branch-${id}`;
-  if ((db.branches || []).some((b) => b.slug === slug)) {
-    return res.status(400).json({ error: 'اسلاگ تکراری است' });
-  }
-  const branch = {
-    id,
-    slug,
-      name: String(req.body.name || `شعبه ${id}`).trim().slice(0, 80),
-      address: String(req.body.address || '').trim().slice(0, 200),
-    phone: String(req.body.phone || '').trim().slice(0, 40),
-    whatsapp: String(req.body.whatsapp || '').trim().slice(0, 40),
-    mapUrl: String(req.body.mapUrl || '').trim().slice(0, 500),
-    active: req.body.active !== false,
-    hours: req.body.hours && typeof req.body.hours === 'object'
-      ? req.body.hours
-      : defaultHoursTemplate(),
-  };
-  db.branches.push(branch);
-  save();
-  res.json({ ok: true, branch });
-});
+moduleRuntime.registerHttpRoute('multi_branch', 'post-134', moduleRouteContext);
 
-app.put('/api/admin/branches/:id', requireAdmin, (req, res) => {
-  const targetId = Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
-  const branch = (db.branches || []).find((b) => Number(b.id) === targetId);
-  if (!branch) return res.status(404).json({ error: 'not found' });
-  if (typeof req.body.name === 'string') branch.name = req.body.name.trim().slice(0, 80);
-  if (typeof req.body.address === 'string') branch.address = req.body.address.trim().slice(0, 200);
-  if (typeof req.body.phone === 'string') branch.phone = req.body.phone.trim().slice(0, 40);
-  if (typeof req.body.whatsapp === 'string') branch.whatsapp = req.body.whatsapp.trim().slice(0, 40);
-  if (typeof req.body.mapUrl === 'string') branch.mapUrl = req.body.mapUrl.trim().slice(0, 500);
-  if (typeof req.body.active === 'boolean') branch.active = req.body.active;
-  if (typeof req.body.slug === 'string') {
-    const slug = req.body.slug.trim().toLowerCase().replace(/[^a-z0-9-]/g, '-').slice(0, 40);
-    if (slug && !(db.branches || []).some((b) => b.slug === slug && b.id !== branch.id)) {
-      branch.slug = slug;
-    }
-  }
-  if (req.body.hours && typeof req.body.hours === 'object') {
-    const days = ['sat', 'sun', 'mon', 'tue', 'wed', 'thu', 'fri'];
-    if (!branch.hours) branch.hours = defaultHoursTemplate();
-    for (const d of days) {
-      if (!req.body.hours[d]) continue;
-      branch.hours[d] = {
-        open: String(req.body.hours[d].open || '10:00').slice(0, 5),
-        close: String(req.body.hours[d].close || '23:00').slice(0, 5),
-        closed: !!req.body.hours[d].closed,
-      };
-    }
-    syncLegacyHours();
-  }
-  save();
-  res.json({ ok: true, branch });
-});
+moduleRuntime.registerHttpRoute('multi_branch', 'put-135', moduleRouteContext);
 
-app.delete('/api/admin/branches/:id', requireAdmin, (req, res) => {
-  const id = Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
-  if ((db.branches || []).length <= 1) {
-    return res.status(400).json({ error: 'حداقل یک شعبه لازم است' });
-  }
-  const fallback = (db.branches || []).find((b) => Number(b.id) !== id);
-  db.branches = (db.branches || []).filter((b) => Number(b.id) !== id);
-  for (const t of db.tables || []) {
-    if (Number(t.branchId) === id) t.branchId = fallback ? fallback.id : 1;
-  }
-  for (const o of db.orders || []) {
-    if (Number(o.branchId) === id) o.branchId = fallback ? fallback.id : 1;
-  }
-  syncLegacyHours();
-  save();
-  res.json({ ok: true });
-});
+moduleRuntime.registerHttpRoute('multi_branch', 'delete-136', moduleRouteContext);
 
-app.get('/api/admin/promotions', requireAdmin, (req, res) => {
-  res.json({ promotions: db.promotions || [] });
-});
-app.post('/api/admin/promotions', requireAdmin, (req, res) => {
-  const id = Math.max(0, ...(db.promotions || []).map((p) => Number(p.id) || 0), 0) + 1;
-  const parsePct = (v) => {
-    if (v == null || v === '') return 0;
-    if (typeof v === 'number') return isNaN(v) ? 0 : v;
-    const n = Number(normalizeDigits(String(v)).replace(/[,٬_\s]/g, '').trim());
-    return isNaN(n) ? 0 : n;
-  };
-  const promo = {
-    id,
-    title: String(req.body.title || '').trim().slice(0, 120),
-    percent: Math.max(0, Math.min(90, Math.round(parsePct(req.body.percent)))),
-    code: String(req.body.code || '').trim().slice(0, 32).toUpperCase(),
-    active: req.body.active !== false,
-    startsAt: req.body.startsAt || new Date().toISOString(),
-    endsAt: req.body.endsAt || null,
-    createdAt: new Date().toISOString(),
-  };
-  if (!promo.title) return res.status(400).json({ error: 'عنوان الزامی است' });
-  db.promotions = db.promotions || [];
-  db.promotions.unshift(promo);
-  save();
-  res.json({ ok: true, promo });
-});
-app.patch('/api/admin/promotions/:id', requireAdmin, (req, res) => {
-  const targetId = Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
-  const promo = (db.promotions || []).find((p) => Number(p.id) === targetId);
-  if (!promo) return res.status(404).json({ error: 'not found' });
-  if (typeof req.body.title === 'string') promo.title = req.body.title.trim().slice(0, 120);
-  if (req.body.percent != null) {
-    const rawPct = typeof req.body.percent === 'number'
-      ? req.body.percent
-      : Number(normalizeDigits(String(req.body.percent)).replace(/[,٬_\s]/g, '').trim());
-    if (!isNaN(rawPct)) {
-      promo.percent = Math.max(0, Math.min(90, Math.round(rawPct)));
-    }
-  }
-  if (typeof req.body.code === 'string') promo.code = req.body.code.trim().slice(0, 32).toUpperCase();
-  if (typeof req.body.active === 'boolean') promo.active = req.body.active;
-  if (req.body.endsAt !== undefined) promo.endsAt = req.body.endsAt;
-  save();
-  res.json({ ok: true, promo });
-});
-app.delete('/api/admin/promotions/:id', requireAdmin, (req, res) => {
-  const targetId = Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
-  db.promotions = (db.promotions || []).filter((p) => Number(p.id) !== targetId);
-  save();
-  res.json({ ok: true });
-});
+moduleRuntime.registerHttpRoute('pos', 'get-137', moduleRouteContext);
+moduleRuntime.registerHttpRoute('pos', 'post-138', moduleRouteContext);
+moduleRuntime.registerHttpRoute('pos', 'patch-139', moduleRouteContext);
+moduleRuntime.registerHttpRoute('pos', 'delete-140', moduleRouteContext);
 
-app.get('/api/admin/promo-slides', requireCapability('content.manage'), (req, res) => {
-  const branchId = req.query.branchId ? Number(req.query.branchId) : null;
-  const slides = (db.promoSlides || [])
-    .filter((slide) => !branchId || slide.branchId == null || Number(slide.branchId) === branchId)
-    .sort((a, b) => (Number(a.sortOrder) || 0) - (Number(b.sortOrder) || 0) || Number(a.id) - Number(b.id));
-  res.json({ slides, branches: db.branches || [] });
-});
+moduleRuntime.registerHttpRoute('website_brand', 'get-141', moduleRouteContext);
 
-app.post('/api/admin/promo-slides', requireCapability('content.manage'), (req, res) => {
-  const id = nextId(db.promoSlides || []);
-  const base = {
-    id, title: '', subtitle: '', badge: '', image: '', ctaLabel: '', actionType: 'none',
-    actionValue: '', kind: 'general', placement: 'entrance', shareEnabled: true, enabled: true, status: 'published', startAt: null, endAt: null,
-    branchId: null, sortOrder: (db.promoSlides || []).length, autoplayMs: 0, impressions: 0, clicks: 0,
-    createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
-  };
-  const slide = sanitizePromoSlideInput(req.body || {}, base);
-  if (!slide.title && !slide.image) return res.status(400).json({ error: 'عنوان یا تصویر الزامی است' });
-  db.promoSlides = db.promoSlides || [];
-  db.promoSlides.push(slide);
-  save();
-  res.json({ ok: true, slide });
-});
+moduleRuntime.registerHttpRoute('website_brand', 'post-142', moduleRouteContext);
 
-app.patch('/api/admin/promo-slides/:id', requireCapability('content.manage'), (req, res) => {
-  const targetId = Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
-  const index = (db.promoSlides || []).findIndex((slide) => Number(slide.id) === targetId);
-  if (index < 0) return res.status(404).json({ error: 'not found' });
-  const updated = sanitizePromoSlideInput(req.body || {}, db.promoSlides[index]);
-  updated.updatedAt = new Date().toISOString();
-  db.promoSlides[index] = updated;
-  save();
-  res.json({ ok: true, slide: updated });
-});
+moduleRuntime.registerHttpRoute('website_brand', 'patch-143', moduleRouteContext);
 
-app.delete('/api/admin/promo-slides/:id', requireCapability('content.manage'), (req, res) => {
-  const targetId = Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
-  db.promoSlides = (db.promoSlides || []).filter((slide) => Number(slide.id) !== targetId);
-  save();
-  res.json({ ok: true });
-});
+moduleRuntime.registerHttpRoute('website_brand', 'delete-144', moduleRouteContext);
 
-app.post('/api/admin/promo-slides/reorder', requireCapability('content.manage'), (req, res) => {
-  const ids = Array.isArray(req.body.ids) ? req.body.ids.map(Number).filter(Number.isFinite) : [];
-  if (!ids.length) return res.status(400).json({ error: 'ids required' });
-  const order = new Map(ids.map((id, index) => [id, index]));
-  for (const slide of db.promoSlides || []) {
-    if (order.has(Number(slide.id))) slide.sortOrder = order.get(Number(slide.id));
-  }
-  save();
-  res.json({ ok: true });
-});
+moduleRuntime.registerHttpRoute('website_brand', 'post-145', moduleRouteContext);
 
-app.post('/api/promo-slides/:id/impression', (req, res) => {
-  const targetId = Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
-  const slide = (db.promoSlides || []).find((item) => Number(item.id) === targetId);
-  if (slide) { slide.impressions = (Number(slide.impressions) || 0) + 1; save(); }
-  res.status(204).end();
-});
+moduleRuntime.registerHttpRoute('website_brand', 'post-146', moduleRouteContext);
 
-app.post('/api/promo-slides/:id/click', (req, res) => {
-  const targetId = Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
-  const slide = (db.promoSlides || []).find((item) => Number(item.id) === targetId);
-  if (slide) { slide.clicks = (Number(slide.clicks) || 0) + 1; save(); }
-  res.status(204).end();
-});
+moduleRuntime.registerHttpRoute('website_brand', 'post-147', moduleRouteContext);
 
 /* Bulk price update — percent or absolute delta */
-app.post('/api/admin/prices/bulk', requireAdmin, (req, res) => {
-  const mode = req.body.mode === 'set' ? 'set' : req.body.mode === 'delta' ? 'delta' : 'percent';
-  const parseNum = (v) => {
-    if (v == null || v === '') return NaN;
-    if (typeof v === 'number') return v;
-    return Number(normalizeDigits(String(v)).replace(/[,٬_\s]/g, '').trim());
-  };
-  const value = parseNum(req.body.value);
-  const rawCat = req.body.categoryId != null ? req.body.categoryId : null;
-  const categoryId = rawCat != null && rawCat !== ''
-    ? Number(normalizeDigits(String(rawCat)).replace(/\D/g, ''))
-    : null;
-  if (!Number.isFinite(value)) return res.status(400).json({ error: 'مقدار نامعتبر' });
-  let n = 0;
-  for (const item of (db.menuItems || [])) {
-    if (categoryId != null && Number(item.categoryId) !== categoryId) continue;
-    if (mode === 'percent') item.price = Math.max(0, Math.round(item.price * (1 + value / 100)));
-    else if (mode === 'delta') item.price = Math.max(0, Math.round(item.price + value));
-    else item.price = Math.max(0, Math.round(value));
-    n += 1;
-  }
-  save();
-  res.json({ ok: true, updated: n });
-});
+moduleRuntime.registerHttpRoute('platform_core', 'post-148', moduleRouteContext);
 
 /* Public analytics beacon + admin analytics */
-app.post('/api/analytics/visit', (req, res) => {
-  const pathName = String(req.body.path || '/').slice(0, 200);
-  const referrer = String(req.body.referrer || '').slice(0, 300);
-  const sessionId = String(req.body.sessionId || crypto.randomBytes(8).toString('hex')).slice(0, 64);
-  const ua = String(req.headers['user-agent'] || '').slice(0, 200);
-  const at = new Date().toISOString();
-  db.visits = db.visits || [];
-  db.visits.unshift({ at, path: pathName, referrer, sessionId, ua });
-  db.visits = db.visits.slice(0, 5000);
-  db.visitSessions = db.visitSessions || {};
-  db.visitSessions[sessionId] = at;
-  // prune old session map
-  const keys = Object.keys(db.visitSessions);
-  if (keys.length > 8000) {
-    for (const k of keys.slice(0, keys.length - 4000)) delete db.visitSessions[k];
-  }
-  save();
-  res.json({ ok: true });
-});
+moduleRuntime.registerHttpRoute('platform_core', 'post-149', moduleRouteContext);
 
 /* Debug-mode NDJSON ingest. Never expose this development aid in production. */
 if (process.env.NODE_ENV !== 'production') {
@@ -9341,67 +5319,16 @@ if (process.env.NODE_ENV !== 'production') {
   });
 }
 
-app.get('/api/admin/analytics', requireAdmin, (req, res) => {
-  const days = Math.min(30, Math.max(1, Number(req.query.days) || 7));
-  const since = Date.now() - days * 24 * 3600 * 1000;
-  const visits = (db.visits || []).filter((v) => new Date(v.at).getTime() >= since);
-  const byDay = {};
-  const byPath = {};
-  const byHour = Array.from({ length: 24 }, () => 0);
-  for (const v of visits) {
-    const d = v.at.slice(0, 10);
-    byDay[d] = (byDay[d] || 0) + 1;
-    byPath[v.path] = (byPath[v.path] || 0) + 1;
-    byHour[new Date(v.at).getHours()] += 1;
-  }
-  const sessions = new Set(visits.map((v) => v.sessionId)).size;
-  res.json({
-    days,
-    total: visits.length,
-    sessions,
-    byDay,
-    byHour,
-    topPaths: Object.entries(byPath)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 12)
-      .map(([path, count]) => ({ path, count })),
-    recent: visits.slice(0, 40),
-  });
-});
+moduleRuntime.registerHttpRoute('analytics', 'get-150', moduleRouteContext);
 
 /* Public restaurant info for site/footer if needed */
-app.get('/api/restaurant', (req, res) => {
-  res.json(publicRestaurantPayload(req.query.branch || req.query.branchId));
-});
+moduleRuntime.registerHttpRoute('website_brand', 'get-151', moduleRouteContext);
 
-app.get('/api/theme', (req, res) => {
-  res.json({ theme: db.theme || {} });
-});
+moduleRuntime.registerHttpRoute('website_brand', 'get-152', moduleRouteContext);
 
-app.get('/api/admin/theme', requireAdmin, (req, res) => {
-  res.json({ theme: db.theme || {} });
-});
+moduleRuntime.registerHttpRoute('website_brand', 'get-153', moduleRouteContext);
 
-app.put('/api/admin/theme', requireAdmin, (req, res) => {
-  const t = req.body.theme || {};
-  if (!db.theme) db.theme = {};
-  const colorKeys = ['accent', 'accentInk', 'surface', 'bg', 'fog', 'printPaper', 'printInk', 'printAccent'];
-  const hex = /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
-  for (const k of colorKeys) {
-    if (typeof t[k] === 'string' && hex.test(t[k].trim())) db.theme[k] = t[k].trim();
-  }
-  if (t.radius != null) {
-    const rawRadius = typeof t.radius === 'number'
-      ? t.radius
-      : Number(normalizeDigits(String(t.radius)).replace(/[,٬_\s]/g, '').trim());
-    if (!isNaN(rawRadius)) {
-      db.theme.radius = Math.max(0, Math.min(28, Math.round(rawRadius)));
-    }
-  }
-  if (typeof t.fontDisplay === 'string') db.theme.fontDisplay = t.fontDisplay.trim().slice(0, 40) || 'Vazirmatn';
-  save();
-  res.json({ ok: true, theme: db.theme });
-});
+moduleRuntime.registerHttpRoute('website_brand', 'put-154', moduleRouteContext);
 
 const upload = multer({
   storage: multer.diskStorage({
@@ -9421,502 +5348,45 @@ const upload = multer({
     cb(ok ? null : new Error('فقط تصویر JPEG/PNG/WebP/GIF مجاز است'), ok);
   },
 });
-app.post('/api/admin/upload', requireAdmin, (req, res) => {
-  upload.single('file')(req, res, (err) => {
-    if (err) return res.status(400).json({ error: err.message || 'آپلود ناموفق' });
-    if (!req.file) return res.status(400).json({ error: 'no file' });
-    res.json({ ok: true, path: `uploads/${req.file.filename}` });
-  });
-});
-app.get('/api/admin/uploads', requireAdmin, (req, res) => {
-  fs.mkdirSync(UPLOADS, { recursive: true });
-  const files = fs.readdirSync(UPLOADS).map((f) => ({ path: `uploads/${f}`, size: fs.statSync(path.join(UPLOADS, f)).size }));
-  res.json({ files });
-});
+moduleRuntime.registerHttpRoute('website_brand', 'post-155', moduleRouteContext);
+moduleRuntime.registerHttpRoute('website_brand', 'get-156', moduleRouteContext);
 
 
-app.get('/api/admin/settings', requireAdmin, (req, res) => res.json({ settings: db.settings, loyalty: db.loyalty }));
-app.put('/api/admin/settings', requireAdmin, (req, res) => {
-  const s = req.body.settings || {};
-  let configuredAdminPhones = null;
-  if (Array.isArray(s.adminPhones) && s.adminPhones.length) {
-    configuredAdminPhones = s.adminPhones.map((phone) => normalizeDigits(phone).trim());
-    if (configuredAdminPhones.some((phone) => PLATFORM_ONLY_PHONE_IDENTITIES.has(phone))) {
-      return res.status(400).json({ error: 'platform_identity_cannot_be_tenant_owner', message: 'حساب راهبر پلتفرم را نمی‌توان به مالک رستوران تبدیل کرد.' });
-    }
-    if (!configuredAdminPhones.every((phone) => PHONE_RE.test(phone))) {
-      return res.status(400).json({ error: 'admin_phone_invalid' });
-    }
-  }
-  if (typeof s.siteTitle === 'string') db.settings.siteTitle = s.siteTitle;
-  if (typeof s.metaDescription === 'string') db.settings.metaDescription = s.metaDescription;
-  if (configuredAdminPhones) db.settings.adminPhones = configuredAdminPhones;
-  const L = req.body.loyalty || {};
-  if (!db.loyalty) db.loyalty = {};
-  if (typeof L.enabled === 'boolean') db.loyalty.enabled = L.enabled;
-  if (typeof L.pointsPerToman === 'number') db.loyalty.pointsPerToman = Math.max(0, Math.min(1, L.pointsPerToman));
-  if (typeof L.redeemValue === 'number') db.loyalty.redeemValue = Math.max(0, Math.round(L.redeemValue));
-  if (typeof L.welcomePoints === 'number') db.loyalty.welcomePoints = Math.max(0, Math.round(L.welcomePoints));
-  save();
-  res.json({ ok: true, settings: db.settings, loyalty: db.loyalty });
-});
+moduleRuntime.registerHttpRoute('platform_core', 'get-157', moduleRouteContext);
+moduleRuntime.registerHttpRoute('platform_core', 'put-158', moduleRouteContext);
 
 /* ---- Loyalty club ---- */
-app.get('/api/admin/inventory', requireAdmin, (req, res) => {
-  const cats = Object.fromEntries((db.menuCategories || []).map((c) => [c.id, c.title]));
-  const items = (db.menuItems || []).map((m) => ({
-    id: m.id,
-    name: m.name,
-    categoryId: m.categoryId,
-    category: cats[m.categoryId] || String(m.categoryId),
-    stock: m.stock === undefined ? null : m.stock,
-    lowStockAt: m.lowStockAt ?? 5,
-    available: m.available !== false,
-    tracked: typeof m.stock === 'number',
-    low:
-      typeof m.stock === 'number' &&
-      m.stock > 0 &&
-      m.stock <= (m.lowStockAt ?? 5),
-    empty: m.stock === 0,
-  }));
-  res.json({
-    items,
-    summary: {
-      tracked: items.filter((i) => i.tracked).length,
-      low: items.filter((i) => i.low).length,
-      empty: items.filter((i) => i.empty).length,
-      unlimited: items.filter((i) => !i.tracked).length,
-    },
-  });
-});
+moduleRuntime.registerHttpRoute('inventory', 'get-159', moduleRouteContext);
 
-app.post('/api/admin/inventory/adjust', requireAdmin, (req, res) => {
-  const targetId = Number(normalizeDigits(String(req.body.id || '')).replace(/\D/g, ''));
-  const item = (db.menuItems || []).find((m) => Number(m.id) === targetId);
-  if (!item) return res.status(404).json({ error: 'not found' });
-  const parseNum = (v) => {
-    if (v == null || v === '') return null;
-    if (typeof v === 'number') return isNaN(v) ? null : v;
-    const n = Number(normalizeDigits(String(v)).replace(/[,٬_\s]/g, '').trim());
-    return isNaN(n) ? null : n;
-  };
-  if (req.body.stock === null || req.body.mode === 'unlimited') {
-    item.stock = null;
-  } else if (req.body.mode === 'set') {
-    const s = parseNum(req.body.stock);
-    item.stock = Math.max(0, Math.round(s ?? 0));
-  } else {
-    const delta = Math.round(parseNum(req.body.delta) ?? 0);
-    const base = typeof item.stock === 'number' ? item.stock : 0;
-    item.stock = Math.max(0, base + delta);
-  }
-  if (item.stock === 0) item.available = false;
-  else if (typeof item.stock === 'number' && item.stock > 0 && req.body.restock === true) {
-    item.available = true;
-  }
-  const lowStock = parseNum(req.body.lowStockAt);
-  if (lowStock != null) item.lowStockAt = Math.max(0, Math.round(lowStock));
-  save();
-  res.json({ ok: true, item });
-});
+moduleRuntime.registerHttpRoute('inventory', 'post-160', moduleRouteContext);
 
-app.get('/api/admin/loyalty', requireOwner, (req, res) => {
-  const rawMembers = db.users.map(publicUser).sort((a, b) => b.points - a.points);
-  const members = rawMembers.map((m) => {
-    const tierInfo = loyaltyEngine.resolveCustomerTier(db, m);
-    return {
-      ...m,
-      tier: tierInfo.tier,
-      nextTier: tierInfo.nextTier,
-      progressPct: tierInfo.progressPct,
-      pointsToNext: tierInfo.pointsToNext,
-      multiplier: tierInfo.multiplier,
-      discountPct: tierInfo.discountPct,
-      badge: tierInfo.badge,
-    };
-  });
-  const tiers = loyaltyEngine.summarizeTiersMembership(db, rawMembers);
-  const completedOrders = (db.orders || []).filter(loyaltyAchievements.isValidCompletedOrder);
-  const linkedMembers = (db.users || []).filter((member) => effectiveRole(member) === 'user');
-  const unlinkedCompleted = completedOrders.filter((order) => !linkedMembers.some((member) => loyaltyAchievements.orderBelongsToMember(order, member)));
-  const membersWithoutCompletedOrders = linkedMembers.filter((member) => Number(member.points) > 0
-    && !completedOrders.some((order) => loyaltyAchievements.orderBelongsToMember(order, member)));
-  res.json({
-    loyalty: {
-      ...(db.loyalty || {}),
-      tiers: loyaltyEngine.getLoyaltyTiers(db),
-    },
-    achievements: loyaltyAchievements.getLoyaltyAchievements(db),
-    menuCategories: (db.menuCategories || []).map((category) => ({ id: category.id, title: category.title || category.name1 || `دسته ${category.id}` })),
-    diagnostics: {
-      completedOrders: completedOrders.length,
-      unlinkedCompletedOrders: unlinkedCompleted.length,
-      unlinkedOrdersSample: unlinkedCompleted.slice(0, 12).map((order) => ({
-        orderNo: order.orderNo || `W-${order.id}`,
-        status: order.status,
-        completedAt: loyaltyAchievements.completionDate(order)?.toISOString() || null,
-        phoneLast4: normalizeDigits(order.phone || order.userPhone || order.customerPhone || '').replace(/\D/g, '').slice(-4),
-      })),
-      membersWithPointsWithoutLinkedCompletedOrders: membersWithoutCompletedOrders.length,
-      membersWithoutOrdersSample: membersWithoutCompletedOrders.slice(0, 12).map((member) => ({
-        name: String(member.name || 'مشتری').slice(0, 48),
-        phoneLast4: normalizeDigits(member.phone || '').replace(/\D/g, '').slice(-4),
-        points: Math.max(0, Math.round(Number(member.points) || 0)),
-      })),
-    },
-    tiers,
-    members,
-    ledger: (db.loyaltyLedger || []).slice(0, 80),
-    totals: {
-      members: members.filter((m) => m.points > 0).length,
-      pointsIssued: members.reduce((s, m) => s + m.points, 0),
-    },
-  });
-});
+moduleRuntime.registerHttpRoute('crm', 'get-161', moduleRouteContext);
 
-app.get('/api/admin/club', requireOwner, (req, res) => {
-  const orderStatsByPhone = new Map();
-  const now = Date.now();
-  for (const o of (db.orders || [])) {
-    const phone = String(o.phone || '').trim();
-    if (!phone) continue;
-    const stat = orderStatsByPhone.get(phone) || { orders: 0, total: 0, lastOrderAt: null };
-    stat.orders += 1;
-    if (o.paid || ['paid', 'preparing', 'ready', 'delivered', 'completed'].includes(o.status)) {
-      stat.total += Number(o.total) || 0;
-    }
-    if (!stat.lastOrderAt || new Date(o.createdAt || 0) > new Date(stat.lastOrderAt)) {
-      stat.lastOrderAt = o.createdAt;
-    }
-    orderStatsByPhone.set(phone, stat);
-  }
+moduleRuntime.registerHttpRoute('crm', 'get-162', moduleRouteContext);
 
-  let totalOrderSpendToman = 0;
-  let totalPaidOrders = 0;
-  let atRiskCount = 0;
-  let championsCount = 0;
+moduleRuntime.registerHttpRoute('crm', 'get-163', moduleRouteContext);
 
-  const rawMembers = (db.users || []).map(publicUser).sort((a, b) => (b.points || 0) - (a.points || 0));
-  const members = rawMembers.map((m) => {
-    const tierInfo = loyaltyEngine.resolveCustomerTier(db, m);
-    const walletBalanceToman = walletEngine.getWalletBalance(db, m.phone);
-    const stat = orderStatsByPhone.get(m.phone) || { orders: 0, total: 0, lastOrderAt: null };
-    const recencyDays = stat.lastOrderAt ? Math.max(0, Math.floor((now - new Date(stat.lastOrderAt).getTime()) / (1000 * 3600 * 24))) : null;
-    const monetaryToman = Math.round(stat.total / 10);
-    totalOrderSpendToman += monetaryToman;
-    totalPaidOrders += stat.orders;
+moduleRuntime.registerHttpRoute('crm', 'put-164', moduleRouteContext);
 
-    let rfmSegment = 'new';
-    let rfmLabel = 'مشتری جدید 🌱';
-    if (stat.orders >= 6 && recencyDays != null && recencyDays <= 30) {
-      rfmSegment = 'champion';
-      rfmLabel = 'قهرمان 🏆';
-      championsCount++;
-    } else if (stat.orders >= 3 && recencyDays != null && recencyDays <= 45) {
-      rfmSegment = 'loyal';
-      rfmLabel = 'وفادار 💎';
-    } else if (stat.orders >= 2 && recencyDays != null && recencyDays <= 60) {
-      rfmSegment = 'potential';
-      rfmLabel = 'مستعد رشد 🚀';
-    } else if (stat.orders >= 2 && recencyDays != null && recencyDays > 60) {
-      rfmSegment = 'at_risk';
-      rfmLabel = 'در معرض ریزش ⚠️';
-      atRiskCount++;
-    } else if (recencyDays != null && recencyDays > 90) {
-      rfmSegment = 'churned';
-      rfmLabel = 'خواب‌رفته 💤';
-    } else if (stat.orders <= 1 && recencyDays != null && recencyDays <= 30) {
-      rfmSegment = 'new';
-      rfmLabel = 'مشتری جدید 🌱';
-    }
+moduleRuntime.registerHttpRoute('crm', 'put-165', moduleRouteContext);
 
-    return {
-      ...m,
-      orders: stat.orders,
-      total: stat.total,
-      monetaryToman,
-      recencyDays,
-      rfmSegment,
-      rfmLabel,
-      walletBalanceToman,
-      tier: tierInfo.tier,
-      nextTier: tierInfo.nextTier,
-      progressPct: tierInfo.progressPct,
-      pointsToNext: tierInfo.pointsToNext,
-      multiplier: tierInfo.multiplier,
-      discountPct: tierInfo.discountPct,
-      badge: tierInfo.badge,
-    };
-  });
-  const walletSummary = walletEngine.summarizeWallet(db);
-  const newFeedback = (db.feedback || []).filter((f) => !f.reviewed).length;
-  res.json({
-    ok: true,
-    summary: {
-      customers: members.length,
-      points: members.reduce((s, m) => s + (m.points || 0), 0),
-      walletTotalToman: walletSummary.totalLiabilityToman || 0,
-      activeWallets: walletSummary.activeWalletsCount || 0,
-      avgLtvToman: members.length ? Math.round(totalOrderSpendToman / members.length) : 0,
-      avgOrderToman: totalPaidOrders ? Math.round(totalOrderSpendToman / totalPaidOrders) : 0,
-      atRiskCount,
-      championsCount,
-      newFeedback,
-    },
-    customers: members,
-  });
-});
+moduleRuntime.registerHttpRoute('crm', 'post-166', moduleRouteContext);
 
-app.get('/api/admin/loyalty/tiers', requireOwner, (req, res) => {
-  const rawMembers = db.users.map(publicUser);
-  const tiers = loyaltyEngine.summarizeTiersMembership(db, rawMembers);
-  res.json({ tiers });
-});
-
-app.put('/api/admin/loyalty/tiers', requireOwner, (req, res) => {
-  let normalizedTiers;
-  try {
-    normalizedTiers = loyaltyEngine.normalizeLoyaltyTiers(req.body.tiers);
-  } catch (error) {
-    return res.status(400).json({ error: error.code || 'invalid_loyalty_tiers', message: error.message });
-  }
-  if (!db.loyalty) db.loyalty = {};
-  db.loyalty.tiers = normalizedTiers;
-  save();
-  res.json({ ok: true, tiers: db.loyalty.tiers });
-});
-
-app.put('/api/admin/loyalty/achievements', requireOwner, async (req, res) => {
-  const validCategoryIds = (db.menuCategories || []).map((category) => Number(category.id));
-  let normalized;
-  try {
-    normalized = loyaltyAchievements.normalizeLoyaltyAchievements(req.body?.achievements, { validCategoryIds });
-  } catch (error) {
-    return res.status(400).json({ error: error.code || 'invalid_loyalty_achievements', message: error.message });
-  }
-  if (!db.loyalty) db.loyalty = {};
-  const previous = db.loyalty.achievements;
-  const previousById = new Map(loyaltyAchievements.getLoyaltyAchievements(db).map((item) => [item.id, item]));
-  const savedAt = new Date().toISOString();
-  db.loyalty.achievements = normalized.map((achievement) => {
-    const prior = previousById.get(achievement.id);
-    const priorRewardWasLive = prior?.enabled !== false && Number(prior?.rewardPoints) > 0 && !!prior?.rewardStartsAt
-      && loyaltyAchievements.sameAchievementRewardDefinition(prior, achievement);
-    const rewardStartsAt = achievement.enabled && achievement.rewardPoints > 0
-      ? (priorRewardWasLive ? prior.rewardStartsAt : savedAt)
-      : null;
-    return { ...achievement, rewardStartsAt };
-  });
-  try {
-    const persisted = await save({ requireDurable: true });
-    if (persisted !== true) throw Object.assign(new Error('ذخیرهٔ پایدار تنظیمات تأیید نشد.'), { code: 'persistence_unconfirmed', status: 503 });
-  } catch (error) {
-    if (previous === undefined) delete db.loyalty.achievements;
-    else db.loyalty.achievements = previous;
-    return res.status(error.status || 503).json({ error: error.code || 'loyalty_achievement_save_failed', message: 'ذخیرهٔ پایدار هدف‌های وفاداری انجام نشد؛ تغییری اعمال نشده است.' });
-  }
-  return res.json({ ok: true, achievements: db.loyalty.achievements });
-});
-
-app.post('/api/admin/loyalty/adjust', requireOwner, (req, res) => {
-  const phone = normalizeDigits(req.body.phone || '').trim();
-  const delta = Math.round(Number(req.body.delta) || 0);
-  const reason = String(req.body.reason || 'manual').slice(0, 80);
-  if (!PHONE_RE.test(phone)) return res.status(400).json({ error: 'شماره معتبر نیست' });
-  if (!delta) return res.status(400).json({ error: 'مقدار امتیاز صفر است' });
-  const entry = awardLoyaltyPoints(phone, delta, reason, { manual: true });
-  save();
-  const user = db.users.find((u) => u.phone === phone);
-  const resolved = loyaltyEngine.resolveCustomerTier(db, user);
-  res.json({
-    ok: true,
-    entry,
-    user: {
-      ...publicUser(user),
-      tier: resolved.tier,
-      badge: resolved.badge,
-    },
-  });
-});
-
-app.get('/api/loyalty/customer', requireAuth, (req, res) => {
-  const phone = normalizeDigits(req.query.phone || '').trim();
-  if (!phone || !PHONE_RE.test(phone)) {
-    return res.status(400).json({ error: 'شماره معتبر نیست' });
-  }
-  const role = effectiveRole(req.user);
-  const isSelf = req.user && req.user.phone === phone;
-  const isStaff = ['cashier', 'waiter', 'manager', 'owner', 'admin'].includes(role)
-    || userCan(req.user, 'crm.view')
-    || userCan(req.user, 'orders.create')
-    || userCan(req.user, 'ops.view');
-
-  if (!isSelf && !isStaff) {
-    return res.status(403).json({ error: 'دسترسی به اطلاعات باشگاه این مشتری مجاز نیست.' });
-  }
-
-  const user = db.users.find((u) => u.phone === phone);
-  const resolved = loyaltyEngine.resolveCustomerTier(db, user || { phone, points: 0 });
-  const walletBalance = walletEngine.getWalletBalance(db, phone);
-  res.json({
-    phone,
-    name: user?.name || '',
-    points: resolved.points,
-    walletBalanceToman: walletBalance,
-    tier: resolved.tier,
-    nextTier: resolved.nextTier,
-    progressPct: resolved.progressPct,
-    pointsToNext: resolved.pointsToNext,
-    spendToNext: resolved.spendToNext,
-    discountPct: resolved.discountPct,
-    multiplier: resolved.multiplier,
-    badge: resolved.badge,
-  });
-});
+moduleRuntime.registerHttpRoute('crm', 'get-167', moduleRouteContext);
 
 // --- Membership QR Code for logged-in user ---
 // Generates a real PNG QR code. The payload is a URL the cashier app
 // can call directly to pull up this customer's loyalty profile.
-app.get('/api/loyalty/qr-code', requireAuth, async (req, res) => {
-  try {
-    const phone = req.user.phone;
-    // Build the cashier look-up URL (same origin, so relative path works on LAN)
-    const protocol = req.protocol;
-    const host = req.get('host');
-    const payload = `${protocol}://${host}/api/loyalty/customer?phone=${encodeURIComponent(phone)}`;
-
-    const png = await QRCode.toBuffer(payload, {
-      type: 'png',
-      width: 400,
-      margin: 2,
-      errorCorrectionLevel: 'M',
-      color: { dark: '#151817', light: '#ffffff' },
-    });
-
-    res.setHeader('Content-Type', 'image/png');
-    res.setHeader('Cache-Control', 'private, max-age=300'); // 5-min cache
-    res.setHeader('X-Westo-Phone', phone.slice(-4));         // last 4 digits hint
-    return res.send(png);
-  } catch (err) {
-    return res.status(500).json({ error: 'ساخت QR ممکن نشد' });
-  }
-});
+moduleRuntime.registerHttpRoute('menu_qr', 'get-168', moduleRouteContext);
 
 
 
-app.get('/api/loyalty/me', requireAuth, (req, res) => {
-  const resolved = loyaltyEngine.resolveCustomerTier(db, req.user);
-  const walletBalance = walletEngine.getWalletBalance(db, req.user.phone);
-  const member = (db.users || []).find((candidate) => loyaltyAchievements.orderBelongsToMember({ userId: req.user.id, phone: req.user.phone }, candidate)) || req.user;
-  const memberKey = member.id !== undefined && member.id !== null
-    ? `user:${String(member.id)}`
-    : `phone:${loyaltyAchievements.normalizePhoneKey(member.phone || req.user.phone)}`;
-  const linkedOrders = (db.orders || []).filter((order) => loyaltyAchievements.orderBelongsToMember(order, member));
-  const awards = (db.loyaltyAchievementAwards || []).filter((award) => award.memberKey === memberKey);
-  const achievementRows = loyaltyAchievements.evaluateAchievements(
-    loyaltyAchievements.getLoyaltyAchievements(db),
-    linkedOrders,
-    {
-      menuItems: db.menuItems || [],
-      branches: db.branches || [],
-      fallbackTimeZone: db.settings?.businessTimeZone || db.settings?.timezone || loyaltyAchievements.FALLBACK_TIME_ZONE,
-    },
-  ).map((achievement) => {
-    const award = awards.find((entry) => entry.achievementId === achievement.id);
-    let rewardStatus = 'in_progress';
-    if (award) rewardStatus = 'issued';
-    else if (achievement.unlocked && achievement.rewardPoints <= 0) rewardStatus = 'not_configured';
-    else if (achievement.unlocked && achievement.rewardStartsAt && achievement.completedAt
-      && Date.parse(achievement.completedAt) < Date.parse(achievement.rewardStartsAt)) rewardStatus = 'completed_before_rewards';
-    else if (achievement.unlocked && !db.loyalty?.enabled) rewardStatus = 'program_paused';
-    else if (achievement.unlocked) rewardStatus = 'award_review';
-    return { ...achievement, thresholdOrderId: undefined, rewardStatus, rewardIssuedAt: award?.at || null, pointsAwarded: award?.points || 0 };
-  });
-  res.json({
-    points: Math.max(0, Math.round(Number(req.user.points) || 0)),
-    walletBalanceToman: walletBalance,
-    tier: resolved.tier,
-    nextTier: resolved.nextTier,
-    progressPct: resolved.progressPct,
-    pointsToNext: resolved.pointsToNext,
-    spendToNext: resolved.spendToNext,
-    multiplier: resolved.multiplier,
-    discountPct: resolved.discountPct,
-    badge: resolved.badge,
-    loyalty: {
-      enabled: !!db.loyalty?.enabled,
-      pointsPerToman: db.loyalty?.pointsPerToman ?? 0,
-      redeemValue: db.loyalty?.redeemValue ?? 0,
-      welcomePoints: db.loyalty?.welcomePoints ?? 0,
-      tiers: loyaltyEngine.getLoyaltyTiers(db),
-      achievements: achievementRows,
-      achievementProgressSource: 'server_completed_orders',
-    },
-    achievements: achievementRows,
-    ledger: (db.loyaltyLedger || []).filter((e) => e.phone === req.user.phone).slice(0, 20),
-  });
-});
+moduleRuntime.registerHttpRoute('crm', 'get-169', moduleRouteContext);
 
-app.post('/api/loyalty/redeem', requireAuth, (req, res) => {
-  const user = (db.users || []).find((u) => phonesMatch(u.phone, req.user.phone)) || req.user;
-  const cost = Math.max(1, Math.round(Number(req.body?.cost) || 500));
-  const currentPts = Math.max(0, Math.round(Number(user.points) || 0));
-
-  if (currentPts < cost) {
-    return res.status(400).json({ ok: false, error: 'امتیاز شما برای دریافت این جایزه کافی نیست.' });
-  }
-
-  user.points = currentPts - cost;
-
-  if (!Array.isArray(db.loyaltyLedger)) db.loyaltyLedger = [];
-  const voucherCode = `WST-REW-${Date.now().toString(36).toUpperCase()}`;
-  db.loyaltyLedger.unshift({
-    id: `ly_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-    phone: user.phone,
-    delta: -cost,
-    type: 'reward_redeem',
-    description: `دریافت جایزه لاته مهمان وستو (${voucherCode})`,
-    voucherCode,
-    at: new Date().toISOString(),
-  });
-
-  save();
-
-  const resolved = loyaltyEngine.resolveCustomerTier(db, user);
-  const walletBalance = walletEngine.getWalletBalance(db, user.phone);
-
-  res.json({
-    ok: true,
-    voucherCode,
-    points: user.points,
-    user: publicUser(user),
-    loyalty: {
-      points: user.points,
-      walletBalanceToman: walletBalance,
-      tier: resolved.tier,
-      nextTier: resolved.nextTier,
-      progressPct: resolved.progressPct,
-      pointsToNext: resolved.pointsToNext,
-    },
-  });
-});
+moduleRuntime.registerHttpRoute('crm', 'post-170', moduleRouteContext);
 
 /* ---- Customer Digital Wallet (کیف پول و شارژ اعتباری) ---- */
-app.get('/api/wallet/me', requireAuth, (req, res) => {
-  const phone = req.user.phone;
-  const balance = walletEngine.getWalletBalance(db, phone);
-  const packages = walletEngine.getWalletPackages(db);
-  const ledger = (db.walletLedger || []).filter((e) => e.phone === phone).slice(0, 30);
-  const resolved = loyaltyEngine.resolveCustomerTier(db, req.user);
-  res.json({
-    phone,
-    walletBalanceToman: balance,
-    packages,
-    ledger,
-    tier: resolved.tier,
-    badge: resolved.badge,
-  });
-});
+moduleRuntime.registerHttpRoute('crm', 'get-171', moduleRouteContext);
 
 // --- Wallet Topup Requests & Multi-Factor Approval Engine ---
 db.walletTopupRequests = db.walletTopupRequests || [];
@@ -9987,911 +5457,60 @@ function campaignWalletTopupWithFinance(input, branchId, actor) {
 }
 
 // 1. Create a Wallet Topup Request (Online Gateway or In-store Waiter/Cashier Approval)
-app.post('/api/wallet/topup/request', requireAuth, (req, res) => {
-  const phone = req.user.phone;
-  const user = (db.users || []).find((u) => u.phone === phone) || req.user;
-  const amountToman = Math.max(0, Math.round(Number(req.body.amountToman || req.body.amount) || 0));
-  const packageId = req.body.packageId ? String(req.body.packageId).trim() : null;
-  const channel = req.body.channel === 'instore_staff' ? 'instore_staff' : 'online_gateway';
-  if (channel === 'online_gateway' && process.env.NODE_ENV === 'production') {
-    return res.status(503).json({ error: 'wallet_online_gateway_not_configured', message: 'شارژ آنلاین تا اتصال و تأیید واقعی درگاه بانکی در دسترس نیست؛ از شارژ حضوری استفاده کنید.' });
-  }
-  let branchId;
-  try { branchId = parseBranchId(req); } catch (error) { return res.status(error.status || 400).json({ error: error.code || 'branch_invalid', message: error.message }); }
-  if (!branchId) return res.status(400).json({ error: 'wallet_topup_branch_required' });
-
-  let finalAmount = amountToman;
-  const packages = walletEngine.getWalletPackages(db);
-  if (packageId) {
-    const pack = packages.find((p) => p.id === packageId);
-    if (pack) finalAmount = pack.amountToman;
-  }
-
-  if (finalAmount <= 0) {
-    return res.status(400).json({ error: 'مبلغ شارژ یا شناسه بسته معتبر نیست.' });
-  }
-
-  const bonusInfo = walletEngine.calculateTopupBonus(finalAmount, packages);
-  const requestId = `wtop_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
-  const trackingCode = generateShortTrackingCode();
-  const gatewayToken = `gw_tok_${Math.random().toString(36).slice(2, 12)}`;
-
-  const topupRequest = {
-    id: requestId,
-    trackingCode,
-    phone,
-    customerName: user.name || 'مشتری گرامی',
-    amountToman: finalAmount,
-    bonusToman: bonusInfo.bonusToman,
-    totalCredit: bonusInfo.totalCreditToman,
-    packageId,
-    channel,
-    status: channel === 'online_gateway' ? 'pending_gateway' : 'pending_staff_approval',
-    gatewayToken,
-    authority: `AU_${Date.now()}_${trackingCode}`,
-    createdAt: new Date().toISOString(),
-    approvedBy: null,
-    approvedAt: null,
-    tableNo: req.body.tableNo || null,
-    branchId,
-  };
-
-  db.walletTopupRequests.unshift(topupRequest);
-  db.walletTopupRequests = db.walletTopupRequests.slice(0, 1000);
-  save();
-
-  res.json({
-    ok: true,
-    request: {
-      id: topupRequest.id,
-      trackingCode: topupRequest.trackingCode,
-      amountToman: topupRequest.amountToman,
-      bonusToman: topupRequest.bonusToman,
-      totalCredit: topupRequest.totalCredit,
-      channel: topupRequest.channel,
-      status: topupRequest.status,
-      authority: topupRequest.authority,
-      gatewayToken: topupRequest.gatewayToken,
-      instructions: channel === 'instore_staff'
-        ? `کد پیگیری شما ${trackingCode} است. لطفاً برای پرداخت نقدی یا کارتخوان، این کد را به گارسون یا صندوقدار اعلام نمایید.`
-        : 'در حال اتصال به درگاه بانکی جهت پرداخت و دریافت تاییدیه…',
-    },
-  });
-});
+moduleRuntime.registerHttpRoute('crm', 'post-172', moduleRouteContext);
 
 // 2. Gateway Verification (Online payment gateway verification callback)
-app.post('/api/wallet/topup/gateway-verify', requireAuth, async (req, res) => {
-  if (process.env.NODE_ENV === 'production') {
-    return res.status(503).json({ error: 'wallet_online_gateway_not_configured', message: 'تأیید شارژ فقط پس از اتصال امن به درگاه واقعی امکان‌پذیر است.' });
-  }
-  const { requestId, gatewayToken } = req.body || {};
-  const request = (db.walletTopupRequests || []).find((r) => (requestId && r.id === requestId) || (gatewayToken && r.gatewayToken === gatewayToken));
-
-  if (!request) {
-    return res.status(404).json({ error: 'درخواست درگاه یافت نشد.' });
-  }
-
-  // A gateway request is customer-owned.  Without this check any signed-in
-  // customer who obtains another request id/token could credit a different
-  // wallet.  Branch access is checked too for staff sessions so a scoped
-  // operator cannot confirm a request from another branch.
-  if (String(request.phone || '') !== String(req.user.phone || '')) {
-    return res.status(403).json({ error: 'wallet_topup_request_owner_mismatch' });
-  }
-  try {
-    assertUserBranchAccess(req.user, request.branchId);
-  } catch (error) {
-    return res.status(error.status || 403).json({ error: error.code || 'branch_access_denied', message: error.message });
-  }
-
-  if (request.status === 'completed') {
-    const eventSourceId = `GW-${String(request.authority || request.trackingCode)}`;
-    const event = (db.financeV2?.events || []).find((item) => item.source === 'wallet.topup' && item.sourceId === eventSourceId);
-    if (!event || event.status !== 'posted') return res.status(409).json({ error: 'wallet_topup_finance_missing' });
-    return res.json({ ok: true, message: 'این شارژ قبلاً تایید و اعمال شده است.', newBalance: walletEngine.getWalletBalance(db, request.phone), finance: { event } });
-  }
-
-  if (!gatewayToken || request.gatewayToken !== gatewayToken) {
-    return res.status(403).json({ error: 'توکن تأییدیه درگاه بانکی نامعتبر است.' });
-  }
-
-  const branchId = Number(request.branchId) || null;
-  if (!branchId) return res.status(400).json({ error: 'wallet_topup_branch_required' });
-  let result;
-  try {
-    result = await applyWalletTopupWithFinance(req, { branchId, amountToman: request.amountToman, bonusToman: request.bonusToman, packageId: request.packageId, phone: request.phone, paymentMethod: 'online_gateway', reference: `GW-${request.authority || request.trackingCode}`, actor: 'تاییدیه درگاه بانکی' }, () => {
-      const value = walletEngine.topupWallet(db, { phone: request.phone, amountToman: request.amountToman, packageId: request.packageId, paymentMethod: 'online_gateway', reference: `GW-${request.authority || request.trackingCode}`, actor: 'تاییدیه درگاه بانکی' });
-      request.status = 'completed'; request.approvedAt = new Date().toISOString();
-      request.approvedBy = { role: 'payment_gateway', name: 'تاییدیه درگاه بانکی شاپرک', ref: request.authority };
-      return value;
-    });
-  } catch (error) { return res.status(error.status || 409).json({ error: error.code || 'wallet_topup_failed', message: error.message }); }
-
-  try {
-    smsEngine.sendSms(db, {
-      phone: request.phone,
-      name: request.customerName,
-      templateKey: 'wallet_topup',
-      vars: { name: request.customerName, amount: request.amountToman, wallet_balance: result.newBalance },
-      triggerType: 'event',
-    });
-  } catch (_) {}
-
-  res.json({ ok: true, verified: true, ...result, request });
-});
+moduleRuntime.registerHttpRoute('crm', 'post-173', moduleRouteContext);
 
 // 3. Staff Approval (Cashier or Waiter confirms and approves cash/POS topup)
-app.post('/api/wallet/topup/staff-approve', requireAuth, async (req, res) => {
-  const role = effectiveRole(req.user);
-  if (!['cashier', 'waiter', 'manager', 'owner', 'admin'].includes(role)) {
-    return res.status(403).json({ error: 'تأیید شارژ کیف پول فقط با دسترسی گارسون، صندوقدار یا مدیریت مجاز است.' });
-  }
-
-  const { requestId, trackingCode, phone, amountToman, packageId, paymentTender = 'CASH', notes } = req.body || {};
-  let targetPhone = phone;
-  let targetAmount = amountToman;
-  let targetPackageId = packageId;
-  let targetRequest = null;
-
-  if (requestId || trackingCode) {
-    targetRequest = (db.walletTopupRequests || []).find((r) => (requestId && r.id === requestId) || (trackingCode && r.trackingCode === String(trackingCode).trim()));
-    if (targetRequest) {
-      targetPhone = targetRequest.phone;
-      targetAmount = targetRequest.amountToman;
-      targetPackageId = targetRequest.packageId;
-    }
-  }
-
-  if (targetRequest?.status === 'completed') {
-    // Replays of a completed in-store request are idempotent and must never
-    // mint a second wallet credit.  The stable source id below is also the
-    // Finance V2 idempotency boundary used for the first approval.
-    const sourceId = `STAFF-${targetRequest.id}`;
-    const event = (db.financeV2?.events || []).find((item) => item.source === 'wallet.topup' && item.sourceId === sourceId);
-    if (!event || event.status !== 'posted') return res.status(409).json({ error: 'wallet_topup_finance_missing' });
-    return res.json({
-      ok: true, approved: true, idempotent: true,
-      newBalance: walletEngine.getWalletBalance(db, targetRequest.phone),
-      totalCredit: Number(targetRequest.totalCredit) || Number(targetRequest.amountToman) || 0,
-      bonusToman: Number(targetRequest.bonusToman) || 0,
-      phone: targetRequest.phone,
-      finance: { event },
-    });
-  }
-  if (targetRequest && (targetRequest.channel !== 'instore_staff' || targetRequest.status !== 'pending_staff_approval')) {
-    return res.status(409).json({ error: 'wallet_topup_request_not_approvable' });
-  }
-
-  if (!targetPhone) {
-    return res.status(400).json({ error: 'شماره مشتری یا کد پیگیری درخواست الزامی است.' });
-  }
-
-  let finalAmount = Math.max(0, Math.round(Number(targetAmount) || 0));
-  if (targetPackageId) {
-    const pack = walletEngine.getWalletPackages(db).find((p) => p.id === targetPackageId);
-    if (pack) finalAmount = pack.amountToman;
-  }
-
-  if (finalAmount <= 0) {
-    return res.status(400).json({ error: 'مبلغ شارژ نامعتبر است.' });
-  }
-
-  let branchId;
-  try { branchId = Number(targetRequest?.branchId) || parseBranchId(req); if (targetRequest?.branchId) assertUserBranchAccess(req.user, targetRequest.branchId); } catch (error) { return res.status(error.status || 400).json({ error: error.code || 'branch_invalid', message: error.message }); }
-  if (!branchId) return res.status(400).json({ error: 'wallet_topup_branch_required' });
-
-  const approverInfo = {
-    phone: req.user.phone,
-    role,
-    roleLabel: role === 'cashier' ? 'صندوقدار' : role === 'waiter' ? 'گارسون' : 'مدیریت',
-    name: req.user.name || (role === 'cashier' ? 'صندوقدار' : 'گارسون'),
-  };
-
-  // Request-backed approvals use a stable reference.  A timestamp here would
-  // turn a repeated approval of the same request into a second Finance event.
-  const reference = targetRequest ? `STAFF-${targetRequest.id}` : `STAFF-${role.toUpperCase()}-${Date.now()}`;
-  let result;
-  try {
-    const bonusInfo = walletEngine.calculateTopupBonus(finalAmount, walletEngine.getWalletPackages(db));
-    result = await applyWalletTopupWithFinance(req, { branchId, amountToman: finalAmount, bonusToman: targetRequest?.bonusToman ?? bonusInfo.bonusToman, packageId: targetPackageId, phone: targetPhone, paymentMethod: paymentTender === 'POS' ? 'pos_card' : 'cash_in_store', reference, actor: `${approverInfo.roleLabel} (${req.user.phone})` }, () => {
-      const value = walletEngine.topupWallet(db, { phone: targetPhone, amountToman: finalAmount, packageId: targetPackageId, paymentMethod: paymentTender === 'POS' ? 'pos_card' : 'cash_in_store', reference, actor: `${approverInfo.roleLabel} (${req.user.phone})` });
-      if (targetRequest) { targetRequest.status = 'completed'; targetRequest.approvedAt = new Date().toISOString(); targetRequest.approvedBy = approverInfo; }
-      return value;
-    });
-  } catch (error) { return res.status(error.status || 409).json({ error: error.code || 'wallet_topup_failed', message: error.message }); }
-
-  recordAudit(req, 'wallet.staff_approved', 'user', targetPhone, {
-    amountToman: finalAmount,
-    totalCredit: result.totalCredit,
-    approvedBy: approverInfo,
-    paymentTender,
-    notes,
-  });
-
-  try {
-    smsEngine.sendSms(db, {
-      phone: targetPhone,
-      name: '',
-      templateKey: 'wallet_topup',
-      vars: { name: 'مشتری گرامی', amount: finalAmount, wallet_balance: result.newBalance },
-      triggerType: 'event',
-    });
-  } catch (_) {}
-
-  res.json({
-    ok: true,
-    approved: true,
-    approver: approverInfo,
-    newBalance: result.newBalance,
-    totalCredit: result.totalCredit,
-    bonusToman: result.bonusToman,
-    phone: targetPhone,
-  });
-});
+moduleRuntime.registerHttpRoute('crm', 'post-174', moduleRouteContext);
 
 // 4. Pending Topup Requests Query for Cashier & Waiter Panels
-app.get('/api/wallet/topup-requests/pending', requireAuth, (req, res) => {
-  const role = effectiveRole(req.user);
-  if (!['cashier', 'waiter', 'manager', 'owner', 'admin'].includes(role)) {
-    return res.status(403).json({ error: 'دسترسی فقط برای کادر سالن و صندوق مجاز است.' });
-  }
-
-  let branchId;
-  try { branchId = parseBranchId(req); } catch (error) {
-    return res.status(error.status || 400).json({ error: error.code || 'branch_invalid', message: error.message });
-  }
-  const pending = branchScoped((db.walletTopupRequests || []), branchId)
-    .filter((r) => r.status === 'pending_staff_approval')
-    .slice(0, 50);
-
-  res.json({ ok: true, requests: pending });
-});
+moduleRuntime.registerHttpRoute('crm', 'get-175', moduleRouteContext);
 
 // 5. Customer Active Requests
-app.get('/api/wallet/topup-requests/my', requireAuth, (req, res) => {
-  const myRequests = (db.walletTopupRequests || [])
-    .filter((r) => r.phone === req.user.phone)
-    .slice(0, 10);
-  res.json({ ok: true, requests: myRequests });
-});
+moduleRuntime.registerHttpRoute('crm', 'get-176', moduleRouteContext);
 
 // 6. Direct /api/wallet/topup Gateway or Staff Guard
-app.post('/api/wallet/topup', requireAuth, async (req, res) => {
-  const role = effectiveRole(req.user);
-  const isStaff = ['cashier', 'waiter', 'manager', 'owner', 'admin'].includes(role);
-  const { gatewayToken, reference } = req.body || {};
+moduleRuntime.registerHttpRoute('crm', 'post-177', moduleRouteContext);
 
-  let matchedGatewayRequest = null;
-  if (!isStaff) {
-    if (gatewayToken) {
-      matchedGatewayRequest = (db.walletTopupRequests || []).find(
-        (r) => r.gatewayToken === gatewayToken && r.phone === req.user.phone && r.status === 'pending_gateway'
-      );
-    }
-    if (!matchedGatewayRequest) {
-      return res.status(403).json({
-        error: 'شارژ کیف پول صرفاً با تأیید پرسنل مجاز یا دریافت تاییدیه معتبر درگاه بانکی امکان‌پذیر است.',
-        requiresVerification: true,
-      });
-    }
-  }
+moduleRuntime.registerHttpRoute('pos', 'post-178', moduleRouteContext);
 
-  const phone = (isStaff && req.body.phone) ? req.body.phone : req.user.phone;
-  const amountToman = Math.max(0, Math.round(Number(req.body.amountToman || req.body.amount) || 0));
-  const packageId = req.body.packageId ? String(req.body.packageId).trim() : null;
-  const paymentMethod = req.body.paymentMethod || (isStaff ? 'in_store_staff' : 'online_gateway');
+moduleRuntime.registerHttpRoute('crm', 'get-179', moduleRouteContext);
 
-  if (!amountToman && !packageId) {
-    return res.status(400).json({ error: 'مبلغ شارژ یا شناسه بسته الزامی است.' });
-  }
+moduleRuntime.registerHttpRoute('crm', 'post-180', moduleRouteContext);
 
-  let finalAmount = amountToman;
-  if (packageId) {
-    const pack = walletEngine.getWalletPackages(db).find((p) => p.id === packageId);
-    if (pack) finalAmount = pack.amountToman;
-  }
+moduleRuntime.registerHttpRoute('crm', 'get-181', moduleRouteContext);
 
-  if (finalAmount <= 0) {
-    return res.status(400).json({ error: 'مبلغ شارژ نامعتبر است.' });
-  }
-
-  let branchId;
-  try { branchId = parseBranchId(req); } catch (error) { return res.status(error.status || 400).json({ error: error.code || 'branch_invalid', message: error.message }); }
-  if (!branchId) return res.status(400).json({ error: 'wallet_topup_branch_required' });
-
-  const financeReference = (isStaff && reference)
-    ? reference
-    : (matchedGatewayRequest ? `GW-${matchedGatewayRequest.authority || matchedGatewayRequest.trackingCode}` : (isStaff ? `STAFF-${role.toUpperCase()}-${Date.now()}` : `GW-${Date.now()}`));
-
-  let result;
-  try {
-    const bonusInfo = walletEngine.calculateTopupBonus(finalAmount, walletEngine.getWalletPackages(db));
-    result = await applyWalletTopupWithFinance(req, { branchId, amountToman: finalAmount, bonusToman: bonusInfo.bonusToman, packageId, phone, paymentMethod, reference: financeReference, actor: isStaff ? `${role} (${req.user.phone})` : (req.user.phone || 'customer') }, () => {
-      const topupVal = walletEngine.topupWallet(db, {
-        phone, amountToman: finalAmount, packageId, paymentMethod, reference: financeReference,
-        actor: isStaff ? `${role} (${req.user.phone})` : (req.user.phone || 'customer'),
-      });
-      if (matchedGatewayRequest) {
-        matchedGatewayRequest.status = 'completed';
-        matchedGatewayRequest.approvedAt = new Date().toISOString();
-        matchedGatewayRequest.approvedBy = { role: 'payment_gateway', name: 'تاییدیه درگاه بانکی شاپرک', ref: matchedGatewayRequest.authority };
-      }
-      return topupVal;
-    });
-  } catch (error) { return res.status(error.status || 409).json({ error: error.code || 'wallet_topup_failed', message: error.message }); }
-
-  try {
-    smsEngine.sendSms(db, {
-      phone,
-      name: req.user?.name || '',
-      templateKey: 'wallet_topup',
-      vars: {
-        name: req.user?.name || 'مشتری گرامی',
-        amount: finalAmount,
-        wallet_balance: result.newBalance,
-      },
-      triggerType: 'event',
-    });
-  } catch (_) {}
-
-  res.json({ ok: true, ...result });
-});
-
-app.post('/api/orders/:id/pay-wallet', requireAuth, serializeOrderMutationRoute(async (req, res) => {
-  const persistenceReadiness = settlementPersistenceGate.check({
-    postgresEnabled: stateStore.enabled,
-    postgresRequired: stateStore.required,
-  });
-  if (!persistenceReadiness.ok) {
-    return res.status(persistenceReadiness.status).json({ error: persistenceReadiness.code, message: persistenceReadiness.message });
-  }
-  const orderId = Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
-  const order = (db.orders || []).find((o) => Number(o.id) === orderId);
-  if (!order) return res.status(404).json({ error: 'سفارش یافت نشد.' });
-  const branchId = persistedOrderBranchId(order);
-  if (!branchId) return res.status(409).json({ error: 'order_branch_unresolved', message: 'شعبهٔ ثبت‌شدهٔ سفارش معتبر نیست؛ پرداخت تا تطبیق شعبه انجام نمی‌شود.' });
-
-  const phone = normalizeDigits(req.user?.phone || '').trim();
-  if (!phone) return res.status(400).json({ error: 'شماره مشتری برای پرداخت کیف پول مشخص نیست.' });
-  if (order.phone && normalizeDigits(order.phone).trim() !== phone) {
-    return res.status(403).json({ error: 'این سفارش به حساب مشتری دیگری تعلق دارد.' });
-  }
-  if (!order.phone) return res.status(409).json({ error: 'سفارش شماره مشتری قابل پرداخت از کیف پول ندارد.' });
-
-  const idempotencyKey = String(req.get('Idempotency-Key') || req.body?.idempotencyKey || '').trim();
-  if (process.env.NODE_ENV === 'production' && !idempotencyKey) {
-    return res.status(400).json({ error: 'settlement_idempotency_required', message: 'برای ثبت پرداخت، کلید یکتای درخواست لازم است.' });
-  }
-  if (idempotencyKey && !/^[A-Za-z0-9][A-Za-z0-9._:-]{7,159}$/.test(idempotencyKey)) {
-    return res.status(400).json({ error: 'settlement_idempotency_invalid' });
-  }
-  const inFlightKey = idempotencyKey ? settlementLockKey(req, order, idempotencyKey, branchId) : null;
-  const requestFingerprint = idempotencyKey ? checkoutIdempotencyFingerprint({ orderId: order.id, branchId, action: 'wallet-pay-remaining' }, req.user) : null;
-  const existingWalletPayment = idempotencyKey
-    ? (Array.isArray(order.partialPayments) ? order.partialPayments : []).find((payment) => payment.idempotencyKey === idempotencyKey)
-    : null;
-  if (existingWalletPayment) {
-    if (!isSettlementRequestFingerprint(existingWalletPayment.requestFingerprint)) {
-      return res.status(409).json({ error: 'idempotency_replay_unavailable', message: 'اثر انگشت پرداخت کیف پول موجود نیست؛ برای جلوگیری از برداشت تکراری، ابتدا سابقهٔ کیف پول و سفارش را تطبیق دهید.' });
-    }
-    if (existingWalletPayment.requestFingerprint !== requestFingerprint) {
-      return res.status(409).json({ error: 'idempotency_key_conflict', message: 'این کلید برای درخواست پرداخت دیگری استفاده شده است.' });
-    }
-    const pending = settlementInFlight.get(inFlightKey);
-    if (pending) {
-      const outcome = await pending;
-      if (!outcome.ok) return res.status(outcome.status || 503).json({ error: outcome.error || 'finance_persistence_failed', message: outcome.message });
-    }
-    return res.json({
-      ok: true,
-      idempotent: true,
-      order: operationalOrderResponse(order, req.user),
-      payment: operationalPaymentResponse(existingWalletPayment, req.user),
-    });
-  }
-  if (order.paymentStatus === 'unknown') {
-    return res.status(409).json({ error: 'payment_status_reconciliation_required', message: 'وضعیت پرداخت سفارش باید پیش از برداشت از کیف پول تطبیق شود.' });
-  }
-  if (order.paymentStatus === 'paid') {
-    return res.json({ ok: true, idempotent: true, order: operationalOrderResponse(order, req.user) });
-  }
-
-  const existingPayments = Array.isArray(order.partialPayments) ? order.partialPayments : [];
-  const settlementAmounts = resolveSettlementAmounts({
-    total: order.total,
-    amountPaid: order.amountPaid,
-    payments: existingPayments,
-    tender: 'wallet',
-  });
-  if (!settlementAmounts.ok) {
-    return res.status(409).json({
-      error: settlementAmounts.error,
-      ...(settlementAmounts.outstanding !== undefined ? { outstanding: settlementAmounts.outstanding } : {}),
-      message: 'ماندهٔ پرداخت از سابقهٔ سفارش قابل‌اعتماد نیست؛ پیش از برداشت کیف پول، پرداخت‌ها را تطبیق دهید.',
-    });
-  }
-  const { orderTotal, alreadyPaid, outstanding, requestedAmount: payableAmount } = settlementAmounts;
-  if (!outstanding) {
-    return res.status(409).json({ error: 'order_payment_reconciliation_required', message: 'وضعیت سفارش پرداخت‌نشده است اما مانده‌ای برای برداشت وجود ندارد؛ ابتدا وضعیت را تطبیق دهید.' });
-  }
-  const currentBalance = walletEngine.getWalletBalance(db, phone);
-
-  if (currentBalance < payableAmount) {
-    return res.status(400).json({
-      error: `موجودی کیف پول (${currentBalance.toLocaleString('fa-IR')} تومان) برای پرداخت ماندهٔ این فاکتور (${payableAmount.toLocaleString('fa-IR')} تومان) کافی نیست.`,
-      currentBalance,
-      required: payableAmount,
-    });
-  }
-
-  // Wallet debit, order state, Finance V2 capture, loyalty and cashback form
-  // one user-visible payment. Never leave a deducted wallet behind when the
-  // fiscal period is closed or the sale cannot be posted.
-  const snapshot = snapshotFinanceMutationState();
-  let resolveWalletPayment;
-  let walletPaymentPromise;
-  let paymentResult;
-  let financeResult;
-  let cashbackAmount = 0;
-  try {
-    paymentResult = walletEngine.payFromWallet(db, {
-      phone,
-      amountToman: payableAmount,
-      orderId: order.id,
-      orderNo: order.orderNo,
-      actor: req.user?.phone || 'customer',
-    });
-
-    // Mark order paid with wallet tender only inside the same rollback scope.
-    const fullyPaid = alreadyPaid + payableAmount >= orderTotal;
-    order.paymentStatus = fullyPaid ? 'paid' : 'partial';
-    order.paymentMethod = 'wallet';
-    order.paymentTender = 'wallet';
-    if (fullyPaid && !order.paidAt) order.paidAt = new Date().toISOString();
-    order.partialPayments = Array.isArray(order.partialPayments) ? order.partialPayments : [];
-    if (!order.partialPayments.some((row) => String(row.id || '') === String(paymentResult.paymentEntry.id))) {
-      order.partialPayments.push({
-        id: paymentResult.paymentEntry.id,
-        tender: 'wallet',
-        amount: payableAmount,
-        at: order.paidAt || new Date().toISOString(),
-        by: req.user?.phone || 'customer',
-        ...(idempotencyKey ? { idempotencyKey, requestFingerprint } : {}),
-      });
-    }
-    order.amountPaid = alreadyPaid + payableAmount;
-    order.paymentTenders = [...new Set(order.partialPayments.map((row) => row.tender).filter(Boolean))];
-    if (fullyPaid) {
-      const nextStatus = nextOrderStatusAfterPayment(order);
-      if (nextStatus && canTransitionOrder(order, nextStatus)) {
-        appendOrderStatus(order, nextStatus, req.user || null, { source: 'wallet' });
-      } else if (normalizeFulfillment(order.fulfillment, { tableNo: order.tableNo }) !== 'delivery'
-          && ['pending', 'pending_cashier'].includes(String(order.status || ''))) {
-        appendOrderStatus(order, 'paid', req.user || null, { source: 'wallet' });
-      }
-    }
-
-    financeResult = financeV2.capturePaidOrder(db, order, {
-      actor: req.user?.phone || 'customer-wallet',
-      idempotencyKey: `order:${branchId}:${order.id}:wallet-payment`,
-    });
-    if (!financeResult?.journalEntry || financeResult.journalEntry.status !== 'posted') {
-      const captureCode = financeResult?.event?.error?.code || 'finance_capture_blocked';
-      throw Object.assign(new Error('پرداخت ثبت نشد چون سند فروش در دفتر مالی ثبت نشد.'), {
-        code: captureCode,
-        status: 409,
-        details: financeResult?.event?.error || null,
-      });
-    }
-
-    // Award order loyalty points and cashback only after the sale journal is
-    // confirmed; these credits must not survive a failed accounting capture.
-    maybeAwardOrderLoyalty(order);
-    const user = (db.users || []).find((u) => u.phone === phone);
-    const tierInfo = loyaltyEngine.resolveCustomerTier(db, user);
-    const cashbackPct = tierInfo.discountPct || 3;
-    cashbackAmount = Math.round((payableAmount * cashbackPct) / 100);
-    if (cashbackAmount > 0) {
-      walletEngine.awardWalletCashback(db, {
-        phone,
-        amountToman: cashbackAmount,
-        orderId: order.id,
-        cashbackPct,
-        actor: 'system',
-      });
-    }
-    if (idempotencyKey) {
-      walletPaymentPromise = new Promise((resolve) => { resolveWalletPayment = resolve; });
-      settlementInFlight.set(inFlightKey, walletPaymentPromise);
-    }
-    await persistFinanceMutation(snapshot);
-  } catch (error) {
-    restoreFinanceMutationState(snapshot);
-    if (walletPaymentPromise) {
-      resolveWalletPayment?.({ ok: false, status: error.status || 503, error: error.code || error.message, message: error.message });
-      settlementInFlight.delete(inFlightKey);
-    }
-    return res.status(error.status || 503).json({
-      error: error.code || error.message,
-      ...(userCan(req.user, 'payments.manage') && error.details ? { details: error.details } : {}),
-    });
-  }
-
-  try {
-    publishOperationalEvent('payment.updated', { orderId: order.id, branchId: order.branchId, status: order.paymentStatus, tender: 'wallet' });
-    publishOperationalEvent('order.updated', { orderId: order.id, branchId: order.branchId, status: order.status });
-  } catch (eventError) { console.error('[wallet-payment] post-commit event failed', eventError?.message || eventError); }
-  resolveWalletPayment?.({ ok: true });
-  if (inFlightKey) settlementInFlight.delete(inFlightKey);
-
-  res.json({
-    ok: true,
-    order: operationalOrderResponse(order, req.user),
-    paymentResult: {
-      ok: paymentResult?.ok === true,
-      amountPaid: paymentResult?.amountPaid ?? null,
-      newBalance: paymentResult?.newBalance ?? null,
-    },
-    ...(userCan(req.user, 'payments.manage') ? { finance: financeResult } : {}),
-    cashbackAwarded: cashbackAmount,
-    newWalletBalance: walletEngine.getWalletBalance(db, phone),
-  });
-}));
-
-app.get('/api/admin/wallet/summary', requireOwner, (req, res) => {
-  const summary = walletEngine.summarizeWallet(db);
-  res.json(summary);
-});
-
-app.post('/api/admin/wallet/adjust', requireOwner, async (req, res) => {
-  const phone = normalizeDigits(req.body.phone || '').trim();
-  const rawDelta = req.body.deltaToman ?? req.body.delta;
-  const parsedDelta = typeof rawDelta === 'number'
-    ? rawDelta
-    : Number(normalizeDigits(String(rawDelta || '')).replace(/[,٬_\s]/g, '').trim());
-  const deltaToman = Math.round(parsedDelta || 0);
-  const reason = String(req.body.reason || 'تعدیل دستی توسط مدیر').slice(0, 120);
-  const key = String(req.get('Idempotency-Key') || '').trim();
-
-  if (!PHONE_RE.test(phone)) return res.status(400).json({ error: 'شماره موبایل معتبر نیست.' });
-  if (!deltaToman) return res.status(400).json({ error: 'مبلغ تغییر نمی‌تواند صفر باشد.' });
-  if (!key) return res.status(400).json({ error: 'کلید Idempotency-Key الزامی است.' });
-
-  let branchId;
-  try { branchId = parseBranchId(req); } catch (error) {
-    return res.status(error.status || 400).json({ error: error.code || 'branch_invalid', message: error.message });
-  }
-  if (!branchId) return res.status(400).json({ error: 'wallet_adjust_branch_required' });
-
-  const snapshot = snapshotFinanceMutationState();
-  try {
-    const result = financeV2.captureWalletAdjustment(db, {
-      branchId,
-      phone,
-      deltaToman,
-      reason,
-      sourceId: `MANUAL-${key}`,
-      reference: `MANUAL-${key}`,
-    }, {
-      actor: req.user?.phone || 'admin',
-      idempotencyKey: key,
-      applyWallet: ({ event }) => {
-        const walletResult = walletEngine.adjustWallet(db, {
-          phone,
-          deltaToman,
-          reason,
-          actor: req.user?.phone || 'admin',
-        });
-        if (walletResult.adjustEntry) {
-          walletResult.adjustEntry.meta = { ...(walletResult.adjustEntry.meta || {}), financeEventId: event.id };
-        }
-        return walletResult;
-      },
-    });
-    if (result.blocked || !result.journalEntry) {
-      throw Object.assign(new Error('تعدیل کیف‌پول تا ثبت سند مالی قابل تکمیل نیست.'), {
-        code: result.event?.error?.code || 'wallet_adjust_finance_blocked', status: 409,
-      });
-    }
-    recordAudit(req, 'wallet.adjusted', 'user', phone, { deltaToman, reason, branchId, financeEventId: result.event.id }, branchId);
-    await persistFinanceMutation(snapshot);
-    return res.json({ ok: true, ...result.walletResult, finance: { event: result.event, journalEntry: result.journalEntry, idempotentReplay: result.idempotentReplay } });
-  } catch (error) {
-    restoreFinanceMutationState(snapshot);
-    return res.status(error.status || 409).json({ error: error.code || 'wallet_adjust_failed', message: error.message });
-  }
-});
-
-app.get('/api/admin/wallet/packages', requireOwner, (req, res) => {
-  res.json({ packages: walletEngine.getWalletPackages(db) });
-});
-
-app.put('/api/admin/wallet/packages', requireOwner, (req, res) => {
-  if (!Array.isArray(req.body.packages) || !req.body.packages.length) {
-    return res.status(400).json({ error: 'packages_array_required' });
-  }
-  const toNum = (v, fb = 0) => {
-    if (v == null || v === '') return fb;
-    if (typeof v === 'number') return isNaN(v) ? fb : v;
-    const n = Number(normalizeDigits(String(v)).replace(/[,٬_\s]/g, '').trim());
-    return isNaN(n) ? fb : n;
-  };
-  db.walletPackages = req.body.packages.map((p, idx) => {
-    const amountToman = Math.max(0, Math.round(toNum(p.amountToman ?? p.amount, 0)));
-    const priceToman = Math.max(0, Math.round(toNum(p.priceToman ?? p.price ?? amountToman, amountToman)));
-    const bonusToman = Math.max(0, Math.round(toNum(p.bonusToman ?? p.bonus, 0)));
-    const bonusPct = Math.max(0, Math.min(100, toNum(p.bonusPct, 0)));
-    const totalCreditToman = Math.max(0, Math.round(toNum(p.totalCreditToman, amountToman + bonusToman)));
-    return {
-      id: String(p.id || `pack-${idx + 1}`).trim(),
-      title: String(p.title || `بسته ${idx + 1}`).trim(),
-      amountToman,
-      priceToman,
-      bonusToman,
-      bonusPct,
-      totalCreditToman,
-      popular: !!p.popular,
-      badge: String(p.badge || '').trim(),
-      description: String(p.description || '').trim(),
-    };
-  });
-  save();
-  res.json({ ok: true, packages: db.walletPackages });
-});
+moduleRuntime.registerHttpRoute('crm', 'put-182', moduleRouteContext);
 
 /* ---- Automated Campaigns (کمپین‌های خودکار: هدیه تولد، کد معرف، ساعت شاد) ---- */
-app.get('/api/campaigns/status', (req, res) => {
-  const happyHour = campaignsEngine.checkHappyHourStatus(db);
-  const config = campaignsEngine.getCampaignConfig(db);
-  res.json({
-    happyHour,
-    campaigns: {
-      birthdayEnabled: config.birthday.enabled,
-      referralEnabled: config.referral.enabled,
-      happyHourEnabled: config.happyHour.enabled,
-    },
-  });
-});
+moduleRuntime.registerHttpRoute('crm', 'get-183', moduleRouteContext);
 
-app.get('/api/referrals/me', requireAuth, (req, res) => {
-  const user = req.user;
-  const referralCode = campaignsEngine.ensureUserReferral(user);
-  const referrals = (db.referrals || []).filter((r) => r.inviterPhone === user.phone);
-  const config = campaignsEngine.getCampaignConfig(db).referral;
+moduleRuntime.registerHttpRoute('crm', 'get-184', moduleRouteContext);
 
-  res.json({
-    referralCode,
-    referralUrl: `/register?ref=${referralCode}`,
-    rewardStats: {
-      totalInvited: referrals.length,
-      rewardedCount: referrals.filter((r) => r.status === 'rewarded').length,
-      totalEarnedWalletToman: referrals.filter((r) => r.status === 'rewarded').reduce((s, r) => s + (r.inviterRewardWalletToman || 0), 0),
-      totalEarnedPoints: referrals.filter((r) => r.status === 'rewarded').reduce((s, r) => s + (r.inviterRewardPoints || 0), 0),
-    },
-    rewardsConfig: {
-      inviterRewardWalletToman: config.inviterRewardWalletToman,
-      inviterRewardPoints: config.inviterRewardPoints,
-      inviteeRewardWalletToman: config.inviteeRewardWalletToman,
-      inviteeRewardPoints: config.inviteeRewardPoints,
-      inviteeDiscountPct: config.inviteeDiscountPct,
-    },
-    referrals,
-  });
-});
+moduleRuntime.registerHttpRoute('crm', 'post-185', moduleRouteContext);
 
-app.post('/api/referrals/apply', requireAuth, async (req, res) => {
-  const referralCode = String(req.body.code || req.body.referralCode || '').trim();
-  if (!referralCode) return res.status(400).json({ error: 'کد معرف الزامی است.' });
+moduleRuntime.registerHttpRoute('crm', 'post-186', moduleRouteContext);
 
-  const snapshot = snapshotFinanceMutationState();
-  try {
-    const branchId = parseBranchId(req);
-    if (!branchId) return res.status(400).json({ error: 'wallet_topup_branch_required' });
-    const result = campaignsEngine.applyReferralCode(db, {
-      inviteePhone: req.user.phone,
-      referralCode,
-      walletTopup: (input) => campaignWalletTopupWithFinance(input, branchId, 'referral-system'),
-    });
-    await persistFinanceMutation(snapshot);
-    res.json(result);
-  } catch (err) {
-    restoreFinanceMutationState(snapshot);
-    res.status(400).json({ error: err.message });
-  }
-});
+moduleRuntime.registerHttpRoute('crm', 'post-187', moduleRouteContext);
 
-app.post('/api/profile/birthday', requireAuth, (req, res) => {
-  const birthdate = String(req.body.birthdate || '').trim();
-  if (!birthdate) return res.status(400).json({ error: 'تاریخ تولد نامعتبر است.' });
+moduleRuntime.registerHttpRoute('crm', 'get-188', moduleRouteContext);
 
-  const user = db.users.find((u) => u.phone === req.user.phone);
-  if (!user) return res.status(404).json({ error: 'کاربر یافت نشد.' });
-
-  if (birthdate !== (user.birthdate || '') && isBirthdateLocked(user)) {
-    return res.status(400).json({
-      error: 'تاریخ تولد قبلاً ثبت شده و امکان تغییر آن تا ۱ سال وجود ندارد. برای تغییر، با مدیریت هماهنگ فرمایید.',
-      birthdateLocked: true,
-      birthdate: user.birthdate,
-    });
-  }
-
-  user.birthdate = birthdate;
-  user.birthdateUpdatedAt = new Date().toISOString();
-  save();
-
-  const eligibility = campaignsEngine.checkBirthdayEligibility(db, user);
-  res.json({ ok: true, birthdate: user.birthdate, eligibility, birthdateLocked: true });
-});
-
-app.post('/api/campaigns/claim-birthday', requireAuth, async (req, res) => {
-  const snapshot = snapshotFinanceMutationState();
-  try {
-    const branchId = parseBranchId(req);
-    if (!branchId) return res.status(400).json({ error: 'wallet_topup_branch_required' });
-    const result = campaignsEngine.grantBirthdayGift(db, req.user.phone, new Date(), {
-      walletTopup: (input) => campaignWalletTopupWithFinance(input, branchId, 'birthday-campaign'),
-    });
-
-    // Trigger Smart Birthday SMS
-    try {
-      smsEngine.sendSms(db, {
-        phone: req.user.phone,
-        name: req.user.name || '',
-        templateKey: 'birthday',
-        vars: {
-          name: req.user.name || 'همراه گرامی',
-          amount: result.walletBonusToman || 100000,
-        },
-        triggerType: 'event',
-      });
-    } catch (_) {}
-
-    await persistFinanceMutation(snapshot);
-    res.json(result);
-  } catch (err) {
-    restoreFinanceMutationState(snapshot);
-    res.status(400).json({ error: err.message });
-  }
-});
-
-app.get(['/api/admin/campaigns', '/api/admin/campaigns/summary'], requireAdmin, (req, res) => {
-  const summary = campaignsEngine.summarizeCampaigns(db);
-  res.json(summary);
-});
-
-app.put(['/api/admin/campaigns', '/api/admin/campaigns/settings'], requireAdmin, (req, res) => {
-  db.campaigns = db.campaigns || {};
-  if (req.body.birthday) db.campaigns.birthday = { ...db.campaigns.birthday, ...req.body.birthday };
-  if (req.body.referral) db.campaigns.referral = { ...db.campaigns.referral, ...req.body.referral };
-  if (req.body.happyHour) db.campaigns.happyHour = { ...db.campaigns.happyHour, ...req.body.happyHour };
-  save();
-  res.json({ ok: true, campaigns: campaignsEngine.getCampaignConfig(db) });
-});
+moduleRuntime.registerHttpRoute('crm', 'put-189', moduleRouteContext);
 
 /* ---- Smart SMS & Retention Automation (پیامک‌های هوشمند و مدیریت ارتباط با مشتریان) ---- */
-app.get('/api/admin/sms/stats', requireAdmin, (req, res) => {
-  const summary = smsEngine.summarizeSmsEngine(db);
-  res.json(summary);
-});
+moduleRuntime.registerHttpRoute('crm', 'get-190', moduleRouteContext);
 
-app.get('/api/admin/sms/rfm', requireAdmin, (req, res) => {
-  const rfm = smsEngine.calculateCustomerRfm(db);
-  res.json(rfm);
-});
+moduleRuntime.registerHttpRoute('crm', 'get-191', moduleRouteContext);
 
-app.put('/api/admin/sms/settings', requireAdmin, (req, res) => {
-  db.smsConfig = db.smsConfig || {};
-  if (req.body.provider !== undefined) db.smsConfig.provider = String(req.body.provider || 'simulator').trim();
-  if (req.body.apiKey !== undefined) db.smsConfig.apiKey = String(req.body.apiKey || '').trim();
-  if (req.body.senderLine !== undefined) db.smsConfig.senderLine = normalizeDigits(String(req.body.senderLine || '1000912')).trim();
-  if (req.body.enabled !== undefined) db.smsConfig.enabled = !!req.body.enabled;
-  if (req.body.templates && typeof req.body.templates === 'object') {
-    db.smsConfig.templates = db.smsConfig.templates || {};
-    for (const [k, v] of Object.entries(req.body.templates)) {
-      db.smsConfig.templates[k] = {
-        ...(db.smsConfig.templates[k] || {}),
-        ...v,
-      };
-    }
-  }
-  save();
-  res.json({ ok: true, config: smsEngine.getSmsConfig(db) });
-});
+moduleRuntime.registerHttpRoute('crm', 'put-192', moduleRouteContext);
 
-app.post('/api/admin/sms/send-test', requireAdmin, async (req, res) => {
-  const phone = normalizeDigits(req.body.phone || '').trim();
-  const text = String(req.body.text || req.body.message || '').trim();
-  const templateKey = req.body.templateKey || 'custom';
+moduleRuntime.registerHttpRoute('crm', 'post-193', moduleRouteContext);
 
-  if (!PHONE_RE.test(phone)) return res.status(400).json({ error: 'شماره موبایل معتبر نیست.' });
+moduleRuntime.registerHttpRoute('crm', 'post-194', moduleRouteContext);
 
-  try {
-    const result = await smsEngine.sendSms(db, {
-      phone,
-      customText: text,
-      templateKey,
-      vars: req.body.vars || { name: 'تست مدیریت' },
-      triggerType: 'manual',
-    });
-    save();
-    res.json(result);
-  } catch (err) {
-    res.status(400).json({ error: err.message });
-  }
-});
-
-app.post('/api/admin/sms/send-bulk', requireAdmin, async (req, res) => {
-  const audience = String(req.body.audience || 'همه مشتریان').trim();
-  const text = String(req.body.text || req.body.message || '').trim().slice(0, 1200);
-  const allowedAudiences = new Set(['همه مشتریان', 'VIP', 'مشتریان جدید']);
-  if (!allowedAudiences.has(audience)) return res.status(400).json({ error: 'گروه گیرندگان پیامک معتبر نیست.' });
-  if (!text) return res.status(400).json({ error: 'متن پیامک خالی است.' });
-
-  const rfm = smsEngine.calculateCustomerRfm(db);
-  const candidates = audience === 'VIP'
-    ? rfm.champions
-    : audience === 'مشتریان جدید'
-      ? rfm.active.filter((customer) => customer.segment === 'new')
-      : [...rfm.champions, ...rfm.active, ...rfm.atRisk, ...rfm.dormant];
-  const recipients = [...new Map(candidates
-    .map((customer) => [String(customer.phone || '').trim(), customer])
-    .filter(([phone]) => PHONE_RE.test(phone)))
-    .values()];
-  const maxRecipients = 500;
-  const batch = recipients.slice(0, maxRecipients);
-  if (!batch.length) return res.status(409).json({ error: 'در این گروه گیرندهٔ معتبر پیدا نشد.' });
-
-  const results = [];
-  for (const customer of batch) {
-    try {
-      results.push(await smsEngine.sendSms(db, {
-        phone: customer.phone,
-        name: customer.name || '',
-        customText: text,
-        templateKey: 'custom',
-        vars: { name: customer.name || 'مشتری گرامی' },
-        triggerType: 'manual',
-      }));
-    } catch (error) {
-      results.push({ ok: false, phone: customer.phone, error: error.message });
-    }
-  }
-  const campaignId = `bulk-${Date.now()}`;
-  const sent = results.filter((result) => result.ok).length;
-  const failed = results.length - sent;
-  recordAudit(req, 'sms.bulk_sent', 'sms_campaign', campaignId, { audience, attempted: results.length, sent, failed, truncated: recipients.length > batch.length });
-  save();
-  res.json({ ok: true, campaignId, audience, attempted: results.length, sent, failed, truncated: recipients.length > batch.length, totalCostToman: results.reduce((sum, result) => sum + (Number(result.costToman) || 0), 0) });
-});
-
-app.post('/api/admin/sms/run-winback', requireAdmin, async (req, res) => {
-  const parseNum = (v) => {
-    if (v == null || v === '') return null;
-    if (typeof v === 'number') return isNaN(v) ? null : v;
-    const n = Number(normalizeDigits(String(v)).replace(/[,٬_\s]/g, '').trim());
-    return isNaN(n) ? null : n;
-  };
-  const segment = req.body.segment || 'at_risk';
-  const rewardWalletToman = parseNum(req.body.rewardWalletToman) ?? 50000;
-  const maxRecipients = parseNum(req.body.maxRecipients) ?? 50;
-
-  const snapshot = snapshotFinanceMutationState();
-  try {
-    const branchId = parseBranchId(req);
-    if (!branchId) return res.status(400).json({ error: 'wallet_topup_branch_required' });
-    const result = await smsEngine.executeWinbackCampaign(db, {
-      segment,
-      rewardWalletToman,
-      maxRecipients,
-      walletTopup: (input) => campaignWalletTopupWithFinance(input, branchId, 'automated-retention'),
-    });
-    await persistFinanceMutation(snapshot);
-    res.json(result);
-  } catch (err) {
-    restoreFinanceMutationState(snapshot);
-    res.status(400).json({ error: err.message });
-  }
-});
+moduleRuntime.registerHttpRoute('crm', 'post-195', moduleRouteContext);
 
 /* ---- Online reservations (رزرو میز) ---- */
 const JS_DAY_TO_KEY = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
@@ -11006,435 +5625,25 @@ function listReservationSlots(branch, dateStr, partySize = 2) {
   return { slots, closed: false, day, open: hours.open, close: hours.close };
 }
 
-app.get('/api/reservations/meta', (req, res) => {
-  const settings = db.reservationSettings || {};
-  res.json({
-    enabled: settings.enabled !== false,
-    settings: {
-      slotMinutes: settings.slotMinutes ?? 30,
-      maxParty: settings.maxParty ?? 12,
-      advanceDays: settings.advanceDays ?? 21,
-      minHoursAhead: settings.minHoursAhead ?? 1,
-    },
-    restaurant: {
-      name: db.restaurant?.name,
-      phone: db.restaurant?.phone,
-    },
-    branches: (db.branches || [])
-      .filter((b) => b.active !== false)
-      .map((b) => ({ id: b.id, slug: b.slug, name: b.name, address: b.address })),
-  });
-});
+moduleRuntime.registerHttpRoute('reservations', 'get-196', moduleRouteContext);
 
-app.get('/api/reservations/slots', (req, res) => {
-  const settings = db.reservationSettings || {};
-  if (settings.enabled === false) return res.status(403).json({ error: 'رزرو غیرفعال است' });
-  let dateStr = String(req.query.date || '').slice(0, 10);
-  if (/^\d{4}[/-]\d{1,2}[/-]\d{1,2}$/.test(dateStr)) {
-    try {
-      const parts = shamsi.toShamsiParts(dateStr);
-      dateStr = parts.isoDate;
-    } catch (_) {}
-  }
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return res.status(400).json({ error: 'تاریخ نامعتبر' });
-  const advance = Math.max(1, Number(settings.advanceDays) || 21);
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const want = new Date(`${dateStr}T12:00:00`);
-  const diffDays = Math.floor((want - today) / 86400000);
-  if (diffDays < 0 || diffDays > advance) {
-    return res.status(400).json({ error: `فقط تا ${advance} روز آینده قابل رزرو است` });
-  }
-  const branch = resolveBranch(req.query.branch || req.query.branchId);
-  if (!branch) return res.status(400).json({ error: 'شعبه یافت نشد' });
-  const partySize = Number(req.query.partySize) || 2;
-  const result = listReservationSlots(branch, dateStr, partySize);
-  res.json({
-    date: dateStr,
-    shamsiDate: shamsi.formatShamsiDate(dateStr),
-    shamsiDateLong: shamsi.formatShamsiDateLong(dateStr),
-    branchId: branch.id,
-    partySize,
-    ...result,
-  });
-});
+moduleRuntime.registerHttpRoute('reservations', 'get-197', moduleRouteContext);
 
-app.post('/api/reservations', async (req, res) => {
-  const settings = db.reservationSettings || {};
-  const sendError = (status, code, message) => res.status(status).json({ ok: false, error: code, code, message });
-  const rawKey = String(req.get('Idempotency-Key') || '').trim();
-  if (process.env.NODE_ENV === 'production' && !rawKey) {
-    return sendError(400, 'idempotency_key_required', 'برای ثبت رزرو، کلید درخواست لازم است.');
-  }
-  if (rawKey && !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/.test(rawKey)) {
-    return sendError(400, 'idempotency_key_invalid', 'کلید درخواست معتبر نیست.');
-  }
+moduleRuntime.registerHttpRoute('reservations', 'post-198', moduleRouteContext);
 
-  const candidateBody = req.body;
-  const bodyPrototype = candidateBody && typeof candidateBody === 'object'
-    ? Object.getPrototypeOf(candidateBody)
-    : null;
-  const body = candidateBody
-    && typeof candidateBody === 'object'
-    && !Array.isArray(candidateBody)
-    && (bodyPrototype === Object.prototype || bodyPrototype === null)
-    ? candidateBody
-    : null;
-  if (!body) return sendError(400, 'reservation_body_invalid', 'بدنهٔ درخواست رزرو معتبر نیست.');
-  const name = String(body.name || '').trim().normalize('NFC').slice(0, 80);
-  const phone = normalizeDigits(body.phone || '').trim();
-  const dateStr = normalizeReservationDate(body.date);
-  const dateFingerprintValue = dateStr || normalizeDigits(String(body.date || '')).trim().slice(0, 32);
-  const time = normalizeDigits(String(body.time || '')).trim();
-  const note = String(body.note || '').trim().normalize('NFC').slice(0, 200);
-  const maxParty = Math.max(1, Number(settings.maxParty) || 12);
-  const rawPartySize = body.partySize == null || String(body.partySize).trim() === ''
-    ? '2'
-    : normalizeDigits(body.partySize);
-  const partySize = Number(rawPartySize);
-  const branchValue = body.branchId ?? body.branch;
-  const branch = resolveBranchExact(branchValue);
+moduleRuntime.registerHttpRoute('reservations', 'get-199', moduleRouteContext);
 
-  const idempotencyKey = rawKey || crypto.randomUUID();
-  const fingerprint = reservationFingerprint({
-    branchId: branch ? Number(branch.id) : normalizeDigits(String(branchValue || '')).trim().toLowerCase(),
-    date: dateFingerprintValue,
-    time,
-    partySize: Number.isSafeInteger(partySize) ? partySize : String(rawPartySize).trim(),
-    name,
-    phone,
-    note,
-  });
+moduleRuntime.registerHttpRoute('reservations', 'patch-200', moduleRouteContext);
 
-  let outcome;
-  try {
-    outcome = await serializeReservationCreation(async () => {
-      const idempotency = db.reservationIdempotency && typeof db.reservationIdempotency === 'object'
-        ? db.reservationIdempotency
-        : {};
-      const prior = Object.prototype.hasOwnProperty.call(idempotency, idempotencyKey)
-        ? idempotency[idempotencyKey]
-        : null;
-      if (prior) {
-        if (prior.fingerprint !== fingerprint) {
-          return { error: { status: 409, code: 'idempotency_key_conflict', message: 'این کلید قبلاً برای اطلاعات رزرو دیگری استفاده شده است.' } };
-        }
-        const existing = (db.reservations || []).find((item) => Number(item.id) === Number(prior.reservationId));
-        if (!existing) {
-          return { error: { status: 409, code: 'reservation_idempotency_result_unavailable', message: 'نتیجهٔ این کلید دیگر در سابقهٔ رزروها موجود نیست.' } };
-        }
-        const existingBranch = (db.branches || []).find((item) => Number(item.id) === Number(existing.branchId)) || branch;
-        return { reservation: existing, branch: existingBranch, replay: true };
-      }
+moduleRuntime.registerHttpRoute('reservations', 'get-201', moduleRouteContext);
 
-      if (!name) return { error: { status: 400, code: 'reservation_name_required', message: 'نام لازم است.' } };
-      if (!PHONE_RE.test(phone)) return { error: { status: 400, code: 'reservation_phone_invalid', message: 'شماره موبایل معتبر نیست.' } };
-      if (!dateStr) return { error: { status: 400, code: 'reservation_date_invalid', message: 'تاریخ معتبر نیست.' } };
-      if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(time)) {
-        return { error: { status: 400, code: 'reservation_time_invalid', message: 'ساعت معتبر نیست.' } };
-      }
-      if (!Number.isSafeInteger(partySize) || partySize < 1 || partySize > maxParty) {
-        return { error: { status: 400, code: 'reservation_party_size_invalid', message: `تعداد نفرات باید بین ۱ تا ${maxParty} باشد.` } };
-      }
-      if (!branch || branch.active === false) {
-        return { error: { status: 400, code: 'reservation_branch_invalid', message: 'شعبهٔ فعال یافت نشد.' } };
-      }
-      if (settings.enabled === false) {
-        return { error: { status: 403, code: 'reservations_disabled', message: 'رزرو غیرفعال است.' } };
-      }
-      if (!reservationDateWithinWindow(dateStr, settings)) {
-        return { error: { status: 400, code: 'reservation_date_out_of_range', message: 'تاریخ رزرو خارج از بازهٔ مجاز است.' } };
-      }
-      const { slots, closed } = listReservationSlots(branch, dateStr, partySize);
-      if (closed) {
-        return { error: { status: 409, code: 'reservation_day_closed', message: 'در این روز مجموعه تعطیل است.' } };
-      }
-      const slot = slots.find((item) => item.time === time);
-      if (!slot || !slot.available) {
-        return { error: { status: 409, code: 'reservation_slot_unavailable', message: 'این ساعت در حال حاضر ظرفیت ندارد.' } };
-      }
+moduleRuntime.registerHttpRoute('reservations', 'put-202', moduleRouteContext);
 
-      const hadReservations = Object.prototype.hasOwnProperty.call(db, 'reservations');
-      const reservationsBefore = Array.isArray(db.reservations) ? db.reservations.slice() : db.reservations;
-      const hadIdempotency = Object.prototype.hasOwnProperty.call(db, 'reservationIdempotency');
-      const idempotencyBefore = db.reservationIdempotency;
-      const hadAuditLog = Object.prototype.hasOwnProperty.call(db, 'auditLog');
-      const auditLogBefore = Array.isArray(db.auditLog) ? db.auditLog.slice() : db.auditLog;
-      const id = Math.max(0, ...(db.reservations || []).map((item) => Number(item.id) || 0)) + 1;
-      const createdAt = new Date().toISOString();
-      const reservation = {
-        id,
-        branchId: branch.id,
-        name,
-        phone,
-        partySize,
-        date: dateStr,
-        time,
-        endTime: '',
-        note,
-        status: 'pending',
-        createdAt,
-        statusAt: createdAt,
-      };
+moduleRuntime.registerHttpRoute('platform_core', 'get-203', moduleRouteContext);
 
-      db.reservations = [reservation, ...(Array.isArray(db.reservations) ? db.reservations : [])].slice(0, 1000);
-      db.reservationIdempotency = {
-        ...idempotency,
-        [idempotencyKey]: { fingerprint, reservationId: id, createdAt },
-      };
-      const auditEntry = recordAudit(null, 'reservation.created', 'reservation', id, { partySize }, branch.id, { deferAppend: true });
+moduleRuntime.registerHttpRoute('platform_core', 'put-204', moduleRouteContext);
 
-      try {
-        const persisted = await save({ requireDurable: true });
-        if (persisted !== true) throw Object.assign(new Error('Reservation persistence was not confirmed.'), { code: 'reservation_persistence_unconfirmed', status: 503 });
-      } catch (error) {
-        if (hadReservations) db.reservations = reservationsBefore;
-        else delete db.reservations;
-        if (hadIdempotency) db.reservationIdempotency = idempotencyBefore;
-        else delete db.reservationIdempotency;
-        if (hadAuditLog) db.auditLog = auditLogBefore;
-        else delete db.auditLog;
-        console.error('[reservation] durable commit failed', error?.message || error);
-        return { error: { status: 503, code: 'reservation_persistence_failed', message: 'رزرو ذخیره نشد؛ لطفاً با همین درخواست دوباره تلاش کنید.' } };
-      }
-
-      appendAuditAfterCommit(auditEntry);
-      return { reservation, branch, replay: false };
-    });
-  } catch (error) {
-    console.error('[reservation] creation failed', error?.message || error);
-    return sendError(503, 'reservation_creation_failed', 'ثبت رزرو موقتاً انجام نشد.');
-  }
-
-  if (outcome.error) return sendError(outcome.error.status, outcome.error.code, outcome.error.message);
-  const reservation = outcome.reservation;
-  const responseBranch = outcome.branch || branch;
-  if (outcome.replay) {
-    return res.status(200).json({ ok: true, idempotentReplay: true, reservation: reservationResponse(reservation, responseBranch), whatsapp: null });
-  }
-
-  let notify = null;
-  try {
-    publishOperationalEvent('reservation.created', { reservationId: reservation.id, branchId: reservation.branchId, status: reservation.status });
-  } catch (error) {
-    console.error('[reservation] post-commit event failed', error?.message || error);
-  }
-  try {
-    notify = await notifyReservationWhatsApp(db, reservation);
-    if (!notify?.skipped) await save({ requireDurable: true });
-  } catch (error) {
-    // The durable reservation and idempotency record already committed. Never
-    // turn a notification error into a retryable create failure.
-    console.error('[reservation] post-commit notification failed', error?.message || error);
-    notify = null;
-  }
-
-  return res.status(201).json({
-    ok: true,
-    idempotentReplay: false,
-    reservation: reservationResponse(reservation, responseBranch),
-    whatsapp: notify?.skipped ? null : notify,
-  });
-});
-
-app.get('/api/admin/reservations', requireCapability('reservations.view'), (req, res) => {
-  // Walk-in guests have no date/time slot; they are served by the waiter
-  // reception endpoint and must not pollute the online reservation calendar.
-  const requestedBranch = requestBranchValue(req);
-  const allowedBranchIds = branchScopeForUser(req.user, { role: effectiveRole(req.user) });
-  let branchId = null;
-  try {
-    if (requestedBranch != null) {
-      branchId = parseBranchId(req);
-    } else if (allowedBranchIds !== null) {
-      if (!allowedBranchIds.length) {
-        return res.status(403).json({ error: 'branch_scope_empty', message: 'برای این کاربر شعبهٔ مجازی تعریف نشده است.' });
-      }
-      const preferred = defaultBranch();
-      branchId = preferred && allowedBranchIds.includes(Number(preferred.id))
-        ? preferred.id
-        : allowedBranchIds[0];
-    }
-  } catch (error) {
-    return res.status(error.status || 400).json({ error: error.code || 'branch_invalid', message: error.message });
-  }
-  let list = (db.reservations || []).filter((item) => !waitlist.isWaitlist(item)).slice();
-  if (branchId != null) list = list.filter((r) => Number(r.branchId) === Number(branchId));
-  let queryDate = req.query.date ? String(req.query.date).slice(0, 10) : null;
-  if (queryDate && /^\d{4}[/-]\d{1,2}[/-]\d{1,2}$/.test(queryDate)) {
-    try {
-      const p = shamsi.toShamsiParts(queryDate);
-      queryDate = p.isoDate;
-    } catch (_) {}
-  }
-  if (queryDate) list = list.filter((r) => r.date === queryDate);
-  if (req.query.status) list = list.filter((r) => r.status === req.query.status);
-  const today = new Date().toISOString().slice(0, 10);
-  const active = list.filter((r) => ACTIVE_RES_STATUSES.has(r.status));
-  const terminal = new Set(['cancelled', 'no_show']);
-  list.sort((a, b) => {
-    const aClosed = terminal.has(String(a.status));
-    const bClosed = terminal.has(String(b.status));
-    if (aClosed !== bClosed) return aClosed ? 1 : -1;
-    const ak = `${a.date || ''}T${a.time || '00:00'}`;
-    const bk = `${b.date || ''}T${b.time || '00:00'}`;
-    return aClosed ? bk.localeCompare(ak) : ak.localeCompare(bk);
-  });
-  const maxCovers = Math.max(1, Number(db.reservationSettings?.maxCoversPerSlot) || 24);
-  const slotMap = new Map();
-  for (const r of active) {
-    const key = `${r.date}|${r.time}`;
-    const row = slotMap.get(key) || { date: r.date, time: r.time, covers: 0, parties: 0 };
-    row.covers += Math.max(1, Number(r.partySize) || 1);
-    row.parties += 1;
-    slotMap.set(key, row);
-  }
-  const slotLoad = [...slotMap.values()]
-    .map((row) => ({ ...row, maxCovers, percent: Math.min(100, Math.round((row.covers / maxCovers) * 100)) }))
-    .sort((a, b) => `${a.date}T${a.time}`.localeCompare(`${b.date}T${b.time}`))
-    .slice(0, 120);
-  const todayActive = active.filter((r) => r.date === today);
-  res.json({
-    reservations: list.slice(0, 200).map((r) => ({
-      ...r,
-      shamsiDate: shamsi.formatShamsiDate(r.date),
-      shamsiDateLong: shamsi.formatShamsiDateLong(r.date),
-      shamsiDateFull: shamsi.formatShamsiDateFull(r.date),
-    })),
-    settings: db.reservationSettings,
-    slotLoad,
-    serverTime: new Date().toISOString(),
-    summary: {
-      today: todayActive.length,
-      todayCovers: todayActive.reduce((sum, r) => sum + Math.max(1, Number(r.partySize) || 1), 0),
-      pending: list.filter((r) => r.status === 'pending').length,
-      confirmed: list.filter((r) => r.status === 'confirmed').length,
-      seated: list.filter((r) => r.status === 'seated' && r.date === today).length,
-      noShowToday: list.filter((r) => r.status === 'no_show' && r.date === today).length,
-    },
-  });
-});
-
-app.patch('/api/admin/reservations/:id', requireCapability('reservations.manage'), (req, res) => {
-  const targetId = Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
-  const item = (db.reservations || []).find((r) => Number(r.id) === targetId);
-  if (!item) return res.status(404).json({ error: 'not found' });
-  try {
-    assertUserBranchAccess(req.user, item.branchId);
-  } catch (error) {
-    return res.status(error.status || 403).json({ error: error.code || 'branch_access_denied', message: error.message, requestId: req.requestId });
-  }
-  if (req.body?.branchId != null && Number(req.body.branchId) !== Number(item.branchId)) {
-    return res.status(404).json({ error: 'reservation_branch_mismatch' });
-  }
-  const allowed = ['pending', 'confirmed', 'seated', 'completed', 'cancelled', 'no_show'];
-  if (typeof req.body.status === 'string' && allowed.includes(req.body.status)) {
-    item.status = req.body.status;
-    item.statusAt = new Date().toISOString();
-    if (req.body.status === 'seated' && !item.seatedAt) item.seatedAt = new Date().toISOString();
-    if (req.body.status === 'completed' && !item.completedAt) item.completedAt = new Date().toISOString();
-  }
-  if (typeof req.body.note === 'string') item.note = req.body.note.trim().slice(0, 200);
-  if (req.body.tableNo !== undefined) {
-    item.tableNo = req.body.tableNo == null || req.body.tableNo === '' ? null : String(req.body.tableNo).trim().slice(0, 20);
-  }
-  if (req.body.occasion !== undefined) {
-    item.occasion = req.body.occasion == null || req.body.occasion === '' ? null : String(req.body.occasion).trim().slice(0, 40);
-  }
-  if (req.body.partySize != null) {
-    const rawParty = typeof req.body.partySize === 'number'
-      ? req.body.partySize
-      : Number(String(req.body.partySize).replace(/[۰-۹]/g, (d) => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d)).replace(/[٠-٩]/g, (d) => '٠١٢٣٤٥٦٧٨٩'.indexOf(d)).trim());
-    if (!isNaN(rawParty)) {
-      item.partySize = Math.max(1, Math.min(Number(db.reservationSettings?.maxParty) || 12, Math.round(rawParty)));
-    }
-  }
-  recordAudit(req, 'reservation.updated', 'reservation', item.id, { status: item.status, partySize: item.partySize, tableNo: item.tableNo }, item.branchId);
-  publishOperationalEvent('reservation.updated', { reservationId: item.id, branchId: item.branchId, status: item.status });
-  save();
-  res.json({ ok: true, reservation: item });
-});
-
-app.get('/api/admin/reservation-settings', requireAdmin, (req, res) => {
-  res.json({ settings: db.reservationSettings || {} });
-});
-
-app.put('/api/admin/reservation-settings', requireAdmin, (req, res) => {
-  if (!db.reservationSettings) db.reservationSettings = {};
-  const s = req.body.settings || req.body || {};
-  const parseNum = (v) => {
-    if (v == null || v === '') return null;
-    if (typeof v === 'number') return isNaN(v) ? null : v;
-    const clean = String(v)
-      .replace(/[۰-۹]/g, (d) => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d))
-      .replace(/[٠-٩]/g, (d) => '٠١٢٣٤٥٦٧٨٩'.indexOf(d))
-      .replace(/[,٬_\s]/g, '')
-      .trim();
-    const n = Number(clean);
-    return isNaN(n) ? null : n;
-  };
-
-  if (typeof s.enabled === 'boolean') db.reservationSettings.enabled = s.enabled;
-  const slotMinutes = parseNum(s.slotMinutes);
-  if (slotMinutes != null) {
-    db.reservationSettings.slotMinutes = Math.max(15, Math.min(120, Math.round(slotMinutes)));
-  }
-  const maxParty = parseNum(s.maxParty);
-  if (maxParty != null) {
-    db.reservationSettings.maxParty = Math.max(1, Math.min(40, Math.round(maxParty)));
-  }
-  const maxCoversPerSlot = parseNum(s.maxCoversPerSlot);
-  if (maxCoversPerSlot != null) {
-    db.reservationSettings.maxCoversPerSlot = Math.max(1, Math.min(200, Math.round(maxCoversPerSlot)));
-  }
-  const advanceDays = parseNum(s.advanceDays);
-  if (advanceDays != null) {
-    db.reservationSettings.advanceDays = Math.max(1, Math.min(90, Math.round(advanceDays)));
-  }
-  const minHoursAhead = parseNum(s.minHoursAhead);
-  if (minHoursAhead != null) {
-    db.reservationSettings.minHoursAhead = Math.max(0, Math.min(48, Math.round(minHoursAhead)));
-  }
-  save();
-  res.json({ ok: true, settings: db.reservationSettings });
-});
-
-app.get('/api/admin/whatsapp', requireAdmin, (req, res) => {
-  res.json({
-    settings: db.whatsappNotify || {},
-    log: (db.whatsappLog || []).slice(0, 40),
-    webhookConfigured: !!process.env.WHATSAPP_WEBHOOK_URL,
-    resolvedPhone: toWaDigits(resolveNotifyPhone(db, req.query.branchId)),
-  });
-});
-
-app.put('/api/admin/whatsapp', requireAdmin, (req, res) => {
-  if (!db.whatsappNotify) db.whatsappNotify = {};
-  const s = req.body.settings || req.body || {};
-  if (typeof s.enabled === 'boolean') db.whatsappNotify.enabled = s.enabled;
-  if (typeof s.onOrder === 'boolean') db.whatsappNotify.onOrder = s.onOrder;
-  if (typeof s.onReservation === 'boolean') db.whatsappNotify.onReservation = s.onReservation;
-  if (typeof s.phone === 'string') {
-    db.whatsappNotify.phone = normalizeDigits(s.phone).trim();
-  }
-  save();
-  res.json({ ok: true, settings: db.whatsappNotify });
-});
-
-app.post('/api/admin/whatsapp/order/:id', requireAdmin, (req, res) => {
-  const targetId = Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
-  const order = (db.orders || []).find((o) => Number(o.id) === targetId);
-  if (!order) return res.status(404).json({ error: 'not found' });
-  const branch = (db.branches || []).find((b) => b.id === Number(order.branchId));
-  const text = buildOrderMessage(order, {
-    brand: db.restaurant?.name || 'وستو',
-    branchName: branch?.name,
-  });
-  const phone = resolveNotifyPhone(db, order.branchId);
-  const url = waMeUrl(phone, text);
-  if (!url) return res.status(400).json({ error: 'شماره واتساپ تنظیم نشده' });
-  res.json({ ok: true, url, phone: toWaDigits(phone), text });
-});
+moduleRuntime.registerHttpRoute('platform_core', 'post-205', moduleRouteContext);
 
 // --- customer feedback / NPS ---
 function feedbackNpsStats(list) {
@@ -11447,143 +5656,18 @@ function feedbackNpsStats(list) {
   return { count: scores.length, promoters, passives, detractors, nps, avg };
 }
 
-app.get('/api/feedback/meta', (req, res) => {
-  const s = db.feedbackSettings || {};
-  const branch = resolveBranch(req.query.branchId);
-  res.json({
-    enabled: s.enabled !== false,
-    title: s.title || 'نظر شما',
-    subtitle: s.subtitle || '',
-    thankYou: s.thankYou || 'ممنون',
-    restaurant: db.restaurant?.name || 'وستو',
-    branch: branch ? { id: branch.id, name: branch.name } : null,
-    branches: (db.branches || [])
-      .filter((b) => b.active !== false)
-      .map((b) => ({ id: b.id, name: b.name })),
-  });
-});
+moduleRuntime.registerHttpRoute('crm', 'get-206', moduleRouteContext);
 
-app.post('/api/feedback', (req, res) => {
-  const s = db.feedbackSettings || {};
-  if (s.enabled === false) return res.status(403).json({ error: 'بازخورد غیرفعال است' });
-  if (req.body.score == null || req.body.score === '' || typeof req.body.score === 'boolean') {
-    return res.status(400).json({ error: 'امتیاز باید عدد صحیح ۰ تا ۱۰ باشد' });
-  }
-  const score = Number(req.body.score);
-  if (!Number.isFinite(score) || score < 0 || score > 10 || Math.floor(score) !== score) {
-    return res.status(400).json({ error: 'امتیاز باید عدد صحیح ۰ تا ۱۰ باشد' });
-  }
-  const branch = resolveBranch(req.body.branchId);
-  const comment = String(req.body.comment || '').trim().slice(0, 800);
-  const name = String(req.body.name || '').trim().slice(0, 80);
-  const phone = normalizeDigits(req.body.phone || '').trim().slice(0, 15);
-  const orderId = req.body.orderId != null ? Number(req.body.orderId) : null;
-  const source = String(req.body.source || 'web').trim().slice(0, 40);
-  const entry = {
-    id: Math.max(0, ...(db.feedback || []).map((f) => f.id), 0) + 1,
-    score,
-    bucket: score >= 9 ? 'promoter' : score >= 7 ? 'passive' : 'detractor',
-    comment,
-    name,
-    phone,
-    orderId: Number.isFinite(orderId) && orderId > 0 ? orderId : null,
-    branchId: branch?.id || null,
-    source,
-    status: 'new',
-    createdAt: new Date().toISOString(),
-  };
-  db.feedback = db.feedback || [];
-  db.feedback.unshift(entry);
-  db.feedback = db.feedback.slice(0, 2000);
-  save();
-  res.json({ ok: true, id: entry.id, thankYou: s.thankYou || 'ممنون از بازخوردتان' });
-});
+moduleRuntime.registerHttpRoute('crm', 'post-207', moduleRouteContext);
 
-app.get('/api/admin/feedback', requireCapability('pii.view'), (req, res) => {
-  let bid;
-  try {
-    assertRequestBranchAccess(req);
-    bid = parseBranchId(req);
-  } catch (error) {
-    return res.status(error.status || 403).json({ error: error.code || 'branch_access_denied', message: error.message });
-  }
-  let list = db.feedback || [];
-  if (bid != null) list = list.filter((f) => Number(f.branchId) === Number(bid));
-  else if (effectiveRole(req.user) !== 'owner') return res.status(403).json({ error: 'branch_scope_required' });
-  const days = Math.min(90, Math.max(1, Number(req.query.days) || 30));
-  const since = Date.now() - days * 24 * 3600 * 1000;
-  const windowed = list.filter((f) => new Date(f.createdAt).getTime() >= since);
-  res.json({
-    settings: db.feedbackSettings || {},
-    feedback: list.slice(0, 100),
-    stats: feedbackNpsStats(windowed),
-    days,
-  });
-});
+moduleRuntime.registerHttpRoute('crm', 'get-208', moduleRouteContext);
 
-app.put('/api/admin/feedback/settings', requireOwner, (req, res) => {
-  if (!db.feedbackSettings) db.feedbackSettings = {};
-  const s = req.body.settings || req.body || {};
-  if (typeof s.enabled === 'boolean') db.feedbackSettings.enabled = s.enabled;
-  if (typeof s.askAfterOrder === 'boolean') db.feedbackSettings.askAfterOrder = s.askAfterOrder;
-  if (typeof s.title === 'string') db.feedbackSettings.title = s.title.trim().slice(0, 120);
-  if (typeof s.subtitle === 'string') db.feedbackSettings.subtitle = s.subtitle.trim().slice(0, 240);
-  if (typeof s.thankYou === 'string') db.feedbackSettings.thankYou = s.thankYou.trim().slice(0, 200);
-  save();
-  res.json({ ok: true, settings: db.feedbackSettings });
-});
+moduleRuntime.registerHttpRoute('crm', 'put-209', moduleRouteContext);
 
-app.patch('/api/admin/feedback/:id', requireAdmin, (req, res) => {
-  const targetId = Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
-  const item = (db.feedback || []).find((f) => Number(f.id) === targetId);
-  if (!item) return res.status(404).json({ error: 'not found' });
-  try {
-    assertUserBranchAccess(req.user, item.branchId);
-  } catch (error) {
-    return res.status(error.status || 403).json({ error: error.code || 'branch_access_denied', message: error.message });
-  }
-  const st = String(req.body.status || '').trim();
-  if (['new', 'reviewed', 'in_progress', 'resolved', 'archived'].includes(st)) item.status = st;
-  if (typeof req.body.resolutionNote === 'string') {
-    item.resolutionNote = req.body.resolutionNote.trim().slice(0, 300);
-    item.resolvedAt = new Date().toISOString();
-  }
-  save();
-  res.json({ ok: true, item });
-});
+moduleRuntime.registerHttpRoute('crm', 'patch-210', moduleRouteContext);
 
 // ---- pages & static -----------------------------------------------------
-app.get('/', (req, res, next) => {
-  // Old overlay deep-links → classic menu page
-  if (req.query.menu != null || req.query.item != null) {
-    const q = new URLSearchParams();
-    if (req.query.cat != null) q.set('cat', String(req.query.cat));
-    if (req.query.item != null) q.set('item', String(req.query.item));
-    if (req.query.lang != null) q.set('lang', String(req.query.lang));
-    if (req.query.q != null) q.set('q', String(req.query.q));
-    if (req.query.exclude != null) q.set('exclude', String(req.query.exclude));
-    const qs = q.toString();
-    return res.redirect(302, '/menu' + (qs ? `?${qs}` : ''));
-  }
-
-  // Conservative 103 Early Hints: only resources that are unconditionally
-  // needed by the root experience. No speculative menu images are hinted here;
-  // the in-page resource scheduler owns those so user intent can preempt them.
-  if (typeof res.writeEarlyHints === 'function') {
-    try {
-      res.writeEarlyHints({
-        link: [
-          '</css/westo-critical.smart.css?v=release14uf1d31-order-staged-quote>; rel=preload; as=style',
-          '</js/westo-smart-loader.js?v=release14uf1d31-order-staged-quote>; rel=preload; as=script',
-          '</js/westo-app.smart.js?v=release14uf1d31-order-staged-quote>; rel=preload; as=script',
-          '</api/content-bootstrap.js>; rel=preload; as=script',
-          '</assets/fonts/Vazirmatn-Variable.woff2>; rel=preload; as=font; type=font/woff2; crossorigin',
-        ],
-      });
-    } catch (_) {}
-  }
-  next();
-});
+moduleRuntime.registerHttpRoute('platform_core', 'get-211', moduleRouteContext);
 
 const PAGES = {
   '/login': 'login.html',
@@ -11606,32 +5690,18 @@ const PAGES = {
 };
 
 // Aliases for Operational Panels (POS, Waiter, KDS) and Checkout
-app.get(['/pos', '/pos.html', '/cashier', '/cashier.html'], (req, res) => res.redirect(302, '/admin/cashier'));
-app.get(['/waiter', '/waiter.html'], (req, res) => res.redirect(302, '/admin/waiter'));
-app.get(['/kitchen', '/kitchen.html', '/kds', '/kds.html'], (req, res) => res.redirect(302, '/admin/kitchen'));
-app.get(['/checkout', '/checkout.html'], (req, res) => res.redirect(302, '/order'));
+moduleRuntime.registerHttpRoute('pos', 'get-212', moduleRouteContext);
+moduleRuntime.registerHttpRoute('floor', 'get-213', moduleRouteContext);
+moduleRuntime.registerHttpRoute('kds', 'get-214', moduleRouteContext);
+moduleRuntime.registerHttpRoute('platform_core', 'get-215', moduleRouteContext);
 
-app.get(Object.keys(PAGES), (req, res) => {
-  if (req.path.startsWith('/admin') || req.path === '/login') res.setHeader('Cache-Control', 'no-store');
-  const pagePath = PAGES[req.path] || PAGES[String(req.path || '').replace(/\/$/, '')];
-  if (!pagePath) return res.status(404).send('Not Found');
-  res.sendFile(path.join(ROOT, pagePath));
-});
+moduleRuntime.registerHttpRoute('platform_core', 'get-216', moduleRouteContext);
 
 // The installed app always revalidates its lifecycle files. Versioned code can
 // remain immutable; media keeps a bounded window so admin updates stay fresh.
-app.get('/sw.js', (req, res) => {
-  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-  res.setHeader('Service-Worker-Allowed', '/');
-  res.type('application/javascript');
-  res.sendFile(path.join(ROOT, 'sw.js'));
-});
+moduleRuntime.registerHttpRoute('platform_core', 'get-217', moduleRouteContext);
 
-app.get('/manifest.webmanifest', (req, res) => {
-  res.setHeader('Cache-Control', 'no-cache');
-  res.type('application/manifest+json');
-  res.sendFile(path.join(ROOT, 'manifest.webmanifest'));
-});
+moduleRuntime.registerHttpRoute('platform_core', 'get-218', moduleRouteContext);
 
 app.use((req, res, next) => {
   const pathname = String(req.path || '');
@@ -11663,6 +5733,7 @@ app.use('/api', (req, res) => {
 
 // Strict static asset security perimeter (blocks path traversal, source code, keys, and internal configs)
 const FORBIDDEN_STATIC_PREFIXES = [
+  '/modules',
   '/server',
   '/scripts',
   '/test',
@@ -11715,6 +5786,17 @@ app.use((req, res, next) => {
   next();
 });
 
+app.use((req, res, next) => {
+  if (!['GET', 'HEAD'].includes(req.method)) return next();
+  try {
+    const relative = req.path === '/' ? 'index.html' : req.path.replace(/^\//, '');
+    const selected = moduleRuntime.resolveFrontendAsset(relative, req.tenantContext?.moduleVersions || {});
+    if (!selected) return next();
+    res.setHeader('X-Westo-Module-Version', `${selected.moduleKey}@${selected.version}`);
+    res.setHeader('Cache-Control', 'no-cache');
+    return res.sendFile(selected.absolute);
+  } catch (error) { return next(error); }
+});
 app.use(express.static(ROOT, { extensions: ['html'], etag: true, lastModified: true }));
 app.use((err, req, res, next) => {
   if (res.headersSent) return next(err);

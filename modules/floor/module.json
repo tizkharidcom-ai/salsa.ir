@@ -1,0 +1,173 @@
+{
+  "schemaVersion": 1,
+  "key": "floor",
+  "nameFa": "سالن، میزها و گارسون",
+  "version": "1.0.0",
+  "runtime": "node-commonjs-express",
+  "runtimeApiVersion": "westo-v1",
+  "dependencies": [
+    "platform_core"
+  ],
+  "technicalFeatures": [
+    "floor.tables",
+    "staff.waiter",
+    "floor.service_charge"
+  ],
+  "sharedComposition": [
+    "server/server.js",
+    "js/admin.js",
+    "role-panel.html"
+  ],
+  "dataCapture": "always-on-operational-core",
+  "access": "tenant-entitlement-and-user-capability",
+  "files": [
+    {
+      "path": "frontend/css/admin-floor-simple.css",
+      "legacyPath": "css/admin-floor-simple.css",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/css/waiter-floor-plan.css",
+      "legacyPath": "css/waiter-floor-plan.css",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/js/admin/floor-studio.js",
+      "legacyPath": "js/admin/floor-studio.js",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/js/floor-chair-layout.js",
+      "legacyPath": "js/floor-chair-layout.js",
+      "layer": "frontend"
+    },
+    {
+      "path": "server/waiter-order-invariants.js",
+      "legacyPath": "server/waiter-order-invariants.js",
+      "layer": "server"
+    },
+    {
+      "path": "frontend/admin-views.js",
+      "legacyPath": "js/admin/features/floor-views.js",
+      "layer": "frontend"
+    }
+  ],
+  "httpRoutes": [
+    {
+      "id": "patch-075",
+      "method": "PATCH",
+      "paths": [
+        "/api/waiter/orders/:id"
+      ],
+      "path": "server/routes/patch-075.js"
+    },
+    {
+      "id": "get-086",
+      "method": "GET",
+      "paths": [
+        "/api/waiter/calls"
+      ],
+      "path": "server/routes/get-086.js"
+    },
+    {
+      "id": "patch-087",
+      "method": "PATCH",
+      "paths": [
+        "/api/waiter/calls/:id"
+      ],
+      "path": "server/routes/patch-087.js"
+    },
+    {
+      "id": "patch-088",
+      "method": "PATCH",
+      "paths": [
+        "/api/waiter/orders/:id/status"
+      ],
+      "path": "server/routes/patch-088.js"
+    },
+    {
+      "id": "patch-092",
+      "method": "PATCH",
+      "paths": [
+        "/api/waiter/orders/:id/fire-course"
+      ],
+      "path": "server/routes/patch-092.js"
+    },
+    {
+      "id": "post-093",
+      "method": "POST",
+      "paths": [
+        "/api/waiter/orders/:id/split"
+      ],
+      "path": "server/routes/post-093.js"
+    },
+    {
+      "id": "patch-094",
+      "method": "PATCH",
+      "paths": [
+        "/api/waiter/orders/:id/move-table"
+      ],
+      "path": "server/routes/patch-094.js"
+    },
+    {
+      "id": "post-107",
+      "method": "POST",
+      "paths": [
+        "/api/call-waiter"
+      ],
+      "path": "server/routes/post-107.js"
+    },
+    {
+      "id": "post-108",
+      "method": "POST",
+      "paths": [
+        "/api/call-waiter/cancel"
+      ],
+      "path": "server/routes/post-108.js"
+    },
+    {
+      "id": "get-127",
+      "method": "GET",
+      "paths": [
+        "/api/admin/tables"
+      ],
+      "path": "server/routes/get-127.js"
+    },
+    {
+      "id": "put-128",
+      "method": "PUT",
+      "paths": [
+        "/api/admin/tables"
+      ],
+      "path": "server/routes/put-128.js"
+    },
+    {
+      "id": "post-129",
+      "method": "POST",
+      "paths": [
+        "/api/admin/tables"
+      ],
+      "path": "server/routes/post-129.js"
+    },
+    {
+      "id": "delete-130",
+      "method": "DELETE",
+      "paths": [
+        "/api/admin/tables/:id"
+      ],
+      "path": "server/routes/delete-130.js"
+    },
+    {
+      "id": "get-213",
+      "method": "GET",
+      "paths": [
+        "/waiter",
+        "/waiter.html"
+      ],
+      "path": "server/routes/get-213.js"
+    }
+  ],
+  "adminViews": [
+    "tables"
+  ]
+}

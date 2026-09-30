@@ -1,0 +1,54 @@
+{
+  "schemaVersion": 1,
+  "moduleKey": "accounting",
+  "version": "1.0.0",
+  "labelFa": "نسخهٔ فعلی وستو",
+  "runtimeApiVersion": "westo-v1",
+  "publishedAt": "2026-09-30T12:34:40.499Z",
+  "changesFa": [
+    "همان رابط و رفتار موجود؛ بدون بازطراحی"
+  ],
+  "digest": "a1b12cb568ac7fa89a4b5707ed6ba78735b38735a3549f2837932bff3c3177b8",
+  "assets": [
+    {
+      "legacyPath": "css/admin-accounting-experience.css",
+      "sha256": "262ea249954e0bcb20325f50613409cd5995a16c84cef4aace8d4d07bd6930a3"
+    },
+    {
+      "legacyPath": "css/admin-accounting.css",
+      "sha256": "685c1fcf8816c0fb825cc1ed9a705b1547d0a77ab9561f4db00b5450439270c5"
+    },
+    {
+      "legacyPath": "css/admin-break-even-chart.css",
+      "sha256": "7586da4b9ceb9c6fe1113d527fa01224cd0dcbd17db7878dcb998e9281ea2107"
+    },
+    {
+      "legacyPath": "css/admin-finance-tokens.css",
+      "sha256": "e59238195f59911d8e843b088a3b3851b3800b868b5eaeb36dde257d3add9e87"
+    },
+    {
+      "legacyPath": "js/admin-accounting.js",
+      "sha256": "433c0bcfc5442c41751ce0081aac6f1fdafbdc892d184504727196f1c89980fe"
+    },
+    {
+      "legacyPath": "js/admin/modules/finance/accounting-experience.js",
+      "sha256": "012fefe3a533224589c45e7b6b88284f4fd5d427e181ce501ccb2a320d4843a2"
+    },
+    {
+      "legacyPath": "js/admin/modules/finance/break-even-chart.js",
+      "sha256": "bab74cea90f13614995957d6f365f71712e473d6031b2f7e838fd1836f146151"
+    },
+    {
+      "legacyPath": "js/admin/modules/finance/finance-module.js",
+      "sha256": "8f5f50ee0949e2990f99e3a0425b67fec14836512f2ca5ee294a2226296c922d"
+    },
+    {
+      "legacyPath": "js/admin/modules/finance/finance-ui-model.js",
+      "sha256": "f56eaf974f9f782c416d03d8eefbad566f50e0c73daa0b3dff2fd5d3e605a71d"
+    },
+    {
+      "legacyPath": "js/admin/features/accounting-views.js",
+      "sha256": "9b1efb1221b496b13a5f5f9f76776585c8b7d84eda189c8f76f5e6eb9369180c"
+    }
+  ]
+}

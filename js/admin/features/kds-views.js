@@ -1,0 +1,1 @@
+../../../modules/kds/frontend/admin-views.js

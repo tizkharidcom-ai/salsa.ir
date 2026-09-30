@@ -1,0 +1,449 @@
+{
+  "schemaVersion": 1,
+  "key": "crm",
+  "nameFa": "CRM، وفاداری و پیامک",
+  "version": "1.0.0",
+  "runtime": "node-commonjs-express",
+  "runtimeApiVersion": "westo-v1",
+  "dependencies": [
+    "platform_core"
+  ],
+  "technicalFeatures": [
+    "crm.directory",
+    "crm.loyalty",
+    "crm.wallet",
+    "marketing.campaigns",
+    "marketing.sms"
+  ],
+  "sharedComposition": [
+    "server/server.js",
+    "js/admin.js",
+    "role-panel.html"
+  ],
+  "dataCapture": "always-on-operational-core",
+  "access": "tenant-entitlement-and-user-capability",
+  "files": [
+    {
+      "path": "frontend/css/profile-dashboard.css",
+      "legacyPath": "css/profile-dashboard.css",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/feedback.html",
+      "legacyPath": "feedback.html",
+      "layer": "frontend"
+    },
+    {
+      "path": "frontend/profile.html",
+      "legacyPath": "profile.html",
+      "layer": "frontend"
+    },
+    {
+      "path": "server/customer-club.js",
+      "legacyPath": "server/customer-club.js",
+      "layer": "server"
+    },
+    {
+      "path": "server/finance/campaigns-engine.js",
+      "legacyPath": "server/finance/campaigns-engine.js",
+      "layer": "server"
+    },
+    {
+      "path": "server/finance/club-program.js",
+      "legacyPath": "server/finance/club-program.js",
+      "layer": "server"
+    },
+    {
+      "path": "server/finance/loyalty-achievements.js",
+      "legacyPath": "server/finance/loyalty-achievements.js",
+      "layer": "server"
+    },
+    {
+      "path": "server/finance/loyalty-engine.js",
+      "legacyPath": "server/finance/loyalty-engine.js",
+      "layer": "server"
+    },
+    {
+      "path": "server/finance/sms-engine.js",
+      "legacyPath": "server/finance/sms-engine.js",
+      "layer": "server"
+    },
+    {
+      "path": "server/finance/sms-provider.js",
+      "legacyPath": "server/finance/sms-provider.js",
+      "layer": "server"
+    },
+    {
+      "path": "server/finance/wallet-engine.js",
+      "legacyPath": "server/finance/wallet-engine.js",
+      "layer": "server"
+    },
+    {
+      "path": "server/whatsapp-notify.js",
+      "legacyPath": "server/whatsapp-notify.js",
+      "layer": "server"
+    },
+    {
+      "path": "frontend/admin-views.js",
+      "legacyPath": "js/admin/features/crm-views.js",
+      "layer": "frontend"
+    }
+  ],
+  "httpRoutes": [
+    {
+      "id": "patch-024",
+      "method": "PATCH",
+      "paths": [
+        "/api/auth/profile"
+      ],
+      "path": "server/routes/patch-024.js"
+    },
+    {
+      "id": "post-032",
+      "method": "POST",
+      "paths": [
+        "/api/user/feedback"
+      ],
+      "path": "server/routes/post-032.js"
+    },
+    {
+      "id": "get-070",
+      "method": "GET",
+      "paths": [
+        "/api/profile/orders"
+      ],
+      "path": "server/routes/get-070.js"
+    },
+    {
+      "id": "post-120",
+      "method": "POST",
+      "paths": [
+        "/api/newsletter"
+      ],
+      "path": "server/routes/post-120.js"
+    },
+    {
+      "id": "get-121",
+      "method": "GET",
+      "paths": [
+        "/api/admin/newsletter"
+      ],
+      "path": "server/routes/get-121.js"
+    },
+    {
+      "id": "get-161",
+      "method": "GET",
+      "paths": [
+        "/api/admin/loyalty"
+      ],
+      "path": "server/routes/get-161.js"
+    },
+    {
+      "id": "get-162",
+      "method": "GET",
+      "paths": [
+        "/api/admin/club"
+      ],
+      "path": "server/routes/get-162.js"
+    },
+    {
+      "id": "get-163",
+      "method": "GET",
+      "paths": [
+        "/api/admin/loyalty/tiers"
+      ],
+      "path": "server/routes/get-163.js"
+    },
+    {
+      "id": "put-164",
+      "method": "PUT",
+      "paths": [
+        "/api/admin/loyalty/tiers"
+      ],
+      "path": "server/routes/put-164.js"
+    },
+    {
+      "id": "put-165",
+      "method": "PUT",
+      "paths": [
+        "/api/admin/loyalty/achievements"
+      ],
+      "path": "server/routes/put-165.js"
+    },
+    {
+      "id": "post-166",
+      "method": "POST",
+      "paths": [
+        "/api/admin/loyalty/adjust"
+      ],
+      "path": "server/routes/post-166.js"
+    },
+    {
+      "id": "get-167",
+      "method": "GET",
+      "paths": [
+        "/api/loyalty/customer"
+      ],
+      "path": "server/routes/get-167.js"
+    },
+    {
+      "id": "get-169",
+      "method": "GET",
+      "paths": [
+        "/api/loyalty/me"
+      ],
+      "path": "server/routes/get-169.js"
+    },
+    {
+      "id": "post-170",
+      "method": "POST",
+      "paths": [
+        "/api/loyalty/redeem"
+      ],
+      "path": "server/routes/post-170.js"
+    },
+    {
+      "id": "get-171",
+      "method": "GET",
+      "paths": [
+        "/api/wallet/me"
+      ],
+      "path": "server/routes/get-171.js"
+    },
+    {
+      "id": "post-172",
+      "method": "POST",
+      "paths": [
+        "/api/wallet/topup/request"
+      ],
+      "path": "server/routes/post-172.js"
+    },
+    {
+      "id": "post-173",
+      "method": "POST",
+      "paths": [
+        "/api/wallet/topup/gateway-verify"
+      ],
+      "path": "server/routes/post-173.js"
+    },
+    {
+      "id": "post-174",
+      "method": "POST",
+      "paths": [
+        "/api/wallet/topup/staff-approve"
+      ],
+      "path": "server/routes/post-174.js"
+    },
+    {
+      "id": "get-175",
+      "method": "GET",
+      "paths": [
+        "/api/wallet/topup-requests/pending"
+      ],
+      "path": "server/routes/get-175.js"
+    },
+    {
+      "id": "get-176",
+      "method": "GET",
+      "paths": [
+        "/api/wallet/topup-requests/my"
+      ],
+      "path": "server/routes/get-176.js"
+    },
+    {
+      "id": "post-177",
+      "method": "POST",
+      "paths": [
+        "/api/wallet/topup"
+      ],
+      "path": "server/routes/post-177.js"
+    },
+    {
+      "id": "get-179",
+      "method": "GET",
+      "paths": [
+        "/api/admin/wallet/summary"
+      ],
+      "path": "server/routes/get-179.js"
+    },
+    {
+      "id": "post-180",
+      "method": "POST",
+      "paths": [
+        "/api/admin/wallet/adjust"
+      ],
+      "path": "server/routes/post-180.js"
+    },
+    {
+      "id": "get-181",
+      "method": "GET",
+      "paths": [
+        "/api/admin/wallet/packages"
+      ],
+      "path": "server/routes/get-181.js"
+    },
+    {
+      "id": "put-182",
+      "method": "PUT",
+      "paths": [
+        "/api/admin/wallet/packages"
+      ],
+      "path": "server/routes/put-182.js"
+    },
+    {
+      "id": "get-183",
+      "method": "GET",
+      "paths": [
+        "/api/campaigns/status"
+      ],
+      "path": "server/routes/get-183.js"
+    },
+    {
+      "id": "get-184",
+      "method": "GET",
+      "paths": [
+        "/api/referrals/me"
+      ],
+      "path": "server/routes/get-184.js"
+    },
+    {
+      "id": "post-185",
+      "method": "POST",
+      "paths": [
+        "/api/referrals/apply"
+      ],
+      "path": "server/routes/post-185.js"
+    },
+    {
+      "id": "post-186",
+      "method": "POST",
+      "paths": [
+        "/api/profile/birthday"
+      ],
+      "path": "server/routes/post-186.js"
+    },
+    {
+      "id": "post-187",
+      "method": "POST",
+      "paths": [
+        "/api/campaigns/claim-birthday"
+      ],
+      "path": "server/routes/post-187.js"
+    },
+    {
+      "id": "get-188",
+      "method": "GET",
+      "paths": [
+        "/api/admin/campaigns",
+        "/api/admin/campaigns/summary"
+      ],
+      "path": "server/routes/get-188.js"
+    },
+    {
+      "id": "put-189",
+      "method": "PUT",
+      "paths": [
+        "/api/admin/campaigns",
+        "/api/admin/campaigns/settings"
+      ],
+      "path": "server/routes/put-189.js"
+    },
+    {
+      "id": "get-190",
+      "method": "GET",
+      "paths": [
+        "/api/admin/sms/stats"
+      ],
+      "path": "server/routes/get-190.js"
+    },
+    {
+      "id": "get-191",
+      "method": "GET",
+      "paths": [
+        "/api/admin/sms/rfm"
+      ],
+      "path": "server/routes/get-191.js"
+    },
+    {
+      "id": "put-192",
+      "method": "PUT",
+      "paths": [
+        "/api/admin/sms/settings"
+      ],
+      "path": "server/routes/put-192.js"
+    },
+    {
+      "id": "post-193",
+      "method": "POST",
+      "paths": [
+        "/api/admin/sms/send-test"
+      ],
+      "path": "server/routes/post-193.js"
+    },
+    {
+      "id": "post-194",
+      "method": "POST",
+      "paths": [
+        "/api/admin/sms/send-bulk"
+      ],
+      "path": "server/routes/post-194.js"
+    },
+    {
+      "id": "post-195",
+      "method": "POST",
+      "paths": [
+        "/api/admin/sms/run-winback"
+      ],
+      "path": "server/routes/post-195.js"
+    },
+    {
+      "id": "get-206",
+      "method": "GET",
+      "paths": [
+        "/api/feedback/meta"
+      ],
+      "path": "server/routes/get-206.js"
+    },
+    {
+      "id": "post-207",
+      "method": "POST",
+      "paths": [
+        "/api/feedback"
+      ],
+      "path": "server/routes/post-207.js"
+    },
+    {
+      "id": "get-208",
+      "method": "GET",
+      "paths": [
+        "/api/admin/feedback"
+      ],
+      "path": "server/routes/get-208.js"
+    },
+    {
+      "id": "put-209",
+      "method": "PUT",
+      "paths": [
+        "/api/admin/feedback/settings"
+      ],
+      "path": "server/routes/put-209.js"
+    },
+    {
+      "id": "patch-210",
+      "method": "PATCH",
+      "paths": [
+        "/api/admin/feedback/:id"
+      ],
+      "path": "server/routes/patch-210.js"
+    }
+  ],
+  "adminViews": [
+    "club",
+    "wallet",
+    "campaigns",
+    "sms",
+    "loyalty",
+    "feedback",
+    "newsletter"
+  ]
+}

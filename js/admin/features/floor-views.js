@@ -1,0 +1,1 @@
+../../../modules/floor/frontend/admin-views.js

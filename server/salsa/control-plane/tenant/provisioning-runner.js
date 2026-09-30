@@ -2,6 +2,7 @@
 'use strict';
 
 const crypto = require('crypto');
+const { defaultVersions } = require('../../../../modules/runtime');
 const { getDatabase } = require('../db/database');
 const templateService = require('./template-service');
 const storageService = require('./storage-service');
@@ -151,7 +152,7 @@ class ProvisioningRunner {
         `tenant_${tenantId.replace(/[^a-zA-Z0-9_]/g, '_')}`,
         databaseProvider,
         canonicalDomain || `${tenantId}.salsa.ir`,
-        JSON.stringify({ ownerEmail, templateCode })
+        JSON.stringify({ ownerEmail, templateCode, moduleVersions: defaultVersions(), moduleReleaseRevision: 0 })
       ]);
 
       await registryClient.query(sqlJob, [

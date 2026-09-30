@@ -1,0 +1,289 @@
+{
+  "schemaVersion": 1,
+  "key": "pos",
+  "nameFa": "صندوق و سفارش‌گیری (POS)",
+  "version": "1.0.0",
+  "runtime": "node-commonjs-express",
+  "runtimeApiVersion": "westo-v1",
+  "dependencies": [
+    "menu_qr"
+  ],
+  "technicalFeatures": [
+    "orders.pos",
+    "orders.advanced",
+    "orders.discounts",
+    "orders.offline_sync",
+    "cash.drawers"
+  ],
+  "sharedComposition": [
+    "server/server.js",
+    "js/admin.js",
+    "role-panel.html"
+  ],
+  "dataCapture": "always-on-operational-core",
+  "access": "tenant-entitlement-and-user-capability",
+  "files": [
+    {
+      "path": "server/finance/sales-pos-engine.js",
+      "legacyPath": "server/finance/sales-pos-engine.js",
+      "layer": "server"
+    },
+    {
+      "path": "server/network-printer.js",
+      "legacyPath": "server/network-printer.js",
+      "layer": "server"
+    },
+    {
+      "path": "server/operational-order-actions.js",
+      "legacyPath": "server/operational-order-actions.js",
+      "layer": "server"
+    },
+    {
+      "path": "server/operational-order-aging.js",
+      "legacyPath": "server/operational-order-aging.js",
+      "layer": "server"
+    },
+    {
+      "path": "server/operational-order-retention.js",
+      "legacyPath": "server/operational-order-retention.js",
+      "layer": "server"
+    },
+    {
+      "path": "server/order-cancellation-guard.js",
+      "legacyPath": "server/order-cancellation-guard.js",
+      "layer": "server"
+    },
+    {
+      "path": "server/order-history.js",
+      "legacyPath": "server/order-history.js",
+      "layer": "server"
+    },
+    {
+      "path": "server/order-split-policy.js",
+      "legacyPath": "server/order-split-policy.js",
+      "layer": "server"
+    },
+    {
+      "path": "frontend/admin-views.js",
+      "legacyPath": "js/admin/features/pos-views.js",
+      "layer": "frontend"
+    }
+  ],
+  "httpRoutes": [
+    {
+      "id": "get-007",
+      "method": "GET",
+      "paths": [
+        "/api/cashier/drawer"
+      ],
+      "path": "server/routes/get-007.js"
+    },
+    {
+      "id": "post-008",
+      "method": "POST",
+      "paths": [
+        "/api/cashier/drawer/open"
+      ],
+      "path": "server/routes/post-008.js"
+    },
+    {
+      "id": "post-009",
+      "method": "POST",
+      "paths": [
+        "/api/cashier/drawer/movements"
+      ],
+      "path": "server/routes/post-009.js"
+    },
+    {
+      "id": "post-010",
+      "method": "POST",
+      "paths": [
+        "/api/cashier/drawer/close"
+      ],
+      "path": "server/routes/post-010.js"
+    },
+    {
+      "id": "get-069",
+      "method": "GET",
+      "paths": [
+        "/api/orders/my-orders"
+      ],
+      "path": "server/routes/get-069.js"
+    },
+    {
+      "id": "post-071",
+      "method": "POST",
+      "paths": [
+        "/api/orders"
+      ],
+      "path": "server/routes/post-071.js"
+    },
+    {
+      "id": "get-072",
+      "method": "GET",
+      "paths": [
+        "/api/admin/orders"
+      ],
+      "path": "server/routes/get-072.js"
+    },
+    {
+      "id": "post-073",
+      "method": "POST",
+      "paths": [
+        "/api/staff/orders"
+      ],
+      "path": "server/routes/post-073.js"
+    },
+    {
+      "id": "patch-074",
+      "method": "PATCH",
+      "paths": [
+        "/api/cashier/orders/:id"
+      ],
+      "path": "server/routes/patch-074.js"
+    },
+    {
+      "id": "post-076",
+      "method": "POST",
+      "paths": [
+        "/api/cashier/orders/:id/apply-loyalty"
+      ],
+      "path": "server/routes/post-076.js"
+    },
+    {
+      "id": "post-077",
+      "method": "POST",
+      "paths": [
+        "/api/cashier/orders/:id/settle"
+      ],
+      "path": "server/routes/post-077.js"
+    },
+    {
+      "id": "post-078",
+      "method": "POST",
+      "paths": [
+        "/api/staff/orders/:id/settle"
+      ],
+      "path": "server/routes/post-078.js"
+    },
+    {
+      "id": "get-079",
+      "method": "GET",
+      "paths": [
+        "/api/cashier/printer"
+      ],
+      "path": "server/routes/get-079.js"
+    },
+    {
+      "id": "get-080",
+      "method": "GET",
+      "paths": [
+        "/api/cashier/printers/system"
+      ],
+      "path": "server/routes/get-080.js"
+    },
+    {
+      "id": "put-081",
+      "method": "PUT",
+      "paths": [
+        "/api/cashier/printer"
+      ],
+      "path": "server/routes/put-081.js"
+    },
+    {
+      "id": "post-082",
+      "method": "POST",
+      "paths": [
+        "/api/cashier/printer/test"
+      ],
+      "path": "server/routes/post-082.js"
+    },
+    {
+      "id": "post-083",
+      "method": "POST",
+      "paths": [
+        "/api/cashier/orders/:id/print"
+      ],
+      "path": "server/routes/post-083.js"
+    },
+    {
+      "id": "post-084",
+      "method": "POST",
+      "paths": [
+        "/api/cashier/orders/:id/receipt"
+      ],
+      "path": "server/routes/post-084.js"
+    },
+    {
+      "id": "patch-085",
+      "method": "PATCH",
+      "paths": [
+        "/api/cashier/orders/:id/status"
+      ],
+      "path": "server/routes/patch-085.js"
+    },
+    {
+      "id": "patch-102",
+      "method": "PATCH",
+      "paths": [
+        "/api/admin/orders/:id"
+      ],
+      "path": "server/routes/patch-102.js"
+    },
+    {
+      "id": "get-137",
+      "method": "GET",
+      "paths": [
+        "/api/admin/promotions"
+      ],
+      "path": "server/routes/get-137.js"
+    },
+    {
+      "id": "post-138",
+      "method": "POST",
+      "paths": [
+        "/api/admin/promotions"
+      ],
+      "path": "server/routes/post-138.js"
+    },
+    {
+      "id": "patch-139",
+      "method": "PATCH",
+      "paths": [
+        "/api/admin/promotions/:id"
+      ],
+      "path": "server/routes/patch-139.js"
+    },
+    {
+      "id": "delete-140",
+      "method": "DELETE",
+      "paths": [
+        "/api/admin/promotions/:id"
+      ],
+      "path": "server/routes/delete-140.js"
+    },
+    {
+      "id": "post-178",
+      "method": "POST",
+      "paths": [
+        "/api/orders/:id/pay-wallet"
+      ],
+      "path": "server/routes/post-178.js"
+    },
+    {
+      "id": "get-212",
+      "method": "GET",
+      "paths": [
+        "/pos",
+        "/pos.html",
+        "/cashier",
+        "/cashier.html"
+      ],
+      "path": "server/routes/get-212.js"
+    }
+  ],
+  "adminViews": [
+    "promotions",
+    "orders"
+  ]
+}

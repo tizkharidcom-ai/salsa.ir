@@ -1,0 +1,152 @@
+/* WESTO installed web app geometry.
+   iOS Home Screen + viewport-fit=cover can report visualViewport/svh without
+   safe-area insets. Browser mode keeps dynamic viewport sizing; standalone
+   mode deliberately uses 100vh and explicitly budgets every safe inset. */
+
+:root {
+  --westo-safe-top: env(safe-area-inset-top, 0px);
+  --westo-safe-right: env(safe-area-inset-right, 0px);
+  --westo-safe-bottom: env(safe-area-inset-bottom, 0px);
+  --westo-safe-left: env(safe-area-inset-left, 0px);
+  --westo-app-height: var(--dl-vv-height, 100dvh);
+  --westo-nav-total-h: calc(var(--v12-nav-h) + var(--westo-safe-top));
+}
+
+html.is-standalone {
+  --westo-app-height: 100vh;
+  min-height: 100vh;
+  background: var(--prod-bg, #020708);
+}
+
+html.is-standalone body {
+  min-height: 100vh;
+  background-color: var(--prod-bg, #020708);
+}
+
+/* A restored touch focus in iOS must never expose the keyboard-only skip link. */
+.dl-skip-link:focus {
+  transform: translateY(calc(-100% - 2rem)) !important;
+}
+html[data-input-modality='keyboard'] .dl-skip-link:focus-visible {
+  transform: translateY(0) !important;
+}
+
+html.is-standalone .navbar {
+  box-sizing: border-box !important;
+  min-height: var(--westo-nav-total-h) !important;
+  padding-top: var(--westo-safe-top) !important;
+  padding-left: max(8px, var(--westo-safe-left)) !important;
+  padding-right: max(8px, var(--westo-safe-right)) !important;
+}
+
+html.is-standalone .navbar_content {
+  box-sizing: border-box !important;
+  height: var(--v12-nav-h) !important;
+  min-height: var(--v12-nav-h) !important;
+}
+
+html.is-standalone .navbar_container {
+  min-width: 0 !important;
+  max-width: 100% !important;
+}
+
+html.is-standalone #westo-entrance,
+html.is-standalone #westo-entrance .eg-shell,
+html.is-standalone:not(.is-dish-boards) .section.is-gamme,
+html.is-standalone:not(.is-dish-boards) .carousel_nav {
+  height: 100vh !important;
+  min-height: 100vh !important;
+  max-height: 100vh !important;
+}
+
+html.is-standalone #westo-entrance .eg-shell {
+  box-sizing: border-box !important;
+}
+
+html.is-standalone .navbar_menu {
+  height: 100vh !important;
+  max-height: 100vh !important;
+  padding-top: var(--westo-nav-total-h) !important;
+  padding-bottom: max(18px, calc(var(--westo-safe-bottom) + 10px)) !important;
+  box-sizing: border-box !important;
+}
+
+@media (max-width: 991px) {
+  html.is-standalone:not(.is-dish-boards) .carousel_arrow {
+    top: calc(var(--westo-safe-top) + 41vh) !important;
+  }
+
+  html.is-standalone:not(.is-dish-boards) .hud .icon-scroll_wrapper {
+    top: calc(var(--westo-safe-top) + 52vh) !important;
+  }
+
+  html.is-standalone.is-dish-boards {
+    --dish-chrome-top: calc(var(--westo-nav-total-h) + 80px);
+    --dish-info-h: clamp(218px, 30vh, 270px);
+  }
+
+  html.is-standalone.is-dish-boards #westo-dish-catbar.westo-dish-catbar {
+    top: calc(var(--westo-nav-total-h) + 4px) !important;
+  }
+
+  html.is-standalone.is-dish-boards section.is-benefits .dish-board-media img {
+    height: min(100%, calc(100vh - var(--dish-chrome-top) - var(--dish-card-stack))) !important;
+  }
+
+  html.is-standalone.is-dish-boards #westo-dish-card.is-shared-dish-card {
+    bottom: max(24px, calc(var(--westo-safe-bottom) + 10px)) !important;
+  }
+
+  html.is-standalone .qty-modal__card,
+  html.is-standalone .table-drawer__panel,
+  html.is-standalone .cm-detail__card,
+  html.is-standalone .cm-drawer__panel {
+    max-height: calc(100vh - var(--westo-safe-top) - var(--westo-safe-bottom) - 16px) !important;
+  }
+}
+
+@media (max-width: 430px) {
+  html.is-standalone.is-dish-boards {
+    --dish-chrome-top: calc(var(--westo-nav-total-h) + 74px);
+  }
+
+  html.is-standalone.is-dish-boards .navbar_container {
+    grid-template-columns: minmax(92px, 1fr) minmax(72px, 86px) minmax(70px, 1fr) !important;
+  }
+
+  html.is-standalone.is-dish-boards .navbar_logo-link {
+    width: min(82px, 21vw) !important;
+    max-width: 82px !important;
+  }
+}
+
+@media (orientation: landscape) and (max-height: 620px) {
+  html.is-standalone.is-dish-boards {
+    /* Use the same separation tokens as the browser layout so the installed
+       app does not tuck the category rail underneath the global header. */
+    --dish-chrome-top: calc(
+      var(--westo-nav-total-h) +
+      var(--westo-header-cat-gap) +
+      58px +
+      var(--westo-header-cat-after-gap)
+    );
+    --dish-info-h: calc(100vh - var(--westo-nav-total-h) - 82px);
+  }
+
+  html.is-standalone.is-dish-boards #westo-dish-catbar.westo-dish-catbar {
+    top: calc(var(--westo-nav-total-h) + var(--westo-header-cat-gap)) !important;
+  }
+
+  html.is-standalone.is-dish-boards section.is-benefits .dish-board-media img {
+    height: calc(100vh - var(--dish-chrome-top) - 14px) !important;
+  }
+
+  html.is-standalone.is-dish-boards #westo-dish-card.is-shared-dish-card {
+    top: calc(var(--dish-chrome-top) + 6px) !important;
+    height: calc(100vh - var(--dish-chrome-top) - var(--westo-safe-bottom) - 18px) !important;
+  }
+}
+
+@media (display-mode: standalone) {
+  :root { --westo-app-height: 100vh; }
+}

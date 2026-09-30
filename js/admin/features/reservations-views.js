@@ -1,0 +1,1 @@
+../../../modules/reservations/frontend/admin-views.js

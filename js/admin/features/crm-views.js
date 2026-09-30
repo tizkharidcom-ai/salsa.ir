@@ -1,0 +1,1 @@
+../../../modules/crm/frontend/admin-views.js

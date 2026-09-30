@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "moduleKey": "kds",
+  "version": "1.0.0",
+  "labelFa": "نسخهٔ فعلی وستو",
+  "runtimeApiVersion": "westo-v1",
+  "publishedAt": "2026-09-30T12:34:40.494Z",
+  "changesFa": [
+    "همان رابط و رفتار موجود؛ بدون بازطراحی"
+  ],
+  "digest": "bba42782154f43765ca209b7a5c39a06bb6ad3d8d3281cd896396e3df090e548",
+  "assets": [
+    {
+      "legacyPath": "css/kitchen-kds.css",
+      "sha256": "3a09f98c3544d32911527b2785744e02fc86d2da07e583c3ac48b58fbbc77dd2"
+    },
+    {
+      "legacyPath": "js/admin/features/kds-views.js",
+      "sha256": "28460ff7a0e1422388d4cd9718f283eec532a573171399235af525ee2df2cac6"
+    }
+  ]
+}
