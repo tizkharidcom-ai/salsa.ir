@@ -112,7 +112,7 @@ function resolveFeatureForRoute(reqOrPath, maybeMethod) {
   // 1. Finance & Accounting
   if (p.startsWith('/api/admin/finance') || p.startsWith('/api/admin/v2/finance') || p === '/admin/finance.html'
     || /^\/v1\/(tax|audit|exports|reports|cfo|settlements|expenses|payroll|bank-transactions|reconciliations|inventory)(?:\/|$)/.test(p)
-    || p.startsWith('/api/tax/')) {
+    || p.startsWith('/api/tax/') || /^\/api\/admin\/v2\/resources\/(funds|credit-cards)(?:\/|$)/.test(p)) {
     return 'finance.workspace';
   }
 

@@ -35,6 +35,10 @@ function customerAccessSnapshot(tenantDb) {
 function withoutUnsubscribedFinance(tenantDb, payload) {
   if (isFeatureEnabledForTenant(tenantDb, 'finance.workspace') || !payload || typeof payload !== 'object' || Array.isArray(payload)) return payload;
   const { finance, financeReceipt, ...operational } = payload;
+  if (operational.resources && typeof operational.resources === 'object') {
+    const { funds, 'credit-cards': creditCards, ...resources } = operational.resources;
+    return { ...operational, resources };
+  }
   return operational;
 }
 

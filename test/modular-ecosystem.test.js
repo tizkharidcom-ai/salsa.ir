@@ -63,6 +63,7 @@ test('blank tenant gets actual versions and no WESTO commercial records; subscri
     assert.equal(isFeatureEnabledForTenant(db, 'finance.workspace'), false);
     assert.equal(db.financeV2.events[0], event);
   }
+  assert.deepEqual(withoutUnsubscribedFinance(db, { resources: { funds: [{ id: 'private-fund' }], 'credit-cards': [], couriers: [] } }), { resources: { couriers: [] } });
   assert.deepEqual(withoutUnsubscribedFinance(db, { order: { id: 1 }, finance: { journalEntry: { id: 2 } }, financeReceipt: {} }), { order: { id: 1 } });
 });
 
@@ -71,6 +72,7 @@ test('legacy finance endpoints and alternative operational APIs cannot bypass mo
     assert.equal(resolveFeatureForRoute(route), 'finance.workspace', route);
   }
   assert.equal(resolveFeatureForRoute('/v1/pos/sales/1'), 'orders.pos');
+  assert.equal(resolveFeatureForRoute('/api/admin/v2/resources/funds/1'), 'finance.workspace');
   assert.equal(resolveFeatureForRoute('/api/admin/v2/kitchen'), 'kitchen.kds');
   assert.equal(resolveFeatureForRoute('/api/admin/v2/crm'), 'crm.directory');
   assert.equal(resolveFeatureForRoute('/api/admin/v2/floor'), 'floor.tables');

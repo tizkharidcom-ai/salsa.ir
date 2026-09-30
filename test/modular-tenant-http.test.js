@@ -77,9 +77,11 @@ test('isolated hosts deliver the same modules with empty menus, deny unpaid APIs
     const asset = await request(tenant, '/js/admin/features/menu_qr-views.js');
     assert.equal(asset.status, 200); assert.equal(asset.response.headers.get('x-westo-module-version'), 'menu_qr@1.0.0');
     assert.equal((await request(tenant, '/modules/accounting/server/finance-v2.js')).status, 404);
+    const resources = await request(tenant, '/api/admin/v2/resources');
+    assert.equal(resources.status, 200); assert.equal('funds' in resources.payload.resources, false);
     const session = await request(tenant, '/api/admin/session');
     assert.equal(session.status, 200); assert.equal(session.payload.moduleAccess.features['finance.workspace'], false);
-    for (const route of ['/api/admin/v2/finance/events', '/v1/reports/pnl', '/api/tax/einvoices/x/status', '/api/admin/v2/kitchen']) {
+    for (const route of ['/api/admin/v2/finance/events', '/v1/reports/pnl', '/api/tax/einvoices/x/status', '/api/admin/v2/kitchen', '/api/admin/v2/resources/funds']) {
       assert.equal((await request(tenant, route)).status, 403, route);
     }
   }
