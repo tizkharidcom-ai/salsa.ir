@@ -1,11 +1,14 @@
 /**
  * prototype/js/views/gm20-backups.js
  * 
- * GM-20: پشتیبان‌گیری و آزمون‌های بازیابی خودکار (/backups)
- * مدیریت اسنپ‌شات‌های روزانه، آرشیو لاگ تراکنشی WAL، تطبیق چک‌سام هش و دریل‌های بازیابی در محیط ایزوله
+ * GM-20: رکوردهای پشتیبان و شواهد بازیابی (/backups)
  */
 
 window.GMViews = window.GMViews || {};
+
+const gm20EscapeHtml = value => String(value ?? '').replace(/[&<>"']/g, char => ({
+  '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+}[char]));
 
 window.renderGM20 = function(params) {
   const store = window.prototypeStore || window.GMStore;
@@ -16,7 +19,7 @@ window.renderGM20 = function(params) {
     ? { id: 'all', name: 'تمامی رستوران‌ها و پایگاه‌های داده', cellId: 'سراسری' }
     : ((store && store.getTenant ? store.getTenant(tenantId) : null) || { id: tenantId, name: 'کافه وستو', cellId: 'cell-teh-01' });
   const backups = store && store.getBackups ? store.getBackups(tenantId) : [];
-  const backupSource = backups.length ? 'ذخیره‌ساز امن ابری NEEM (پایش پیوسته)' : 'بدون اسنپ‌شات قابل مشاهده';
+  const backupSource = 'مخزن محلی نمونه؛ فاقد اتصال تأییدشده به بکاپ پروداکشن';
   const cellLabel = isAll ? 'سراسری' : ({ 'cell-teh-01': 'تهران', 'cell-msh-01': 'مشهد', 'cell-mashhad-01': 'مشهد' }[tenant.cellId] || 'مرکز عملیاتی');
 
   return `
@@ -38,13 +41,13 @@ window.renderGM20 = function(params) {
           </span>
           <span class="page-code-badge">GM-20</span>
         </h1>
-        <p>مدیریت نسخه‌های پشتیبان دیتابیس مستقل، اعتبارسنجی خودکار بازیابی و پایش سلامت دریل‌ها</p>
+        <p>مشاهده رکوردهای پشتیبان و وضعیت شواهد؛ مقادیر تأییدنشده به‌عنوان آمادگی عملیاتی گزارش نمی‌شوند.</p>
       </div>
       <div class="header-actions">
         <button class="btn btn-primary" onclick="window.triggerGM20ManualBackup('${!isAll ? tenantId : 'tnt_westo_demo'}')">
           تهیه بکاپ اضطراری فوری
         </button>
-        <button class="btn btn-secondary" onclick="window.triggerGM20RestoreDrill ? window.triggerGM20RestoreDrill() : (window.GMApp ? window.GMApp.showToast('دریل آزمایشی بازیابی نسخه پشتیبان آغاز شد', 'info') : null)">
+        <button class="btn btn-secondary" onclick="window.triggerGM20RestoreDrill ? window.triggerGM20RestoreDrill() : (window.GMApp ? window.GMApp.showToast('اتصال به اجراکنندهٔ واقعی دریل بازیابی موجود نیست؛ هیچ عملیاتی شروع نشد.', 'warning') : null)">
           دریل بازیابی آزمایشی
         </button>
       </div>
@@ -52,7 +55,7 @@ window.renderGM20 = function(params) {
 
     ${window.GMDataState ? window.GMDataState.renderFreshnessBar({
       viewId: 'GM20',
-      sourceLabel: 'مخزن نسخه‌های پشتیبان، ذخیره‌ساز و آزمون‌های بازیابی',
+      sourceLabel: backupSource,
       sourceMode: 'local',
       totalCount: backups.length,
       countLabel: 'نسخه پشتیبان ثبت‌شده'
@@ -64,16 +67,16 @@ window.renderGM20 = function(params) {
         return window.GMDataState.renderFailedState({
           viewId: 'GM20',
           title: 'خطا در واکشی اسنپ‌شات‌های پشتیبان',
-          reason: 'ارتباط با مخزن ابری ذخیره‌سازی یا رجیستری متادیتا برقرار نشد.',
+          reason: 'منبع فعلی داده‌های پشتیبان در دسترس نیست؛ وضعیت بکاپ و بازیابی نامشخص است.',
           errorCode: 'ERR_BACKUP_STORAGE_UNREACHABLE'
         });
       }
       if (dataState.state === 'empty') {
         return window.GMDataState.renderEmptyState({
           title: 'هیچ نسخه پشتیبانی یافت نشد',
-          summary: 'عدم وجود اسنپ‌شات یا نسخه پشتیبان نقطه‌ای در مخزن ذخیره‌سازی ابری',
-          description: 'هیچ اسنپ‌شاتی برای پایگاه داده انتخاب‌شده در مخزن آبجکت‌استوریج ثبت نگردیده است.',
-          auditScope: 'اسنپ‌شات‌های دوره‌ای WAL، فایل‌های پشتیبان کامل پایگاه داده و کلیدهای رمزنگاری',
+          summary: 'در منبع محلی فعلی رکوردی برای نمایش وجود ندارد.',
+          description: 'این وضعیت به‌تنهایی وجود یا نبود بکاپ در زیرساخت پروداکشن را اثبات نمی‌کند.',
+          auditScope: 'مانیفست بکاپ، ذخیره‌ساز artifact، WAL و شواهد restore باید از منبع عملیاتی دریافت شوند.',
           actionLabel: 'تهیه اسنپ‌شات اضطراری فوری',
           onAction: `window.triggerGM20ManualBackup('${!isAll ? tenantId : 'tnt_westo_demo'}')`
         });
@@ -95,12 +98,12 @@ window.renderGM20 = function(params) {
     <div class="tenant-correlation-bar" style="background: var(--bg-surface); border: 1px solid var(--border-default); border-radius: 8px; padding: 0.65rem 1rem; margin-bottom: 1.25rem; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.75rem;">
       <div style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
         <span style="font-size: 0.813rem; font-weight: 600; color: var(--text-secondary);">دیتابیس مستقل رستوران:</span>
-        <a href="#gm-20-backups?id=all" class="filter-chip ${isAll ? 'active' : ''}">همه دیتابیس‌ها (${(store ? store.getBackups('all') : []).length})</a>
+        <a href="#gm-20-backups?id=all" class="filter-chip ${isAll ? 'active' : ''}">همه رکوردها (${(store ? store.getBackups('all') : []).length})</a>
         ${tenants.map(t => {
           const tBkp = store ? store.getBackups(t.id) : [];
           return `
             <a href="#gm-20-backups?id=${t.id}" class="filter-chip ${tenantId === t.id ? 'active' : ''}">
-              ${t.name} (${tBkp.length})
+              ${gm20EscapeHtml(t.name)} (${tBkp.length})
             </a>
           `;
         }).join('')}
@@ -117,36 +120,40 @@ window.renderGM20 = function(params) {
       </div>
     </div>
 
-    <!-- Operational Guidance Banner -->
-    <div class="op-context-banner op-context-info" role="region" aria-label="راهنمای پشتیبان‌گیری و بازیابی">
+    <!-- DR evidence is unknown until this view receives verified operational evidence. -->
+    <div class="op-context-banner op-context-info" role="region" aria-label="وضعیت شواهد پشتیبان‌گیری و بازیابی">
       <div class="op-context-header">
-        <span>سامانه پشتیبان‌گیری و بازیابی داده‌های سازمانی</span>
-        <span class="badge badge-success">RPO < ۱۵ دقیقه / RTO < ۵ دقیقه</span>
+        <span>آمادگی بازیابی بحران</span>
+        <span class="badge badge-warning">مسدود — شواهد عملیاتی متصل نیست</span>
       </div>
       <div class="op-context-grid">
         <div class="op-context-item">
-          <span class="op-context-label">وضعیت جاری:</span>
-          <span class="op-context-desc">رکوردهای پشتیبان در ذخیره‌ساز ابری با کلید اختصاصی AES-256 رمزنگاری شده و دارای چک‌سام SHA-256 هستند.</span>
+          <span class="op-context-label">RPO / RTO</span>
+          <span class="op-context-desc">نامشخص — نتیجهٔ دریل معتبر و قابل انتساب در این نما موجود نیست.</span>
         </div>
         <div class="op-context-item">
-          <span class="op-context-label">تعهد معماری و پیامد:</span>
-          <span class="op-context-desc">بازیابی تضمینی داده‌ها مطابق شاخص‌های RPO و RTO مصوب سرویس سازمانی.</span>
+          <span class="op-context-label">WAL / PITR</span>
+          <span class="op-context-desc">نامشخص — وضعیت جاری replication، WAL و قابلیت PITR گزارش نشده است.</span>
         </div>
         <div class="op-context-item">
-          <span class="op-context-label">اقدام استاندارد بعدی:</span>
-          <span class="op-context-desc">بررسی دوره‌ای لاگ‌های اعتبارسنجی بازیابی خودکار در محیط Sandbox.</span>
+          <span class="op-context-label">ذخیره‌سازی خارج از سایت</span>
+          <span class="op-context-desc">نامشخص — مقصد و تأیید همگام‌سازی شواهد ندارند.</span>
+        </div>
+        <div class="op-context-item">
+          <span class="op-context-label">امتیاز آمادگی</span>
+          <span class="op-context-desc">مسدود — تا اتصال telemetry و شواهد restore، امتیاز محاسبه نمی‌شود.</span>
         </div>
       </div>
     </div>
 
     <div class="data-quality-strip" role="status" aria-label="وضعیت داده‌های پشتیبان‌گیری">
-      <div class="data-quality-label"><span class="dq-badge-dot dot-cyan"></span><span>وضعیت پشتیبان‌ها</span></div>
+      <div class="data-quality-label"><span class="dq-badge-dot dot-warning"></span><span>منبع و اعتبار داده</span></div>
       <div class="data-quality-grid">
-        <span class="dq-badge"><span class="dq-badge-dot ${backups.length ? 'dot-blue' : 'dot-purple'}"></span><span class="dq-dim-name">منبع</span><span class="dq-dim-val">${backupSource}</span></span>
-        <span class="dq-badge"><span class="dq-badge-dot dot-blue"></span><span class="dq-dim-name">اسنپ‌شات قابل مشاهده</span><span class="dq-dim-val">${backups.length.toLocaleString('fa-IR')} مورد</span></span>
-        <span class="dq-badge"><span class="dq-badge-dot dot-emerald"></span><span class="dq-dim-name">آزمون بازیابی</span><span class="dq-dim-val">تأییدشده و آماده</span></span>
+        <span class="dq-badge"><span class="dq-badge-dot dot-warning"></span><span class="dq-dim-name">منبع</span><span class="dq-dim-val">${backupSource}</span></span>
+        <span class="dq-badge"><span class="dq-badge-dot dot-blue"></span><span class="dq-dim-name">ردیف محلی</span><span class="dq-dim-val">${backups.length.toLocaleString('fa-IR')} مورد (نه شمارش پروداکشن)</span></span>
+        <span class="dq-badge"><span class="dq-badge-dot dot-warning"></span><span class="dq-dim-name">اعتبارسنجی / restore</span><span class="dq-dim-val">نامشخص؛ مدرک عملیاتی متصل نیست</span></span>
       </div>
-      <span class="dq-action-hint"><span>تمام اسنپ‌شات‌ها رمزنگاری‌شده و دارای امضای معتبر هستند.</span></span>
+      <span class="dq-action-hint"><span>داده‌های محلی، provenance یا سلامت artifactهای پروداکشن را اثبات نمی‌کنند.</span></span>
     </div>
 
     <!-- Backups Table with Toolbar, Select All, and Bulk Actions -->
@@ -154,11 +161,11 @@ window.renderGM20 = function(params) {
       <div class="table-toolbar">
         <div class="table-filters" id="backupStatusFilters" role="group" aria-label="فیلتر نوع و وضعیت پشتیبان">
           <button class="filter-chip active" aria-pressed="true" onclick="window.GMViews.GM20.setStatusFilter('all', this)">همه (${backups.length})</button>
-          <button class="filter-chip" aria-pressed="false" onclick="window.GMViews.GM20.setStatusFilter('verified', this)">تأییدشده</button>
+          <button class="filter-chip" aria-pressed="false" onclick="window.GMViews.GM20.setStatusFilter('verified', this)">دارای مدرک تأیید واقعی</button>
           <button class="filter-chip" aria-pressed="false" onclick="window.GMViews.GM20.setStatusFilter('full', this)">پشتیبان کامل</button>
         </div>
         <div class="table-search-group">
-          <span id="backupsFilterCount" class="filter-count-badge">نمایش ${backups.length.toLocaleString('fa-IR')} از ${backups.length.toLocaleString('fa-IR')} نسخه پشتیبان</span>
+          <span id="backupsFilterCount" class="filter-count-badge">نمایش ${backups.length.toLocaleString('fa-IR')} از ${backups.length.toLocaleString('fa-IR')} رکورد محلی</span>
           <div class="search-input-wrapper" id="backupSearchWrapper">
             <input type="text" id="backupSearchInput" class="form-control" placeholder="جست‌وجو در شناسه، رستوران یا مخزن..." aria-label="جست‌وجو در نسخه‌های پشتیبان" style="width: 220px; padding: 0.35rem 0.75rem;" oninput="window.GMViews.GM20.setQuery(this.value)" />
             <button class="search-clear-btn" onclick="window.GMViews.GM20.clearSearch()" aria-label="پاکسازی جستجو">✕</button>
@@ -172,7 +179,7 @@ window.renderGM20 = function(params) {
               <th class="cell-checkbox" style="width: 40px; text-align: center;">
                 <input type="checkbox" id="backups-select-all" aria-label="انتخاب همه نسخه‌های پشتیبان" />
               </th>
-              <th>نسخه پشتیبان</th>
+          <th>رکورد محلی</th>
               <th>رستوران والد</th>
               <th>نوع نسخه</th>
               <th>حجم فشرده</th>
@@ -186,41 +193,41 @@ window.renderGM20 = function(params) {
           </thead>
           <tbody>
             ${backups.map(b => `
-              <tr id="row-bkp-${b.id}" data-id="${b.id}" data-type="${b.type || ''}" data-status="${b.status || ''}" data-search="${b.id} ${tenant.name || ''} ${b.type || ''} ${b.storageProvider || ''}">
+              <tr id="row-bkp-${gm20EscapeHtml(b.id)}" data-id="${gm20EscapeHtml(b.id)}" data-type="" data-status="unverified" data-search="${gm20EscapeHtml(`${b.id || ''} ${tenant.name || ''}`)}">
                 <td class="cell-checkbox" style="text-align: center;">
-                  <input type="checkbox" class="backup-row-select" data-id="${b.id}" aria-label="انتخاب نسخه پشتیبان ${b.id}" />
+                  <input type="checkbox" class="backup-row-select" data-id="${gm20EscapeHtml(b.id)}" aria-label="انتخاب رکورد محلی ${gm20EscapeHtml(b.id)}" />
                 </td>
                 <td>
-                  <strong style="color: var(--text-primary);">نسخه پشتیبان ${b.createdAt}</strong>
+                  <strong style="color: var(--text-primary);">رکورد محلی ${gm20EscapeHtml(b.createdAt || 'با زمان نامشخص')}</strong>
                   <details class="row-disclosure backup-technical-details">
-                    <summary>شناسه نسخه</summary>
-                    <code class="nav-code">${b.id}</code>
+                    <summary>شناسه و منبع</summary>
+                    <code class="nav-code">${gm20EscapeHtml(b.id)} — prototypeStore / داده محلی؛ بدون provenance پروداکشن</code>
                   </details>
                 </td>
                 <td>
-                  <a href="#gm-04-tenant-detail?id=${b.tenantId}&tab=backups" class="badge badge-neutral" style="text-decoration: none; display: inline-flex; align-items: center; gap: 0.3rem;" title="مشاهده پرونده رستوران">
-                    <span>${tenant.name || 'کافه وستو'}</span>
+                  <a href="#gm-04-tenant-detail?id=${gm20EscapeHtml(b.tenantId)}&tab=backups" class="badge badge-neutral" style="text-decoration: none; display: inline-flex; align-items: center; gap: 0.3rem;" title="مشاهده پرونده رستوران">
+                    <span>${gm20EscapeHtml(tenant.name || 'نامشخص')}</span>
                   </a>
                 </td>
-                <td><strong style="color: var(--text-primary);">${String(b.type || '').includes('WAL') ? 'پشتیبان کامل داده و تراکنش' : 'نسخه پشتیبان'}</strong></td>
-                <td class="cell-mono" style="font-size: 0.75rem;">${b.size}</td>
-                <td style="color: var(--text-secondary);">${b.storageProvider}</td>
+                <td><span class="badge badge-warning">نامشخص — نوع رکورد تأیید نشده</span></td>
+                <td class="cell-mono" style="font-size: 0.75rem;">نامشخص</td>
+                <td style="color: var(--text-secondary);">نامشخص — مقصد ذخیره‌سازی تأیید نشده</td>
                 <td>
-                  <span class="badge badge-success"><span class="status-dot dot-green"></span> امضای معتبر SHA-256</span>
+                  <span class="badge badge-warning">نامشخص — هش با artifact واقعی تطبیق نشده</span>
                   <details class="row-disclosure backup-technical-details">
-                    <summary>جزئیات اعتبارسنجی</summary>
-                    <code class="nav-code" style="font-size: 0.688rem;">${b.sha256}</code>
+                    <summary>منبع شواهد</summary>
+                    <code class="nav-code" style="font-size: 0.688rem;">مانیفست و artifact عملیاتی به این نما متصل نیست.</code>
                   </details>
                 </td>
                 <td>
-                  <span class="badge badge-success"><span class="badge-dot"></span> آزمون بازیابی موفق (${b.restoreDrillTime || '۲۴ ساعت گذشته'})</span>
+                  <span class="badge badge-warning">مسدود — شواهد دریل بازیابی موجود نیست</span>
                 </td>
-                <td style="font-size: 0.75rem; color: var(--text-secondary);">${b.createdAt}</td>
+                <td style="font-size: 0.75rem; color: var(--text-secondary);">${gm20EscapeHtml(b.createdAt || 'نامشخص')} — مقدار محلی</td>
                 <td>
-                  <span class="badge badge-success"><span class="badge-dot"></span> آماده و تأییدشده</span>
+                  <span class="badge badge-warning">مسدود — وضعیت تولیدی نامشخص</span>
                 </td>
                 <td class="cell-actions">
-                  <button class="btn btn-secondary btn-sm" onclick="window.openGM20RestoreModal('${b.id}', '${b.createdAt}')" aria-label="شروع فرایند بازیابی اسنپ‌شات ${b.id}">
+                  <button class="btn btn-secondary btn-sm" onclick="window.openGM20RestoreModal('${gm20EscapeHtml(b.id)}', '${gm20EscapeHtml(b.createdAt || '')}')" aria-label="بررسی امکان بازیابی رکورد ${gm20EscapeHtml(b.id)}">
                     بازیابی و اعتبارسنجی
                   </button>
                 </td>
@@ -276,39 +283,24 @@ window.triggerGM20ManualBackup = function(targetTenantId) {
 window.openGM20RestoreModal = function(backupId, backupTime) {
   const content = `
     <div style="display: flex; flex-direction: column; gap: 1rem;">
-      <div class="alert alert-info">
-        <strong>فرایند بازیابی امن (Sandbox Isolation):</strong>
-        بازیابی در محیط مجزا و ایمن جهت سنجش جامعیت داده انجام می‌شود و سرویس زنده تحت تأثیر قرار نمی‌گیرد.
-      </div>
-
-      <div>
-        <label class="form-label" style="font-size: 0.813rem; font-weight: 600; color: var(--text-primary);">محیط هدف جهت بازنشانی:</label>
-        <div style="display: flex; gap: 1rem; flex-wrap: wrap; margin-top: 0.35rem;">
-          <label style="display: flex; align-items: center; gap: 0.4rem; cursor: pointer; font-size: 0.813rem;">
-            <input type="radio" name="restore-target" value="sandbox" checked aria-describedby="restore-target-help" />
-            <span>محیط آزمایشی ایزوله (Sandbox) — توصیه پیش‌فرض</span>
-          </label>
-          <label style="display: flex; align-items: center; gap: 0.4rem; cursor: pointer; font-size: 0.813rem; color: #fb7185;">
-            <input type="radio" name="restore-target" value="production" aria-describedby="restore-target-help" />
-            <strong>محیط تولیدی (نیازمند تایید دو مرحله‌ای)</strong>
-          </label>
-        </div>
-        <div class="form-helper-text" id="restore-target-help">در محیط آزمایشی ایزوله، داده‌ها بدون دستکاری یا ایجاد قطعی در سرویس زنده بازنشانی و صحه‌گذاری می‌شوند.</div>
+      <div class="alert alert-warning">
+        <strong>وضعیت بازیابی: مسدود / نامشخص</strong>
+        این نما به اجراکنندهٔ واقعی بازیابی متصل نیست؛ ایزوله‌بودن مقصد و صحت مانیفست هنوز اثبات نشده است.
       </div>
 
       <div style="background: var(--bg-surface-elevated, #f8fafc); padding: 0.75rem; border-radius: 6px; font-size: 0.75rem; color: var(--text-secondary); border: 1px solid var(--border-default);" class="cell-mono">
-        <div>نسخه انتخاب‌شده: ${backupId} (${backupTime})</div>
-        <div style="margin-top: 0.2rem;">بررسی دروازه‌های ایمنی: تأیید خودکار چک‌سام و تست جامعیت تراکنشی</div>
+        <div>شناسه رکورد محلی: ${gm20EscapeHtml(backupId)} (${gm20EscapeHtml(backupTime || 'زمان نامشخص')})</div>
+        <div style="margin-top: 0.2rem;">مانیفست، checksum و نتیجهٔ restore باید از سرویس واقعی دریافت و بررسی شوند.</div>
       </div>
     </div>
   `;
 
   if (window.GMApp && window.GMApp.openModal) {
-    window.GMApp.openModal(`بازیابی و اعتبارسنجی اسنپ‌شات: ${backupId}`, content, () => {
+    window.GMApp.openModal(`بررسی بازیابی رکورد: ${gm20EscapeHtml(backupId)}`, content, () => {
       window.GMApp.showToast('پروتوتایپ به اجراکنندهٔ بازیابی متصل نیست؛ هیچ بازیابی آغاز نشد.', 'warning');
       return false;
     }, {
-      confirmText: 'شروع فرایند دریل بازیابی',
+      confirmText: 'درخواست دریل بازیابی',
       confirmVariant: 'warning',
       severity: 'warning',
       severityLabel: 'سناریوی بازیابی DR'
@@ -379,7 +371,7 @@ window.GMViews.GM20 = {
 
     const countBadge = document.getElementById('backupsFilterCount');
     if (countBadge) {
-      countBadge.textContent = `نمایش ${visibleCount.toLocaleString('fa-IR')} از ${totalCount.toLocaleString('fa-IR')} نسخه پشتیبان`;
+      countBadge.textContent = `نمایش ${visibleCount.toLocaleString('fa-IR')} از ${totalCount.toLocaleString('fa-IR')} رکورد محلی`;
     }
 
     const wrapper = document.getElementById('backupSearchWrapper');
@@ -456,7 +448,7 @@ window.GMViews.GM20 = {
       return;
     }
     if (window.GMApp && window.GMApp.showToast) {
-      window.GMApp.showToast(`مانیفست امنیتی آرشیو برای ${ids.length} اسنپ‌شات دانلود شد.`, 'info');
+      window.GMApp.showToast(`این نما به مانیفست عملیاتی متصل نیست؛ برای ${ids.length} رکورد فایلی دانلود نشد.`, 'warning');
     }
   }
 };

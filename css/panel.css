@@ -642,6 +642,20 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
 .kds-actions { display: flex; flex-wrap: wrap; gap: 0.35rem; }
 .kds-ready-note { color: var(--p-accent); font-size: .74rem; font-weight: 750; }
 .kds-calls { border-color: rgba(120, 208, 216, 0.35); }
+.kds-cancelled-lane--admin { margin: 0 0 1rem; padding: .8rem; border: 1px solid color-mix(in srgb,var(--ops-danger,#d04b55) 42%,var(--p-border)); border-radius: var(--p-radius); background: var(--p-surface); color: var(--p-text); }
+.kds-cancelled-lane--admin > .ops-panel__head { margin-bottom: .45rem; }
+.kds-cancelled-lane--admin > .ops-panel__head h2 { margin: 0; font-size: 1rem; }
+.kds-cancelled-lane--admin > .hint { margin: .4rem 0 .7rem; }
+.kds-cancelled-lane--admin__list { display: grid; grid-template-columns: repeat(auto-fit,minmax(min(100%,14rem),1fr)); gap: .55rem; }
+.kds-cancelled-card { min-width: 0; padding: .65rem .75rem; border: 1px solid color-mix(in srgb,var(--ops-danger,#d04b55) 28%,var(--p-border)); border-radius: 12px; background: color-mix(in srgb,var(--ops-danger,#d04b55) 6%,var(--p-surface-2)); }
+.kds-cancelled-card header { display: flex; justify-content: space-between; gap: .5rem; color: var(--p-text); }
+.kds-cancelled-card header span { color: var(--p-text-dim); direction: ltr; }
+.kds-cancelled-card__time,.kds-cancelled-card__note { margin: .25rem 0; color: var(--p-text-dim); font-size: .75rem; }
+.kds-cancelled-card__time { color: var(--ops-danger,#d04b55); font-weight: 750; }
+.kds-cancelled-card ul { margin: .35rem 0 0; padding-inline-start: 1.1rem; color: var(--p-text); line-height: 1.6; }
+.kds-cancelled-card li b { color: var(--ops-danger,#d04b55); }
+.kds-cancelled-card__note { display: grid; gap: .15rem; }
+.kds-cancelled-card__note b { color: var(--p-text); }
 
 .branch-select-wrap {
   margin-inline-start: auto;
@@ -2024,5 +2038,561 @@ html[data-theme='light'] .admin-tracking-code {
   color: #1a2327 !important;
   background: rgba(12, 85, 92, 0.08) !important;
   border: 1px solid rgba(12, 85, 92, 0.18) !important;
+}
+
+/* ── WESTO Admin — Menu & Recipe Engineering V2 Ergonomics ── */
+
+.menu-studio__row {
+  position: relative;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.menu-studio__row.is-unavailable {
+  opacity: 0.62;
+  filter: grayscale(0.25);
+  background: rgba(255, 255, 255, 0.03);
+}
+.menu-studio__row.is-price-updated {
+  animation: priceUpdatedGlow 1.2s ease-out;
+}
+@keyframes priceUpdatedGlow {
+  0% { box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.6), inset 0 0 12px rgba(34, 197, 94, 0.3); border-color: #22c55e; }
+  100% { box-shadow: none; }
+}
+
+.menu-studio__meta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-width: 0;
+}
+.menu-studio__name-line {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+.menu-studio__name-line strong {
+  font-size: 0.98rem;
+  font-weight: 750;
+  color: var(--p-text);
+}
+.menu-studio__chips-line {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+
+/* Dietary Pills */
+.menu-dietary-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 0.12rem 0.45rem;
+  border-radius: 999px;
+  font-size: 0.65rem;
+  font-weight: 700;
+  border: 1px solid transparent;
+}
+.menu-dietary-pill.is-vegan {
+  background: rgba(34, 197, 94, 0.12);
+  color: #4ade80;
+  border-color: rgba(34, 197, 94, 0.25);
+}
+.menu-dietary-pill.is-keto {
+  background: rgba(168, 85, 247, 0.12);
+  color: #c084fc;
+  border-color: rgba(168, 85, 247, 0.25);
+}
+.menu-dietary-pill.is-gf {
+  background: rgba(234, 179, 8, 0.12);
+  color: #facc15;
+  border-color: rgba(234, 179, 8, 0.25);
+}
+.menu-dietary-pill.is-spicy {
+  background: rgba(239, 68, 68, 0.12);
+  color: #f87171;
+  border-color: rgba(239, 68, 68, 0.25);
+}
+.menu-dietary-pill.is-lowcal {
+  background: rgba(56, 189, 248, 0.12);
+  color: #38bdf8;
+  border-color: rgba(56, 189, 248, 0.25);
+}
+.menu-dietary-pill.is-dairyfree {
+  background: rgba(244, 114, 182, 0.12);
+  color: #f472b6;
+  border-color: rgba(244, 114, 182, 0.25);
+}
+
+/* Food Cost & BCG Pills */
+.menu-cost-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.15rem 0.5rem;
+  border-radius: 0.45rem;
+  font-size: 0.65rem;
+  font-weight: 750;
+  border: 1px solid transparent;
+}
+.menu-cost-pill.is-good {
+  background: rgba(16, 185, 129, 0.14);
+  color: #34d399;
+  border-color: rgba(16, 185, 129, 0.28);
+}
+.menu-cost-pill.is-warn {
+  background: rgba(245, 158, 11, 0.14);
+  color: #fbbf24;
+  border-color: rgba(245, 158, 11, 0.28);
+}
+.menu-cost-pill.is-danger {
+  background: rgba(239, 68, 68, 0.14);
+  color: #f87171;
+  border-color: rgba(239, 68, 68, 0.28);
+}
+.menu-cost-pill.is-missing {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--p-text-dim);
+  border-color: rgba(255, 255, 255, 0.12);
+  cursor: pointer;
+}
+.menu-cost-pill.is-missing:hover {
+  background: rgba(245, 158, 11, 0.12);
+  color: #fbbf24;
+  border-color: rgba(245, 158, 11, 0.3);
+}
+.menu-cost-pill .bcg-tag {
+  padding: 0.05rem 0.3rem;
+  border-radius: 0.3rem;
+  background: rgba(255, 255, 255, 0.1);
+  font-size: 0.62rem;
+}
+
+/* Prep & Stock Pills */
+.menu-prep-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.1rem 0.4rem;
+  border-radius: 0.35rem;
+  font-size: 0.64rem;
+  color: var(--p-text-dim);
+  background: rgba(255, 255, 255, 0.06);
+}
+.menu-stock-pill {
+  display: inline-flex;
+  padding: 0.1rem 0.45rem;
+  border-radius: 0.35rem;
+  font-size: 0.63rem;
+  font-weight: 700;
+}
+.menu-stock-pill.is-ok {
+  background: rgba(34, 197, 94, 0.1);
+  color: #4ade80;
+}
+.menu-stock-pill.is-low {
+  background: rgba(245, 158, 11, 0.15);
+  color: #f59e0b;
+  border: 1px solid rgba(245, 158, 11, 0.3);
+}
+.menu-stock-pill.is-out {
+  background: rgba(239, 68, 68, 0.18);
+  color: #ef4444;
+  border: 1px solid rgba(239, 68, 68, 0.35);
+}
+
+/* Inline Quick-Price Editor */
+.menu-studio__price-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.15rem;
+}
+.menu-price-display {
+  display: inline-block;
+  font-size: 0.88rem;
+  font-weight: 750;
+  color: var(--p-accent, #78d0d8);
+  cursor: pointer;
+  padding: 0.15rem 0.35rem;
+  border-radius: 0.4rem;
+  transition: background 0.15s ease;
+  direction: ltr;
+}
+.menu-price-display:hover {
+  background: rgba(120, 208, 216, 0.15);
+  text-decoration: underline;
+}
+.inline-price-editor {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+  padding: 0.3rem 0.45rem;
+  background: var(--p-surface-2, rgba(20, 20, 24, 0.95));
+  border: 1px solid var(--p-accent, #78d0d8);
+  border-radius: 0.65rem;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+  z-index: 10;
+}
+.inline-price-input {
+  width: 7.5rem !important;
+  min-height: 2rem !important;
+  padding: 0.25rem 0.45rem !important;
+  font-size: 0.85rem !important;
+  font-weight: 700 !important;
+  direction: ltr !important;
+  text-align: center !important;
+  border-radius: 0.4rem !important;
+  border: 1px solid var(--admin-line, rgba(255, 255, 255, 0.15)) !important;
+  background: var(--p-surface, #121214) !important;
+  color: var(--p-text, #fff) !important;
+}
+.inline-price-nudges {
+  display: flex;
+  align-items: center;
+  gap: 0.2rem;
+}
+.btn-nudge {
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--p-text);
+  border-radius: 0.35rem;
+  padding: 0.2rem 0.4rem;
+  font-size: 0.68rem;
+  font-weight: 750;
+  cursor: pointer;
+  transition: all 0.12s ease;
+  direction: ltr;
+}
+.btn-nudge:hover {
+  background: var(--p-accent);
+  color: #0d1b1e;
+  border-color: var(--p-accent);
+}
+.inline-price-save {
+  padding: 0.25rem 0.6rem !important;
+  min-height: 2rem !important;
+  font-size: 0.75rem !important;
+}
+.inline-price-cancel {
+  padding: 0.25rem 0.5rem !important;
+  min-height: 2rem !important;
+  font-size: 0.75rem !important;
+}
+
+/* Dietary & Costing Filter Strip */
+.menu-filters-strip {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  overflow-x: auto;
+  padding: 0.4rem 0;
+  margin-top: 0.5rem;
+  scrollbar-width: none;
+}
+.menu-filters-strip::-webkit-scrollbar { display: none; }
+.menu-filter-chip {
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--p-text-dim);
+  border-radius: 999px;
+  padding: 0.3rem 0.65rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+}
+.menu-filter-chip:hover {
+  border-color: var(--p-accent);
+  color: var(--p-text);
+}
+.menu-filter-chip.is-active {
+  background: var(--p-accent);
+  color: #0b1e22;
+  border-color: var(--p-accent);
+}
+
+/* Bulk Price Adjustment Modal */
+.bulk-price-modal {
+  width: min(38rem, calc(100vw - 2rem));
+}
+.bulk-price-options {
+  display: flex;
+  gap: 0.4rem;
+  margin: 0.85rem 0;
+  flex-wrap: wrap;
+}
+.bulk-pct-chip {
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--p-text);
+  border-radius: 0.5rem;
+  padding: 0.4rem 0.75rem;
+  font-size: 0.8rem;
+  font-weight: 750;
+  cursor: pointer;
+  direction: ltr;
+}
+.bulk-pct-chip.is-active {
+  background: var(--p-accent);
+  color: #0b1e22;
+  border-color: var(--p-accent);
+}
+.bulk-preview-table-wrap {
+  max-height: 240px;
+  overflow-y: auto;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 0.65rem;
+  margin: 0.75rem 0;
+}
+.bulk-preview-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.75rem;
+}
+.bulk-preview-table th,
+.bulk-preview-table td {
+  padding: 0.5rem 0.75rem;
+  text-align: right;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+.bulk-preview-table th {
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--p-text-dim);
+}
+.bulk-diff-up { color: #4ade80; font-weight: 700; direction: ltr; }
+.bulk-diff-down { color: #f87171; font-weight: 700; direction: ltr; }
+
+/* Gross Profit & Markup Simulator in Drawer */
+.menu-editor-card--simulator {
+  border-color: rgba(120, 208, 216, 0.3);
+  background: linear-gradient(175deg, rgba(120, 208, 216, 0.08) 0%, rgba(20, 24, 28, 0.85) 100%);
+}
+.menu-simulator-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  margin-top: 0.75rem;
+}
+.menu-simulator-box {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.65rem;
+}
+.sim-metric {
+  padding: 0.75rem;
+  border-radius: 0.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+}
+.sim-metric .sim-label {
+  display: block;
+  font-size: 0.66rem;
+  color: var(--p-text-dim);
+  margin-bottom: 0.2rem;
+}
+.sim-metric .sim-value {
+  display: block;
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: var(--p-text);
+  direction: ltr;
+  text-align: right;
+}
+.sim-metric .sim-value.is-profit { color: #4ade80; }
+.sim-metric .sim-value.is-margin { color: #38bdf8; }
+.sim-target-label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--p-text);
+}
+.sim-target-label input[type="range"] {
+  width: 100%;
+  accent-color: var(--p-accent);
+  cursor: pointer;
+}
+.sim-target-chips {
+  display: flex;
+  gap: 0.3rem;
+  margin: 0.45rem 0 0.75rem;
+  flex-wrap: wrap;
+}
+.sim-target-chip {
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--p-text-dim);
+  border-radius: 0.45rem;
+  padding: 0.25rem 0.55rem;
+  font-size: 0.68rem;
+  font-weight: 750;
+  cursor: pointer;
+}
+.sim-target-chip.is-active {
+  background: var(--p-accent);
+  color: #091a1d;
+  border-color: var(--p-accent);
+}
+.sim-suggested-card {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem 0.9rem;
+  border-radius: 0.75rem;
+  background: rgba(120, 208, 216, 0.12);
+  border: 1px solid rgba(120, 208, 216, 0.3);
+}
+.sim-suggested-card small {
+  display: block;
+  font-size: 0.65rem;
+  color: var(--p-text-dim);
+}
+.sim-suggested-card strong {
+  display: block;
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: var(--p-accent);
+  direction: ltr;
+  text-align: right;
+}
+
+/* Recipe Ingredient Yield & Wastage Controls */
+.inv-recipe-line {
+  display: grid;
+  grid-template-columns: 1.3fr 0.65fr 0.65fr 0.75fr 0.75fr 2rem;
+  gap: 0.35rem;
+  align-items: center;
+  padding-bottom: 0.4rem;
+}
+.recipe-basis-select {
+  font-size: 0.72rem !important;
+}
+.recipe-yield-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  background: var(--p-surface-2);
+  border: 1px solid var(--admin-line);
+  border-radius: 0.62rem;
+  padding: 0 0.4rem;
+  height: 2.55rem;
+  box-sizing: border-box;
+}
+.recipe-yield-wrap input {
+  border: none !important;
+  background: transparent !important;
+  padding: 0.2rem !important;
+  min-height: auto !important;
+  width: 2.6rem !important;
+  text-align: center;
+  direction: ltr;
+  font-weight: 750;
+  color: var(--p-text);
+}
+.recipe-yield-wrap span {
+  font-size: 0.65rem;
+  color: var(--p-text-dim);
+  white-space: nowrap;
+}
+.recipe-line-calc {
+  grid-column: 1 / -1;
+  font-size: 0.68rem;
+  color: var(--p-text-dim);
+  display: flex;
+  gap: 0.85rem;
+  padding: 0.15rem 0.5rem 0.35rem 0.5rem;
+  margin-top: -0.2rem;
+  border-bottom: 1px dashed rgba(255, 255, 255, 0.08);
+}
+.recipe-line-calc strong {
+  color: var(--p-accent);
+}
+.recipe-yield-badge {
+  font-size: 0.62rem;
+  color: var(--p-text-dim);
+  padding: 0.2rem 0.35rem;
+  border-radius: 0.35rem;
+  background: rgba(255, 255, 255, 0.05);
+  white-space: nowrap;
+}
+.recipe-batch-scaler {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.5rem 0.75rem;
+  margin-bottom: 0.65rem;
+  border-radius: 0.65rem;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--admin-line);
+}
+.recipe-batch-scaler span {
+  font-size: 0.72rem;
+  font-weight: 750;
+  color: var(--p-text-dim);
+  margin-left: 0.4rem;
+}
+.recipe-scale-btn {
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--p-text);
+  border-radius: 0.4rem;
+  padding: 0.25rem 0.55rem;
+  font-size: 0.7rem;
+  font-weight: 750;
+  cursor: pointer;
+  direction: ltr;
+}
+.recipe-scale-btn:hover {
+  border-color: var(--p-accent);
+}
+.recipe-scale-btn.is-active {
+  background: var(--p-accent);
+  color: #0a1b1e;
+  border-color: var(--p-accent);
+}
+.recipe-live-summary {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.65rem;
+  padding: 0.85rem;
+  border-radius: 0.85rem;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  margin-top: 0.5rem;
+}
+.recipe-live-summary article small {
+  display: block;
+  font-size: 0.65rem;
+  color: var(--p-text-dim);
+}
+.recipe-live-summary article strong {
+  display: block;
+  font-size: 1.1rem;
+  font-weight: 800;
+  color: var(--p-text);
+  margin-top: 0.15rem;
+  direction: ltr;
+  text-align: right;
+}
+.recipe-danger-alert {
+  grid-column: 1 / -1;
+  padding: 0.65rem 0.85rem;
+  border-radius: 0.65rem;
+  background: rgba(239, 68, 68, 0.15);
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  color: #fca5a5;
+  font-size: 0.74rem;
+  font-weight: 750;
+}
+
+@media (max-width: 768px) {
+  .menu-simulator-grid { grid-template-columns: 1fr; }
+  .recipe-live-summary { grid-template-columns: 1fr 1fr; }
+  .inv-recipe-line { grid-template-columns: 1fr 1fr; }
 }
 

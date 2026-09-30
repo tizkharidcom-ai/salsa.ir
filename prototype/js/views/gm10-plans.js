@@ -1,516 +1,658 @@
 /**
- * prototype/js/views/gm10-plans.js
- * 
- * GM-10: پلن و قیمت (/plans)
- * ماتریس سطوح اشتراک، بسته‌های مرجع، سهمیه‌بندی منابع و مقایسه جامع
+ * GM-10: server-backed commercial plan catalog and version publishing.
+ * Prices, quotas, feature definitions, drafts, and publish results come only
+ * from the Control Plane API. This view deliberately has no store/fixture path.
  */
+(function (global) {
+  'use strict';
 
-window.renderGM10 = function() {
-  const store = window.prototypeStore || window.GMStore;
-  const plans = (store && store.state && store.state.plans) ? store.state.plans : [];
-  const featuresCount = (store && typeof store.getFeaturesCount === 'function') ? store.getFeaturesCount() : 44;
-  const displayPlanName = (planName) => String(planName || '')
-    .replace(/Starter/gi, 'شروع')
-    .replace(/Growth/gi, 'رشد')
-    .replace(/Scale/gi, 'مقیاس‌پذیر')
-    .replace(/Enterprise/gi, 'سراسری')
-    .replace(/\s*\([^)]*\)\s*$/, '');
-  const displayPlanDescription = (description) => String(description || '')
-    .replace(/KDS/gi, 'نمایشگر آشپزخانه')
-    .replace(/POS/gi, 'صندوق')
-    .replace(/پوز/gi, 'صندوق');
+  const state = {
+    status: 'loading',
+    plans: [],
+    matrix: null,
+    matrixError: null,
+    access: null,
+    error: null,
+    lastMutationResult: null,
+    pendingPublishes: new Map(),
+    requestId: 0,
+    loading: false,
+    handler: null
+  };
 
-  return `
-    <div class="page-header gm10-page">
-      <div class="page-title-group">
-        <nav class="breadcrumb-nav" aria-label="مسیر راهبری">
-          <a href="#gm-02-overview" class="breadcrumb-link">پیشخوان</a>
-          <span class="breadcrumb-separator">/</span>
-          <span class="breadcrumb-current" aria-current="page">پلن‌ها و تعرفه‌ها</span>
-        </nav>
-        <div style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
-          <h1>
-            ماتریس پلن‌ها و سطوح تجاری NEEM
-            <span class="page-code-badge">GM-10</span>
-          </h1>
-          <span class="badge badge-scope-global"><span class="status-dot dot-purple"></span> کلان پلتفرم</span>
-        </div>
-        <p>پیش‌نمایش بسته‌های قیمتی و سهمیه‌ای؛ قیمت قطعی، SLA و قرارداد عملیاتی از این صفحه صادر نمی‌شود.</p>
-      </div>
-      <div class="header-actions">
-        <a href="#gm-05-tenant-new" class="btn btn-primary">
-          شروع تحویل مشتری جدید
-        </a>
-        <button type="button" class="btn btn-secondary" onclick="window.GMViews.GM10.openPlanCompareDrawer()">
-          مقایسه تخصصی سهمیه‌ها
-        </button>
-      </div>
-    </div>
+  function escapeHtml(value) {
+    return String(value == null ? '' : value)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
 
-    <!-- Standardized Operational Guidance Banner -->
-    <div class="op-context-banner op-context-warning" role="region" aria-label="راهنمای سطوح اشتراک و تخصیص سهمیه‌ها">
-      <div class="op-context-header">
-        <span>معماری بسته‌های اشتراک و سهمیه‌بندی منابع (Subscription Tiers &amp; Quota Governance)</span>
-        <span class="badge badge-warning">Fixture؛ قرارداد منتشر نشده</span>
-      </div>
-      <div class="op-context-grid">
-        <div class="op-context-item">
-          <span class="op-context-label">سطوح اشتراک مصوب:</span>
-          <span class="op-context-desc">۴ سطح سناریویی با ظرفیت‌های نمایشی؛ منبع نسخه‌دار قیمت و quota در Control Plane متصل نیست.</span>
-        </div>
-        <div class="op-context-item">
-          <span class="op-context-label">پلن پیشنهادی برای شروع:</span>
-          <span class="op-context-desc">پلن پیشنهادی فقط برای نمایش است؛ ظرفیت دستگاه، QR و بکاپ بدون قرارداد و metering معتبر قطعی نیست.</span>
-        </div>
-        <div class="op-context-item">
-          <span class="op-context-label">اقدام استاندارد اپراتور:</span>
-          <span class="op-context-desc">برای ایجاد حساب جدید روی «انتخاب پلن» کلیک کنید یا با «شناسنامه سهمیه» جزئیات دقیق منابع هر پلن را مشاهده فرمایید.</span>
-        </div>
-      </div>
-    </div>
+  function formatApiValue(value) {
+    if (value === null || value === undefined || value === '') return 'در API ثبت نشده';
+    if (typeof value === 'number' && Number.isFinite(value)) return value.toLocaleString('fa-IR');
+    if (typeof value === 'boolean') return value ? 'بله' : 'خیر';
+    if (typeof value === 'object') return JSON.stringify(value);
+    return String(value);
+  }
 
-    <div class="data-quality-strip" role="status" aria-label="وضعیت منبع پلن‌ها و قیمت‌گذاری">
-      <div class="data-quality-label"><span class="dq-badge-dot dot-cyan"></span><span>وضعیت قیمت‌گذاری</span></div>
-      <div class="data-quality-grid">
-        <span class="dq-badge"><span class="dq-badge-dot dot-purple"></span><span class="dq-dim-name">منبع</span><span class="dq-dim-val">${plans.length.toLocaleString('fa-IR')} سطح</span></span>
-        <span class="dq-badge"><span class="dq-badge-dot dot-blue"></span><span class="dq-dim-name">پلن‌های قابل مشاهده</span><span class="dq-dim-val">${plans.length.toLocaleString('fa-IR')} سطح</span></span>
-        <span class="dq-badge"><span class="dq-badge-dot dot-emerald"></span><span class="dq-dim-name">وضعیت</span><span class="dq-dim-val">پیش‌نمایش تصمیم</span></span>
-      </div>
-      <span class="dq-action-hint"><span>قیمت‌ها و سهمیه‌ها برای مقایسهٔ رابط هستند؛ انتشار قرارداد واقعی نیازمند تأیید جداگانه است</span></span>
-    </div>
+  function formatDate(value) {
+    if (!value) return 'در API ثبت نشده';
+    const date = new Date(value);
+    return Number.isFinite(date.getTime()) ? date.toLocaleString('fa-IR') : String(value);
+  }
 
-    ${window.GMDataState ? window.GMDataState.renderFreshnessBar({
-      viewId: 'GM10',
-      sourceLabel: 'ماتریس سطوح اشتراک و سهمیه‌های پایه پلتفرم',
-      sourceMode: 'local',
-      totalCount: plans.length,
-      countLabel: 'سطح پلن تجاری'
-    }) : ''}
+  function currentRepository() {
+    return global.CommercialRepository || null;
+  }
 
-    ${(() => {
-      const dataState = window.GMDataState ? window.GMDataState.getViewState('GM10') : { state: 'live' };
-      if (dataState.state === 'failed' || dataState.state === 'error') {
-        return window.GMDataState.renderFailedState({
-          viewId: 'GM10',
-          title: 'خطا در واکشی ماتریس پلن‌ها و قیمت‌ها',
-          reason: 'ارتباط با سرویس مدیریت تعرفه و صورتحساب پلتفرم برقرار نشد.',
-          errorCode: 'ERR_PLANS_MATRIX_UNAVAILABLE'
-        });
-      }
-      if (dataState.state === 'empty') {
-        return window.GMDataState.renderEmptyState({
-          title: 'هیچ پلنی یافت نشد',
-          description: 'ماتریس پلن‌های تجاری خالی است.',
-          actionLabel: 'بارگذاری مجدد',
-          actionHash: '#gm-10-plans'
-        });
-      }
-      if (dataState.state === 'loading') {
-        return window.GMDataState.renderSkeleton('table', 4);
-      }
-      if (dataState.state === 'stale') {
-        return window.GMDataState.renderStaleBanner('GM10');
-      }
-      if (dataState.state === 'refreshing') {
-        return window.GMDataState.renderRefreshingBanner ? window.GMDataState.renderRefreshingBanner('GM10') : '';
-      }
-      return '';
-    })()}
-
-    ${(window.GMDataState && ['failed', 'empty', 'error', 'loading'].includes(window.GMDataState.getViewState('GM10').state)) ? '' : `
-    <!-- Plan recommendation & comparison tier cards -->
-    <div class="plan-tier-grid" role="region" aria-label="خلاصه سطوح اشتراک پلتفرم">
-      ${plans.map((p, idx) => {
-        const isFlagship = p.name.includes('Growth');
-        const posCount = idx * 2 + 2;
-        return `
-          <div class="plan-tier-card ${isFlagship ? 'is-flagship' : ''}" id="tier-card-${idx}" style="${isFlagship ? 'border-color: var(--gm-accent, #1a73e8); box-shadow: 0 4px 12px rgba(26, 115, 232, 0.12);' : ''}">
-            <div class="plan-tier-header">
-              <div class="plan-tier-badge-row" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
-                <span class="badge ${isFlagship ? 'badge-primary' : 'badge-neutral'}">${isFlagship ? 'پیشنهاد محبوب' : (p.name.includes('Enterprise') ? 'سراسری' : 'استاندارد')}</span>
-                <span class="cell-mono" style="font-size: 0.72rem; color: var(--text-tertiary);">سطح ${idx + 1}</span>
-              </div>
-              <h3 class="plan-tier-title" style="font-size: 1.1rem; font-weight: 700; margin: 0 0 0.25rem;">${displayPlanName(p.name)}</h3>
-              <p class="plan-tier-desc" style="font-size: 0.75rem; color: var(--text-secondary); min-height: 2.2rem;">${displayPlanDescription(p.description)}</p>
-            </div>
-
-            <div class="plan-tier-price-box" style="margin: 0.75rem 0; padding: 0.65rem; background: var(--bg-surface-subtle, #f8f9fa); border-radius: 6px;">
-              <span class="plan-tier-price" style="font-size: 1.25rem; font-weight: 800; color: var(--text-primary);">${p.price.toLocaleString('fa-IR')}</span>
-              <span class="plan-tier-period" style="font-size: 0.75rem; color: var(--text-secondary);">تومان / ${p.period}</span>
-            </div>
-
-            <ul class="plan-tier-features-list" style="list-style: none; padding: 0; margin: 0 0 1rem; display: flex; flex-direction: column; gap: 0.4rem; font-size: 0.78rem;">
-              <li class="plan-tier-feature-item" style="display: flex; align-items: center; gap: 0.4rem;">
-                <span class="check-icon" style="color: #10b981;">✓</span>
-                <span>${p.featuresCount.toLocaleString('fa-IR')} قابلیت تجاری</span>
-              </li>
-              <li class="plan-tier-feature-item" style="display: flex; align-items: center; gap: 0.4rem;">
-                <span class="check-icon" style="color: #10b981;">✓</span>
-                <span>ظرفیت ${posCount.toLocaleString('fa-IR')} پایانه صندوق</span>
-              </li>
-              <li class="plan-tier-feature-item" style="display: flex; align-items: center; gap: 0.4rem;">
-                <span class="check-icon" style="color: #10b981;">✓</span>
-                <span>پشتیبان‌گیری + ایزولاسیون</span>
-              </li>
-            </ul>
-
-            <div class="plan-tier-actions" style="margin-top: auto; display: flex; flex-direction: column; gap: 0.4rem;">
-              <a href="#gm-05-tenant-new?plan=${encodeURIComponent(p.name)}" 
-                 class="btn ${isFlagship ? 'btn-primary' : 'btn-secondary'} btn-sm" 
-                 style="width: 100%; justify-content: center;"
-                 aria-label="شروع تحویل با پلن ${displayPlanName(p.name)}">
-                شروع تحویل
-              </a>
-              <button type="button" 
-                      class="btn btn-ghost btn-sm" 
-                      style="width: 100%; justify-content: center; font-size: 0.72rem;"
-                      onclick="window.GMViews.GM10.openPlanDetailDrawer('${p.name}')"
-                      aria-label="مشاهده شناسنامه سهمیه ${displayPlanName(p.name)}">
-                شناسنامه سهمیه
-              </button>
-            </div>
-          </div>
-        `;
-      }).join('')}
-    </div>
-
-    <!-- Structured Comparison Matrix Table -->
-    <section class="surface-panel plans-matrix" aria-labelledby="plans-matrix-title">
-      <div class="table-toolbar">
-        <div>
-          <h2 id="plans-matrix-title" class="section-title" style="margin: 0;">مقایسه‌ی سریع پلن‌ها</h2>
-          <p class="text-secondary" style="margin: 0.25rem 0 0; font-size: 0.75rem;">قیمت، ظرفیت و مناسب‌بودن هر سطح را در یک نگاه مقایسه کنید.</p>
-        </div>
-        <details class="progressive-disclosure">
-          <summary>راهنمای تصمیم‌گیری</summary>
-          <p class="text-secondary" style="margin: 0.5rem 0 0; font-size: 0.75rem;">برای شروع، پلنی را انتخاب کنید که ظرفیت دستگاه و تعداد قابلیت موردنیاز امروز را پوشش دهد؛ ارتقا در پرونده مشتری انجام می‌شود.</p>
-        </details>
-      </div>
-      <div class="table-responsive">
-        <table class="data-table" id="plansTable" aria-label="مقایسه پلن‌های تجاری">
-          <thead>
-            <tr>
-              <th>پلن</th>
-              <th>قیمت و دوره</th>
-              <th>قابلیت‌های پایه</th>
-              <th>ظرفیت دستگاه</th>
-              <th>شرح کوتاه</th>
-              <th class="cell-actions">اقدام</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${plans.map((p, idx) => `
-              <tr class="${idx === 2 ? 'is-recommended' : ''}">
-                <td>
-                  <strong class="text-primary">${displayPlanName(p.name)}</strong>
-                  ${idx === 2 ? '<span class="badge badge-cyan" style="display: block; width: max-content; margin-top: 0.35rem;">پیشنهاد فعلی</span>' : ''}
-                </td>
-                <td class="cell-mono"><strong>${p.price.toLocaleString('fa-IR')}</strong><br><span class="text-secondary" style="font-size: 0.7rem;">تومان / ${p.period}</span></td>
-                <td>${p.featuresCount.toLocaleString('fa-IR')} قابلیت</td>
-                <td>${(idx * 2 + 2).toLocaleString('fa-IR')} پایانه صندوق</td>
-                <td style="min-width: 220px;">${displayPlanDescription(p.description)}</td>
-                <td class="cell-actions">
-                  <a href="#gm-05-tenant-new?plan=${encodeURIComponent(p.name)}" class="btn ${idx === 2 ? 'btn-primary' : 'btn-secondary'} btn-sm" aria-label="ایجاد مشتری جدید با پلن ${displayPlanName(p.name)}">انتخاب پلن</a>
-                  <button type="button" class="btn btn-ghost btn-sm" style="margin-top: 0.25rem; font-size: 0.7rem;" onclick="window.GMViews.GM10.openPlanDetailDrawer('${p.name}')" aria-label="مشاهده جزئیات کامل سهمیه پلن ${displayPlanName(p.name)}">شناسنامه سهمیه</button>
-                  <details class="row-disclosure" style="margin-top: 0.45rem;">
-                    <summary>جزئیات</summary>
-                    <div class="text-secondary" style="font-size: 0.7rem; text-align: right; margin-top: 0.35rem;">پشتیبان‌گیری روزانه و ایزولاسیون کامل داده</div>
-                  </details>
-                </td>
-              </tr>
-            `).join('')}
-          </tbody>
-        </table>
-      </div>
-    </section>
-    `}
-  `;
-};
-
-window.GMViews = window.GMViews || {};
-window.GMViews.GM10 = {
-  render: window.renderGM10,
-
-  openPlanDetailDrawer(planName) {
-    const store = window.prototypeStore || window.GMStore;
-    const plans = (store && store.state && store.state.plans) ? store.state.plans : [];
-    const displayPlanName = (value) => String(value || '')
-      .replace(/Starter/gi, 'شروع')
-      .replace(/Growth/gi, 'رشد')
-      .replace(/Scale/gi, 'مقیاس‌پذیر')
-      .replace(/Enterprise/gi, 'سراسری')
-      .replace(/\s*\([^)]*\)\s*$/, '');
-    const plan = plans.find(p => p.name === planName || p.id === planName);
-    if (!plan) {
-      if (window.GMApp && window.GMApp.showToast) {
-        window.GMApp.showToast('پلن در کاتالوگ Fixture یافت نشد؛ جزئیات جایگزین نمایش داده نمی‌شود.', 'warning');
-      }
-      return;
+  function getMutationDisabledReason() {
+    if (!state.access) return 'ابتدا نشست Control Plane و نقش مجاز بررسی شود.';
+    if (!state.access.allowed) return state.access.reason || 'نقش یا نشست فعلی اجازهٔ تغییر پلن ندارد.';
+    if (!global.GodModeConfirmDialog || typeof global.GodModeConfirmDialog.show !== 'function') {
+      return 'سرویس تأیید امن عملیات در این صفحه بارگذاری نشده؛ تغییر پلن غیرفعال است.';
     }
+    return '';
+  }
 
-    const isEnterprise = plan.name.includes('Enterprise');
-    const isScale = plan.name.includes('Scale');
-    const isGrowth = plan.name.includes('Growth');
-
-    const posQuota = isEnterprise ? 'نامحدود (تا ۵۰)' : isScale ? '۸ پایانه' : isGrowth ? '۴ پایانه' : '۲ پایانه';
-    const ramQuota = isEnterprise ? '۸ گیگابایت اختصاصی' : isScale ? '۴ گیگابایت' : isGrowth ? '۲ گیگابایت' : '۱ گیگابایت';
-    const storageQuota = isEnterprise ? '۱ ترابایت NVMe' : isScale ? '۲۰۰ گیگابایت' : isGrowth ? '۵۰ گیگابایت' : '۱۰ گیگابایت';
-    const txQuota = isEnterprise ? 'نامحدود' : isScale ? '۵۰,۰۰۰ تراکنش' : isGrowth ? '۱۰,۰۰۰ تراکنش' : '۲,۰۰۰ تراکنش';
-    const slaLevel = 'هدف طراحی؛ SLA قراردادی تأیید نشده';
-
-    const content = `
-      <div style="display: flex; flex-direction: column; gap: 1.25rem;">
-        <!-- KPI Metric Cards -->
-        <div class="drawer-kpi-grid">
-          <div class="drawer-kpi-card">
-            <div class="drawer-kpi-title">تعرفه نمایشی اشتراک</div>
-            <div class="drawer-kpi-value" style="color: var(--accent-cyan); font-size: 1.05rem;">${plan.price.toLocaleString('fa-IR')} تومان</div>
-            <div style="font-size: 0.75rem; color: var(--state-warning); margin-top: 0.25rem;">Fixture؛ Quote و دوره قراردادی صادر نشده</div>
-          </div>
-
-          <div class="drawer-kpi-card">
-            <div class="drawer-kpi-title">ظرفیت پایانه صندوق</div>
-            <div class="drawer-kpi-value" style="color: var(--text-primary); font-size: 1.05rem;">${posQuota}</div>
-            <div style="font-size: 0.75rem; color: var(--text-secondary); margin-top: 0.25rem;">مجوز اتصال سخت‌افزار</div>
-          </div>
-
-          <div class="drawer-kpi-card">
-            <div class="drawer-kpi-title">قابلیت‌های همراه</div>
-            <div class="drawer-kpi-value" style="color: var(--state-success); font-size: 1.05rem;">${plan.featuresCount.toLocaleString('fa-IR')} قابلیت</div>
-            <div style="font-size: 0.75rem; color: var(--text-secondary); margin-top: 0.25rem;">امکانات پیش‌فرض فعال</div>
-          </div>
-
-          <div class="drawer-kpi-card">
-            <div class="drawer-kpi-title">سقف تراکنش ماهانه</div>
-            <div class="drawer-kpi-value" style="color: var(--text-primary); font-size: 1.05rem;">${txQuota}</div>
-            <div style="font-size: 0.75rem; color: var(--text-secondary); margin-top: 0.25rem;">بدون افت کارایی پایگاه‌داده</div>
-          </div>
+  function errorPanel(error) {
+    const status = Number(error && error.status) || 0;
+    const authFailure = status === 401 || status === 403;
+    const title = authFailure ? 'دسترسی به کاتالوگ پلن‌ها مجاز نیست' : 'دریافت کاتالوگ پلن‌ها ناموفق بود';
+    const explanation = authFailure
+      ? 'این مسیر API فقط برای نشست پلتفرمیِ دارای مجوز نمایش draftها در دسترس است. با حساب پلتفرم وارد شوید یا دسترسی نقش را بررسی کنید.'
+      : status === 0
+        ? 'ارتباط با Control Plane برقرار نشد. اتصال سرویس و نشانی Control Plane را بررسی و دوباره تلاش کنید.'
+        : 'Control Plane پاسخ خطا داد. پس از بررسی سرویس و دسترسی، دوباره تلاش کنید.';
+    return `
+      <section class="card" role="alert" aria-live="assertive" aria-labelledby="gm10-error-title">
+        <div class="card-body">
+          <h2 id="gm10-error-title">${title}</h2>
+          <p>${explanation}</p>
+          <p><strong>پاسخ API:</strong> ${escapeHtml(error && error.message || 'پیام خطا دریافت نشد')}
+            ${error && error.code ? ' · ' + escapeHtml(error.code) : ''}
+            ${status ? ' · HTTP ' + status.toLocaleString('fa-IR') : ''}</p>
+          <button type="button" class="btn btn-primary" data-gm10-action="refresh">تلاش دوباره</button>
+          ${renderMutationResult()}
         </div>
+      </section>`;
+  }
 
-        <!-- 4D Synthetic Telemetry Audit Strip -->
-        <div class="data-quality-strip" role="status" aria-label="ارزیابی کیفیت سهمیه پلن">
-          <div class="data-quality-label"><span class="dq-badge-dot dot-cyan"></span><span>ممیزی سهمیه‌ها</span></div>
-          <div class="data-quality-grid">
-            <span class="dq-badge"><span class="dq-badge-dot dot-blue"></span><span class="dq-dim-name">ایزولاسیون</span><span class="dq-dim-val">کامل</span></span>
-            <span class="dq-badge"><span class="dq-badge-dot dot-emerald"></span><span class="dq-dim-name">تعهد SLA</span><span class="dq-dim-val">${slaLevel}</span></span>
-            <span class="dq-badge"><span class="dq-badge-dot dot-purple"></span><span class="dq-dim-name">پشتیبان‌گیری</span><span class="dq-dim-val">${isGrowth || isScale || isEnterprise ? 'روزانه و کامل' : 'هفتگی'}</span></span>
-            <span class="dq-badge"><span class="dq-badge-dot dot-cyan"></span><span class="dq-dim-name">تطابق قرارداد</span><span class="dq-dim-val">معتبر</span></span>
-          </div>
+  function emptyPanel() {
+    return `
+      <section class="card" role="status" aria-labelledby="gm10-empty-title">
+        <div class="card-body">
+          <h2 id="gm10-empty-title">کاتالوگ API خالی است</h2>
+          <p>Control Plane پاسخ موفق داد، اما هیچ پلن منتشرشده یا draft در پاسخ این درخواست نبود. دادهٔ نمایشی جایگزین نمی‌شود.</p>
+          <p>برای ایجاد draft از این صفحه، ابتدا باید پلن مبنا و داده‌های واقعی قیمت، سهمیه و قابلیت‌ها در کاتالوگ Control Plane موجود باشد.</p>
+          <button type="button" class="btn btn-secondary" data-gm10-action="refresh">بازخوانی کاتالوگ</button>
+          ${renderMutationResult()}
         </div>
+      </section>`;
+  }
 
-        <!-- Resource Quotas Table -->
-        <div class="drawer-section">
-          <h4 class="drawer-section-title">سهمیه‌بندی منابع زیرساخت و کانتینر</h4>
-          <div style="display: flex; flex-direction: column; gap: 0.4rem; font-size: 0.813rem;">
-            <div style="display: flex; justify-content: space-between; padding: 0.4rem 0; border-bottom: 1px solid var(--border-subtle);">
-              <span style="color: var(--text-secondary);">حافظه رم کانتینر اختصاصی:</span>
-              <span class="cell-mono text-cyan" style="font-weight: 600;">${ramQuota}</span>
-            </div>
-            <div style="display: flex; justify-content: space-between; padding: 0.4rem 0; border-bottom: 1px solid var(--border-subtle);">
-              <span style="color: var(--text-secondary);">فضای ذخیره‌سازی ابری امن:</span>
-              <span class="cell-mono" style="font-weight: 600; color: var(--text-primary);">${storageQuota}</span>
-            </div>
-            <div style="display: flex; justify-content: space-between; padding: 0.4rem 0; border-bottom: 1px solid var(--border-subtle);">
-              <span style="color: var(--text-secondary);">سقف حساب‌های کاربری و پرسنل:</span>
-              <span style="font-weight: 600; color: var(--text-primary);">${isEnterprise ? 'نامحدود' : isScale ? '۳۰ کاربر' : isGrowth ? '۱۰ کاربر' : '۳ کاربر'}</span>
-            </div>
-            <div style="display: flex; justify-content: space-between; padding: 0.4rem 0; border-bottom: 1px solid var(--border-subtle);">
-              <span style="color: var(--text-secondary);">بافر آفلاین سفارشات صندوق:</span>
-              <span style="font-weight: 600; color: var(--state-success);">۷ روز کش کامل محلی</span>
-            </div>
-            <div style="display: flex; justify-content: space-between; padding: 0.4rem 0; border-bottom: 1px solid var(--border-subtle);">
-              <span style="color: var(--text-secondary);">پشتیبانی و پاسخگویی:</span>
-              <span style="font-weight: 600; color: var(--text-primary);">${isEnterprise ? 'مدیر حساب اختصاصی ۲۴/۷' : isScale ? 'تلفنی و تیکت فوری' : 'تیکت استاندارد'}</span>
-            </div>
-          </div>
+  function renderLoading() {
+    return `
+      <section class="card" role="status" aria-live="polite">
+        <div class="card-body">
+          <p>در حال خواندن پلن‌ها، قیمت‌ها و سهمیه‌ها از Control Plane…</p>
+          <div class="progress" aria-hidden="true"><div class="progress-bar" style="width: 40%"></div></div>
         </div>
+      </section>`;
+  }
 
-        <!-- Default Features Checklist -->
-        <div class="drawer-section">
-          <h4 class="drawer-section-title">امکانات و ماژول‌های فعال پیش‌فرض</h4>
-          <div class="surface-subtle" style="padding: 0.75rem; border-radius: 6px; font-size: 0.813rem; line-height: 1.6;">
-            <ul style="list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 0.35rem;">
-              <li style="display: flex; align-items: center; gap: 0.4rem;">
-                <span style="color: var(--state-success); font-weight: bold;">✓</span>
-                <span>مدیریت کاتالوگ منو، دسته‌بندی اقلام و قیمت‌گذاری چندسطحی</span>
-              </li>
-              <li style="display: flex; align-items: center; gap: 0.4rem;">
-                <span style="color: var(--state-success); font-weight: bold;">✓</span>
-                <span>ثبت سفارشات سالن و بیرون‌بر به همراه چاپ فیش صندوق</span>
-              </li>
-              ${isGrowth || isScale || isEnterprise ? `
-                <li style="display: flex; align-items: center; gap: 0.4rem;">
-                  <span style="color: var(--state-success); font-weight: bold;">✓</span>
-                  <span>منوی آنلاین QR و ثبت سفارش مستقیم مهمانان سر میز</span>
-                </li>
-                <li style="display: flex; align-items: center; gap: 0.4rem;">
-                  <span style="color: var(--state-success); font-weight: bold;">✓</span>
-                  <span>باشگاه مشتریان پایه، مدیریت پرسنل و ثبت شیفت‌ها</span>
-                </li>
-              ` : ''}
-              ${isScale || isEnterprise ? `
-                <li style="display: flex; align-items: center; gap: 0.4rem;">
-                  <span style="color: var(--state-success); font-weight: bold;">✓</span>
-                  <span>نمایشگر آشپزخانه و مدیریت چند ایستگاه آماده‌سازی</span>
-                </li>
-                <li style="display: flex; align-items: center; gap: 0.4rem;">
-                  <span style="color: var(--state-success); font-weight: bold;">✓</span>
-                  <span>انبارداری فرمولاسیونی و محاسبه خودکار مصرف بر مبنای رسپی</span>
-                </li>
-              ` : ''}
-              ${isEnterprise ? `
-                <li style="display: flex; align-items: center; gap: 0.4rem;">
-                  <span style="color: var(--state-success); font-weight: bold;">✓</span>
-                  <span>حسابداری دوبل مالیاتی، اتصال مستقیم سامانه مودیان و وب‌هوک‌های اختصاصی</span>
-                </li>
-              ` : ''}
-            </ul>
-          </div>
+  function featureName(key) {
+    const feature = state.matrix && state.matrix.featureComparison
+      ? state.matrix.featureComparison.find(item => item && item.key === key)
+      : null;
+    return feature && feature.nameFa ? feature.nameFa : key;
+  }
+
+  function renderMutationResult() {
+    if (!state.lastMutationResult) return '';
+    const result = state.lastMutationResult;
+    return `
+      <section class="card" role="status" aria-live="polite" aria-labelledby="gm10-result-title">
+        <div class="card-body">
+          <h2 id="gm10-result-title">${result.kind === 'published' ? 'نتیجهٔ انتشار از سرور' : 'نتیجهٔ ثبت draft از سرور'}</h2>
+          <p>این نتیجه مستقیماً از پاسخ عملیات Control Plane آمده است؛ مقدار محلی یا پیش‌بینی‌شده نمایش داده نمی‌شود.</p>
+          <pre style="white-space:pre-wrap;overflow-wrap:anywhere;max-height:20rem;overflow:auto">${escapeHtml(JSON.stringify(result.data, null, 2))}</pre>
         </div>
+      </section>`;
+  }
 
-        <!-- CTA Toolbar -->
-        <div class="drawer-cta-toolbar">
-          <a href="#gm-05-tenant-new?plan=${encodeURIComponent(plan.name)}" 
-             class="btn btn-primary drawer-cta-btn" 
-             onclick="window.GMApp && window.GMApp.closeDrawer ? window.GMApp.closeDrawer() : null">
-            <span>شروع تحویل مشتری با این پلن</span>
-            <span>←</span>
-          </a>
-          <a href="#gm-08-features" 
-             class="btn btn-secondary drawer-cta-btn" 
-             onclick="window.GMApp && window.GMApp.closeDrawer ? window.GMApp.closeDrawer() : null">
-            <span>مشاهده کاتالوگ قابلیت‌ها</span>
-            <span>←</span>
-          </a>
-          <button type="button" 
-                  class="btn btn-secondary drawer-cta-btn" 
-                  onclick="window.GMViews.GM10.openPlanCompareDrawer()">
-            <span>مقایسه تخصصی همه پلن‌ها</span>
-            <span>←</span>
-          </button>
-        </div>
-      </div>
-    `;
-
-    if (window.GMApp && window.GMApp.openDrawer) {
-      window.GMApp.openDrawer(`شناسنامه سهمیه: ${displayPlanName(plan.name)}`, content, { subtitle: `مشخصات فنی، ظرفیت پایانه‌ها و سهمیه منابع` });
-    } else if (typeof openDrawer === 'function') {
-      openDrawer(`شناسنامه سهمیه: ${displayPlanName(plan.name)}`, content);
+  function renderAccessNotice() {
+    const reason = getMutationDisabledReason();
+    if (!reason) {
+      return `<p class="text-secondary" role="status">نشست تأیید شد · نقش مجاز از Control Plane: <code>${escapeHtml(state.access.role)}</code>. مجوز نهایی هر عملیات را سرور بررسی می‌کند.</p>`;
     }
-  },
+    return `
+      <div class="alert alert-warning" role="note">
+        <strong>ساخت و انتشار پلن غیرفعال است.</strong>
+        <span>${escapeHtml(reason)}</span>
+      </div>`;
+  }
 
-  openPlanCompareDrawer() {
-    const store = window.prototypeStore || window.GMStore;
-    const plans = (store && store.state && store.state.plans) ? store.state.plans : [];
+  function quotaRows(plan) {
+    const quotas = plan && plan.quotas && typeof plan.quotas === 'object' && !Array.isArray(plan.quotas)
+      ? plan.quotas : {};
+    const fixed = [
+      ['includedBranches', 'شعبهٔ همراه'],
+      ['includedDevices', 'دستگاه همراه'],
+      ['includedUsers', 'کاربر همراه']
+    ].map(([key, label]) => `
+      <div class="gm10-data-row"><span>${label}</span><strong>${escapeHtml(formatApiValue(plan[key]))}</strong></div>`);
+    const extra = Object.entries(quotas).map(([key, value]) => `
+      <div class="gm10-data-row"><span><code>${escapeHtml(key)}</code></span><strong>${escapeHtml(formatApiValue(value))}</strong></div>`);
+    if (!Object.keys(quotas).length) extra.push('<p class="text-secondary">سهمیه‌ای در بخش quotas پاسخ API ثبت نشده است.</p>');
+    return fixed.concat(extra).join('');
+  }
 
-    const content = `
-      <div style="display: flex; flex-direction: column; gap: 1.25rem;">
-        <div class="drawer-section">
-          <p style="font-size: 0.813rem; color: var(--text-secondary); margin: 0 0 1rem; line-height: 1.5;">
-            جدول تفصیلی زیر سهمیه‌ها و مرزهای عملیاتی هر یک از ۴ سطح اشتراک NEEM را برای برنامه‌ریزی مهاجرت و توسعه رستوران‌ها مشخص می‌کند.
-          </p>
+  function draftQuotaSafety(plan) {
+    const quotas = plan && plan.quotas && typeof plan.quotas === 'object' && !Array.isArray(plan.quotas)
+      ? plan.quotas : {};
+    const requiredKeys = ['maxBranches', 'maxDevices', 'maxUsers', 'maxOrders', 'maxStorageMb', 'maxSms'];
+    const missing = requiredKeys.filter(key => !Object.prototype.hasOwnProperty.call(quotas, key));
+    if (missing.length) {
+      return 'ثبت draft امن نیست: پاسخ API این کلیدهای سهمیه را ندارد و endpoint ساخت draft برای آن‌ها مقدار پیش‌فرض داخلی می‌سازد: ' + missing.join('، ');
+    }
+    if (Number(quotas.maxBranches) !== Number(plan.includedBranches)
+      || Number(quotas.maxDevices) !== Number(plan.includedDevices)
+      || Number(quotas.maxUsers) !== Number(plan.includedUsers)) {
+      return 'ثبت draft امن نیست: سهمیه‌های شعبه/دستگاه/کاربر API با فیلدهای همراه همین نسخه هم‌خوان نیستند؛ ابتدا قرارداد backend را هماهنگ کنید.';
+    }
+    if (Object.values(quotas).some(value => !Number.isSafeInteger(Number(value)))) {
+      return 'ثبت draft امن نیست: دست‌کم یک سهمیهٔ API عدد صحیح قابل‌حفظ نیست؛ برای جلوگیری از تبدیل یا حذف داده، عملیات غیرفعال است.';
+    }
+    const currentFeatureKeys = Array.isArray(plan.includedFeatures) ? plan.includedFeatures : [];
+    if ((!state.matrix || !Array.isArray(state.matrix.featureComparison) || !state.matrix.featureComparison.length)
+      && currentFeatureKeys.length === 0) {
+      return 'ثبت draft امن نیست: API هیچ قابلیت مبنا برنگرداند و ماتریس قابلیت هم در دسترس نیست؛ ویژگی جدید ساخته نمی‌شود.';
+    }
+    if (state.matrix && Array.isArray(state.matrix.featureComparison)) {
+      const canonicalKeys = new Set(state.matrix.featureComparison.map(item => item && item.key).filter(Boolean));
+      const unknownKeys = currentFeatureKeys.filter(key => !canonicalKeys.has(key));
+      if (unknownKeys.length) {
+        return 'ثبت draft امن نیست: دست‌کم یک قابلیت نسخه در ماتریس canonical API نیست؛ تغییر باعث حذف خاموش قابلیت می‌شود: ' + unknownKeys.join('، ');
+      }
+    }
+    return '';
+  }
 
-          <div class="table-responsive" style="border: 1px solid var(--border-default); border-radius: 8px;">
-            <table class="data-table" style="font-size: 0.75rem; text-align: center;" aria-label="جدول تفصیلی مقایسه سهمیه‌ها و مرزهای عملیاتی پلن‌ها">
-              <thead>
-                <tr>
-                  <th style="text-align: right;">شاخص مقایسه‌ای</th>
-                  <th>شروع</th>
-                  <th style="background: color-mix(in srgb, var(--accent-cyan) 8%, transparent); color: var(--accent-cyan);">رشد</th>
-                  <th>مقیاس‌پذیر</th>
-                  <th>سراسری</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td style="text-align: right; font-weight: 600;">تعرفه ماهانه</td>
-                  <td class="cell-mono">۹۹۰,۰۰۰ ت</td>
-                  <td class="cell-mono" style="background: color-mix(in srgb, var(--accent-cyan) 4%, transparent); font-weight: 700; color: var(--accent-cyan);">۱,۸۵۰,۰۰۰ ت</td>
-                  <td class="cell-mono">۳,۴۰۰,۰۰۰ ت</td>
-                  <td class="cell-mono">۶,۵۰۰,۰۰۰ ت</td>
-                </tr>
-                <tr>
-                  <td style="text-align: right; font-weight: 600;">پایانه‌های صندوق</td>
-                  <td>۲ صندوق</td>
-                  <td style="background: color-mix(in srgb, var(--accent-cyan) 4%, transparent); font-weight: 600;">۴ صندوق</td>
-                  <td>۸ صندوق</td>
-                  <td>نامحدود</td>
-                </tr>
-                <tr>
-                  <td style="text-align: right; font-weight: 600;">قابلیت‌های همراه</td>
-                  <td>۸ قابلیت</td>
-                  <td style="background: color-mix(in srgb, var(--accent-cyan) 4%, transparent); font-weight: 600;">۱۸ قابلیت</td>
-                  <td>۳۲ قابلیت</td>
-                  <td>${featuresCount.toLocaleString('fa-IR')} قابلیت (کامل)</td>
-                </tr>
-                <tr>
-                  <td style="text-align: right; font-weight: 600;">سفارش آنلاین QR</td>
-                  <td>—</td>
-                  <td style="background: color-mix(in srgb, var(--accent-cyan) 4%, transparent); color: var(--state-success); font-weight: bold;">✓ فعال</td>
-                  <td style="color: var(--state-success); font-weight: bold;">✓ فعال</td>
-                  <td style="color: var(--state-success); font-weight: bold;">✓ فعال</td>
-                </tr>
-                <tr>
-                  <td style="text-align: right; font-weight: 600;">نمایشگر آشپزخانه</td>
-                  <td>—</td>
-                  <td style="background: color-mix(in srgb, var(--accent-cyan) 4%, transparent);">افزونه جداگانه</td>
-                  <td style="color: var(--state-success); font-weight: bold;">✓ فعال</td>
-                  <td style="color: var(--state-success); font-weight: bold;">✓ فعال</td>
-                </tr>
-                <tr>
-                  <td style="text-align: right; font-weight: 600;">انبارداری و رسپی آنالیز</td>
-                  <td>—</td>
-                  <td style="background: color-mix(in srgb, var(--accent-cyan) 4%, transparent);">افزونه جداگانه</td>
-                  <td style="color: var(--state-success); font-weight: bold;">✓ فعال</td>
-                  <td style="color: var(--state-success); font-weight: bold;">✓ فعال</td>
-                </tr>
-                <tr>
-                  <td style="text-align: right; font-weight: 600;">حسابداری دوبل و مودیان</td>
-                  <td>—</td>
-                  <td style="background: color-mix(in srgb, var(--accent-cyan) 4%, transparent);">—</td>
-                  <td>افزونه جداگانه</td>
-                  <td style="color: var(--state-success); font-weight: bold;">✓ فعال</td>
-                </tr>
-                <tr>
-                  <td style="text-align: right; font-weight: 600;">پشتیبان‌گیری دیتابیس</td>
-                  <td>هفتگی</td>
-                  <td style="background: color-mix(in srgb, var(--accent-cyan) 4%, transparent); font-weight: 600;">روزانه و کامل</td>
-                  <td>ساعتی و کامل</td>
-                  <td>پیوسته + DR سایت دوم</td>
-                </tr>
-                <tr>
-                  <td style="text-align: right; font-weight: 600;">تعهد در دسترس بودن (SLA)</td>
-                  <td>هدف طراحی</td>
-                  <td style="background: color-mix(in srgb, var(--accent-cyan) 4%, transparent); font-weight: 600;">هدف طراحی</td>
-                  <td>هدف طراحی</td>
-                  <td>هدف طراحی</td>
-                </tr>
-              </tbody>
-            </table>
+  function renderPlanCard(plan, index, draftCountForCode) {
+    const code = escapeHtml(plan.planCode);
+    const version = escapeHtml(plan.version);
+    const isDraft = plan.isDraft === true;
+    const accessReason = getMutationDisabledReason();
+    const canMutate = !accessReason;
+    const draftSafetyReason = draftQuotaSafety(plan);
+    const isAmbiguous = isDraft && draftCountForCode > 1;
+    const noDraftForCode = draftCountForCode === 0;
+    const statusLabel = isDraft ? 'پیش‌نویس' : 'منتشرشده';
+    const featureKeys = Array.isArray(plan.includedFeatures) ? plan.includedFeatures : [];
+    const featureList = featureKeys.length
+      ? `<ul class="gm10-feature-list">${featureKeys.map(key => `<li>${escapeHtml(featureName(key))}<code>${escapeHtml(key)}</code></li>`).join('')}</ul>`
+      : '<p class="text-secondary">در پاسخ API قابلیتی برای این نسخه ثبت نشده است.</p>';
+    const monthly = typeof plan.basePriceMonthlyToman === 'number' && Number.isFinite(plan.basePriceMonthlyToman)
+      ? `<strong>${escapeHtml(formatApiValue(Number(plan.basePriceMonthlyToman)))} تومان</strong>`
+      : '<strong>قیمت ماهانه در API ثبت نشده</strong>';
+    const annual = typeof plan.basePriceAnnualToman === 'number' && Number.isFinite(plan.basePriceAnnualToman)
+      ? `<span>${escapeHtml(formatApiValue(Number(plan.basePriceAnnualToman)))} تومان / سال</span>`
+      : '';
+    const provisioningLink = !isDraft
+      ? `<a class="btn btn-ghost" href="#gm-05-tenant-new?plan=${encodeURIComponent(plan.nameFa || plan.planCode)}">ادامهٔ ایجاد مشتری با این پلن</a>`
+      : '';
+    const actionMarkup = isDraft
+      ? `
+        <button type="button" class="btn btn-secondary" data-gm10-action="edit-draft" data-plan-code="${code}" data-version="${version}" ${canMutate && !draftSafetyReason ? '' : 'disabled'}>ویرایش همین draft</button>
+        <button type="button" class="btn btn-primary" data-gm10-action="publish" data-plan-code="${code}" data-version="${version}" ${canMutate && !isAmbiguous ? '' : 'disabled'}>بررسی و انتشار</button>
+        ${isAmbiguous ? '<p class="text-warning">برای این کد بیش از یک draft از API آمده؛ endpoint انتشار draft را مبهم انتخاب می‌کند، پس انتشار غیرفعال است.</p>' : ''}
+        ${draftSafetyReason ? `<p class="text-warning">${escapeHtml(draftSafetyReason)}</p>` : ''}
+      `
+        : noDraftForCode
+        ? `<button type="button" class="btn btn-secondary" data-gm10-action="new-draft" data-plan-code="${code}" data-version="${version}" ${canMutate && !draftSafetyReason ? '' : 'disabled'}>ساخت draft بر پایهٔ این نسخه</button>
+           ${draftSafetyReason ? `<p class="text-warning">${escapeHtml(draftSafetyReason)}</p>` : ''}`
+        : '<p class="text-secondary">برای این کد draft موجود است؛ همان نسخه را از کارت پیش‌نویس ویرایش کنید.</p>';
+    return `
+      <article class="card gm10-plan-card" data-plan-code="${code}" data-plan-version="${version}">
+        <div class="card-body">
+          <div class="gm10-card-heading">
+            <div><h2>${escapeHtml(plan.nameFa || plan.planCode || 'نام ثبت‌نشده در API')}</h2><p><code>${code}</code> · نسخهٔ <code>${version}</code></p></div>
+            <span class="badge ${isDraft ? 'badge-warning' : 'badge-success'}">${statusLabel}</span>
+          </div>
+          <p>${escapeHtml(plan.descriptionFa || 'شرحی در API ثبت نشده است.')}</p>
+          <div class="gm10-price-block">
+            <span>قیمت پایهٔ ماهانه</span>${monthly}
+            ${annual ? `<span>قیمت پایهٔ سالانه · ${annual}</span>` : ''}
+            <small>مبنای پول API: ${escapeHtml(formatApiValue(plan.basePriceMonthlyRials))} ریال</small>
+          </div>
+          <div class="gm10-data-grid">${quotaRows(plan)}</div>
+          <details class="gm10-features">
+            <summary>قابلیت‌های ثبت‌شده در API · ${featureKeys.length.toLocaleString('fa-IR')}</summary>${featureList}
+          </details>
+          <p class="text-secondary">اثرگذاری: ${escapeHtml(formatDate(plan.effectiveFrom))} · به‌روزرسانی: ${escapeHtml(formatDate(plan.updatedAt))}</p>
+          <div class="gm10-actions">
+            <button type="button" class="btn btn-ghost" data-gm10-action="details" data-plan-code="${code}" data-version="${version}">جزئیات API</button>
+            ${provisioningLink}
+            ${actionMarkup}
           </div>
         </div>
+      </article>`;
+  }
 
-        <!-- CTA Toolbar -->
-        <div class="drawer-cta-toolbar">
-          <a href="#gm-05-tenant-new?plan=Growth%20(%D8%B1%D8%B4%D8%AF)" 
-             class="btn btn-primary drawer-cta-btn" 
-             onclick="window.GMApp && window.GMApp.closeDrawer ? window.GMApp.closeDrawer() : null">
-            <span>شروع تحویل با پلن رشد پیشنهادی</span>
-            <span>←</span>
-          </a>
-          <button type="button" 
-                  class="btn btn-secondary drawer-cta-btn" 
-                  onclick="window.GMApp && window.GMApp.closeDrawer ? window.GMApp.closeDrawer() : null">
-            <span>بستن و بازگشت به جدول پلن‌ها</span>
-          </button>
+  function renderMatrix() {
+    if (state.matrixError) {
+      return `
+        <section class="card" role="note">
+          <div class="card-body">
+            <h2>مقایسهٔ ماتریسی در دسترس نیست</h2>
+            <p>کاتالوگ پلن از API خوانده شده، اما درخواست <code>/plans/matrix</code> ناموفق بود. مقایسه یا مقادیر جایگزین ساخته نشده است.</p>
+            <p><strong>پاسخ API:</strong> ${escapeHtml(state.matrixError.message || 'خطای نامشخص')}</p>
+            <button type="button" class="btn btn-secondary" data-gm10-action="refresh">تلاش دوباره</button>
+          </div>
+        </section>`;
+    }
+    if (!state.matrix) return '';
+    const plans = state.matrix.plans;
+    const features = state.matrix.featureComparison;
+    const quotaRowsData = [
+      { key: 'includedBranches', label: 'شعبهٔ همراه' },
+      { key: 'includedDevices', label: 'دستگاه همراه' },
+      { key: 'includedUsers', label: 'کاربر همراه' }
+    ];
+    const quotaKeys = new Set();
+    plans.forEach(plan => Object.keys(plan.quotas || {}).forEach(key => quotaKeys.add(key)));
+    Array.from(quotaKeys).forEach(key => quotaRowsData.push({ key: 'quotas.' + key, label: key }));
+    return `
+      <section class="card gm10-matrix">
+        <div class="card-body">
+          <h2>مقایسهٔ کاتالوگ Control Plane</h2>
+          <p>تمام ستون‌ها و سلول‌ها از پاسخ <code>/api/control/billing/plans/matrix</code> و دادهٔ پلن‌های همان API خوانده شده‌اند.</p>
+          <div class="table-responsive"><table class="data-table">
+            <thead><tr><th>شاخص</th>${plans.map(plan => `<th>${escapeHtml(plan.nameFa || plan.planCode)}<br><code>${escapeHtml(plan.planCode)} · ${escapeHtml(plan.version)}</code></th>`).join('')}</tr></thead>
+            <tbody>
+              <tr><th>قیمت پایهٔ ماهانه (تومان)</th>${plans.map(plan => `<td>${escapeHtml(formatApiValue(plan.basePriceMonthlyToman))}</td>`).join('')}</tr>
+              ${quotaRowsData.map(row => `<tr><th>${escapeHtml(row.label)}</th>${plans.map(plan => {
+                const value = row.key.startsWith('quotas.') ? (plan.quotas || {})[row.key.slice(7)] : plan[row.key];
+                return `<td>${escapeHtml(formatApiValue(value))}</td>`;
+              }).join('')}</tr>`).join('')}
+              ${features.map(feature => `<tr><th>${escapeHtml(feature.nameFa || feature.key)}<br><code>${escapeHtml(feature.key)}</code></th>${plans.map(plan => `<td>${feature.plans && feature.plans[plan.planCode] === true ? '✓' : '—'}</td>`).join('')}</tr>`).join('')}
+            </tbody>
+          </table></div>
         </div>
-      </div>
-    `;
+      </section>`;
+  }
 
-    if (window.GMApp && window.GMApp.openDrawer) {
-      window.GMApp.openDrawer('مقایسه جامع سطوح اشتراک (Plan Matrix Comparison)', content, { subtitle: 'ارزیابی تطبیقی امکانات، ظرفیت‌ها و سهمیه‌های ۴ گانه' });
-    } else if (typeof openDrawer === 'function') {
-      openDrawer('مقایسه جامع سطوح اشتراک (Plan Matrix Comparison)', content);
+  function renderCatalog() {
+    const draftsByCode = new Map();
+    state.plans.filter(plan => plan.isDraft === true).forEach(plan => {
+      draftsByCode.set(plan.planCode, (draftsByCode.get(plan.planCode) || 0) + 1);
+    });
+    const sourceLabel = state.plansMeta && state.plansMeta.observedAt
+      ? formatDate(state.plansMeta.observedAt) : 'زمان پاسخ در دسترس نیست';
+    return `
+      <div class="gm10-source-line" role="status">
+        <strong>منبع قیمت، سهمیه و ویژگی: Control Plane API</strong>
+        <span>پاسخ فهرست پلن‌ها: ${escapeHtml(sourceLabel)}</span>
+        <button type="button" class="btn btn-secondary btn-sm" data-gm10-action="refresh" ${state.loading ? 'disabled' : ''}>بازخوانی از سرور</button>
+      </div>
+      ${renderAccessNotice()}
+      ${renderMutationResult()}
+      <section class="gm10-plan-grid" aria-label="پلن‌های بازگشتی از API">
+        ${state.plans.map((plan, index) => renderPlanCard(plan, index, draftsByCode.get(plan.planCode) || 0)).join('')}
+      </section>
+      ${renderMatrix()}
+      <p class="text-secondary">این صفحه فقط کاتالوگ و نسخه‌بندی قیمت‌گذاری را مدیریت می‌کند؛ هیچ تغییر subscription یا قرارداد مستأجر از این مسیر انجام نمی‌شود.</p>`;
+  }
+
+  function renderMainContent() {
+    if (state.status === 'loading' && !state.plans.length) return renderLoading();
+    if (state.status === 'failed') return errorPanel(state.error || new Error('خطای نامشخص'));
+    if (state.status === 'empty') return emptyPanel();
+    return renderCatalog();
+  }
+
+  function makeIdempotencyKey() {
+    if (global.crypto && typeof global.crypto.randomUUID === 'function') return global.crypto.randomUUID();
+    return 'gm10-' + Date.now() + '-' + Math.random().toString(36).slice(2);
+  }
+
+  function getPlan(planCode, version) {
+    return state.plans.find(plan => plan.planCode === planCode && String(plan.version) === String(version)) || null;
+  }
+
+  function openPlanDetailDrawer(planCode, version) {
+    const plan = getPlan(planCode, version);
+    if (!plan) return;
+    const features = Array.isArray(plan.includedFeatures) ? plan.includedFeatures : [];
+    const details = [
+      ['planCode', plan.planCode],
+      ['version', plan.version],
+      ['state', plan.isDraft === true ? 'draft' : 'published'],
+      ['nameFa', plan.nameFa],
+      ['descriptionFa', plan.descriptionFa],
+      ['basePriceMonthlyRials', plan.basePriceMonthlyRials],
+      ['basePriceMonthlyToman', plan.basePriceMonthlyToman],
+      ['basePriceAnnualRials', plan.basePriceAnnualRials],
+      ['basePriceAnnualToman', plan.basePriceAnnualToman],
+      ['includedBranches', plan.includedBranches],
+      ['includedDevices', plan.includedDevices],
+      ['includedUsers', plan.includedUsers],
+      ['quotas', plan.quotas],
+      ['includedFeatures', features],
+      ['effectiveFrom', plan.effectiveFrom],
+      ['effectiveTo', plan.effectiveTo],
+      ['createdAt', plan.createdAt],
+      ['updatedAt', plan.updatedAt],
+      ['pricingSource', plan.pricingSource]
+    ];
+    const content = `
+      <div class="gm10-api-detail">
+        <p>مقادیر زیر عین پاسخ API هستند؛ ویژگی قراردادی یا SLA که در پاسخ نیست اضافه نشده است.</p>
+        <dl>${details.map(([key, value]) => `<div class="gm10-data-row"><dt><code>${escapeHtml(key)}</code></dt><dd>${escapeHtml(value === undefined ? 'در پاسخ API وجود ندارد' : JSON.stringify(value))}</dd></div>`).join('')}</dl>
+        <h3>نام قابلیت‌ها از ماتریس API</h3>
+        <ul>${features.map(key => `<li>${escapeHtml(featureName(key))} <code>${escapeHtml(key)}</code></li>`).join('')}</ul>
+      </div>`;
+    if (global.GMApp && typeof global.GMApp.openDrawer === 'function') {
+      global.GMApp.openDrawer('جزئیات پلن · Control Plane', content, { subtitle: escapeHtml(plan.planCode + ' · ' + plan.version) });
     }
   }
-};
+
+  function openDraftDrawer(planCode, version) {
+    const reason = getMutationDisabledReason();
+    const plan = getPlan(planCode, version);
+    if (!plan || reason) return;
+    const currentFeatures = new Set(Array.isArray(plan.includedFeatures) ? plan.includedFeatures : []);
+    const matrixFeatures = state.matrix ? state.matrix.featureComparison : [];
+    const features = matrixFeatures.length
+      ? matrixFeatures
+      : Array.from(currentFeatures).map(key => ({ key, nameFa: key }));
+    const quotas = plan.quotas && typeof plan.quotas === 'object' && !Array.isArray(plan.quotas) ? plan.quotas : {};
+    const quotaControls = Object.entries(quotas).map(([key, value]) => {
+      if (!Number.isSafeInteger(Number(value))) return '';
+      return `
+        <label class="form-group"><span><code>${escapeHtml(key)}</code></span>
+          <input class="form-control" type="number" step="1" min="-1" name="quota-${escapeHtml(key)}" data-quota-key="${escapeHtml(key)}" value="${escapeHtml(value)}" required>
+        </label>`;
+    }).join('');
+    const hasUneditableQuota = Object.values(quotas).some(value => !Number.isSafeInteger(Number(value)));
+    const quotaSafetyReason = draftQuotaSafety(plan);
+    const content = `
+      <form id="gm10-draft-form" class="gm10-draft-form" onsubmit="return window.GMViews.GM10.submitDraft(event)">
+        <p>فرم از نسخهٔ واقعی ${escapeHtml(plan.planCode)} · ${escapeHtml(plan.version)} پر شده است. نسخهٔ جدید و هر تغییر را خودتان وارد کنید؛ هیچ قیمت یا سهمیه‌ای از پیش پیشنهاد نمی‌شود.</p>
+        <div id="gm10-draft-feedback" role="alert" aria-live="assertive"></div>
+        <input type="hidden" name="planCode" value="${escapeHtml(plan.planCode)}">
+        <label class="form-group"><span>کد نسخهٔ draft <b aria-hidden="true">*</b></span>
+          <input class="form-control" name="version" type="text" maxlength="32" required value="${plan.isDraft === true ? escapeHtml(plan.version) : ''}" placeholder="نسخه را وارد کنید">
+        </label>
+        <label class="form-group"><span>نام پلن</span>
+          <input class="form-control" name="nameFa" type="text" maxlength="128" required value="${escapeHtml(plan.nameFa || '')}">
+        </label>
+        <label class="form-group"><span>شرح</span>
+          <textarea class="form-control" name="descriptionFa" maxlength="4000" rows="3">${escapeHtml(plan.descriptionFa || '')}</textarea>
+        </label>
+        <label class="form-group"><span>قیمت پایهٔ ماهانه (ریال؛ مقدار از API)</span>
+          <input class="form-control" name="basePriceMonthlyRials" type="number" min="0" step="1" required value="${escapeHtml(plan.basePriceMonthlyRials)}">
+        </label>
+        <div class="gm10-form-grid">
+          <label class="form-group"><span>شعبهٔ همراه</span><input class="form-control" name="includedBranches" type="number" min="1" step="1" required value="${escapeHtml(plan.includedBranches)}"></label>
+          <label class="form-group"><span>دستگاه همراه</span><input class="form-control" name="includedDevices" type="number" min="1" step="1" required value="${escapeHtml(plan.includedDevices)}"></label>
+          <label class="form-group"><span>کاربر همراه</span><input class="form-control" name="includedUsers" type="number" min="1" step="1" required value="${escapeHtml(plan.includedUsers)}"></label>
+        </div>
+        ${quotaSafetyReason ? `<div class="alert alert-warning" role="alert">${escapeHtml(quotaSafetyReason)}</div>` : ''}
+        <fieldset><legend>سهمیه‌های API</legend>
+          ${quotaControls || '<p>برای این پلن سهمیهٔ قابل‌ویرایشی در پاسخ API ثبت نشده است؛ فیلد تازه‌ای ساخته نمی‌شود.</p>'}
+          ${hasUneditableQuota ? '<p class="text-warning">شکل بعضی سهمیه‌ها عدد صحیح نیست؛ برای جلوگیری از تبدیل یا حذف داده، ثبت draft غیرفعال است.</p>' : ''}
+        </fieldset>
+        <fieldset><legend>قابلیت‌های کاتالوگ API</legend>
+          ${features.map(feature => `
+            <label class="gm10-feature-option"><input type="checkbox" name="includedFeatures" value="${escapeHtml(feature.key)}" ${currentFeatures.has(feature.key) ? 'checked' : ''}>
+              <span>${escapeHtml(feature.nameFa || feature.key)}</span> <code>${escapeHtml(feature.key)}</code></label>`).join('') || '<p>کاتالوگ قابلیت از API خالی است؛ انتخاب قابلیت در دسترس نیست.</p>'}
+        </fieldset>
+        ${state.matrixError ? '<p class="text-warning">ماتریس نام‌گذاری در دسترس نیست؛ فقط کلیدهای قابلیت همین نسخهٔ API قابل انتخاب‌اند.</p>' : ''}
+        <button type="submit" class="btn btn-primary" ${hasUneditableQuota || !features.length || Boolean(quotaSafetyReason) ? 'disabled' : ''}>بررسی و ثبت draft</button>
+      </form>`;
+    if (global.GMApp && typeof global.GMApp.openDrawer === 'function') {
+      global.GMApp.openDrawer(plan.isDraft === true ? 'ویرایش پیش‌نویس پلن' : 'ساخت پیش‌نویس پلن', content, { subtitle: 'ارسال با تأیید، نشست مجاز و idempotency key' });
+    }
+  }
+
+  function numericField(formData, name, min) {
+    const raw = formData.get(name);
+    const value = Number(raw);
+    if (raw === null || raw === '' || !Number.isSafeInteger(value) || value < min) {
+      throw new Error('مقدار «' + name + '» باید عدد صحیح معتبر باشد.');
+    }
+    return value;
+  }
+
+  async function submitDraft(event) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const feedback = document.getElementById('gm10-draft-feedback');
+    const repo = currentRepository();
+    if (!repo || typeof repo.createPlanDraft !== 'function') {
+      if (feedback) feedback.textContent = 'عملیات draft در repository در دسترس نیست؛ درخواستی ارسال نشد.';
+      return false;
+    }
+    try {
+      const formData = new FormData(form);
+      const planCode = String(formData.get('planCode') || '');
+      const payload = {
+        planCode,
+        version: String(formData.get('version') || '').trim(),
+        nameFa: String(formData.get('nameFa') || '').trim(),
+        descriptionFa: String(formData.get('descriptionFa') || ''),
+        basePriceMonthlyRials: numericField(formData, 'basePriceMonthlyRials', 0),
+        includedBranches: numericField(formData, 'includedBranches', 1),
+        includedDevices: numericField(formData, 'includedDevices', 1),
+        includedUsers: numericField(formData, 'includedUsers', 1),
+        includedFeatures: Array.from(form.querySelectorAll('input[name="includedFeatures"]:checked')).map(input => input.value),
+        quotas: {}
+      };
+      form.querySelectorAll('[data-quota-key]').forEach(input => {
+        payload.quotas[input.dataset.quotaKey] = numericField(formData, input.name, -1);
+      });
+      if (!payload.version || !payload.nameFa) throw new Error('نسخه و نام پلن الزامی است.');
+      if (state.access && !state.access.allowed) throw new Error(state.access.reason || 'نشست مجاز برای تغییر پلن وجود ندارد.');
+      const signature = JSON.stringify(payload);
+      const key = state.pendingDraft && state.pendingDraft.signature === signature
+        ? state.pendingDraft.key
+        : makeIdempotencyKey();
+      state.pendingDraft = { signature, key };
+      if (feedback) feedback.textContent = 'در انتظار تأیید نهایی اپراتور…';
+      global.GodModeConfirmDialog.show({
+        title: 'تأیید ثبت draft پلن',
+        severity: 'high',
+        message: 'نسخهٔ draft با مقادیر زیر به Control Plane ارسال می‌شود. این کار نسخهٔ منتشرشده و subscription مستأجران را تغییر نمی‌دهد.',
+        impactDetails: JSON.stringify(payload, null, 2),
+        confirmText: 'ثبت draft در Control Plane',
+        onConfirm: async function () {
+          try {
+            const result = await repo.createPlanDraft(payload, { idempotencyKey: key });
+            state.pendingDraft = null;
+            state.lastMutationResult = { kind: 'draft', data: result.data };
+            if (global.GMApp && typeof global.GMApp.closeDrawer === 'function') global.GMApp.closeDrawer();
+            await GM10.load();
+          } catch (error) {
+            state.pendingDraft = { signature, key };
+            if (feedback) feedback.textContent = (error.code ? error.code + ' · ' : '') + error.message;
+            throw error;
+          }
+        }
+      });
+    } catch (error) {
+      if (feedback) feedback.textContent = error.message;
+    }
+    return false;
+  }
+
+  function confirmPublish(planCode, version) {
+    const plan = getPlan(planCode, version);
+    const draftsForCode = state.plans.filter(item => item.planCode === planCode && item.isDraft === true);
+    if (!plan || plan.isDraft !== true || draftsForCode.length !== 1 || getMutationDisabledReason()) return;
+    const payload = { planCode, version: plan.version };
+    const operationId = planCode + ':' + version;
+    const publishSignature = JSON.stringify({ planCode, version });
+    const previous = state.pendingPublishes.get(operationId);
+    const idempotencyKey = previous && previous.signature === publishSignature ? previous.key : makeIdempotencyKey();
+    state.pendingPublishes.set(operationId, { signature: publishSignature, key: idempotencyKey });
+    global.GodModeConfirmDialog.show({
+      title: 'تأیید انتشار نسخهٔ پلن',
+      severity: 'high',
+      message: 'با تأیید، Control Plane همین draft را منتشر می‌کند. قیمت و سهمیه از نو محاسبه نمی‌شوند؛ سرور نسخهٔ مؤثر و تعداد اشتراک‌های مرتبط را در نتیجه اعلام می‌کند.',
+      impactDetails: JSON.stringify({
+        planCode: plan.planCode,
+        version: plan.version,
+        nameFa: plan.nameFa,
+        descriptionFa: plan.descriptionFa,
+        basePriceMonthlyRials: plan.basePriceMonthlyRials,
+        basePriceMonthlyToman: plan.basePriceMonthlyToman,
+        includedBranches: plan.includedBranches,
+        includedDevices: plan.includedDevices,
+        includedUsers: plan.includedUsers,
+        quotas: plan.quotas,
+        includedFeatures: plan.includedFeatures,
+        effectiveFrom: 'اگر زمان مؤثر ارسال نشود، backend از زمان سرور استفاده می‌کند.'
+      }, null, 2),
+      confirmText: 'انتشار از طریق Control Plane',
+      onConfirm: async function () {
+        try {
+          const result = await currentRepository().publishPlanDraft(planCode, { idempotencyKey });
+          state.pendingPublishes.delete(operationId);
+          state.lastMutationResult = { kind: 'published', data: result.data };
+          await GM10.load();
+        } catch (error) {
+          state.pendingPublishes.set(operationId, { signature: publishSignature, key: idempotencyKey });
+          if (global.GMApp && typeof global.GMApp.showToast === 'function') {
+            global.GMApp.showToast((error.code ? error.code + ' · ' : '') + error.message, 'danger');
+          }
+          throw error;
+        }
+      }
+    });
+  }
+
+  const GM10 = {
+    state,
+    render: function () {
+      return `
+        <style>
+          .gm10-plan-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,19rem),1fr));gap:1rem;margin-block:1rem}
+          .gm10-plan-card .card-body{display:flex;flex-direction:column;gap:.75rem;height:100%}
+          .gm10-card-heading,.gm10-source-line,.gm10-actions{display:flex;align-items:center;justify-content:space-between;gap:.65rem;flex-wrap:wrap}
+          .gm10-card-heading h2{margin:0}.gm10-card-heading p{margin:.25rem 0 0}
+          .gm10-price-block,.gm10-data-grid,.gm10-api-detail{display:grid;gap:.5rem;padding:.75rem;border:1px solid var(--border-default);border-radius:.65rem}
+          .gm10-price-block small{display:block;color:var(--text-secondary)}
+          .gm10-data-row{display:flex;justify-content:space-between;align-items:flex-start;gap:1rem;padding:.4rem 0;border-bottom:1px solid var(--border-subtle)}
+          .gm10-data-row:last-child{border-bottom:0}.gm10-feature-list{display:grid;gap:.35rem}
+          .gm10-feature-list li,.gm10-feature-option{display:flex;align-items:center;gap:.5rem;flex-wrap:wrap}
+          .gm10-form-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(9rem,1fr));gap:.75rem}
+          .gm10-draft-form{display:grid;gap:.85rem}.gm10-draft-form fieldset{display:grid;gap:.55rem;min-width:0}
+          .gm10-matrix .table-responsive{overflow:auto}.gm10-matrix td,.gm10-matrix th{white-space:nowrap}
+          @media(max-width:36rem){.gm10-actions>*{width:100%}.gm10-data-row{gap:.5rem}.gm10-plan-card .card-body{padding:1rem}}
+        </style>
+        <div class="page-header gm10-page">
+          <div class="page-title-group">
+            <nav class="breadcrumb-nav" aria-label="مسیر راهبری"><a href="#gm-02-overview">پیشخوان</a><span aria-hidden="true">/</span><span aria-current="page">پلن‌ها و قیمت‌گذاری</span></nav>
+            <h1>قیمت‌گذاری و سهمیه‌های پلتفرم <span class="page-code-badge">GM-10</span></h1>
+            <p>کاتالوگ نسخه‌دار، قیمت و سهمیه از Control Plane؛ بدون دادهٔ نمایشی یا تغییر در subscription مستأجر.</p>
+          </div>
+          <div class="header-actions"><button type="button" class="btn btn-secondary" onclick="window.GMViews.GM10.openPlanCompareDrawer()">مقایسهٔ API</button></div>
+        </div>
+        <div id="gm10-live-content" aria-live="polite">${renderMainContent()}</div>`;
+    },
+    afterRender: function () {
+      const container = document.getElementById('gm10-live-content');
+      if (container && (!state.handler || state.handler.node !== container)) {
+        if (state.handler && state.handler.listener) state.handler.node.removeEventListener('click', state.handler.listener);
+        const listener = function (event) {
+          const button = event.target.closest('[data-gm10-action]');
+          if (!button || !container.contains(button)) return;
+          const action = button.dataset.gm10Action;
+          if (action === 'refresh') GM10.load();
+          if (action === 'compare') GM10.openPlanCompareDrawer();
+          if (action === 'details') openPlanDetailDrawer(button.dataset.planCode, button.dataset.version);
+          if (action === 'new-draft' || action === 'edit-draft') openDraftDrawer(button.dataset.planCode, button.dataset.version);
+          if (action === 'publish') confirmPublish(button.dataset.planCode, button.dataset.version);
+        };
+        container.addEventListener('click', listener);
+        state.handler = { node: container, listener };
+      }
+      if (state.status === 'loading' && !state.loading) GM10.load();
+    },
+    load: async function () {
+      const repo = currentRepository();
+      if (!repo || typeof repo.listPlans !== 'function' || typeof repo.getPlanMatrix !== 'function') {
+        state.status = 'failed';
+        state.error = Object.assign(new Error('CommercialRepository با API پلن‌ها در دسترس نیست.'), { code: 'COMMERCIAL_REPOSITORY_UNAVAILABLE', status: 0 });
+        GM10.updateContent();
+        return;
+      }
+      const requestId = ++state.requestId;
+      state.loading = true;
+      if (!state.plans.length) state.status = 'loading';
+      GM10.updateContent();
+      const matrixRequest = repo.getPlanMatrix().then(matrix => ({ matrix })).catch(error => ({ matrixError: error }));
+      const accessRequest = typeof repo.getPlanMutationAccess === 'function'
+        ? repo.getPlanMutationAccess().then(access => ({ access })).catch(error => ({ accessError: error }))
+        : Promise.resolve({ access: { allowed: false, reason: 'repository احراز نشست پلتفرم را پشتیبانی نمی‌کند.', code: 'PLATFORM_SESSION_CHECK_UNAVAILABLE' } });
+      try {
+        const plans = await repo.listPlans();
+        const [matrixResult, accessResult] = await Promise.all([matrixRequest, accessRequest]);
+        if (requestId !== state.requestId) return;
+        state.matrix = matrixResult.matrix || null;
+        state.matrixError = matrixResult.matrixError || null;
+        state.access = accessResult.access || {
+          allowed: false,
+          reason: accessResult.accessError && accessResult.accessError.message || 'نشست Control Plane بررسی نشد.',
+          code: accessResult.accessError && accessResult.accessError.code || 'PLATFORM_SESSION_CHECK_UNAVAILABLE'
+        };
+        state.plans = plans;
+        state.plansMeta = repo.lastPlansMeta || null;
+        state.error = null;
+        state.status = plans.length ? 'ready' : 'empty';
+      } catch (error) {
+        const [matrixResult, accessResult] = await Promise.all([matrixRequest, accessRequest]);
+        if (requestId !== state.requestId) return;
+        state.matrix = matrixResult.matrix || null;
+        state.matrixError = matrixResult.matrixError || null;
+        state.access = accessResult.access || {
+          allowed: false,
+          reason: accessResult.accessError && accessResult.accessError.message || 'نشست Control Plane بررسی نشد.',
+          code: accessResult.accessError && accessResult.accessError.code || 'PLATFORM_SESSION_CHECK_UNAVAILABLE'
+        };
+        state.error = error;
+        state.status = 'failed';
+      } finally {
+        if (requestId === state.requestId) {
+          state.loading = false;
+          GM10.updateContent();
+        }
+      }
+    },
+    updateContent: function () {
+      const content = document.getElementById('gm10-live-content');
+      if (content) content.innerHTML = renderMainContent();
+    },
+    openPlanDetailDrawer,
+    openPlanCompareDrawer: function () {
+      if (!state.matrix) {
+        if (global.GMApp && typeof global.GMApp.showToast === 'function') global.GMApp.showToast(state.matrixError ? state.matrixError.message : 'ماتریس API هنوز دریافت نشده است.', 'warning');
+        return;
+      }
+      const content = renderMatrix();
+      if (global.GMApp && typeof global.GMApp.openDrawer === 'function') {
+        global.GMApp.openDrawer('مقایسهٔ پلن‌ها · API', content, { subtitle: 'دادهٔ واقعی Control Plane' });
+      }
+    },
+    openDraftDrawer,
+    submitDraft,
+    confirmPublish
+  };
+
+  global.renderGM10 = function () { return GM10.render(); };
+  global.GMViews = global.GMViews || {};
+  global.GMViews.GM10 = GM10;
+})(typeof window !== 'undefined' ? window : globalThis);

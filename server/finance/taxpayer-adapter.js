@@ -37,6 +37,71 @@ function ensureTaxpayerData(db) {
   };
 }
 
+function normalizeDigits(val) {
+  return String(val ?? '')
+    .replace(/[۰-۹]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)))
+    .replace(/[٠-٩]/g, (d) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d)));
+}
+
+function normalizedBranchId(value) {
+  if (value == null || String(value).trim() === '') return null;
+  const clean = normalizeDigits(value).replace(/\D/g, '');
+  if (!clean) return null;
+  const branchId = Number(clean);
+  return Number.isSafeInteger(branchId) && branchId > 0 ? branchId : null;
+}
+
+function sourceBranchId(db, sourceId) {
+  const orders = Array.isArray(db?.orders) ? db.orders : [];
+  const source = orders.find((order) => [order.id, order.orderNo, order.order_no, order.external_id]
+    .some((value) => value != null && String(value) === String(sourceId)));
+  return normalizedBranchId(source?.branchId ?? source?.branch_id ?? source?.locationId);
+}
+
+function invoiceBranchId(db, invoice) {
+  return normalizedBranchId(invoice?.branchId ?? invoice?.branch_id ?? invoice?.locationId)
+    || sourceBranchId(db, invoice?.source_id);
+}
+
+/**
+ * Tax invoices are legal records and must carry an immutable branch
+ * dimension. Resolve it from the source order where possible, then verify
+ * that a caller-provided/request-context branch cannot override it.
+ */
+function resolveInvoiceBranch(db, invoiceData = {}, opts = {}) {
+  const inputBranchId = normalizedBranchId(invoiceData.branchId ?? invoiceData.branch_id);
+  const sourceId = String(invoiceData.source_id || invoiceData.sale_id || invoiceData.external_id || '').trim();
+  const sourceBranch = sourceBranchId(db, sourceId);
+  const contextBranchId = normalizedBranchId(opts.branchId);
+  const branchId = sourceBranch || inputBranchId || contextBranchId;
+
+  if (sourceBranch && inputBranchId && sourceBranch !== inputBranchId) {
+    throw Object.assign(new Error('شعبهٔ صورتحساب با شعبهٔ سفارش منبع یکسان نیست.'), {
+      code: 'tax_invoice_branch_mismatch', status: 409,
+    });
+  }
+  if (sourceBranch && contextBranchId && sourceBranch !== contextBranchId) {
+    throw Object.assign(new Error('دسترسی به شعبهٔ سفارش منبع صورتحساب مجاز نیست.'), {
+      code: 'tax_invoice_branch_access_denied', status: 403,
+    });
+  }
+  if (!branchId) {
+    throw Object.assign(new Error('شعبهٔ صورتحساب مالیاتی مشخص نشده است.'), {
+      code: 'tax_invoice_branch_required', status: 400,
+    });
+  }
+
+  const allowed = Array.isArray(opts.allowedBranchIds)
+    ? opts.allowedBranchIds.map(normalizedBranchId).filter(Boolean)
+    : null;
+  if (allowed && !allowed.includes(branchId)) {
+    throw Object.assign(new Error('دسترسی به شعبهٔ صورتحساب مالیاتی مجاز نیست.'), {
+      code: 'tax_invoice_branch_access_denied', status: 403,
+    });
+  }
+  return branchId;
+}
+
 /**
  * Generates a unique 22-character Tax Invoice UID (شماره منحصر به فرد مالیاتی)
  * Format: [6-char Tax Memory ID] + [5-char Julian/Epoch Days] + [10-char Serial Number] + [1-char Checksum]
@@ -60,12 +125,24 @@ function enqueueTaxInvoice(db, invoiceData, opts = {}) {
 
   const sourceId = String(invoiceData.source_id || invoiceData.sale_id || invoiceData.external_id || '').trim();
   if (!sourceId) throw new Error('شناسه منبع صورتحساب (source_id) الزامی است.');
+  const branchId = resolveInvoiceBranch(db, invoiceData, opts);
 
   const documentType = String(invoiceData.document_type || 'ORIGINAL').toUpperCase(); // ORIGINAL, CORRECTION, CANCELLATION
   const referenceTaxUid = invoiceData.reference_tax_uid || null;
+  if (!['ORIGINAL', 'CORRECTION', 'CANCELLATION'].includes(documentType)) {
+    throw Object.assign(new Error('نوع صورتحساب مالیاتی معتبر نیست.'), { code: 'tax_document_type_invalid' });
+  }
+  if (documentType !== 'ORIGINAL' && !String(referenceTaxUid || '').trim()) {
+    throw Object.assign(new Error('صورتحساب اصلاحی یا ابطالی باید به شماره مالیاتی مرجع متصل باشد.'), {
+      code: 'tax_reference_required',
+    });
+  }
 
   // Check existing active invoice for this source
-  const existing = taxInvoices.find((inv) => inv.source_id === sourceId && inv.document_type === documentType && inv.status !== 'FAILED');
+  const existing = taxInvoices.find((inv) => inv.source_id === sourceId
+    && inv.document_type === documentType
+    && invoiceBranchId(db, inv) === branchId
+    && inv.status !== 'FAILED');
   if (existing) {
     return {
       ok: true,
@@ -129,6 +206,7 @@ function enqueueTaxInvoice(db, invoiceData, opts = {}) {
     tax_uid: taxUid,
     source_type: invoiceData.source_type || 'pos_sale',
     source_id: sourceId,
+    branchId,
     document_type: documentType,
     reference_tax_uid: referenceTaxUid,
     serial_number: serialNumber,
@@ -175,10 +253,42 @@ function enqueueTaxInvoice(db, invoiceData, opts = {}) {
 /**
  * Dispatches an e-invoice to the Tax Authority API (or Sandbox Mock).
  */
-function processSubmission(db, taxInvoiceId) {
+function providerMode(settings) {
+  return String(settings?.provider || '').trim().toUpperCase();
+}
+
+function providerDispatchError(settings) {
+  const provider = providerMode(settings);
+  if (!provider) return new Error('درگاه سامانه مؤدیان تنظیم نشده است.');
+  if (provider === 'SANDBOX_MOCK' && settings.sandboxMode === true) return null;
+  const error = new Error(
+    provider === 'SANDBOX_MOCK'
+      ? 'حالت sandbox برای شبیه‌ساز سامانه مؤدیان فعال نیست.'
+      : `اتصال واقعی provider «${provider}» هنوز پیکربندی نشده است؛ تأیید مالیاتی صادر نشد.`,
+  );
+  error.code = provider === 'SANDBOX_MOCK' ? 'tax_sandbox_disabled' : 'tax_provider_not_configured';
+  return error;
+}
+
+/**
+ * Dispatch an invoice only through an explicitly supplied provider adapter.
+ * The current release ships a deterministic sandbox adapter, but deliberately
+ * has no implicit network/mock success path for real providers.
+ */
+function processSubmission(db, taxInvoiceId, opts = {}) {
   const { taxInvoices, taxSubmissions, settings } = ensureTaxpayerData(db);
   const invoice = taxInvoices.find((inv) => inv.id === taxInvoiceId);
   if (!invoice) return { ok: false, error: 'صورتحساب مالیاتی یافت نشد.' };
+  // A confirmed tax invoice is immutable from the retry endpoint. Replaying
+  // it must return the existing confirmation instead of creating another tax
+  // submission or advancing the attempt counter.
+  if (invoice.status === 'CONFIRMED') {
+    const submission = taxSubmissions
+      .slice()
+      .reverse()
+      .find((row) => row.tax_invoice_id === invoice.id && row.status === 'SUCCESS');
+    return { ok: true, idempotent: true, invoice, submission: submission || null };
+  }
 
   invoice.status = 'SENDING';
   invoice.attempt_count += 1;
@@ -195,21 +305,32 @@ function processSubmission(db, taxInvoiceId) {
   };
 
   try {
-    // In Sandbox / Direct Mock mode: Simulate Tax Authority response
-    const mockSuccess = true;
-    if (mockSuccess) {
-      invoice.status = 'CONFIRMED';
-      invoice.response_payload = {
+    const dispatchError = providerDispatchError(settings);
+    const adapter = typeof opts.adapter === 'function' ? opts.adapter : null;
+    let response;
+    if (adapter) {
+      response = adapter({ invoice, settings, attempt: invoice.attempt_count });
+      if (!response || response.status !== 'SUCCESS') {
+        throw Object.assign(new Error(response?.error || 'provider_submission_rejected'), { code: 'tax_provider_rejected' });
+      }
+    } else if (!dispatchError) {
+      // SANDBOX_MOCK is the only built-in success path and must be explicit.
+      response = {
         status: 'SUCCESS',
-        referenceNumber: `TAX-REF-${Date.now()}`,
+        referenceNumber: `SANDBOX-TAX-REF-${invoice.tax_uid}`,
         fiscalConfirmationTime: new Date().toISOString(),
         packetType: 'INVOICE_V01',
         errors: [],
       };
+    } else {
+      throw dispatchError;
+    }
+
+    if (response?.status === 'SUCCESS') {
+      invoice.status = 'CONFIRMED';
+      invoice.response_payload = response;
       submissionRecord.status = 'SUCCESS';
       submissionRecord.response = invoice.response_payload;
-    } else {
-      throw new Error('خطای ارتباط با سرور سامانه مؤدیان (تایم‌اوت درگاه مرکزی)');
     }
   } catch (err) {
     invoice.status = invoice.attempt_count >= settings.maxRetries ? 'FAILED' : 'QUEUED';
@@ -220,6 +341,7 @@ function processSubmission(db, taxInvoiceId) {
 
     submissionRecord.status = 'FAILED';
     submissionRecord.error = err.message;
+    submissionRecord.errorCode = err.code || 'tax_provider_error';
   }
 
   taxSubmissions.push(submissionRecord);

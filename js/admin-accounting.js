@@ -27,13 +27,18 @@
     { id: 'credit', label: 'اعتباری' },
     { id: 'gift_card', label: 'کارت هدیه' },
   ]);
-  const state = { workspace: 'workbench', operation: 'journal', query: {}, payload: null, meta: null, loading: false, pages: {}, serverPages: { events: 1, migration: 1, uncaptured: 1, journals: 1, approvals: 1 }, request: null, focusRecordId: null };
+  const state = { workspace: 'workbench', operation: 'journal', query: {}, payload: null, meta: null, loading: false, pages: {}, serverPages: { events: 1, migration: 1, uncaptured: 1, journals: 1, approvals: 1 }, request: null, focusRecordId: null, experience: false, view: 'home', section: '', task: '', search: '', listSearch: '', navigation: {}, auxiliary: {} };
   let root = null;
+  let taxSetupRequestId = 0;
   let accessContext = { hasCapability: () => false, currentUser: () => null, branchCount: () => 0 };
 
   const can = (capability) => accessContext.hasCapability?.(capability) === true;
   const actorPhone = () => String(accessContext.currentUser?.()?.phone || '');
   const currentRole = () => String(accessContext.currentUser?.()?.role || '').toLowerCase();
+  const activeBranchId = () => {
+    const branchId = Number(state.query.branchId);
+    return Number.isSafeInteger(branchId) && branchId > 0 ? branchId : null;
+  };
 
   const esc = (value) => String(value ?? '').replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
   const fa = (value) => window.WestoPersianFormat?.number(value, { locale: 'fa-IR' }) ?? Number(value || 0).toLocaleString('fa-IR');
@@ -64,6 +69,7 @@
     online: 'آنلاین', gateway: 'درگاه', gift_card: 'کارت هدیه', credit: 'اعتباری', unknown: 'نامشخص',
     posted: 'قطعی', blocked: 'مسدود', pending: 'منتظر پردازش', unregistered: 'ثبت‌نشده',
     paid: 'پرداخت‌شده', partial: 'ناقص', approved: 'تأییدشده', rejected: 'ردشده',
+    processing: 'پرداخت در حال انجام',
     succeeded: 'انجام‌شده', refunded: 'کاملاً برگشت‌خورده', cancelled: 'لغوشده',
     draft: 'پیش‌نویس', pending_approval: 'منتظر تأیید', open: 'باز', reopened: 'بازگشایی‌شده', soft_closed: 'بستهٔ مقدماتی', closed: 'بسته',
     received: 'کامل دریافت‌شده', partially_received: 'دریافت ناقص', partially_paid: 'بخشی پرداخت‌شده', match_exception: 'اختلاف تطبیق', match_rejected: 'اختلاف ردشده', matched: 'تطبیق‌شده', accepted_variance: 'اختلاف پذیرفته‌شده', unmatched: 'تطبیق‌نشده', exception: 'دارای اختلاف',
@@ -232,6 +238,15 @@
     });
     state.workspace = WORKSPACES.some((item) => item.id === params.get('financeWorkspace')) ? params.get('financeWorkspace') : 'workbench';
     state.operation = ['journal', 'events', 'approvals', 'periods'].includes(params.get('financeOperation')) ? params.get('financeOperation') : 'journal';
+    if (state.experience) {
+      const oldOperation = params.has('financeOperation') && state.workspace === 'workbench'
+        ? { journal: 'journals', events: 'issues', approvals: 'approvals', periods: 'periods' }[state.operation] : '';
+      const view = window.WestoAccountingExperience.resolve(params.get('financeView') || oldOperation, state.workspace, state.operation);
+      state.view = view.id;
+      state.section = window.WestoAccountingExperience.tabFor(view, params.get('financeSection'));
+      state.task = params.get('financeTask') || '';
+      Object.assign(state, window.WestoAccountingExperience.routeFor(view, state.section));
+    }
     state.query = {
       branchId: params.get('branchId') || supplied.get('branchId') || '',
       from: params.get('financeFrom') || '',
@@ -247,6 +262,11 @@
     state.query.from ? params.set('financeFrom', state.query.from) : params.delete('financeFrom');
     state.query.to ? params.set('financeTo', state.query.to) : params.delete('financeTo');
     if (state.query.branchId) params.set('branchId', state.query.branchId);
+    if (state.experience) {
+      params.set('financeView', state.view);
+      state.section ? params.set('financeSection', state.section) : params.delete('financeSection');
+      state.task ? params.set('financeTask', state.task) : params.delete('financeTask');
+    }
     history.replaceState(null, '', `${location.pathname}?${params.toString()}${location.hash}`);
   }
 
@@ -271,15 +291,26 @@
   }
 
   async function api(path, options = {}) {
-    const response = await fetch(path, {
-      ...options,
-      headers: { Accept: 'application/json', 'Content-Type': 'application/json', ...(options.headers || {}) },
-    });
+    let response;
+    try {
+      response = await fetch(path, {
+        ...options,
+        headers: { Accept: 'application/json', 'Content-Type': 'application/json', ...(options.headers || {}) },
+      });
+    } catch (error) {
+      // A failed connection cannot tell the client whether a financial POST
+      // reached and committed on the server.
+      error.outcomeUnknown = true;
+      error.code = error.code || 'finance_response_unknown';
+      throw error;
+    }
     const body = await response.json().catch(() => null);
     if (!response.ok || !body || body.error) {
       const message = body?.error?.message || body?.error || `پاسخ نامعتبر سرور (${response.status})`;
       const error = new Error(message);
       error.code = body?.error?.code || `http_${response.status}`;
+      error.responseStatus = response.status;
+      error.outcomeUnknown = response.status >= 500 || (response.ok && (!body || Boolean(body.error)));
       throw error;
     }
     return body;
@@ -295,23 +326,70 @@
     if (typeof window.showToast === 'function') window.showToast(message, tone === 'danger' ? 'error' : tone, 2400);
   };
 
-  async function mutation(path, body, button) {
+  async function mutation(path, body, button, options = {}) {
     if (button?.dataset.finBusy === '1') return null;
-    if (button) { button.dataset.finBusy = '1'; button.disabled = true; button.setAttribute('aria-busy', 'true'); }
+    const recoveryEnabled = options.recovery === true && Boolean(button);
+    const requestKey = recoveryEnabled
+      ? (button.dataset.finIdempotencyKey || idempotencyKey())
+      : idempotencyKey();
+    if (button) {
+      button.dataset.finBusy = '1';
+      button.disabled = true;
+      button.setAttribute('aria-busy', 'true');
+      if (recoveryEnabled) {
+        button.dataset.finIdempotencyKey = requestKey;
+        button.dataset.finPendingVerification = '1';
+      }
+    }
     try {
       return await api(path, {
         method: 'POST',
-        headers: { 'Idempotency-Key': idempotencyKey() },
+        headers: { 'Idempotency-Key': requestKey },
         body: JSON.stringify(body || {}),
       });
+    } catch (error) {
+      if (recoveryEnabled && error.outcomeUnknown) {
+        button.dataset.finOutcomeUnknown = '1';
+      } else if (recoveryEnabled) {
+        delete button.dataset.finIdempotencyKey;
+        delete button.dataset.finPendingVerification;
+        delete button.dataset.finOutcomeUnknown;
+      }
+      throw error;
     } finally {
-      if (button) { delete button.dataset.finBusy; button.disabled = false; button.removeAttribute('aria-busy'); }
+      if (button) {
+        delete button.dataset.finBusy;
+        button.removeAttribute('aria-busy');
+        if (!recoveryEnabled || button.dataset.finPendingVerification !== '1') button.disabled = false;
+      }
     }
+  }
+
+  function finalizeRecoverableMutation(button) {
+    if (!button) return;
+    delete button.dataset.finIdempotencyKey;
+    delete button.dataset.finPendingVerification;
+    delete button.dataset.finOutcomeUnknown;
+    button.disabled = false;
+    button.removeAttribute('aria-busy');
   }
 
   function statusBadge(value, explicitTone) {
     const tone = explicitTone || (['posted', 'approved', 'paid', 'passed', 'succeeded', 'matched', 'accepted_variance', 'refunded'].includes(value) ? 'success' : ['blocked', 'rejected', 'match_rejected', 'failed', 'NO_GO'].includes(value) ? 'danger' : 'warning');
     return `<span class="fin-badge ${tone}">${esc(label(value))}</span>`;
+  }
+
+  function refundStatusBadge(value) {
+    const states = {
+      pending_approval: { text: 'منتظر تأیید مالک', tone: 'warning' },
+      approved: { text: 'مجاز برای پرداخت؛ وجه منتقل نشده', tone: 'warning' },
+      processing: { text: 'پرداخت در حال انجام؛ هنوز نهایی نیست', tone: 'warning' },
+      succeeded: { text: 'برگشت وجه ثبت و با مدرک خروجی تطبیق شد', tone: 'success' },
+      failed: { text: 'پرداخت ناموفق؛ بررسی لازم است', tone: 'danger' },
+      cancelled: { text: 'درخواست لغو شده', tone: 'neutral' },
+    };
+    const state = states[String(value || '').toLowerCase()] || { text: 'وضعیت نامشخص؛ از ثبت دوباره خودداری کنید', tone: 'danger' };
+    return `<span class="fin-badge ${state.tone}">${esc(state.text)}</span>`;
   }
 
   function metric(title, value, detail, tone = '') {
@@ -333,8 +411,8 @@
     const pageAttr = serverPagination ? 'data-fin-server-page' : 'data-fin-page';
     return `
       <div class="fin-table-wrap">
-        <table class="fin-table"><thead><tr>${columns.map((column) => `<th>${esc(column.label)}</th>`).join('')}</tr></thead>
-          <tbody>${visible.map((row) => `<tr>${columns.map((column) => `<td>${column.render ? column.render(row) : esc(row[column.key] ?? '—')}</td>`).join('')}</tr>`).join('')}</tbody>
+        <table class="fin-table" ${state.experience ? `data-fin-table="${esc(id)}"` : ''}><thead><tr>${columns.map((column) => `<th>${esc(column.label)}</th>`).join('')}</tr></thead>
+          <tbody>${visible.map((row) => `<tr ${state.experience && row.bucketKey ? `data-fin-aging-row="${esc(row.bucketKey)}"` : ''}>${columns.map((column) => `<td>${column.render ? column.render(row) : esc(row[column.key] ?? '—')}</td>`).join('')}</tr>`).join('')}</tbody>
         </table>
       </div>
       <div class="fin-pagination" aria-label="صفحه‌بندی جدول">
@@ -357,15 +435,25 @@
   }
 
   function renderShell() {
+    if (state.experience) {
+      root.innerHTML = window.WestoAccountingExperience.shell(state, localIsoDate());
+      bindShell();
+      return;
+    }
     root.innerHTML = `
-      <section class="finance-v2" data-display-mode="simple" aria-labelledby="fin-title">
-        <header class="fin-header">
-          <div><p class="fin-eyebrow">مدیریت مالی</p><h1 id="fin-title">حسابداری</h1><p>کارهای روزانه، گزارش‌ها و کنترل‌های مالی در یکجا.</p></div>
+      <section class="finance-v2" data-display-mode="simple" aria-label="فضای کاری حسابداری">
+        <nav class="fin-workspace-nav" aria-label="فضاهای کاری مالی">
+          ${WORKSPACES.map((item) => {
+            const shortLabel = { workbench: 'کارتابل', sales_bank: 'فروش و دریافت', purchases: 'خرید و هزینه', costing: 'مواد و بها', ledger_close: 'گزارش و دوره' }[item.id] || item.navLabel || item.label;
+            return `<button type="button" data-fin-workspace="${item.id}" class="${item.id === state.workspace ? 'active' : ''}" aria-current="${item.id === state.workspace ? 'page' : 'false'}" aria-label="${esc(item.label)}" title="${esc(item.label)}"><b aria-hidden="true">${item.icon}</b><strong>${esc(shortLabel)}</strong></button>`;
+          }).join('')}
+        </nav>
+        <div class="fin-context">
           <div class="fin-scope" data-fin-scope aria-label="محدودهٔ نمایش مالی"><span data-fin-period>بازه: تمام تاریخچه</span></div>
           <aside class="fin-header-status" data-fin-connection-state="loading" role="status" aria-live="polite">
             <span class="fin-dot" aria-hidden="true"></span><span><b>در حال بررسی داده‌ها</b><small>اتصال به دفتر مالی در حال بررسی است.</small></span>
           </aside>
-        </header>
+        </div>
         <div class="fin-toolbar">
           <label class="fin-search"><span>جست‌وجو در مالی</span><input id="fin-global-search" type="search" placeholder="شماره سفارش، سند یا تأمین‌کننده" autocomplete="off"><div id="fin-search-results" class="fin-search-results" hidden></div></label>
           <div class="fin-presets" role="group" aria-label="فیلتر سریع تاریخ">
@@ -381,15 +469,14 @@
             <button class="fin-btn secondary" id="fin-apply-filter" type="button">اعمال بازه</button>
           </div>
         </div>
-        <nav class="fin-workspace-nav" aria-label="فضاهای کاری مالی">
-          ${WORKSPACES.map((item) => `<button type="button" data-fin-workspace="${item.id}" class="${item.id === state.workspace ? 'active' : ''}" aria-current="${item.id === state.workspace ? 'page' : 'false'}" title="${esc(item.label)}"><b aria-hidden="true">${item.icon}</b><span><strong>${esc(item.navLabel || item.label)}</strong><small>${esc(item.hint || '')}</small></span></button>`).join('')}
-        </nav>
-        <div id="fin-workspace-content" role="region" aria-labelledby="fin-title" aria-live="polite" tabindex="-1"></div>
+        <div id="fin-workspace-content" role="region" aria-label="جزئیات فضای کاری مالی" aria-live="polite" tabindex="-1"></div>
       </section>`;
     bindShell();
   }
 
   function bindShell() {
+    root.querySelectorAll('[data-fin-view]').forEach(button => button.addEventListener('click', () => navigateAccounting(button.dataset.finView)));
+    root.querySelector('[data-fin-mobile-view]')?.addEventListener('change', event => navigateAccounting(event.target.value));
     root.querySelectorAll('[data-fin-workspace]').forEach((button) => button.addEventListener('click', () => {
       state.workspace = button.dataset.finWorkspace;
       state.pages = {};
@@ -400,6 +487,7 @@
       loadWorkspace();
     }));
     root.querySelectorAll('[data-fin-preset]').forEach((btn) => btn.addEventListener('click', () => {
+      if (state.experience && !confirmLeaveAccountingTask()) return;
       const preset = btn.dataset.finPreset;
       const today = localIsoDate();
       if (preset === 'all') {
@@ -419,6 +507,7 @@
         state.query.from = d.toISOString().slice(0, 10);
         state.query.to = today;
       }
+      if (state.experience) Object.assign(state.query, window.WestoAccountingExperience.dateRange(preset, today));
       state.pages = {};
       state.query.page = 1;
       persistQuery();
@@ -431,40 +520,93 @@
     if (activeWorkspace && window.matchMedia('(max-width: 720px)').matches) {
       window.requestAnimationFrame(() => activeWorkspace.scrollIntoView({ block: 'nearest', inline: 'center' }));
     }
-    filterToggle.addEventListener('click', () => {
+    filterToggle?.addEventListener('click', () => {
       const expanded = filterToggle.getAttribute('aria-expanded') === 'true';
       filterToggle.setAttribute('aria-expanded', String(!expanded));
-      filterToggle.textContent = expanded ? 'تغییر بازهٔ زمانی' : 'بستن بازهٔ زمانی';
+      if (state.experience) {
+        const toggleLabel = filterToggle.querySelector('span') || filterToggle;
+        toggleLabel.textContent = expanded ? 'بازهٔ دلخواه' : 'بستن بازه';
+      } else filterToggle.textContent = expanded ? 'تغییر بازهٔ زمانی' : 'بستن بازهٔ زمانی';
       dateControls.classList.toggle('is-open', !expanded);
     });
     root.querySelector('#fin-apply-filter').addEventListener('click', () => {
+      if (state.experience && !confirmLeaveAccountingTask()) return;
       const fromInput = root.querySelector('#fin-from');
       const toInput = root.querySelector('#fin-to');
-      state.query.from = window.ShamsiDatePicker?.getISOValue(fromInput) || fromInput.dataset.isoDate || fromInput.value;
-      state.query.to = window.ShamsiDatePicker?.getISOValue(toInput) || toInput.dataset.isoDate || toInput.value;
-      if (state.query.from && state.query.to && state.query.from > state.query.to) {
-        renderError({ code: 'date_range_invalid', message: 'تاریخ شروع نمی‌تواند بعد از تاریخ پایان باشد.' });
+      const from = window.ShamsiDatePicker?.getISOValue(fromInput) || fromInput.dataset.isoDate || fromInput.value;
+      const to = window.ShamsiDatePicker?.getISOValue(toInput) || toInput.dataset.isoDate || toInput.value;
+      if (!state.experience) Object.assign(state.query, { from, to });
+      const dateError = root.querySelector('#fin-date-error');
+      if (from && to && from > to) {
+        if (dateError) { dateError.textContent = 'تاریخ شروع باید پیش از تاریخ پایان باشد.'; dateError.hidden = false; }
+        else renderError({ code: 'date_range_invalid', message: 'تاریخ شروع نمی‌تواند بعد از تاریخ پایان باشد.' });
         return;
       }
+      if (dateError) dateError.hidden = true;
+      Object.assign(state.query, { from, to });
       state.pages = {};
       state.query.page = 1;
       persistQuery();
+      if (state.experience) renderShell();
       loadWorkspace();
     });
     const search = root.querySelector('#fin-global-search');
     let timer = null;
     search.addEventListener('input', () => {
+      if (state.experience) state.search = search.value;
       clearTimeout(timer);
       const term = search.value.trim();
       if (term.length < 2) return closeSearch();
       timer = setTimeout(() => runSearch(term), 280);
     });
-    search.addEventListener('keydown', (event) => { if (event.key === 'Escape') closeSearch(); });
+    search.addEventListener('keydown', event => {
+      if (event.key === 'Escape') { if (state.experience) clearTimeout(timer); closeSearch(); }
+      if (state.experience && event.key === 'ArrowDown') { const button = root.querySelector('#fin-search-results:not([hidden]) button'); if (button) { event.preventDefault(); button.focus(); } }
+    });
+  }
+
+  function navigateAccounting(viewId, section = '', task = '', targetPage = null) {
+    if (!state.experience) return;
+    const view = window.WestoAccountingExperience.views.find(item => item.id === viewId);
+    if (!view || !confirmLeaveAccountingTask()) return;
+    state.navigation[`${state.view}:${state.section}`] = { listSearch: state.listSearch, listStatus: state.listStatus || '', listCategory: state.listCategory || 'all', listAging: state.listAging || 'all', listSort: { ...state.listSort }, pages: { ...state.pages }, page: state.query.page, serverPages: { ...state.serverPages } };
+    state.view = view.id;
+    state.section = window.WestoAccountingExperience.tabFor(view, section);
+    Object.assign(state, window.WestoAccountingExperience.routeFor(view, state.section));
+    state.task = task;
+    const previous = state.navigation[`${state.view}:${state.section}`];
+    state.listSearch = targetPage == null ? previous?.listSearch || '' : '';
+    state.listStatus = targetPage == null ? previous?.listStatus || '' : '';
+    state.listCategory = targetPage == null ? previous?.listCategory || 'all' : 'all';
+    state.listAging = targetPage == null ? previous?.listAging || 'all' : 'all';
+    state.listSort = targetPage == null ? previous?.listSort || {} : {};
+    state.pages = targetPage == null ? previous?.pages || {} : {};
+    state.query.page = targetPage || previous?.page || 1;
+    state.serverPages = previous?.serverPages || { events: 1, migration: 1, uncaptured: 1, journals: 1, approvals: 1 };
+    persistQuery(); renderShell();
+    root.querySelector('.fin-experience')?.scrollIntoView({ block: 'start' });
+    loadWorkspace();
+  }
+
+  function confirmLeaveAccountingTask() {
+    const form = root?.querySelector('[data-fin-task-page]:not([hidden]) form');
+    if (!form || form.dataset.finDirty !== 'true') return true;
+    const changed = form.dataset.finInitialValues !== accountingFormSnapshot(form);
+    return !changed || window.confirm('اطلاعات این فرم هنوز ثبت نشده است. از فرم خارج شوید؟');
+  }
+
+  function accountingFormSnapshot(form) {
+    return JSON.stringify([...form.querySelectorAll('input[name],select[name],textarea[name]')].map(field => [
+      field.name,
+      field.type === 'checkbox' ? field.checked : field.tagName === 'SELECT' && field.multiple ? [...field.selectedOptions].map(option => option.value)
+        : field.dataset.isoDate || (field.type === 'date' ? field.value : asciiDigits(field.value).replace(/[,٬]/g, '')),
+    ]));
   }
 
   async function runSearch(term) {
     const target = root.querySelector('#fin-search-results');
     target.hidden = false;
+    if (state.experience) root.querySelector('#fin-global-search')?.setAttribute('aria-expanded', 'true');
     target.innerHTML = '<span class="fin-search-wait">در حال جست‌وجو…</span>';
     try {
       const query = new URLSearchParams({ q: term, pageSize: '25' });
@@ -472,8 +614,21 @@
       if (state.query.from) query.set('from', state.query.from);
       if (state.query.to) query.set('to', state.query.to);
       const result = await api(`/api/admin/v2/finance/search?${query}`);
+      if (state.experience && (!target.isConnected || root.querySelector('#fin-global-search')?.value.trim() !== term || target.hidden)) return;
       target.innerHTML = result.data.length ? result.data.map((item) => `<button type="button" data-fin-search-workspace="${esc(item.kind === 'order' ? 'sales_bank' : item.kind === 'vendor' ? 'purchases' : 'ledger_close')}" data-fin-search-id="${esc(item.id)}" data-fin-search-page="${esc(item.targetPage || 1)}" aria-label="مشاهده ${esc(item.label)} در بخش مرتبط"><span><strong>${esc(item.label)}</strong><small>${esc(label(item.kind))} · ${money(item.amountIrr)}</small></span><em>مشاهده</em></button>`).join('') : '<span class="fin-search-wait">نتیجه‌ای پیدا نشد.</span>';
+      if (state.experience) target.onkeydown = event => {
+        const buttons = [...target.querySelectorAll('button')]; const index = buttons.indexOf(event.target);
+        if (event.key === 'Escape') { closeSearch(); root.querySelector('#fin-global-search')?.focus(); }
+        else if (['ArrowDown', 'ArrowUp'].includes(event.key) && buttons.length) { event.preventDefault(); buttons[(index + (event.key === 'ArrowDown' ? 1 : -1) + buttons.length) % buttons.length].focus(); }
+      };
       target.querySelectorAll('[data-fin-search-workspace]').forEach((button) => button.addEventListener('click', () => {
+        if (state.experience) {
+          state.focusRecordId = button.dataset.finSearchId || null;
+          const workspace = button.dataset.finSearchWorkspace;
+          const view = workspace === 'sales_bank' ? 'sales' : workspace === 'purchases' ? 'purchases' : 'journals';
+          navigateAccounting(view, workspace === 'purchases' ? 'vendors' : '', '', Math.max(1, Number(button.dataset.finSearchPage) || 1));
+          return;
+        }
         state.workspace = button.dataset.finSearchWorkspace;
         state.operation = 'journal';
         state.pages = {};
@@ -485,6 +640,7 @@
         loadWorkspace();
       }));
     } catch (error) {
+      if (state.experience && (!target.isConnected || root.querySelector('#fin-global-search')?.value.trim() !== term || target.hidden)) return;
       target.innerHTML = `<span class="fin-search-error">${esc(error.message)}</span>`;
     }
   }
@@ -492,35 +648,63 @@
   function closeSearch() {
     const target = root?.querySelector('#fin-search-results');
     if (target) { target.hidden = true; target.innerHTML = ''; }
+    if (state.experience) root?.querySelector('#fin-global-search')?.setAttribute('aria-expanded', 'false');
   }
 
   async function loadWorkspace() {
     const content = root.querySelector('#fin-workspace-content');
+    const accountingRequest = state.experience;
     const config = WORKSPACES.find((item) => item.id === state.workspace) || WORKSPACES[0];
     if (!config) {
       setFinanceConnectionState('error', 'مدل مالی بارگذاری نشد', 'صفحه را تازه‌سازی کنید یا با پشتیبانی تماس بگیرید.');
       content.innerHTML = '<div class="fin-error" role="alert"><span>!</span><div><strong>فضای مالی آماده نیست</strong><p>تعریف مسیرهای حسابداری بارگذاری نشد.</p></div><button type="button" id="fin-retry">تلاش دوباره</button></div>';
       content.querySelector('#fin-retry')?.addEventListener('click', () => location.reload());
-      return;
+      return false;
     }
     if (state.request) state.request.abort();
     state.request = new AbortController();
+    const request = state.request;
     setFinanceConnectionState('loading', 'در حال بررسی داده‌ها', 'اتصال به دفتر مالی در حال بررسی است.');
     content.innerHTML = '<div class="fin-loading"><span></span><strong>در حال دریافت دادهٔ تأییدشده…</strong></div>';
     try {
       const query = requestQuery();
-      const result = await api(`/api/admin/v2/finance/${config.endpoint}${query ? `?${query}` : ''}`, { signal: state.request.signal });
+      const result = await api(`/api/admin/v2/finance/${config.endpoint}${query ? `?${query}` : ''}`, { signal: request.signal });
+      if (accountingRequest && (request !== state.request || !content.isConnected)) return false;
+      const auxiliary = {};
+      if (state.experience) {
+        const extra = [];
+        if (state.view === 'journals') extra.push(['journals', 'journal-entries']);
+        if (state.view === 'purchases' && state.section === 'expenses') extra.push(['expenses', 'operating-expenses']);
+        const responses = await Promise.all(extra.map(async ([key, endpoint]) => {
+          const response = await api(`/api/admin/v2/finance/${endpoint}?${query}`, { signal: request.signal });
+          return [key, key === 'journals' ? { rows: response.data, pagination: response.meta?.pagination } : response.data];
+        }));
+        if (request !== state.request || !content.isConnected) return false;
+        Object.assign(auxiliary, Object.fromEntries(responses));
+        if ((state.view === 'journals' && can('finance.journal.create')) || (state.view === 'settings' && state.section === 'accounts')) {
+          auxiliary.accounts = (await api('/api/admin/finance/coa', { signal: request.signal })).accounts || [];
+        }
+      }
+      if (accountingRequest && (request !== state.request || !content.isConnected)) return false;
+      state.auxiliary = auxiliary;
       state.payload = result.data;
       state.meta = result.meta;
+      if (state.experience && state.view === 'purchases' && state.section === 'vendors' && state.focusRecordId) {
+        const index = (state.payload.vendors || []).findIndex(row => String(row.id) === String(state.focusRecordId));
+        if (index >= 0) state.pages.vendors = Math.floor(index / 25) + 1;
+      }
       setFinanceScope(result.data?.currentPeriod || result.data?.selectedPeriod || null);
       setFinanceConnectionState('ready', 'دادهٔ مالی آماده است', 'اطلاعات این بخش از دفتر مالی دریافت شد.');
       renderWorkspace();
       focusSearchedRecord();
+      return true;
     } catch (error) {
+      if (accountingRequest && (request !== state.request || !content.isConnected)) return false;
       if (error.name !== 'AbortError') {
         setFinanceConnectionState('error', 'دادهٔ مالی در دسترس نیست', error.message || 'پاسخ قابل استفاده‌ای دریافت نشد.');
         renderError(error);
       }
+      return false;
     }
   }
 
@@ -548,7 +732,9 @@
       : `بازه: ${range}`;
     const branch = accessContext.branchCount?.() > 1 && state.query.branchId ? ` · شعبهٔ ${fa(state.query.branchId)}` : '';
     const target = scope.querySelector('[data-fin-period]');
-    if (target) target.textContent = `${periodLabel}${branch}`;
+    if (target) target.textContent = `${state.experience ? range : periodLabel}${branch}`;
+    const periodStatus = scope.querySelector('[data-fin-period-status]');
+    if (periodStatus) { periodStatus.textContent = period ? `دورهٔ مالی ${label(period.status)}` : 'دورهٔ مالی تعیین نشده'; periodStatus.title = period ? `${dateOnly(period.startDate)} تا ${dateOnly(period.endDate)}` : ''; }
   }
 
   function renderError(error) {
@@ -561,7 +747,24 @@
     const renderers = { workbench: renderWorkbench, sales_bank: renderSales, purchases: renderPurchases, costing: renderCosting, ledger_close: renderLedger };
     const content = root.querySelector('#fin-workspace-content');
     content.innerHTML = renderers[state.workspace]?.(state.payload) || empty('فضای کاری در دسترس نیست.');
+    if (state.experience) {
+      if (state.view === 'journals') {
+        content.insertAdjacentHTML('beforeend', renderAccountingJournalHistory(state.auxiliary.journals));
+        const form = content.querySelector('#fin-journal-form');
+        if (form && state.auxiliary.accounts) form.outerHTML = renderAccountingJournalForm(state.auxiliary.accounts);
+      }
+      if (state.view === 'settings' && state.section === 'accounts') content.insertAdjacentHTML('beforeend', renderAccountingChartAccounts(state.auxiliary.accounts));
+      if (state.view === 'purchases' && state.section === 'expenses') content.insertAdjacentHTML('beforeend', renderAccountingExpenseForm(state.auxiliary.expenses));
+      const previousOperation = state.operation;
+      state.operation = 'events';
+      const workbenchHtml = state.auxiliary.workbench ? renderWorkbench(state.auxiliary.workbench) : '';
+      state.operation = previousOperation;
+      window.WestoAccountingExperience.compose(content, state, {
+        ledgerHtml: state.auxiliary.ledger ? renderLedger(state.auxiliary.ledger) : '', workbenchHtml,
+      });
+    }
     bindContent();
+    if (state.experience) bindAccountingExperience();
   }
 
   // Finance V2 keeps the whole workspace read-only for roles that can inspect
@@ -589,6 +792,7 @@
       ['#fin-cost-accrual-form', 'finance.payables.manage'],
       ['#fin-cost-payment-form', 'finance.payables.manage'],
       ['#fin-journal-form', 'finance.journal.create'],
+      ['#fin-operating-expense-form', 'finance.journal.create'],
       ['#fin-fixed-asset-form', 'finance.journal.create'],
       ['#fin-depreciation-form', 'finance.journal.create'],
       ['#fin-payroll-run-form', 'finance.journal.create'],
@@ -657,6 +861,7 @@
       const target = root.querySelector(targetId);
       if (target) {
         event.preventDefault();
+        if (state.experience && target.closest('[data-fin-task-page]')) openAccountingTask(target.closest('[data-fin-task-page]').dataset.finTaskPage);
         const details = target.closest('details');
         if (details) details.open = true;
         target.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -664,6 +869,11 @@
       }
     }));
     root.querySelectorAll('[data-fin-goto]').forEach((button) => button.addEventListener('click', () => {
+      if (state.experience) {
+        const destination = { workbench: 'home', sales_bank: 'bank', purchases: 'purchases', costing: 'costing', ledger_close: 'reports' }[button.dataset.finGoto];
+        navigateAccounting(destination || 'home', button.dataset.finGoto === 'costing' ? 'coverage' : '');
+        return;
+      }
       state.workspace = button.dataset.finGoto;
       persistQuery(); renderShell(); loadWorkspace();
     }));
@@ -685,6 +895,11 @@
         const chain = result.data || {};
         const issueText = (chain.issues || []).map((issue) => esc(issue.message || label(issue.code))).join('، ') || 'مورد باز وجود ندارد.';
         feedback.innerHTML = `<div class="fin-note ${chain.status === 'complete' ? 'success' : 'warning'}" role="status"><strong>زنجیرهٔ سفارش ${esc(chain.order?.orderNo || chain.order?.id || button.dataset.finOrderChain)}</strong><span>وضعیت: ${esc(chain.statusLabel || label(chain.status))} · تطبیق پرداخت: ${esc(label(chain.reconciliationStatus || 'نامشخص'))}</span>${chain.issues?.length ? `<small>موارد نیازمند اقدام: ${issueText}</small>` : '<small>فروش، پرداخت، بهای تمام‌شده و برگشت وجه بررسی شد.</small>'}</div>`;
+        if (state.experience) {
+          window.WestoAccountingExperience.showRecord(root.querySelector('#fin-workspace-content'), 'جزئیات ثبت مالی سفارش', feedback.innerHTML);
+          feedback.innerHTML = '';
+          return;
+        }
         feedback.scrollIntoView({ behavior: 'smooth', block: 'center' });
       } catch (error) { operationError(error); }
       finally { button.disabled = false; }
@@ -737,6 +952,11 @@
       } catch (error) { operationError(error); }
     });
     root.querySelectorAll('[data-fin-operation]').forEach((button) => button.addEventListener('click', () => {
+      if (state.experience) {
+        const migration = /migration|legacy/.test(button.dataset.finQueueActionId || '');
+        navigateAccounting(migration ? 'settings' : ({ journal: 'journals', events: 'issues', approvals: 'approvals', periods: 'periods' }[button.dataset.finOperation] || 'issues'), migration ? 'migration' : '');
+        return;
+      }
       state.operation = button.dataset.finOperation;
       state.query.page = 1;
       persistQuery();
@@ -745,10 +965,251 @@
       if (specialistArea) specialistArea.open = true;
       root.querySelector('#fin-operations')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }));
+    // Quick Pay button on open invoices
+    root.querySelectorAll('[data-fin-quick-pay]').forEach((button) => button.addEventListener('click', () => {
+      const invoiceId = button.dataset.finQuickPay;
+      const amountToman = button.dataset.amountToman;
+      if (state.experience) openAccountingTask('fin-supplier-payment-form');
+      const payDetails = root.querySelector('#fin-supplier-payment-form')?.closest('details');
+      if (payDetails) payDetails.open = true;
+      const form = root.querySelector('#fin-supplier-payment-form');
+      if (!form) return;
+      const select = form.querySelector('[name="vendorInvoiceId"]');
+      if (select) select.value = invoiceId;
+      const amountInput = form.querySelector('[name="amountToman"]');
+      if (amountInput) amountInput.value = amountToman || '';
+      form.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      amountInput?.focus();
+      toast(`فاکتور انتخاب و مبلغ ${fa(amountToman)} تومان درج شد.`, 'success');
+    }));
+
+    // Interactive AP Aging bucket filter
+    root.querySelectorAll('[data-fin-aging-bucket]').forEach((card) => card.addEventListener('click', () => {
+      const bucket = card.dataset.finAgingBucket;
+      const isAlreadyActive = card.classList.contains('active');
+      if (state.experience) {
+        state.listAging = isAlreadyActive ? 'all' : bucket;
+        root.querySelectorAll('[data-fin-aging-bucket]').forEach(button => { const active = button.dataset.finAgingBucket === state.listAging; button.classList.toggle('active', active); button.setAttribute('aria-pressed', String(active)); });
+        window.WestoAccountingExperience.filterList(root.querySelector('#fin-workspace-content'), state.listSearch, state.listStatus, state.listCategory, state.listAging);
+        return;
+      }
+      root.querySelectorAll('[data-fin-aging-bucket]').forEach((c) => c.classList.remove('active'));
+      if (!isAlreadyActive) card.classList.add('active');
+      const activeBucket = isAlreadyActive ? 'all' : bucket;
+      const invoiceRows = root.querySelectorAll('.fin-table tbody tr');
+      invoiceRows.forEach((tr) => {
+        if (activeBucket === 'all' || !activeBucket) {
+          tr.style.display = '';
+        } else {
+          const text = tr.textContent;
+          let match = false;
+          if (activeBucket === 'days90Plus') match = text.includes('+۹۰');
+          else if (activeBucket === 'days61_90') match = text.includes('۶۱-۹۰');
+          else if (activeBucket === 'days31_60') match = text.includes('۳۱-۶۰');
+          else if (activeBucket === 'current') match = text.includes('جاری');
+          tr.style.display = match ? '' : 'none';
+        }
+      });
+    }));
+
+    // Trial Balance category tabs and live search
+    root.querySelectorAll('[data-fin-trial-cat]').forEach((pill) => pill.addEventListener('click', () => {
+      const cat = pill.dataset.finTrialCat;
+      if (state.experience) {
+        state.listCategory = cat;
+        root.querySelectorAll('[data-fin-trial-cat]').forEach(button => { button.classList.toggle('active', button === pill); button.setAttribute('aria-pressed', String(button === pill)); });
+        window.WestoAccountingExperience.filterList(root.querySelector('#fin-workspace-content'), state.listSearch, state.listStatus, state.listCategory, state.listAging);
+        return;
+      }
+      root.querySelectorAll('[data-fin-trial-cat]').forEach((p) => p.classList.remove('active'));
+      pill.classList.add('active');
+      const tableRows = root.querySelectorAll('#fin-trial-balance-details .fin-table tbody tr');
+      tableRows.forEach((tr) => {
+        const firstCell = tr.querySelector('td')?.textContent?.trim() || '';
+        if (cat === 'all' || firstCell.startsWith(cat)) {
+          tr.style.display = '';
+        } else {
+          tr.style.display = 'none';
+        }
+      });
+    }));
+
+    root.querySelector('#fin-trial-search')?.addEventListener('input', (e) => {
+      const q = e.target.value.trim().toLowerCase();
+      const tableRows = root.querySelectorAll('#fin-trial-balance-details .fin-table tbody tr');
+      tableRows.forEach((tr) => {
+        const text = tr.textContent.toLowerCase();
+        tr.style.display = (!q || text.includes(q)) ? '' : 'none';
+      });
+    });
+
+    // Global keyboard shortcuts for workspace switching (Alt+1 to Alt+5)
+    if (!window.__finShortcutsBound) {
+      window.__finShortcutsBound = true;
+      window.addEventListener('keydown', (e) => {
+        if (e.altKey && e.key >= '1' && e.key <= '5') {
+          if (state.experience) {
+            if (!root?.querySelector('.fin-experience')) return;
+            e.preventDefault();
+            navigateAccounting({ '1': 'home', '2': 'sales', '3': 'purchases', '4': 'bank', '5': 'journals' }[e.key]);
+            return;
+          }
+          const workspaceMap = { '1': 'workbench', '2': 'sales_bank', '3': 'purchases', '4': 'costing', '5': 'ledger_close' };
+          const targetWs = workspaceMap[e.key];
+          if (targetWs && targetWs !== state.workspace) {
+            e.preventDefault();
+            state.workspace = targetWs;
+            persistQuery();
+            renderShell();
+            loadWorkspace();
+          }
+        }
+      });
+    }
+
     bindOperationActions();
     bindBreakEvenPlanning();
     bindBreakEvenPreview();
     applyCapabilityGates();
+    const taxSetup = root.querySelector('[data-fin-tax-setup]');
+    if (taxSetup) loadBranchTaxSetup(taxSetup);
+  }
+
+  async function loadBranchTaxSetup(panel, successMessage = '') {
+    const requestId = ++taxSetupRequestId;
+    const status = panel.querySelector('[data-fin-tax-status]');
+    const content = panel.querySelector('[data-fin-tax-content]');
+    const branchId = activeBranchId();
+    if (!status || !content) return;
+    if (!branchId) {
+      status.className = 'fin-note warning';
+      status.innerHTML = '<strong>شعبه انتخاب نشده</strong><span>از انتخابگر بالای پنل، شعبه را مشخص کنید؛ تنظیم مالیات بدون محدودهٔ شعبه در دسترس نیست.</span>';
+      content.hidden = true;
+      return;
+    }
+    status.className = 'fin-note';
+    status.textContent = 'در حال دریافت قواعد همین شعبه…';
+    content.hidden = true;
+    try {
+      const result = await api(`/api/admin/finance/tax-matrix?branchId=${encodeURIComponent(branchId)}`);
+      if (requestId !== taxSetupRequestId || !panel.isConnected) return;
+      const categories = Array.isArray(result.categories) ? result.categories.filter((item) => item && item.exempt !== true) : [];
+      const rules = Array.isArray(result.rules) ? result.rules.filter((rule) => Number(rule.locationId) === Number(branchId)) : [];
+      const categoryByCode = new Map(categories.map((category) => [String(category.code), category]));
+      const ruleList = rules.length
+        ? `<div class="fin-operation-list">${rules.map((rule) => {
+          const category = categoryByCode.get(String(rule.taxCategory));
+          const fulfillment = { dine_in: 'صرف داخل سالن', pickup: 'بیرون‌بر', delivery: 'ارسال' }[rule.fulfillmentType] || 'همهٔ روش‌ها';
+          const effective = `${dateOnly(rule.effectiveFrom)}${rule.effectiveTo ? ` تا ${dateOnly(rule.effectiveTo)}` : ' به بعد'}`;
+          return `<article><div><strong>${esc(rule.name)} · نسخه ${fa(rule.version || 1)}</strong><small>${esc(category?.label || category?.name || rule.taxCategory)} · ${esc(fulfillment)} · ${effective}</small><small>مأخذ: ${esc(rule.legalSource || 'ثبت نشده')}</small></div><div>${statusBadge(rule.status || 'active', rule.status === 'active' ? 'success' : 'neutral')}<b>${fa(Number(rule.rate) * 100)}٪ · شامل قیمت</b></div></article>`;
+        }).join('')}</div>`
+        : '<div class="fin-note warning"><strong>برای این شعبه قاعده‌ای ثبت نشده است</strong><span>تا ثبت قاعدهٔ معتبر و مؤثر، سفارش فاقد snapshot مالیاتی ثبت نمی‌شود.</span></div>';
+      const categoryOptions = categories.map((category) => `<option value="${esc(category.code)}" ${String(category.code) === String(result.defaultCategory || '') ? 'selected' : ''}>${esc(category.label || category.name || category.code)}</option>`).join('');
+      const globalSettingsForm = currentRole() === 'owner' ? `
+        <form id="fin-tax-global-form" class="fin-form fin-form-wide" autocomplete="off">
+          <div class="fin-form-title"><div><strong>دسته‌های مالیاتی کل رستوران</strong><small>این نگاشت سراسری است؛ نرخ و مأخذ هر قاعده همچنان جداگانه برای شعبه ثبت می‌شود.</small></div><span class="fin-badge warning">فقط مالک</span></div>
+          <label class="fin-field"><span>دستهٔ پیش‌فرض کالاها</span><select name="defaultCategory" required>${categories.map((category) => `<option value="${esc(category.code)}" ${String(category.code) === String(result.defaultCategory || '') ? 'selected' : ''}>${esc(category.label || category.name || category.code)}</option>`).join('')}</select></label>
+          <label class="fin-field"><span>دستهٔ هزینهٔ ارسال</span><select name="deliveryFeeTaxCategory"><option value="">تنظیم نشده · سفارش دارای هزینهٔ ارسال متوقف می‌شود</option>${categories.map((category) => `<option value="${esc(category.code)}" ${String(category.code) === String(result.deliveryFeeTaxCategory || '') ? 'selected' : ''}>${esc(category.label || category.name || category.code)}</option>`).join('')}</select></label>
+          <div class="fin-note span-all"><strong>اثر این تغییر</strong><span>دستهٔ پیش‌فرض و هزینهٔ ارسال برای کل رستوران به‌روزرسانی می‌شود؛ پیش از ثبت، شعبه‌های دیگر را هم در نظر بگیرید.</span></div>
+          <button class="fin-btn secondary span-all" type="submit" ${categories.length ? '' : 'disabled'}>ذخیرهٔ نگاشت سراسری</button>
+          <p class="fin-form-feedback span-all" data-fin-tax-global-feedback role="status" aria-live="polite"></p>
+        </form>` : '';
+      content.innerHTML = `
+        <div class="fin-note success"><strong>قیمت منو شامل مالیات است</strong><span>مالیات دوباره به مبلغ سفارش افزوده نمی‌شود. هر نرخ، مأخذ و بازهٔ اثر باید از مسئول مالی شعبه تأیید شود.</span></div>
+        ${globalSettingsForm}
+        ${ruleList}
+        <form id="fin-tax-rule-form" class="fin-form fin-form-wide" autocomplete="off">
+          <div class="fin-form-title"><div><strong>ثبت قاعدهٔ شعبه</strong><small>نرخ پیش‌فرض نداریم؛ تاریخ شروع، دسته، کد و مأخذ را از سند معتبر وارد کنید.</small></div><span class="fin-badge neutral">شعبه ${fa(branchId)}</span></div>
+          <label class="fin-field"><span>دستهٔ مالیاتی</span><select name="taxCategory" required ${categories.length ? '' : 'disabled'}>${categoryOptions || '<option value="">دسته‌ای موجود نیست</option>'}</select></label>
+          <label class="fin-field"><span>کد پایدار قاعده</span><input name="code" required minlength="2" maxlength="80" pattern="[A-Za-z0-9][A-Za-z0-9._-]{1,79}" dir="ltr" autocomplete="off"></label>
+          <label class="fin-field"><span>عنوان قاعده</span><input name="name" required minlength="2" maxlength="120"></label>
+          <label class="fin-field"><span>نرخ تأییدشده (%)</span><input name="ratePercent" type="number" inputmode="decimal" min="0" max="100" step="0.01" required></label>
+          <label class="fin-field"><span>روش دریافت</span><select name="fulfillmentType"><option value="">همهٔ روش‌ها</option><option value="dine_in">صرف داخل سالن</option><option value="pickup">بیرون‌بر</option><option value="delivery">ارسال</option></select></label>
+          <label class="fin-field"><span>شروع اثر</span><input name="effectiveFrom" type="date" required></label>
+          <label class="fin-field"><span>پایان اثر (اختیاری)</span><input name="effectiveTo" type="date"></label>
+          <label class="fin-field span-2"><span>مأخذ قانونی یا سند تأیید</span><input name="legalSource" required minlength="3" maxlength="500" autocomplete="off"></label>
+          <div class="fin-note span-all"><strong>مبنای قیمت</strong><span>طبق تنظیم انتخاب‌شده، نرخ به‌صورت مالیاتِ داخل قیمت ثبت می‌شود.</span></div>
+          <button class="fin-btn primary span-all" type="submit" ${categories.length ? '' : 'disabled'}>ثبت قاعده برای شعبهٔ ${fa(branchId)}</button>
+          <p class="fin-form-feedback span-all" data-fin-tax-feedback role="status" aria-live="polite"></p>
+        </form>`;
+      content.hidden = false;
+      status.className = successMessage ? 'fin-note success' : 'fin-note';
+      status.textContent = successMessage || `تنظیمات فقط برای شعبهٔ ${fa(branchId)} نمایش داده می‌شود.`;
+      const globalForm = content.querySelector('#fin-tax-global-form');
+      globalForm?.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        if (!globalForm.reportValidity()) return;
+        const submit = globalForm.querySelector('[type="submit"]');
+        const feedback = globalForm.querySelector('[data-fin-tax-global-feedback]');
+        const data = new FormData(globalForm);
+        submit.disabled = true;
+        submit.setAttribute('aria-busy', 'true');
+        feedback.textContent = 'در حال ذخیرهٔ نگاشت سراسری…';
+        try {
+          await api('/api/admin/finance/tax-matrix', {
+            method: 'PATCH',
+            body: JSON.stringify({
+              defaultCategory: String(data.get('defaultCategory') || ''),
+              deliveryFeeTaxCategory: String(data.get('deliveryFeeTaxCategory') || ''),
+            }),
+          });
+          await loadBranchTaxSetup(panel, 'نگاشت سراسری ذخیره شد؛ این تغییر بر همهٔ شعبه‌ها اثر دارد.');
+          toast('نگاشت مالیاتی کل رستوران ذخیره شد.', 'success');
+        } catch (error) {
+          feedback.textContent = error.message || 'ذخیرهٔ نگاشت انجام نشد.';
+          feedback.dataset.tone = 'danger';
+          submit.disabled = false;
+          submit.removeAttribute('aria-busy');
+        }
+      });
+      const form = content.querySelector('#fin-tax-rule-form');
+      form?.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        if (!form.reportValidity()) return;
+        const submit = form.querySelector('[type="submit"]');
+        const feedback = form.querySelector('[data-fin-tax-feedback]');
+        const data = new FormData(form);
+        const ratePercent = asciiNumber(data.get('ratePercent'));
+        if (!Number.isFinite(ratePercent) || ratePercent < 0 || ratePercent > 100) {
+          feedback.textContent = 'نرخ باید عددی بین صفر تا ۱۰۰ درصد باشد.';
+          feedback.dataset.tone = 'danger';
+          return;
+        }
+        submit.disabled = true;
+        submit.setAttribute('aria-busy', 'true');
+        feedback.textContent = 'در حال ثبت…';
+        try {
+          await api(`/api/admin/finance/tax-matrix/rule?branchId=${encodeURIComponent(branchId)}`, {
+            method: 'POST',
+            body: JSON.stringify({
+              locationId: branchId,
+              taxCategory: String(data.get('taxCategory') || ''),
+              code: String(data.get('code') || '').trim(),
+              name: String(data.get('name') || '').trim(),
+              rate: ratePercent / 100,
+              inclusive: true,
+              fulfillmentType: String(data.get('fulfillmentType') || '') || null,
+              effectiveFrom: String(data.get('effectiveFrom') || ''),
+              effectiveTo: String(data.get('effectiveTo') || '') || null,
+              legalSource: String(data.get('legalSource') || '').trim(),
+            }),
+          });
+          form.reset();
+          await loadBranchTaxSetup(panel, 'قاعدهٔ مالیاتی شعبه ثبت شد. قبل از استفاده، بازه و مأخذ را با مسئول مالی تطبیق دهید.');
+          toast('قاعدهٔ مالیاتی شعبه ثبت شد.', 'success');
+        } catch (error) {
+          feedback.textContent = error.message || 'ثبت قاعده انجام نشد.';
+          feedback.dataset.tone = 'danger';
+          submit.disabled = false;
+          submit.removeAttribute('aria-busy');
+        }
+      });
+    } catch (error) {
+      if (requestId !== taxSetupRequestId || !panel.isConnected) return;
+      status.className = 'fin-note warning';
+      status.textContent = `تنظیم مالیات دریافت نشد: ${error.message || 'خطای نامشخص'}`;
+      content.hidden = true;
+    }
   }
 
   function breakEvenPlanAmounts(plan) {
@@ -883,12 +1344,91 @@
   function operationError(error, targetSelector = '#fin-operation-feedback') {
     toast(error.message || 'عملیات مالی انجام نشد.', 'danger');
     const target = root.querySelector(targetSelector);
-    if (target) target.innerHTML = `<div class="fin-note warning" role="alert"><strong>عملیات انجام نشد</strong><span>${esc(error.message)} · کد: ${esc(error.code || 'unknown')}</span></div>`;
+    if (target) target.innerHTML = `<div class="fin-note warning" role="alert"><strong>عملیات انجام نشد</strong><span>${esc(error.message)}${state.experience ? '' : ` · کد: ${esc(error.code || 'unknown')}`}</span></div>`;
   }
 
   async function refreshAfterMutation(message) {
-    toast(message, 'success');
-    await loadWorkspace();
+    const refreshed = await loadWorkspace();
+    toast(refreshed
+      ? message
+      : 'پاسخ ثبت از سرور دریافت شد، اما تازه‌سازی فهرست مالی ناموفق بود؛ وضعیت تازه پس از بازیابی اتصال بررسی شود.', refreshed ? 'success' : 'info');
+    return refreshed;
+  }
+
+  function renderOperationReceipt(selector, title, record, fields, refreshed) {
+    const target = root.querySelector(selector);
+    const host = target || root.querySelector('#fin-workspace-content');
+    if (!host || !record?.id) return;
+    const fieldRows = [
+      { label: 'شناسهٔ رسید', value: record.id },
+      ...fields,
+      ...(record.status ? [{ label: 'وضعیت ثبت‌شده', value: label(record.status) }] : []),
+    ].filter((field) => field.value != null && field.value !== '');
+    const markup = `<div class="fin-operation-receipt" data-fin-operation-receipt role="status" aria-live="polite">
+      <div class="fin-operation-receipt__heading"><strong>رسید پاسخ سرور</strong><span class="fin-badge ${refreshed ? 'success' : 'warning'}">${refreshed ? 'فهرست تازه شد' : 'فهرست تازه نشد'}</span></div>
+      <p>${esc(title)}${refreshed ? '؛ اطلاعات مالی دوباره بارگیری شد.' : '؛ اما تازه‌سازی فهرست ناموفق بود، پس وضعیت تازه را پس از بازیابی اتصال بررسی کنید.'}</p>
+      <dl>${fieldRows.map((field) => `<div><dt>${esc(field.label)}</dt><dd>${esc(field.value)}</dd></div>`).join('')}</dl>
+      ${!refreshed ? '<small class="fin-operation-receipt__caution">رسید پاسخ سرور موجود است؛ تا تازه‌شدن فهرست، این مورد را دوباره ثبت نکنید.</small>' : ''}
+    </div>`;
+    if (target) target.innerHTML = markup;
+    else host.insertAdjacentHTML('afterbegin', markup);
+    host.closest('details')?.setAttribute('open', '');
+    host.setAttribute('tabindex', '-1');
+    host.scrollIntoView?.({ behavior: 'smooth', block: 'nearest' });
+    host.focus?.({ preventScroll: true });
+  }
+
+  function renderUnknownOperation(selector, error, button, retry) {
+    const target = root.querySelector(selector);
+    if (!target) return;
+    const key = button?.dataset.finIdempotencyKey || '';
+    target.innerHTML = `<div class="fin-operation-unknown" role="alert" aria-live="assertive">
+      <strong>نتیجهٔ عملیات نامعلوم است</strong>
+      <span>پاسخ قطعی دریافت نشد؛ ممکن است ثبت در سرور انجام شده باشد. برای جلوگیری از ثبت تکراری، فرم را دوباره ارسال نکنید. نتیجه را با همان شناسهٔ امن پیگیری کنید.</span>
+      ${key ? `<small>شناسهٔ پیگیری: <code>${esc(key)}</code></small>` : ''}
+      <button class="fin-btn secondary" type="button" data-fin-recover-operation>بازیابی پاسخ با همان شناسه</button>
+      <small>کد فنی: ${esc(error.code || 'finance_response_unknown')}</small>
+    </div>`;
+    toast('نتیجهٔ عملیات مالی نامعلوم است؛ تا بازیابی پاسخ، آن را دوباره ثبت نکنید.', 'info');
+    target.querySelector('[data-fin-recover-operation]')?.addEventListener('click', async (event) => {
+      const retryButton = event.currentTarget;
+      retryButton.disabled = true;
+      retryButton.setAttribute('aria-busy', 'true');
+      await retry();
+      retryButton.removeAttribute('aria-busy');
+      retryButton.disabled = false;
+    }, { once: true });
+  }
+
+  async function runRecoverableFinanceOperation({ path, body, button, feedbackSelector, receiptKey, receiptTitle, receiptFields, successMessage, lockButtonOnSuccess = false }) {
+    const attempt = async () => {
+      try {
+        const result = await mutation(path, body, button, { recovery: true });
+        const record = result?.data?.[receiptKey];
+        if (!record?.id) {
+          throw Object.assign(new Error('پاسخ عملیات رسید قابل تأیید ندارد.'), {
+            code: 'finance_operation_receipt_missing', outcomeUnknown: true,
+          });
+        }
+        finalizeRecoverableMutation(button);
+        if (lockButtonOnSuccess && button) {
+          button.dataset.finCompleted = '1';
+          button.disabled = true;
+          button.textContent = 'درخواست ثبت شد';
+          button.setAttribute('aria-label', `${receiptTitle} با پاسخ سرور ثبت شد`);
+        }
+        const refreshed = await refreshAfterMutation(successMessage);
+        renderOperationReceipt(feedbackSelector, receiptTitle, record, receiptFields(record, result.data), refreshed);
+      } catch (error) {
+        if (error.outcomeUnknown) {
+          renderUnknownOperation(feedbackSelector, error, button, attempt);
+          return;
+        }
+        finalizeRecoverableMutation(button);
+        operationError(error, feedbackSelector);
+      }
+    };
+    await attempt();
   }
 
   function payrollFormPayload(form) {
@@ -973,19 +1513,27 @@
       const settledAt = window.ShamsiDatePicker?.getISOValue(form.elements.settledAt) || form.elements.settledAt.dataset.isoDate || values.settledAt;
       if (!paymentIds.length) return operationError({ code: 'settlement_payments_required', message: 'حداقل یک پرداخت داخل دسته انتخاب کنید.' });
       if (!Number.isSafeInteger(feeToman) || feeToman < 0 || feeToman > Number.MAX_SAFE_INTEGER / 10) return operationError({ code: 'settlement_amount_invalid', message: 'کارمزد باید عدد صحیح نامنفی باشد.' });
-      try {
-        await mutation('/api/admin/v2/finance/reconciliation/settlements', {
-          branchId: Number(state.query.branchId) || 1, paymentIds, psp: values.psp,
+      const branchId = activeBranchId();
+      if (!branchId) return operationError({ code: 'finance_branch_required', message: 'شعبهٔ فعال مشخص نیست؛ برای جلوگیری از ثبت در شعبهٔ اشتباه، ابتدا شعبه را انتخاب کنید.' }, '#fin-settlement-feedback');
+      await runRecoverableFinanceOperation({
+        path: '/api/admin/v2/finance/reconciliation/settlements',
+        body: {
+          branchId, paymentIds, psp: values.psp,
           terminalId: values.terminalId, batchNo: values.batchNo, feeIrr: feeToman * 10,
           bankReference: values.bankReference,
           settledAt: `${settledAt}T12:00:00.000Z`,
-        }, form.querySelector('button[type="submit"]'));
-        await refreshAfterMutation('دسته تسویه با پرداخت‌ها و سند دفتر تطبیق شد.');
-      } catch (error) {
-        const target = root.querySelector('#fin-settlement-feedback');
-        if (target) target.innerHTML = `<div class="fin-note warning" role="alert"><strong>تسویه ثبت نشد</strong><span>${esc(error.message)} · کد: ${esc(error.code || 'unknown')}</span></div>`;
-        operationError(error);
-      }
+        },
+        button: form.querySelector('button[type="submit"]'),
+        feedbackSelector: '#fin-settlement-feedback', receiptKey: 'settlement',
+        receiptTitle: 'دستهٔ تسویه در سامانه ثبت شد',
+        receiptFields: (record, data) => [
+          { label: 'درگاه / شرکت پرداخت', value: record.psp },
+          { label: 'شمارهٔ دسته', value: record.batchNo },
+          { label: 'مبلغ خالص', value: money(record.amountIrr) },
+          { label: 'سند دفتر', value: data.journalEntry?.number || data.journalEntry?.id || record.journalEntryId },
+        ],
+        successMessage: 'رسید دستهٔ تسویه از سرور دریافت و فهرست مالی تازه شد.',
+      });
     });
     root.querySelector('#fin-bank-line-form')?.addEventListener('submit', async (event) => {
       event.preventDefault();
@@ -994,41 +1542,87 @@
       const amountToman = asciiNumber(values.amountToman);
       const occurredAt = window.ShamsiDatePicker?.getISOValue(form.elements.occurredAt) || form.elements.occurredAt.dataset.isoDate || values.occurredAt;
       if (!Number.isSafeInteger(amountToman) || amountToman <= 0 || amountToman > Number.MAX_SAFE_INTEGER / 10) return operationError({ code: 'bank_statement_amount_invalid', message: 'مبلغ گردش بانک باید عدد صحیح و بزرگ‌تر از صفر باشد.' }, '#fin-bank-feedback');
-      try {
-        await mutation('/api/admin/v2/finance/reconciliation/bank-statement-lines', {
-          branchId: Number(state.query.branchId) || 1, bankReference: values.bankReference,
+      const branchId = activeBranchId();
+      if (!branchId) return operationError({ code: 'finance_branch_required', message: 'شعبهٔ فعال مشخص نیست؛ برای جلوگیری از ثبت در شعبهٔ اشتباه، ابتدا شعبه را انتخاب کنید.' }, '#fin-bank-feedback');
+      await runRecoverableFinanceOperation({
+        path: '/api/admin/v2/finance/reconciliation/bank-statement-lines',
+        body: {
+          branchId, bankReference: values.bankReference,
           bankAccountCode: values.bankAccountCode, direction: values.direction,
           amountIrr: amountToman * 10, occurredAt: `${occurredAt}T12:00:00.000Z`, description: values.description,
-        }, form.querySelector('button[type="submit"]'));
-        await refreshAfterMutation('ردیف صورت‌حساب بانک ثبت شد و در صف تطبیق قرار گرفت.');
-      } catch (error) { operationError(error, '#fin-bank-feedback'); }
+        },
+        button: form.querySelector('button[type="submit"]'),
+        feedbackSelector: '#fin-bank-feedback', receiptKey: 'statementLine',
+        receiptTitle: 'گردش صورت‌حساب بانک در صف تطبیق ثبت شد',
+        receiptFields: (record) => [
+          { label: 'شناسهٔ یکتای بانک', value: record.bankReference },
+          { label: 'مبلغ گردش', value: money(record.amountIrr) },
+          { label: 'حساب بانکی', value: record.details?.bankAccountCode },
+          { label: 'جهت گردش', value: label(record.details?.direction) },
+        ],
+        successMessage: 'رسید گردش بانک از سرور دریافت و فهرست مالی تازه شد.',
+      });
     });
     root.querySelectorAll('[data-fin-bank-match]').forEach((button) => button.addEventListener('click', async () => {
       const statementLineId = button.dataset.finBankMatch;
       const journalEntryId = root.querySelector(`[data-fin-bank-candidate="${CSS.escape(statementLineId)}"]`)?.value;
       if (!journalEntryId) return operationError({ code: 'bank_match_journal_required', message: 'یک سند قطعی با مبلغ، جهت، شعبه و حساب یکسان انتخاب کنید.' }, '#fin-bank-feedback');
-      try {
-        await mutation(`/api/admin/v2/finance/reconciliation/bank-statement-lines/${encodeURIComponent(statementLineId)}/match`, { journalEntryId }, button);
-        await refreshAfterMutation('گردش بانک با سند قطعی دفتر تطبیق شد.');
-      } catch (error) { operationError(error, '#fin-bank-feedback'); }
+      await runRecoverableFinanceOperation({
+        path: `/api/admin/v2/finance/reconciliation/bank-statement-lines/${encodeURIComponent(statementLineId)}/match`,
+        body: { journalEntryId }, button,
+        feedbackSelector: '#fin-bank-feedback', receiptKey: 'statementLine',
+        receiptTitle: 'تطبیق گردش بانک با سند دفتر ثبت شد',
+        receiptFields: (record, data) => [
+          { label: 'شناسهٔ بانکی', value: record.bankReference },
+          { label: 'سند تطبیق‌یافته', value: data.journalEntry?.number || data.journalEntry?.id || record.journalEntryId },
+          { label: 'مبلغ', value: money(record.amountIrr) },
+          { label: 'تطبیق‌دهنده', value: record.matchedBy },
+        ],
+        successMessage: 'رسید تطبیق از سرور دریافت و فهرست مالی تازه شد.',
+      });
     }));
     root.querySelector('#fin-refund-form')?.addEventListener('submit', async (event) => {
       event.preventDefault();
       const form = event.currentTarget;
+      const submitButton = form.querySelector('button[type="submit"]');
+      if (submitButton?.dataset.finCompleted === '1') return;
       const values = Object.fromEntries(new FormData(form));
       const selected = form.elements.paymentId.selectedOptions[0];
       const orderId = selected?.dataset.orderId;
       const amountToman = asciiNumber(values.amountToman);
       const refundDate = window.ShamsiDatePicker?.getISOValue(form.elements.refundDate) || form.elements.refundDate.dataset.isoDate || values.refundDate;
+      const reason = String(values.reason || '').trim();
       if (!orderId || !values.paymentId) return operationError({ code: 'refund_payment_required', message: 'پرداخت مبدأ را انتخاب کنید.' });
       if (!Number.isSafeInteger(amountToman) || amountToman <= 0 || amountToman > Number.MAX_SAFE_INTEGER / 10) return operationError({ code: 'refund_amount_invalid', message: 'مبلغ برگشت باید عدد صحیح و بزرگ‌تر از صفر باشد.' });
-      try {
-        await mutation(`/api/admin/v2/finance/orders/${encodeURIComponent(orderId)}/refund-requests`, {
+      if (Array.from(reason).filter((character) => !/\s/u.test(character)).length < 10 || reason.length > 300) {
+        operationError({ code: 'refund_reason_not_meaningful', message: 'علت را روشن و دست‌کم با ۱۰ نویسهٔ غیرخالی بنویسید.' }, '#fin-operation-feedback');
+        form.elements.reason.focus();
+        return;
+      }
+      const confirmation = [
+        `درخواست برگشت ${fa(amountToman)} تومان از پرداخت سفارش ${orderId} ثبت شود؟`,
+        `علت: ${reason}`,
+        'این مرحله فقط درخواست را برای تأیید مالک می‌فرستد؛ وجه اکنون منتقل نمی‌شود.',
+      ].join('\n');
+      if (!window.confirm(confirmation)) return;
+      await runRecoverableFinanceOperation({
+        path: `/api/admin/v2/finance/orders/${encodeURIComponent(orderId)}/refund-requests`,
+        body: {
           paymentId: values.paymentId, amountIrr: amountToman * 10,
-          refundDate: `${refundDate}T12:00:00.000Z`, reason: values.reason,
-        }, form.querySelector('button[type="submit"]'));
-        await refreshAfterMutation('درخواست برگشت وجه برای تأیید مستقل مالک ارسال شد.');
-      } catch (error) { operationError(error); }
+          refundDate: `${refundDate}T12:00:00.000Z`, reason,
+        },
+        button: submitButton,
+        feedbackSelector: '#fin-operation-feedback',
+        receiptKey: 'refund',
+        receiptTitle: 'درخواست بازپرداخت ثبت شد',
+        receiptFields: (record) => [
+          { label: 'سفارش', value: record.orderId },
+          { label: 'پرداخت مبدأ', value: record.paymentId },
+          { label: 'مبلغ درخواستی', value: money(record.amountIrr) },
+        ],
+        successMessage: 'رسید درخواست بازپرداخت از سرور دریافت شد؛ وجه هنوز منتقل نشده است.',
+        lockButtonOnSuccess: true,
+      });
     });
     const poForm = root.querySelector('#fin-po-form');
     const poLines = poForm?.querySelector('[data-fin-po-lines]');
@@ -1085,6 +1679,10 @@
     root.querySelector('#fin-journal-form')?.addEventListener('submit', async (event) => {
       event.preventDefault();
       const form = event.currentTarget;
+      if (state.experience && form.querySelector('[data-fin-journal-lines]')) {
+        await submitAccountingJournal(form);
+        return;
+      }
       const submit = form.querySelector('button[type="submit"]');
       const amountToman = asciiNumber(new FormData(form).get('amountToman'));
       if (!Number.isSafeInteger(amountToman) || amountToman <= 0 || amountToman > Number.MAX_SAFE_INTEGER / 10) return operationError({ code: 'amount_invalid', message: 'مبلغ سند باید عدد صحیح، بزرگ‌تر از صفر و در محدودهٔ امن ریال باشد.' });
@@ -1232,11 +1830,22 @@
     root.querySelectorAll('[data-fin-approval-decision]').forEach((button) => button.addEventListener('click', async () => {
       const decision = button.dataset.finApprovalDecision;
       const approvalId = button.dataset.finApprovalId;
-      if (decision === 'approved' && !window.confirm('این درخواست تأیید و اثر مالی آن قطعی شود؟')) return;
+      const isCustomerRefund = button.dataset.finApprovalOperation === 'approve_customer_refund';
+      if (decision === 'approved') {
+        const confirmMessage = isCustomerRefund
+          ? 'این تأیید فقط مجوز برگشت وجه است؛ هنوز پولی منتقل نشده. درخواست را تأیید می‌کنید؟'
+          : 'این درخواست تأیید شود؟ اثر مالی فقط پس از انجام فرایند مربوط ثبت خواهد شد.';
+        if (!window.confirm(confirmMessage)) return;
+      }
       const comment = root.querySelector(`[data-fin-approval-comment="${CSS.escape(approvalId)}"]`)?.value || '';
       try {
         await mutation(`/api/admin/v2/finance/approvals/${encodeURIComponent(approvalId)}/decision`, { decision, comment }, button);
-        await refreshAfterMutation(decision === 'approved' ? 'درخواست تأیید و ثبت قطعی شد.' : 'درخواست با ردپای کامل رد شد.');
+        const successMessage = decision !== 'approved'
+          ? 'درخواست با ردپای کامل رد شد.'
+          : isCustomerRefund
+            ? 'درخواست برگشت وجه تأیید شد؛ هنوز وجهی منتقل نشده است. پس از پرداخت، مدرک خروجی و تطبیق لازم است.'
+            : 'درخواست تأیید شد؛ اثر مالی پس از انجام فرایند مربوط ثبت خواهد شد.';
+        await refreshAfterMutation(successMessage);
       } catch (error) { operationError(error); }
     }));
 
@@ -1643,9 +2252,9 @@
       const audienceHint = action.audience === 'manager_owner' && !actionable
         ? 'فقط مشاهده؛ تصمیم با مدیر یا مالک است'
         : actionable ? (workspace ? 'رفتن به بخش مرتبط' : 'بازکردن اقدام در ابزار حسابدار') : 'مجوز اقدام برای نقش فعلی صادر نشده است';
-      return `<button type="button" class="fin-queue-action" aria-label="${esc(action.label)}" data-fin-required-capability="${esc(requiredCapability)}" data-fin-actionable="${actionable ? 'true' : 'false'}" ${workspace ? `data-fin-goto="${esc(workspace)}"` : `data-fin-operation="${esc(action.operation || 'journal')}"`}><span>${fa(index + 1)}</span><strong>${esc(action.label)}</strong><small>${audienceHint}</small><i class="fin-action-arrow" aria-hidden="true">←</i></button>`;
+      return `<button type="button" class="fin-queue-action" aria-label="${esc(action.label)}" data-fin-queue-action-id="${esc(action.id || '')}" data-fin-required-capability="${esc(requiredCapability)}" data-fin-actionable="${actionable ? 'true' : 'false'}" ${workspace ? `data-fin-goto="${esc(workspace)}"` : `data-fin-operation="${esc(action.operation || 'journal')}"`}><span>${fa(index + 1)}</span><strong>${esc(action.label)}</strong><small>${audienceHint}</small><i class="fin-action-arrow" aria-hidden="true">←</i></button>`;
     };
-    const renderQueue = (id, title, description, items, tone, emptyMessage, countLabel = 'مورد') => `<section class="fin-work-queue ${tone}" data-fin-queue="${id}" aria-labelledby="fin-queue-${id}"><div class="fin-work-queue-head"><div><h3 id="fin-queue-${id}">${esc(title)}</h3><p>${esc(description)}</p></div><span class="fin-queue-count" aria-label="${fa(items.length)} ${esc(countLabel)}">${fa(items.length)} <small>${esc(countLabel)}</small></span></div>${items.length ? `<div class="fin-queue-items">${items.map((item, index) => item.label ? renderQueueAction(item, index) : `<div class="fin-queue-info"><strong>${esc(item.value)}</strong><span>${esc(item.label)}</span><small>${esc(item.detail)}</small></div>`).join('')}</div>` : `<div class="fin-queue-empty"><span class="fin-empty-icon" aria-hidden="true">✓</span><span>${esc(emptyMessage)}</span></div>`}</section>`;
+    const renderQueue = (id, title, description, items, tone, emptyMessage, countLabel = 'مورد') => `<section class="fin-work-queue ${tone}" data-fin-queue="${id}" aria-labelledby="fin-queue-${id}"><div class="fin-work-queue-head"><div><h3 id="fin-queue-${id}">${esc(title)}</h3><p>${esc(description)}</p></div><span class="fin-queue-count" aria-label="${fa(items.length)} ${esc(countLabel)}">${fa(items.length)} <small>${esc(countLabel)}</small></span></div>${items.length ? `<div class="fin-queue-items">${items.map((item, index) => item.label && !(state.experience && id === 'informational') ? renderQueueAction(item, index) : `<div class="fin-queue-info"><strong>${esc(item.value)}</strong><span>${esc(item.label)}</span><small>${esc(item.detail)}</small></div>`).join('')}</div>` : `<div class="fin-queue-empty"><span class="fin-empty-icon" aria-hidden="true">✓</span><span>${esc(emptyMessage)}</span></div>`}</section>`;
     return `
       <section class="fin-section-head"><div><h2>کارتابل حسابدار</h2><p>اول ${workbenchScope} را انجام دهید؛ جزئیات تخصصی در ادامه قرار دارد.</p></div></section>
       <section class="fin-panel fin-actions" aria-labelledby="fin-today-title"><div class="fin-panel-title"><div><h3 id="fin-today-title">${workbenchScope}</h3><p>${workbenchScopeDetail} هر مورد علت روشن و مسیر مستقیم دارد؛ جزئیات فنی در ابزار تکمیلی است.</p></div></div>
@@ -1795,7 +2404,7 @@
         const selfRequested = Boolean(currentActor && String(row.createdBy || row.requestedBy || '') === currentActor);
         const canDecide = can('finance.approve') && !selfRequested;
         const action = canDecide
-          ? `<div class="fin-inline-action"><input data-fin-approval-comment="${esc(row.id)}" placeholder="یادداشت تصمیم" maxlength="300"><button class="fin-btn secondary" type="button" data-fin-approval-id="${esc(row.id)}" data-fin-approval-decision="rejected">رد</button><button class="fin-btn primary" type="button" data-fin-approval-id="${esc(row.id)}" data-fin-approval-decision="approved">تأیید</button></div>`
+          ? `<div class="fin-inline-action"><input data-fin-approval-comment="${esc(row.id)}" placeholder="یادداشت تصمیم" maxlength="300"><button class="fin-btn secondary" type="button" data-fin-approval-id="${esc(row.id)}" data-fin-approval-operation="${esc(row.operation)}" data-fin-approval-decision="rejected">رد</button><button class="fin-btn primary" type="button" data-fin-approval-id="${esc(row.id)}" data-fin-approval-operation="${esc(row.operation)}" data-fin-approval-decision="approved">تأیید</button></div>`
           : `<div class="fin-note warning"><strong>${selfRequested ? 'نیازمند تصمیم شخص مستقل' : 'فقط مشاهده'}</strong><span>${selfRequested ? 'این درخواست توسط شما ایجاد شده و تأیید یا رد آن باید توسط مالک/مدیر دیگری انجام شود.' : 'نقش فعلی مجوز تصمیم‌گیری مالی ندارد.'}</span></div>`;
         return `<article class="stack"><div><strong>${esc(label(row.operation))}</strong><small>${esc(label(row.entityType))} · ${money(row.amountIrr)} · ایجاد: ${dateTime(row.createdAt)}</small></div>${action}</article>`;
       }).join('') : empty('درخواستی منتظر تأیید مالک یا مدیر مالی نیست.')}
@@ -1847,6 +2456,18 @@
     const bankStatementLines = data.reconciliation?.bankStatementLines || [];
     const bankCandidates = data.reconciliation?.bankCandidates || [];
     const unmatchedBankLines = bankStatementLines.filter((row) => row.status === 'unmatched');
+    const autoMatchSuggestions = [];
+    unmatchedBankLines.forEach((row) => {
+      const candidate = bankCandidates.find((c) => (
+        c.accountCode === row.details?.bankAccountCode
+        && c.direction === row.details?.direction
+        && Number(c.amountIrr) === Number(row.amountIrr)
+      ));
+      if (candidate) {
+        autoMatchSuggestions.push({ statementLineId: row.id, journalEntryId: candidate.journalEntryId, reference: row.bankReference, amountIrr: row.amountIrr });
+      }
+    });
+
     const settlementPagination = { page: Math.max(1, Number(state.pages.settlements) || 1), pageSize: 25, total: settlementsV2.length, pages: Math.max(1, Math.ceil(settlementsV2.length / 25)) };
     const settlementPage = Math.min(settlementPagination.page, settlementPagination.pages);
     const visibleSettlements = settlementsV2.slice((settlementPage - 1) * settlementPagination.pageSize, settlementPage * settlementPagination.pageSize);
@@ -1913,6 +2534,18 @@
         </div>
       </details>
       <details class="fin-action-details" ${unmatchedBankLines.length ? 'open' : ''}><summary><span><strong>تطبیق صورت‌حساب بانک با دفتر</strong><small>مدرک بانک ← کنترل مبلغ و جهت ← سند قطعی</small></span><em>${fa(unmatchedBankLines.length)} گردش منتظر</em></summary><div id="fin-bank-feedback"></div>
+        ${autoMatchSuggestions.length ? `
+          <div class="fin-auto-match-banner" data-fin-auto-match-banner>
+            <div class="fin-auto-match-banner__text">
+              <span class="fin-sparkle-icon">⚡</span>
+              <div>
+                <strong>${fa(autoMatchSuggestions.length)} گردش با مبلغ، جهت و حسابِ همسان پیدا شد</strong>
+                <small>مبلغ، جهت و حساب این گردش‌ها با اسناد قطعی دفتر کل دقیقاً برابر است.</small>
+              </div>
+            </div>
+            <small class="fin-auto-match-review">این‌ها فقط پیشنهادند؛ هر گردش را جداگانه بررسی و تطبیق را تأیید کنید.</small>
+          </div>
+        ` : ''}
         <div class="fin-operation-layout">
           <form id="fin-bank-line-form" class="fin-form" autocomplete="off">
             <div class="fin-form-title span-2"><div><strong>ثبت گردش صورت‌حساب بانک</strong><small>این رکورد فقط مدرک بیرونی است و خودش سند حسابداری ایجاد نمی‌کند.</small></div>${statusBadge('unmatched')}</div>
@@ -1945,12 +2578,12 @@
             }).join('')}</select></label>
             <label class="fin-field"><span>تاریخ برگشت</span><input name="refundDate" type="date" value="${today}" required></label>
             <label class="fin-field"><span>مبلغ (تومان)</span><input name="amountToman" inputmode="numeric" required placeholder="۰"></label>
-            <label class="fin-field span-2"><span>علت</span><input name="reason" required minlength="3" maxlength="300" placeholder="مثلاً لغو پس از پرداخت"></label>
+            <label class="fin-field span-2"><span>علت</span><input name="reason" required minlength="10" maxlength="300" placeholder="علت روشن را با جزئیات کوتاه بنویسید"></label>
             <div class="fin-note warning span-2"><strong>بازگشت فیزیکی جداست</strong><span>این عملیات موجودی یا بهای تمام‌شده را تغییر نمی‌دهد؛ دریافت کالای برگشتی باید در انبار ثبت شود.</span></div>
             <button class="fin-btn primary span-2" type="submit" ${refundablePayments.length ? '' : 'disabled'}>ارسال برای تأیید مالک</button>
           </form>
           <div class="fin-operation-list"><div class="fin-subhead"><strong>درخواست‌های اخیر</strong><span>${fa(refunds.length)} مورد</span></div>
-            ${refunds.length ? visibleRefunds.map((row) => `<article><div><strong>${esc(row.reason)}</strong><small>سفارش ${esc(row.orderId)} · ${dateTime(row.refundDate)}</small></div><div>${statusBadge(row.status)}<b>${money(row.amountIrr)}</b></div></article>`).join('') : empty('درخواست برگشت وجه‌ای در این محدوده ثبت نشده است.')}
+            ${refunds.length ? visibleRefunds.map((row) => `<article><div><strong>${esc(row.reason)}</strong><small>سفارش ${esc(row.orderId)} · ${dateTime(row.refundDate)}</small></div><div>${refundStatusBadge(row.status)}<b>${money(row.amountIrr)}</b></div></article>`).join('') : empty('درخواست برگشت وجه‌ای در این محدوده ثبت نشده است.')}
             ${paginationControls('refunds', refundPagination)}
           </div>
         </div>
@@ -2019,6 +2652,56 @@
       grn, line, remainingInvoiceQuantity: Math.max(0, Number(line.acceptedQuantity || 0) - Number(invoicedByReceiptLine.get(String(line.id)) || 0)),
     })).filter((row) => row.remainingInvoiceQuantity > 1e-9));
     const payableInvoices = (v2.vendorInvoices || []).filter((row) => ['open', 'partially_paid'].includes(row.status) && Number(row.totalIrr) > Number(row.paidAmountIrr || 0));
+
+    // AP Aging Matrix computation across open & partially paid vendor invoices
+    const nowTs = new Date(today).getTime();
+    const agingBuckets = {
+      current: { label: 'جاری (۰ تا ۳۰ روز)', labelShort: 'جاری', amountIrr: 0, count: 0, tone: 'success' },
+      days31_60: { label: '۳۱ تا ۶۰ روز معوق', labelShort: '۳۱-۶۰ روز', amountIrr: 0, count: 0, tone: 'warning' },
+      days61_90: { label: '۶۱ تا ۹۰ روز معوق', labelShort: '۶۱-۹۰ روز', amountIrr: 0, count: 0, tone: 'warning' },
+      days90Plus: { label: '+۹۰ روز معوق (بحرانی)', labelShort: '+۹۰ روز', amountIrr: 0, count: 0, tone: 'danger' },
+    };
+    const invoicesWithAging = (v2.vendorInvoices || []).map((inv) => {
+      const remainingIrr = Math.max(0, Number(inv.totalIrr || 0) - Number(inv.paidAmountIrr || 0));
+      const refDate = inv.dueDate || inv.invoiceDate || today;
+      const refTs = new Date(refDate).getTime();
+      const daysPastDue = Number.isFinite(refTs) ? Math.max(0, Math.floor((nowTs - refTs) / (1000 * 60 * 60 * 24))) : 0;
+      let bucketKey = 'current';
+      if (daysPastDue > 90) bucketKey = 'days90Plus';
+      else if (daysPastDue > 60) bucketKey = 'days61_90';
+      else if (daysPastDue > 30) bucketKey = 'days31_60';
+      if (['open', 'partially_paid'].includes(inv.status) && remainingIrr > 0) {
+        agingBuckets[bucketKey].amountIrr += remainingIrr;
+        agingBuckets[bucketKey].count += 1;
+      }
+      return { ...inv, remainingIrr, daysPastDue, bucketKey };
+    });
+    const totalAgingPayableIrr = Object.values(agingBuckets).reduce((sum, b) => sum + b.amountIrr, 0);
+
+    // Top vendors by outstanding debt exposure
+    const vendorDebtMap = new Map();
+    invoicesWithAging.forEach((inv) => {
+      if (inv.remainingIrr > 0) {
+        const key = String(inv.vendorId || 'unknown');
+        const cur = vendorDebtMap.get(key) || { vendorId: key, debtIrr: 0, count: 0 };
+        cur.debtIrr += inv.remainingIrr;
+        cur.count += 1;
+        vendorDebtMap.set(key, cur);
+      }
+    });
+    const topVendorsByDebt = [...vendorDebtMap.values()]
+      .sort((a, b) => b.debtIrr - a.debtIrr)
+      .slice(0, 4)
+      .map((item) => {
+        const vendor = (data.vendors || []).find((v) => String(v.id) === String(item.vendorId));
+        return {
+          ...item,
+          name: vendor?.nameFa || vendor?.name || item.vendorId,
+          category: vendor?.category || 'مواد اولیه',
+          termsDays: vendor?.termsDays != null ? vendor.termsDays : null,
+        };
+      });
+
     const activeCostCommitments = (v2.costCommitments || []).filter((row) => row.status === 'active');
     const costAccruals = v2.costAccruals || [];
     const payableCostAccruals = costAccruals.filter((row) => ['posted', 'partially_paid'].includes(row.status) && Number(row.amountIrr) > Number(row.paidAmountIrr || 0));
@@ -2161,17 +2844,112 @@
           { label: 'اقدام', render: (row) => row.status === 'draft' ? `<button class="fin-btn secondary" type="button" data-fin-submit-po="${esc(row.id)}">ارسال برای تأیید</button>` : '—' },
         ], v2.purchaseOrders, 'هنوز سفارش خریدی در سامانه جدید ثبت نشده است.')}
       </section>
+      <section class="fin-panel fin-ap-aging-panel" data-fin-ap-aging-section>
+        <div class="fin-panel-title">
+          <div>
+            <h3>ماتریس سن‌سنجی بدهی‌های پرداختنی (AP Aging)</h3>
+            <p>تفکیک بدهی‌ها بر اساس سررسید و روزهای معوق جهت مدیریت جریان نقدینگی و اولویت‌بندی تسویه</p>
+          </div>
+          <div class="fin-ap-aging-total">
+            <span>مجموع پرداختنی:</span>
+            <strong>${money(totalAgingPayableIrr)}</strong>
+          </div>
+        </div>
+        <div class="fin-ap-aging-matrix">
+          ${Object.entries(agingBuckets).map(([key, bucket]) => {
+            const pct = totalAgingPayableIrr > 0 ? Math.round((bucket.amountIrr / totalAgingPayableIrr) * 100) : 0;
+            return `
+              <div class="fin-ap-aging-card ${bucket.tone}" data-fin-aging-bucket="${key}" role="button" tabindex="0" title="فیلتر فاکتورهای ${bucket.label}">
+                <div class="fin-ap-aging-card__head">
+                  <span>${esc(bucket.label)}</span>
+                  <span class="fin-badge ${bucket.tone}">${fa(bucket.count)} فاکتور</span>
+                </div>
+                <strong class="fin-ap-aging-card__amount">${money(bucket.amountIrr)}</strong>
+                <div class="fin-ap-aging-card__foot">
+                  <small>${fa(pct)}٪ از کل بدهی</small>
+                </div>
+              </div>
+            `;
+          }).join('')}
+        </div>
+        ${totalAgingPayableIrr > 0 ? `
+          <div class="fin-ap-aging-bar-wrap" aria-label="نمودار توزیع سن‌سنجی بدهی">
+            <div class="fin-ap-aging-bar">
+              ${Object.entries(agingBuckets).map(([key, bucket]) => {
+                const pct = totalAgingPayableIrr > 0 ? (bucket.amountIrr / totalAgingPayableIrr) * 100 : 0;
+                return pct > 0 ? `<div class="fin-ap-aging-segment ${bucket.tone}" style="width: ${pct}%" title="${bucket.label}: ${money(bucket.amountIrr)} (${fa(Math.round(pct))}٪)"></div>` : '';
+              }).join('')}
+            </div>
+            <div class="fin-ap-aging-legend">
+              <span class="fin-legend-item success"><i class="dot"></i> جاری (۰-۳۰)</span>
+              <span class="fin-legend-item warning"><i class="dot"></i> ۳۱-۶۰ روز</span>
+              <span class="fin-legend-item orange"><i class="dot"></i> ۶۱-۹۰ روز</span>
+              <span class="fin-legend-item danger"><i class="dot"></i> +۹۰ روز معوق</span>
+            </div>
+          </div>
+        ` : ''}
+      </section>
+      ${topVendorsByDebt.length ? `
+      <section class="fin-panel fin-top-vendors-panel">
+        <div class="fin-panel-title">
+          <div>
+            <h3>تأمین‌کنندگان با بیشترین مانده پرداختنی</h3>
+            <p>تعهدات عمدهٔ تأمین و شرایط اعتباری تسویه</p>
+          </div>
+          <span>${fa(topVendorsByDebt.length)} تأمین‌کننده</span>
+        </div>
+        <div class="fin-top-vendors-grid">
+          ${topVendorsByDebt.map((v) => `
+            <article class="fin-vendor-card">
+              <div class="fin-vendor-card__info">
+                <strong>${esc(v.name)}</strong>
+                <small>${esc(v.category)}${v.termsDays != null ? ` · مهلت ${fa(v.termsDays)} روز` : ''}</small>
+              </div>
+              <div class="fin-vendor-card__balance">
+                <b>${money(v.debtIrr)}</b>
+                <span class="fin-badge neutral">${fa(v.count)} فاکتور باز</span>
+              </div>
+            </article>
+          `).join('')}
+        </div>
+      </section>
+      ` : ''}
       <section class="fin-panel"><div class="fin-panel-title"><div><h3>فاکتور و پرداخت</h3><p>اختلاف تطبیق قبل از ایجاد بدهی و پرداخت متوقف می‌شود.</p></div></div>
         ${table('v2-invoices', [
-          { label: 'فاکتور', render: (row) => `<strong>${esc(row.invoiceNumber)}</strong>` },
+          { label: 'فاکتور', render: (row) => `<strong>${esc(row.invoiceNumber)}</strong>${row.invoiceDate ? `<small class="fin-cell-note">${dateOnly(row.invoiceDate)}</small>` : ''}` },
           { label: 'مبلغ', render: (row) => money(row.totalIrr) },
-          { label: 'مانده', render: (row) => money(Number(row.totalIrr) - Number(row.paidAmountIrr || 0)) },
+          { label: 'مانده', render: (row) => {
+            const remaining = Number(row.totalIrr) - Number(row.paidAmountIrr || 0);
+            const paidPct = Number(row.totalIrr) > 0 ? Math.min(100, Math.round((Number(row.paidAmountIrr || 0) / Number(row.totalIrr)) * 100)) : 0;
+            return `<strong>${money(remaining)}</strong>${paidPct > 0 ? `<div class="fin-partial-progress"><span style="width: ${paidPct}%"></span><small>${fa(paidPct)}٪ تسویه</small></div>` : ''}`;
+          } },
+          { label: 'سررسید و سن بدهی', render: (row) => {
+            const refDate = row.dueDate || row.invoiceDate || today;
+            const daysPastDue = Math.max(0, Math.floor((nowTs - new Date(refDate).getTime()) / (1000 * 60 * 60 * 24)));
+            let badgeTone = 'success';
+            let badgeText = 'جاری (۰-۳۰)';
+            if (daysPastDue > 90) { badgeTone = 'danger'; badgeText = `${fa(daysPastDue)} روز (+۹۰)`; }
+            else if (daysPastDue > 60) { badgeTone = 'danger'; badgeText = `${fa(daysPastDue)} روز (۶۱-۹۰)`; }
+            else if (daysPastDue > 30) { badgeTone = 'warning'; badgeText = `${fa(daysPastDue)} روز (۳۱-۶۰)`; }
+            else if (daysPastDue > 0) { badgeTone = 'warning'; badgeText = `${fa(daysPastDue)} روز معوق`; }
+            return `<span class="fin-badge ${badgeTone}">${esc(badgeText)}</span>`;
+          } },
           { label: 'تطبیق', render: (row) => statusBadge(row.matchStatus, ['matched', 'accepted_variance'].includes(row.matchStatus) ? 'success' : 'danger') },
           { label: 'وضعیت', render: (row) => statusBadge(row.status, row.status === 'paid' ? 'success' : ['match_exception', 'match_rejected'].includes(row.status) ? 'danger' : 'warning') },
-          { label: 'اقدام اختلاف', render: (row) => row.status !== 'match_exception' ? '—' : row.matchReview?.status === 'pending_approval'
-            ? statusBadge('pending_approval', 'warning')
-            : `<button class="fin-btn secondary" type="button" data-fin-request-match-review="${esc(row.id)}">ارسال برای تصمیم</button>` },
-        ], v2.vendorInvoices, 'هنوز فاکتوری در سامانه جدید ثبت نشده است.')}
+          { label: 'اقدام اختلاف', render: (row) => {
+            if (row.status === 'match_exception') {
+              return row.matchReview?.status === 'pending_approval'
+                ? statusBadge('pending_approval', 'warning')
+                : `<button class="fin-btn secondary" type="button" data-fin-request-match-review="${esc(row.id)}">ارسال برای تصمیم</button>`;
+            }
+            const remaining = Number(row.totalIrr) - Number(row.paidAmountIrr || 0);
+            if (['open', 'partially_paid'].includes(row.status) && remaining > 0) {
+              const amountToman = Math.round(remaining / 10);
+              return `<button class="fin-btn primary fin-quick-pay-btn" type="button" data-fin-quick-pay="${esc(row.id)}" data-amount-toman="${amountToman}" title="تسویه سریع فاکتور">پرداخت سریع</button>`;
+            }
+            return '—';
+          } },
+        ], invoicesWithAging, 'هنوز فاکتوری در سامانه جدید ثبت نشده است.')}
       </section>
       <div class="fin-note warning"><strong>دادهٔ قدیمی فقط برای بررسی است</strong><span>${fa(data.purchaseOrders?.length || 0)} سفارش خرید، ${fa(data.goodsReceipts?.length || 0)} رسید و ${fa(data.bills?.length || 0)} فاکتور تاریخی وارد دفتر مالی جدید نشده‌اند؛ حذف یا تبدیل کور انجام نمی‌شود.</span></div>
       <details class="fin-advanced"><summary>تأمین‌کنندگان و مانده‌های تاریخی</summary><section class="fin-legacy-table">
@@ -2440,6 +3218,40 @@
       const [text, workspace] = checklistActions[id];
       return `<button class="fin-btn secondary fin-check-action" type="button" data-fin-goto="${workspace}">${text}</button>`;
     };
+
+    // Financial ratios & 4-column trial balance calculations
+    const totalAssets = Number(balance.assetsIrr || 0);
+    const totalLiabilities = Number(balance.liabilitiesIrr || 0);
+    const revenue = Number(pnl.revenueIrr || 0);
+    const cogs = Number(pnl.cogsIrr || 0);
+    const netProfit = Number(pnl.netProfitIrr || 0);
+    const grossProfit = revenue - cogs;
+
+    const currentAssetsIrr = (trial.rows || [])
+      .filter((r) => /^(11|12|13|14|15|16)/.test(r.accountCode))
+      .reduce((sum, r) => sum + Math.max(0, Number(r.balanceIrr || 0)), 0);
+
+    const currentLiabilitiesIrr = (trial.rows || [])
+      .filter((r) => /^(21|22|23|24|26)/.test(r.accountCode))
+      .reduce((sum, r) => sum + Math.max(0, -Number(r.balanceIrr || 0)), 0);
+
+    const quickAssetsIrr = (trial.rows || [])
+      .filter((r) => /^(11|12|13)/.test(r.accountCode))
+      .reduce((sum, r) => sum + Math.max(0, Number(r.balanceIrr || 0)), 0);
+
+    const currentRatio = currentLiabilitiesIrr > 0 ? (currentAssetsIrr / currentLiabilitiesIrr).toFixed(2) : null;
+    const quickRatio = currentLiabilitiesIrr > 0 ? (quickAssetsIrr / currentLiabilitiesIrr).toFixed(2) : null;
+    const grossMarginPct = revenue > 0 ? Math.round((grossProfit / revenue) * 1000) / 10 : null;
+    const netMarginPct = revenue > 0 ? Math.round((netProfit / revenue) * 1000) / 10 : null;
+    const debtRatioPct = totalAssets > 0 ? Math.round((totalLiabilities / totalAssets) * 1000) / 10 : null;
+
+    const totalDebitTurnover = (trial.rows || []).reduce((sum, r) => sum + Number(r.debitIrr || 0), 0);
+    const totalCreditTurnover = (trial.rows || []).reduce((sum, r) => sum + Number(r.creditIrr || 0), 0);
+    const totalDebitBalance = (trial.rows || []).reduce((sum, r) => sum + (r.balanceIrr > 0 ? Number(r.balanceIrr) : 0), 0);
+    const totalCreditBalance = (trial.rows || []).reduce((sum, r) => sum + (r.balanceIrr < 0 ? Math.abs(Number(r.balanceIrr)) : 0), 0);
+    const turnoverBalanced = totalDebitTurnover === totalCreditTurnover;
+    const balanceBalanced = totalDebitBalance === totalCreditBalance;
+
     return `
       <section class="fin-section-head"><div><h2>گزارش‌ها و بستن دوره</h2><p>چهار نتیجهٔ اصلی را سریع ببینید؛ گزارش‌ها از اسناد قطعی ساخته می‌شوند و جزئیات حرفه‌ای فقط هنگام نیاز باز می‌شود.</p></div><button class="fin-btn secondary" type="button" data-fin-export="ledger" title="خروجی فقط از صفحهٔ جاری">دریافت CSV صفحهٔ جاری</button></section>
       <section class="fin-report-summary" aria-label="خلاصهٔ گزارش‌های مالی">
@@ -2448,6 +3260,10 @@
         ${reportCard('سود و زیان', profitReport.value, profitReport.detail, profitReport.status, profitReport.tone)}
         ${reportCard('وضعیت بستن دوره', closeReport.value, closeReport.detail, closeReport.status, closeReport.tone)}
       </section>
+      ${can('finance.settings.manage') ? `<details class="fin-advanced fin-tax-setup" data-fin-tax-setup>
+        <summary><span><strong>تنظیم مالیات سفارش‌های این شعبه</strong><small>قیمت منو شامل مالیات است · فقط برای شعبهٔ انتخاب‌شده</small></span><em>تنظیمات حساس</em></summary>
+        <div class="fin-tax-setup__body"><div class="fin-note" data-fin-tax-status role="status" aria-live="polite">در حال آماده‌سازی…</div><div data-fin-tax-content hidden></div></div>
+      </details>` : ''}
       <section class="fin-panel fin-close-summary" aria-labelledby="fin-close-summary-title"><div class="fin-panel-title"><div><h3 id="fin-close-summary-title">کنترل‌های بستن دوره</h3><p>هر مورد ناموفق یک علت ساده و مسیر مستقیم برای اصلاح دارد.</p></div><span>${fa(passedChecks)} از ${fa(checks.length)} کنترل</span></div>
         <div class="fin-check-list fin-check-list--summary">${checks.map((item) => `<article class="${item.passed ? 'passed' : 'failed'}"><span>${item.passed ? '✓' : '!'}</span><div><strong>${esc(item.label)}</strong>${item.passed ? '<small>کنترل عبور کرده است</small>' : '<small>برای ادامه، اقدام پیشنهادی را انجام دهید.</small>'}</div>${checklistAction(item.id, item.passed)}${statusBadge(item.passed ? 'passed' : 'failed')}</article>`).join('')}</div>
         <div class="fin-inline-action fin-close-actions">
@@ -2587,14 +3403,133 @@
         <section class="fin-panel"><div class="fin-panel-title"><div><h3>سود و زیان</h3><p>فقط خطوط قطعی حساب‌های ۴، ۵ و ۶</p></div>${statusBadge(pnl.status, pnl.status === 'available' ? 'success' : pnl.status === 'partial_coverage' ? 'warning' : 'neutral')}</div>${pnl.status === 'partial_coverage' ? `<div class="fin-note warning" role="alert"><strong>این سود برای تصمیم‌گیری یا انتشار معتبر نیست</strong><span>اختلاف فروش و دفتر: ${money(Math.abs(pnl.controls?.salesDifferenceIrr || 0))} · بهای تمام‌شده مسدود: ${fa(pnl.controls?.blockedCogsEvents || 0)} · بهای تمام‌شده مفقود: ${fa(pnl.controls?.missingCogsEvents || 0)}</span></div>` : ''}<div class="fin-result-grid">${metric('درآمد خالص', money(pnl.revenueIrr), 'گروه حساب ۴')}${metric('بهای تمام‌شده', money(pnl.cogsIrr), 'گروه حساب ۵')}${metric('هزینه عملیاتی', money(pnl.operatingExpenseIrr), 'گروه حساب ۶')}${metric('سود/زیان دوره', money(pnl.netProfitIrr), pnl.status === 'available' ? 'رقم قابل اتکا از دفتر قطعی' : 'رقم موقت؛ پوشش کامل نیست', pnl.status !== 'available' ? 'warning' : pnl.netProfitIrr < 0 ? 'danger' : 'success')}</div></section>
         <section class="fin-panel"><div class="fin-panel-title"><div><h3>ترازنامه</h3><p>دارایی = بدهی + حقوق مالکانه + نتیجه دوره</p></div>${statusBadge(balance.status, balance.status === 'balanced' ? 'success' : balance.status === 'unbalanced' ? 'danger' : balance.status === 'partial_coverage' ? 'warning' : 'neutral')}</div>${balance.status === 'partial_coverage' ? `<div class="fin-note warning" role="alert"><strong>معادله تراز است، اما ماهیت مانده سالم نیست</strong><span>${fa(balance.abnormalBalanceRows?.length || 0)} حساب دارای مانده خلاف ماهیت است: ${(balance.abnormalBalanceRows || []).slice(0, 3).map((row) => `${esc(row.accountCode)} ${esc(businessText(row.accountName || ''))}`).join('، ')}</span></div>` : ''}<div class="fin-result-grid">${metric('دارایی', money(balance.assetsIrr), 'گروه حساب ۱')}${metric('بدهی', money(balance.liabilitiesIrr), 'گروه حساب ۲', balance.liabilitiesIrr < 0 ? 'warning' : '')}${metric('حقوق مالکانه', money(balance.equityIrr), 'شامل نتیجه دوره')}${metric('اختلاف معادله', money(Math.abs(balance.equationDifferenceIrr)), 'باید صفر باشد', balance.equationDifferenceIrr ? 'danger' : 'success')}</div></section>
       </div>
+      <section class="fin-panel fin-ratios-panel" aria-label="نسبت‌های سلامت مالی">
+        <div class="fin-panel-title">
+          <div>
+            <h3>شاخص‌های تحلیلی و نسبت‌های سلامت مالی</h3>
+            <p>سنجش توان نقدینگی، سودآوری و ساختار سرمایه بر مبنای اسناد قطعی دوره</p>
+          </div>
+          <span class="fin-badge neutral">استاندارد رستوران و کافه</span>
+        </div>
+        <div class="fin-ratio-grid">
+          <article class="fin-ratio-card ${currentRatio == null ? '' : Number(currentRatio) >= 1.2 ? 'success' : Number(currentRatio) >= 1.0 ? 'warning' : 'danger'}">
+            <div class="fin-ratio-head">
+              <span>نسبت جاری (Current Ratio)</span>
+              <small title="دارایی جاری تقسیم بر بدهی جاری">توان تسویه بدهی کوتاه‌مدت</small>
+            </div>
+            <strong class="fin-ratio-value">${currentRatio != null ? fa(currentRatio) : '—'}</strong>
+            <div class="fin-ratio-meta">
+              <span class="benchmark">هدف: &gt; ۱.۲</span>
+              <span class="fin-badge ${currentRatio == null ? 'neutral' : Number(currentRatio) >= 1.2 ? 'success' : 'warning'}">${currentRatio == null ? 'بدون داده' : Number(currentRatio) >= 1.2 ? 'نقدینگی قوی' : 'نیازمند پایش'}</span>
+            </div>
+          </article>
+          <article class="fin-ratio-card ${quickRatio == null ? '' : Number(quickRatio) >= 0.8 ? 'success' : 'warning'}">
+            <div class="fin-ratio-head">
+              <span>نسبت آنی (Quick Ratio)</span>
+              <small title="نقدینگی و مطالبات تقسیم بر بدهی جاری">تسویه فوری بدون فروش انبار</small>
+            </div>
+            <strong class="fin-ratio-value">${quickRatio != null ? fa(quickRatio) : '—'}</strong>
+            <div class="fin-ratio-meta">
+              <span class="benchmark">هدف: &gt; ۰.۸</span>
+              <span class="fin-badge ${quickRatio == null ? 'neutral' : Number(quickRatio) >= 0.8 ? 'success' : 'warning'}">${quickRatio == null ? 'بدون داده' : Number(quickRatio) >= 0.8 ? 'نقدینگی آنی بالا' : 'ریسک سررسید'}</span>
+            </div>
+          </article>
+          <article class="fin-ratio-card ${grossMarginPct == null ? '' : grossMarginPct >= 60 ? 'success' : grossMarginPct >= 45 ? 'warning' : 'danger'}">
+            <div class="fin-ratio-head">
+              <span>حاشیه سود ناخالص</span>
+              <small title="(درآمد منهای بهای تمام‌شده) تقسیم بر درآمد">(فروش - مواد) ÷ فروش</small>
+            </div>
+            <strong class="fin-ratio-value">${grossMarginPct != null ? `${fa(grossMarginPct)}٪` : '—'}</strong>
+            <div class="fin-ratio-meta">
+              <span class="benchmark">هدف: ۶۰٪ تا ۷۰٪</span>
+              <span class="fin-badge ${grossMarginPct == null ? 'neutral' : grossMarginPct >= 60 ? 'success' : 'warning'}">${grossMarginPct == null ? 'بدون داده' : grossMarginPct >= 60 ? 'حاشیه عالی' : 'بهای مواد بالا'}</span>
+            </div>
+          </article>
+          <article class="fin-ratio-card ${netMarginPct == null ? '' : netMarginPct >= 15 ? 'success' : netMarginPct >= 0 ? 'warning' : 'danger'}">
+            <div class="fin-ratio-head">
+              <span>حاشیه سود خالص</span>
+              <small title="سود خالص تقسیم بر درآمد">سود نهایی پس از تمام هزینه‌ها</small>
+            </div>
+            <strong class="fin-ratio-value">${netMarginPct != null ? `${fa(netMarginPct)}٪` : '—'}</strong>
+            <div class="fin-ratio-meta">
+              <span class="benchmark">هدف: ۱۵٪ تا ۲۵٪</span>
+              <span class="fin-badge ${netMarginPct == null ? 'neutral' : netMarginPct >= 15 ? 'success' : netMarginPct >= 0 ? 'warning' : 'danger'}">${netMarginPct == null ? 'بدون داده' : netMarginPct >= 15 ? 'سودآور' : netMarginPct >= 0 ? 'سود محدود' : 'زیان‌ده'}</span>
+            </div>
+          </article>
+          <article class="fin-ratio-card ${debtRatioPct == null ? '' : debtRatioPct <= 50 ? 'success' : debtRatioPct <= 75 ? 'warning' : 'danger'}">
+            <div class="fin-ratio-head">
+              <span>نسبت بدهی (Debt Ratio)</span>
+              <small title="مجموع بدهی تقسیم بر مجموع دارایی">اهرم مالی و ریسک بدهی</small>
+            </div>
+            <strong class="fin-ratio-value">${debtRatioPct != null ? `${fa(debtRatioPct)}٪` : '—'}</strong>
+            <div class="fin-ratio-meta">
+              <span class="benchmark">هدف: &lt; ۵۰٪</span>
+              <span class="fin-badge ${debtRatioPct == null ? 'neutral' : debtRatioPct <= 50 ? 'success' : 'warning'}">${debtRatioPct == null ? 'بدون داده' : debtRatioPct <= 50 ? 'ریسک پایین' : 'اهرم بالا'}</span>
+            </div>
+          </article>
+        </div>
+      </section>
       <section class="fin-panel"><div class="fin-panel-title"><div><h3>جریان وجوه نقد مستقیم</h3><p>فقط تغییر حساب‌های صندوق، تنخواه و بانک؛ طبقه‌بندی نامطمئن پنهان نمی‌شود.</p></div>${statusBadge(cashFlow.status, cashFlow.status === 'rule_based' ? 'success' : cashFlow.status === 'partial_coverage' ? 'warning' : 'neutral')}</div><div class="fin-result-grid">${metric('عملیاتی', money(cashFlow.operatingIrr), 'قاعده حساب مقابل')}${metric('سرمایه‌گذاری', money(cashFlow.investingIrr), 'دارایی ثابت')}${metric('تأمین مالی', money(cashFlow.financingIrr), 'سرمایه/تسهیلات')}${metric('تغییر خالص وجه', money(cashFlow.netChangeIrr), cashFlow.unclassifiedIrr ? `طبقه‌بندی‌نشده: ${money(cashFlow.unclassifiedIrr)}` : 'تمام تغییرات طبقه‌بندی شد', cashFlow.unclassifiedIrr ? 'warning' : 'success')}</div></section>
-      <details class="fin-advanced"><summary>تراز آزمایشی (${fa(trial.rows.length)} حساب)</summary><section class="fin-panel"><div class="fin-panel-title"><div><h3>تراز آزمایشی</h3><p>جمع بدهکار و بستانکار از خطوط قطعی دفتر جدید</p></div>${statusBadge(trial.status, trial.status === 'balanced' ? 'success' : trial.status === 'unbalanced' ? 'danger' : 'neutral')}</div>${table('trial-balance', [
-        { label: 'حساب', render: (row) => `<strong>${esc(row.accountCode)}</strong>${row.accountName ? `<small>${esc(businessText(row.accountName))}</small>` : ''}` },
-        { label: 'بدهکار', render: (row) => money(row.debitIrr) },
-        { label: 'بستانکار', render: (row) => money(row.creditIrr) },
-        { label: 'مانده', render: (row) => money(Math.abs(row.balanceIrr)) },
-        { label: 'ماهیت مانده', render: (row) => row.balanceIrr > 0 ? 'بدهکار' : row.balanceIrr < 0 ? 'بستانکار' : 'صفر' },
-      ], trial.rows, 'برای این محدوده سند قطعی وجود ندارد.')}</section></details>
+      <details class="fin-advanced" id="fin-trial-balance-details"><summary>تراز آزمایشی چهارستونی (${fa(trial.rows.length)} حساب)</summary>
+        <section class="fin-panel fin-trial-panel">
+          <div class="fin-panel-title">
+            <div>
+              <h3>تراز آزمایشی</h3>
+              <p>تراز آزمایشی استاندارد چهارستونی بر اساس اسناد قطعی دفتر مالی</p>
+            </div>
+            ${statusBadge(trial.status, trial.status === 'balanced' ? 'success' : trial.status === 'unbalanced' ? 'danger' : 'neutral')}
+          </div>
+          <div class="fin-trial-toolbar">
+            <div class="fin-category-pills" role="tablist" aria-label="فیلتر طبقه حساب">
+              <button type="button" class="fin-category-pill active" data-fin-trial-cat="all">همه (${fa(trial.rows.length)})</button>
+              <button type="button" class="fin-category-pill" data-fin-trial-cat="1">۱. دارایی‌ها</button>
+              <button type="button" class="fin-category-pill" data-fin-trial-cat="2">۲. بدهی‌ها</button>
+              <button type="button" class="fin-category-pill" data-fin-trial-cat="3">۳. حقوق مالکانه</button>
+              <button type="button" class="fin-category-pill" data-fin-trial-cat="4">۴. درآمدها</button>
+              <button type="button" class="fin-category-pill" data-fin-trial-cat="5">۵. بهای تمام‌شده</button>
+              <button type="button" class="fin-category-pill" data-fin-trial-cat="6">۶. هزینه‌ها</button>
+            </div>
+            <div class="fin-trial-search-wrap">
+              <input type="search" id="fin-trial-search" class="fin-trial-search" placeholder="جستجوی کد یا نام حساب…" autocomplete="off">
+            </div>
+          </div>
+          ${table('trial-balance', [
+            { label: 'حساب', render: (row) => `<strong>${esc(row.accountCode)}</strong>${row.accountName ? `<small>${esc(businessText(row.accountName))}</small>` : ''}` },
+            { label: 'گردش بدهکار', render: (row) => money(row.debitIrr) },
+            { label: 'گردش بستانکار', render: (row) => money(row.creditIrr) },
+            { label: 'مانده بدهکار', render: (row) => row.balanceIrr > 0 ? `<strong>${money(row.balanceIrr)}</strong>` : '—' },
+            { label: 'مانده بستانکار', render: (row) => row.balanceIrr < 0 ? `<strong>${money(Math.abs(row.balanceIrr))}</strong>` : '—' },
+            { label: 'ماهیت مانده', render: (row) => {
+              const isAbnormal = (balance.abnormalBalanceRows || []).some((ab) => ab.accountCode === row.accountCode);
+              if (isAbnormal) return `<span class="fin-badge danger" title="مانده خلاف ماهیت طبیعی حساب">غیرعادی</span>`;
+              return row.balanceIrr > 0 ? '<span class="fin-badge neutral">بدهکار</span>' : row.balanceIrr < 0 ? '<span class="fin-badge neutral">بستانکار</span>' : '<span class="fin-badge neutral">صفر</span>';
+            } },
+          ], trial.rows, 'برای این محدوده سند قطعی وجود ندارد.')}
+          <div class="fin-trial-totals-bar">
+            <div class="fin-trial-total-col">
+              <span>جمع گردش بدهکار:</span>
+              <strong>${money(totalDebitTurnover)}</strong>
+            </div>
+            <div class="fin-trial-total-col">
+              <span>جمع گردش بستانکار:</span>
+              <strong>${money(totalCreditTurnover)}</strong>
+            </div>
+            <div class="fin-trial-total-col">
+              <span>جمع مانده بدهکار:</span>
+              <strong>${money(totalDebitBalance)}</strong>
+            </div>
+            <div class="fin-trial-total-col">
+              <span>جمع مانده بستانکار:</span>
+              <strong>${money(totalCreditBalance)}</strong>
+            </div>
+            <div class="fin-trial-status-badge">
+              <span class="fin-badge ${turnoverBalanced && balanceBalanced ? 'success' : 'danger'}">
+                ${turnoverBalanced && balanceBalanced ? 'تراز ۴ ستونی کامل و منطبق ✓' : 'مغایرت در تراز آزمایشی'}
+              </span>
+            </div>
+          </div>
+        </section>
+      </details>
       <section class="fin-panel"><div class="fin-panel-title"><div><h3>اسناد دفتر مالی جدید</h3><p>سند قطعی ویرایش نمی‌شود؛ اصلاح فقط با سند معکوس انجام می‌شود.</p></div></div>
         ${table('ledger', [
           { label: 'شماره', render: (row) => `<strong class="fin-record-anchor" data-fin-record-id="${esc(row.id)}" tabindex="-1">${esc(row.number)}</strong>` },
@@ -2609,6 +3544,269 @@
       <details class="fin-advanced"><summary>سایر ابزارهای پیشرفته</summary><div><span>کدینگ حساب‌ها</span><span>پارامترهای قانونی حقوق: نیازمند تأیید تخصصی مؤثر-از-تاریخ</span><span>مالیات</span><span>${esc(data.integrityControl.label)}</span></div></details>
       </details>
       <div class="fin-note warning"><strong>سامانه مؤدیان: متصل نیست</strong><span>${esc(data.taxpayerIntegration.message)}</span></div>`;
+  }
+
+  function accountingJournalRow() {
+    return `<div class="fin-journal-row" data-fin-journal-row>
+      <label class="fin-field"><span>حساب</span><input name="journalAccount" list="fin-posting-accounts" required autocomplete="off" data-money-input="false" placeholder="کد یا نام حساب"></label>
+      <label class="fin-field"><span>بدهکار (تومان)</span><input name="journalDebitToman" inputmode="numeric" data-money-input="false" placeholder="۰"></label>
+      <label class="fin-field"><span>بستانکار (تومان)</span><input name="journalCreditToman" inputmode="numeric" data-money-input="false" placeholder="۰"></label>
+      <label class="fin-field"><span>شرح ردیف</span><input name="journalMemo" maxlength="300" data-money-input="false"></label>
+      <button class="fin-btn secondary" type="button" data-fin-remove-journal-row aria-label="حذف ردیف سند">حذف</button>
+    </div>`;
+  }
+
+  function renderAccountingJournalForm(accounts = []) {
+    const posting = accounts.filter(account => account.isPostingAccount !== false && account.active !== false);
+    return `<form id="fin-journal-form" class="fin-form fin-form-wide" autocomplete="off">
+      <label class="fin-field span-2"><span>شرح سند</span><input name="description" required minlength="3" maxlength="500" placeholder="شرح روشن عملیات حسابداری"></label>
+      <label class="fin-field"><span>تاریخ سند</span><input name="date" type="date" value="${localIsoDate()}" required></label>
+      <div class="fin-note"><strong>مبالغ به تومان وارد می‌شوند</strong><span>سند ابتدا پیش‌نویس می‌شود؛ ارسال برای تأیید از فهرست پیش‌نویس‌ها انجام می‌شود.</span></div>
+      <datalist id="fin-posting-accounts">${posting.map(account => `<option value="${esc(account.code)} · ${esc(account.nameFa || account.name)}"></option>`).join('')}</datalist>
+      <div class="fin-journal-lines span-2" data-fin-journal-lines>${accountingJournalRow()}${accountingJournalRow()}</div>
+      <button class="fin-btn secondary" type="button" data-fin-add-journal-row>افزودن ردیف سند</button>
+      <output class="fin-journal-totals span-2" data-fin-journal-totals aria-live="polite">حداقل دو ردیف را تکمیل کنید؛ بدهکار و بستانکار باید برابر باشند.</output>
+      <button class="fin-btn primary span-2" type="submit" ${posting.length ? '' : 'disabled'}>بررسی و ذخیرهٔ پیش‌نویس</button>
+    </form>`;
+  }
+
+  function accountingJournalInput(form) {
+    return [...form.querySelectorAll('[data-fin-journal-row]')].map(row => ({
+      account: row.querySelector('[name="journalAccount"]').value,
+      debit: row.querySelector('[name="journalDebitToman"]').value,
+      credit: row.querySelector('[name="journalCreditToman"]').value,
+      memo: row.querySelector('[name="journalMemo"]').value,
+    }));
+  }
+
+  async function submitAccountingJournal(form) {
+    try {
+      const branchId = activeBranchId();
+      const journal = window.WestoAccountingExperience.journalLines(accountingJournalInput(form), branchId, state.auxiliary.accounts);
+      const dateInput = form.elements.date;
+      const date = window.ShamsiDatePicker?.getISOValue(dateInput) || dateInput.dataset.isoDate || dateInput.value;
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error('تاریخ سند را انتخاب کنید.');
+      await runRecoverableFinanceOperation({
+        path: '/api/admin/v2/finance/journal-entries',
+        body: { branchId, costCenter: `branch:${branchId}`, date: `${date}T12:00:00.000Z`, description: form.elements.description.value, lines: journal.lines },
+        button: form.querySelector('button[type="submit"]'), feedbackSelector: '#fin-operation-feedback',
+        receiptKey: 'entry', receiptTitle: 'رسید پیش‌نویس سند',
+        receiptFields: record => [{ label: 'شماره', value: record.number }, { label: 'شرح', value: record.description }, { label: 'وضعیت', value: label(record.status) }],
+        successMessage: 'پیش‌نویس ذخیره شد؛ از فهرست پیش‌نویس‌ها برای تأیید ارسال کنید.', lockButtonOnSuccess: true,
+      });
+    } catch (error) { operationError(error); }
+  }
+
+  function renderAccountingChartAccounts(accounts = []) {
+    const types = { asset: 'دارایی', liability: 'بدهی', equity: 'سرمایه', revenue: 'درآمد', contra_revenue: 'کاهندهٔ درآمد', cogs: 'بهای تمام‌شده', expense: 'هزینه' };
+    return `<section class="fin-panel" data-fin-chart-accounts><div class="fin-panel-title"><div><h3>کدینگ حساب‌ها</h3><p>ساختار حساب‌های متصل به دفتر مالی؛ حساب‌های گروهی قابل ثبت مستقیم نیستند.</p></div></div>${table('accounting-chart-accounts', [
+      { label: 'کد', key: 'code' }, { label: 'نام حساب', render: row => esc(row.nameFa || row.name) },
+      { label: 'گروه', render: row => esc(types[row.type] || row.type) }, { label: 'حساب والد', render: row => esc(row.parentCode || '—') },
+      { label: 'نوع ثبت', render: row => statusBadge(row.isPostingAccount === false ? 'گروهی' : 'قابل ثبت', row.isPostingAccount === false ? 'neutral' : 'success') },
+    ], accounts, 'کدینگ حساب‌ها از سرور دریافت نشد.')}</section>`;
+  }
+
+  function renderAccountingJournalHistory(result = {}) {
+    const rows = result.rows || [];
+    return `<section class="fin-panel" data-fin-journal-history><div class="fin-panel-title"><div><h3>دفتر اسناد حسابداری</h3><p>اسناد ثبت‌شده در شعبه و بازهٔ انتخاب‌شده</p></div></div>${table('accounting-journal-history', [
+      { label: 'شماره سند', render: row => `<strong data-fin-record-id="${esc(row.id)}" tabindex="-1">${esc(row.number)}</strong>` },
+      { label: 'تاریخ', render: row => dateTime(row.date) },
+      { label: 'شرح', key: 'description' },
+      { label: 'منشأ', render: row => esc(financeSourceLabel(row.source)) },
+      { label: 'بدهکار', render: row => money(row.debitIrr ?? (row.lines || []).reduce((sum, line) => sum + Number(line.debitIrr || 0), 0)) },
+      { label: 'بستانکار', render: row => money(row.creditIrr ?? (row.lines || []).reduce((sum, line) => sum + Number(line.creditIrr || 0), 0)) },
+      { label: 'وضعیت', render: row => statusBadge(row.status) },
+      { label: 'جزئیات', render: row => `<button class="fin-btn secondary" type="button" data-fin-journal-detail="${esc(row.id)}">مشاهده</button>` },
+    ], rows, 'سندی در این شعبه و بازه ثبت نشده است.', result.pagination)}</section>`;
+  }
+
+  function renderAccountingExpenseForm(data = {}) {
+    return `<section class="fin-panel" data-fin-daily-expense><form id="fin-operating-expense-form" class="fin-form fin-form-wide" autocomplete="off">
+      <label class="fin-field span-2"><span>شرح هزینه</span><input name="subject" required minlength="2" maxlength="240" placeholder="مثلاً قبض برق شهریور"></label>
+      <label class="fin-field"><span>دستهٔ هزینه</span><select name="category" required><option value="">دستهٔ هزینه را انتخاب کنید</option>${(data.categories || []).map(row => `<option value="${esc(row.id)}">${esc(row.label)}</option>`).join('')}</select></label>
+      <label class="fin-field"><span>مبلغ (تومان)</span><input name="amountToman" inputmode="numeric" data-money-input="false" required placeholder="۰"></label>
+      <label class="fin-field"><span>تاریخ هزینه</span><input name="date" type="date" value="${localIsoDate()}" required></label>
+      <label class="fin-field"><span>روش پرداخت</span><select name="paymentMethod"><option value="bank">بانک</option><option value="cash">نقد</option><option value="petty_cash">تنخواه</option><option value="credit">پرداخت نشده؛ ثبت بدهی</option></select></label>
+      <label class="fin-field span-2"><span>مرجع فاکتور یا پرداخت</span><input name="reference" maxlength="160" placeholder="شماره فاکتور یا رسید"></label>
+      <div class="fin-note span-2"><strong>ثبت پس از تأیید مستقل قطعی می‌شود</strong><span>شرح، دسته و روش پرداخت را بررسی کنید؛ هزینهٔ سرمایه‌ای از بخش دارایی ثبت می‌شود.</span></div>
+      <button class="fin-btn primary span-2" type="submit" ${(data.categories || []).length ? '' : 'disabled'}>ثبت هزینه و ارسال برای تأیید</button>
+    </form></section>`;
+  }
+
+  function openAccountingTask(id) {
+    const content = root.querySelector('#fin-workspace-content');
+    const form = content.querySelector(`#${CSS.escape(id)}`);
+    if (!form || form.hidden || !confirmLeaveAccountingTask()) return false;
+    state.task = id; persistQuery();
+    return window.WestoAccountingExperience.showTask(content, id);
+  }
+
+  function bindAccountingExperience() {
+    const content = root.querySelector('#fin-workspace-content');
+    const experience = window.WestoAccountingExperience;
+    const journalForm = content.querySelector('#fin-journal-form');
+    const journalRows = journalForm?.querySelector('[data-fin-journal-lines]');
+    if (journalRows) {
+      const updateTotals = () => {
+        const output = journalForm.querySelector('[data-fin-journal-totals]');
+        try {
+          const journal = experience.journalLines(accountingJournalInput(journalForm), activeBranchId(), state.auxiliary.accounts, { allowUnbalanced: true });
+          const difference = journal.debitIrr - journal.creditIrr;
+          output.textContent = `بدهکار: ${money(journal.debitIrr)} · بستانکار: ${money(journal.creditIrr)} · ${difference ? `اختلاف: ${money(Math.abs(difference))}` : 'سند تراز است'}`;
+          output.dataset.balanced = String(!difference);
+        } catch (error) { output.textContent = error.message; output.dataset.balanced = 'false'; }
+      };
+      journalRows.addEventListener('input', updateTotals);
+      journalRows.addEventListener('change', updateTotals);
+      journalRows.addEventListener('click', event => {
+        const button = event.target.closest('[data-fin-remove-journal-row]');
+        if (!button) return;
+        if (journalRows.children.length <= 2) return operationError({ message: 'حداقل دو ردیف برای سند لازم است.' });
+        button.closest('[data-fin-journal-row]').remove(); journalForm.dataset.finDirty = 'true'; updateTotals();
+      });
+      journalForm.querySelector('[data-fin-add-journal-row]').addEventListener('click', () => {
+        if (journalRows.children.length >= 1000) return;
+        journalRows.insertAdjacentHTML('beforeend', accountingJournalRow()); journalForm.dataset.finDirty = 'true'; updateTotals();
+        journalRows.lastElementChild.querySelector('input').focus();
+      });
+    }
+    content.querySelectorAll('[data-fin-section]').forEach(button => button.addEventListener('click', () => navigateAccounting(state.view, button.dataset.finSection)));
+    content.querySelectorAll('[data-fin-open-task]').forEach(button => {
+      const form = content.querySelector(`#${CSS.escape(button.dataset.finOpenTask)}`);
+      if (form?.hidden) button.hidden = true;
+      button.addEventListener('click', () => openAccountingTask(button.dataset.finOpenTask));
+    });
+    content.querySelectorAll('[data-fin-close-task]').forEach(button => button.addEventListener('click', () => {
+      if (!confirmLeaveAccountingTask()) return;
+      state.task = ''; persistQuery(); experience.showTask(content, '');
+    }));
+    content.querySelector('[data-fin-list-search]')?.addEventListener('input', event => {
+      state.listSearch = event.target.value; experience.filterList(content, state.listSearch, state.listStatus, state.listCategory, state.listAging);
+    });
+    content.querySelector('[data-fin-list-status]')?.addEventListener('change', event => {
+      state.listStatus = event.target.value; experience.filterList(content, state.listSearch, state.listStatus, state.listCategory, state.listAging);
+    });
+    content.querySelectorAll('[data-fin-clear-list]').forEach(button => button.addEventListener('click', () => {
+      state.listSearch = ''; state.listStatus = ''; state.listCategory = 'all'; state.listAging = 'all';
+      content.querySelectorAll('[data-fin-aging-bucket]').forEach(card => { card.classList.remove('active'); card.setAttribute('aria-pressed', 'false'); });
+      const search = content.querySelector('[data-fin-list-search]'); if (search) search.value = '';
+      const status = content.querySelector('[data-fin-list-status]'); if (status) status.value = '';
+      content.querySelectorAll('[data-fin-trial-cat]').forEach(pill => { const active = pill.dataset.finTrialCat === 'all'; pill.classList.toggle('active', active); pill.setAttribute('aria-pressed', String(active)); });
+      experience.filterList(content, '', '', 'all');
+    }));
+    experience.filterList(content, state.listSearch, state.listStatus, state.listCategory, state.listAging);
+    const sortTable = (tableNode, index, ascending) => {
+      const rows = [...tableNode.querySelectorAll('tbody tr')];
+      const collator = new Intl.Collator('fa', { numeric: true });
+      rows.sort((left, right) => {
+        const a = left.children[index]?.textContent.trim() || ''; const b = right.children[index]?.textContent.trim() || '';
+        const comparison = a.includes('تومان') && b.includes('تومان')
+          ? Number(asciiDigits(a).replace(/[^0-9-]/g, '')) - Number(asciiDigits(b).replace(/[^0-9-]/g, '')) : collator.compare(a, b);
+        return comparison * (ascending ? 1 : -1);
+      });
+      tableNode.querySelectorAll('thead th').forEach((node, column) => { if (node.hasAttribute('aria-sort')) node.setAttribute('aria-sort', column === index ? ascending ? 'ascending' : 'descending' : 'none'); });
+      rows.forEach(row => tableNode.querySelector('tbody').append(row));
+    };
+    content.querySelectorAll('table[data-fin-table]').forEach(tableNode => {
+      const sort = state.listSort?.[tableNode.dataset.finTable];
+      if (sort) sortTable(tableNode, sort.index, sort.ascending);
+    });
+    content.querySelectorAll('[data-fin-sort]').forEach(button => button.addEventListener('click', () => {
+      const tableNode = button.closest('table'); const heading = button.closest('th');
+      const ascending = heading.getAttribute('aria-sort') !== 'ascending';
+      const index = Number(button.dataset.finSort);
+      state.listSort ||= {}; state.listSort[tableNode.dataset.finTable] = { index, ascending };
+      sortTable(tableNode, index, ascending);
+    }));
+    content.querySelectorAll('[data-fin-journal-detail]').forEach(button => button.addEventListener('click', () => {
+      const entry = state.auxiliary.journals?.rows?.find(row => String(row.id) === button.dataset.finJournalDetail);
+      if (!entry) return;
+      const accountNames = new Map((state.auxiliary.accounts || []).map(account => [String(account.code), account.nameFa || account.name]));
+      const lines = table('journal-record-lines', [
+        { label: 'حساب', render: row => esc(`${row.accountCode} ${accountNames.get(String(row.accountCode)) || ''}`) },
+        { label: 'شرح ردیف', key: 'memo' },
+        { label: 'بدهکار', render: row => money(row.debitIrr) }, { label: 'بستانکار', render: row => money(row.creditIrr) },
+      ], entry.lines || [], 'ردیف‌های سند در پاسخ موجود نیست.', { page: 1, pages: 1, total: entry.lines?.length || 0 });
+      experience.showRecord(content, `سند ${entry.number || entry.id}`, `<div class="fin-note"><strong>${esc(entry.description)}</strong><span>${dateTime(entry.date)} · ${esc(label(entry.status))} · ${esc(financeSourceLabel(entry.source))}</span></div>${lines}<p class="fin-record-note">سند قطعی از این صفحه ویرایش نمی‌شود؛ اصلاح آن از گردش مجاز سند معکوس انجام می‌شود.</p>`);
+    }));
+    content.querySelector('[data-fin-export-visible]')?.addEventListener('click', () => {
+      const rows = [];
+      content.querySelectorAll('.fin-page-list table').forEach(tableNode => {
+        const headers = [...tableNode.querySelectorAll('thead th')];
+        const columns = headers.map((header, index) => /اقدام|جزئیات|زنجیره/.test(header.textContent) ? -1 : index).filter(index => index >= 0);
+        rows.push(columns.map(index => headers[index].textContent.trim()));
+        tableNode.querySelectorAll('tbody tr').forEach(row => {
+          if (row.hidden || row.style.display === 'none') return;
+          rows.push(columns.map(index => row.children[index]?.textContent.trim() || ''));
+        });
+      });
+      if (!rows.length) return;
+      const quote = value => {
+        const text = String(value).trimStart();
+        const safe = /^[=+@-]/.test(text) && !/^-?\d+(\.\d+)?$/.test(text) ? `'${value}` : value;
+        return `"${String(safe).replace(/"/g, '""')}"`;
+      };
+      const url = URL.createObjectURL(new Blob([`\uFEFF${rows.map(row => row.map(quote).join(',')).join('\n')}`], { type: 'text/csv;charset=utf-8' }));
+      const link = document.createElement('a'); link.href = url; link.download = `westo-accounting-${state.view}-${state.section || 'list'}-${localIsoDate()}.csv`; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+    });
+    content.querySelectorAll('[data-fin-task-page] form').forEach(form => {
+      form.dataset.finInitialValues = accountingFormSnapshot(form);
+      const beginEdit = event => {
+        if (!event.isTrusted || form.dataset.finUserTouched === 'true') return;
+        form.dataset.finInitialValues = accountingFormSnapshot(form);
+        form.dataset.finUserTouched = 'true';
+      };
+      form.addEventListener('pointerdown', beginEdit);
+      form.addEventListener('keydown', beginEdit);
+      form.addEventListener('input', event => { if (event.isTrusted || form.dataset.finUserTouched === 'true') form.dataset.finDirty = 'true'; });
+      form.addEventListener('change', event => { if (event.isTrusted || form.dataset.finUserTouched === 'true') form.dataset.finDirty = 'true'; });
+      form.addEventListener('submit', event => {
+        if (form.id === 'fin-break-even-form') return;
+        const snapshot = accountingFormSnapshot(form);
+        if (form.dataset.finReviewedValues === snapshot) { delete form.dataset.finReviewedValues; return; }
+        event.preventDefault(); event.stopImmediatePropagation();
+        if (!activeBranchId()) return operationError({ code: 'finance_branch_required', message: 'ابتدا شعبه را انتخاب کنید.' });
+        if (form.querySelector('[data-fin-journal-lines]')) {
+          try { experience.journalLines(accountingJournalInput(form), activeBranchId(), state.auxiliary.accounts); }
+          catch (error) { return operationError(error); }
+        }
+        if (form.id === 'fin-operating-expense-form') {
+          try { if (experience.tomanToIrr(form.elements.amountToman.value) <= 0) throw new Error('مبلغ هزینه باید مثبت باشد.'); }
+          catch (error) { return operationError(error); }
+        }
+        form.querySelector('[data-fin-form-review]')?.remove();
+        const review = document.createElement('section'); review.className = 'fin-form-review span-all'; review.dataset.finFormReview = ''; review.setAttribute('aria-label', 'بررسی اطلاعات پیش از ثبت');
+        review.innerHTML = experience.reviewMarkup(form, activeBranchId());
+        form.classList.add('is-reviewing'); form.append(review); review.scrollIntoView({ block: 'start' }); review.querySelector('[data-fin-confirm-form]').focus({ preventScroll: true });
+        const dismiss = () => { review.remove(); form.classList.remove('is-reviewing'); };
+        review.querySelector('[data-fin-edit-form]').addEventListener('click', () => { dismiss(); form.querySelector('input:not([type="hidden"]),select,textarea')?.focus({ preventScroll: true }); });
+        review.querySelector('[data-fin-confirm-form]').addEventListener('click', () => {
+          if (snapshot !== accountingFormSnapshot(form)) { dismiss(); form.requestSubmit(event.submitter); return; }
+          form.dataset.finReviewedValues = snapshot; dismiss(); form.requestSubmit(event.submitter);
+        });
+      }, { capture: true });
+    });
+    const daily = content.querySelector('#fin-operating-expense-form');
+    daily?.addEventListener('submit', async event => {
+      event.preventDefault(); const form = event.currentTarget; const values = Object.fromEntries(new FormData(form));
+      const branchId = activeBranchId();
+      let amountIrr;
+      try { amountIrr = experience.tomanToIrr(values.amountToman); }
+      catch (error) { return operationError(error); }
+      if (!branchId || amountIrr <= 0) return operationError({ code: 'expense_amount_invalid', message: 'مبلغ هزینه باید عدد صحیح مثبت و در محدودهٔ امن ریال باشد.' });
+      const dateInput = form.elements.date;
+      const date = window.ShamsiDatePicker?.getISOValue(dateInput) || dateInput.dataset.isoDate || dateInput.value;
+      await runRecoverableFinanceOperation({
+        path: '/api/admin/v2/finance/operating-expenses', body: { branchId, subject: values.subject, category: values.category, amountIrr, date, paymentMethod: values.paymentMethod, reference: values.reference },
+        button: form.querySelector('button[type="submit"]'), feedbackSelector: '#fin-operation-feedback', receiptKey: 'expense', receiptTitle: 'رسید ثبت هزینهٔ روزانه',
+        receiptFields: record => [{ label: 'شرح', value: record.subject }, { label: 'مبلغ', value: money(record.amountIrr) }, { label: 'وضعیت', value: label(record.status) }], successMessage: 'هزینه ثبت و برای تأیید مستقل ارسال شد.', lockButtonOnSuccess: true,
+      });
+    });
+    if (state.task) {
+      const form = content.querySelector(`#${CSS.escape(state.task)}`);
+      if (form && !form.hidden) experience.showTask(content, state.task);
+      else { state.task = ''; persistQuery(); }
+    }
   }
 
   function exportCurrent(kind) {
@@ -2631,6 +3829,12 @@
 
   window.renderAccountingWorkspace = async function renderAccountingWorkspace(container, qs = '', context = {}) {
     root = container;
+    state.experience = context.experience === 'accounting' && Boolean(window.WestoAccountingExperience);
+    state.search = '';
+    state.listSearch = '';
+    state.listStatus = '';
+    state.listCategory = 'all'; state.listAging = 'all'; state.listSort = {};
+    state.navigation = {};
     accessContext = {
       hasCapability: typeof context.hasCapability === 'function' ? context.hasCapability : () => false,
       currentUser: typeof context.currentUser === 'function' ? context.currentUser : () => null,

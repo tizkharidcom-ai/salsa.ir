@@ -203,6 +203,9 @@
       let slotRefreshTimer = 0;
       let pageSuspended = false;
       let reservationCompleted = false;
+      let reservationRequestInFlight = false;
+      let memoryReservationRetryKey = '';
+      const reservationRetryStorageKey = 'westo_reservation_retry_key';
 
       function abortController(controller) {
         if (!controller) return;
@@ -254,13 +257,96 @@
 
         if (!response.ok) {
           const message =
-            data && typeof data.error === 'string' && data.error
+            data && typeof data.message === 'string' && data.message
+              ? data.message
+              : data && typeof data.error === 'string' && data.error
+                ? data.error
+                : tr('reserve.serverError');
+          const error = new Error(message);
+          error.status = response.status;
+          error.code = data && typeof data.code === 'string'
+            ? data.code
+            : data && typeof data.error === 'string'
               ? data.error
-              : tr('reserve.serverError');
-          throw new Error(message);
+              : 'http_error';
+          throw error;
         }
 
         return data || {};
+      }
+
+      function clearReservationRetryKey() {
+        memoryReservationRetryKey = '';
+        try {
+          sessionStorage.removeItem(reservationRetryStorageKey);
+        } catch (_) {}
+      }
+
+      function getReservationRetryKey() {
+        let key = memoryReservationRetryKey;
+        try {
+          const stored = sessionStorage.getItem(reservationRetryStorageKey);
+          if (key && stored && stored !== key) {
+            throw new Error('The retry key changed in session storage.');
+          }
+          if (!key && stored && /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/.test(stored)) key = stored;
+          if (!key) {
+            const random = new Uint8Array(16);
+            if (window.crypto?.getRandomValues) {
+              window.crypto.getRandomValues(random);
+              key = 'reservation-' + Array.from(random, (byte) => byte.toString(16).padStart(2, '0')).join('');
+            } else {
+              key = 'reservation-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2);
+            }
+          }
+
+          if (stored !== key) sessionStorage.setItem(reservationRetryStorageKey, key);
+          if (sessionStorage.getItem(reservationRetryStorageKey) !== key) {
+            throw new Error('The retry key could not be verified in session storage.');
+          }
+          memoryReservationRetryKey = key;
+          return key;
+        } catch (_) {
+          memoryReservationRetryKey = '';
+          const error = new Error('برای جلوگیری از ثبت تکراری، مرورگر باید کلید امن درخواست را در این نشست نگه دارد. ذخیره‌سازی نشست در دسترس نیست.');
+          error.code = 'reservation_retry_storage_unavailable';
+          throw error;
+        }
+      }
+
+      async function submitReservationRequest(payload) {
+        const idempotencyKey = getReservationRetryKey();
+        return fetch('/api/reservations', {
+          method: 'POST',
+          credentials: 'same-origin',
+          cache: 'no-store',
+          headers: {
+            'Content-Type': 'application/json',
+            'Idempotency-Key': idempotencyKey,
+          },
+          body: JSON.stringify(payload),
+        });
+      }
+
+      function invalidateReservationRetryKey() {
+        if (!reservationRequestInFlight) clearReservationRetryKey();
+      }
+
+      function setReservationFormBusy(busy) {
+        const controls = [
+          $('branch'), $('date'), $('party'), $('name'), $('phone'), $('note'),
+          ...Array.from($('slots')?.querySelectorAll('button') || []),
+        ].filter(Boolean);
+        for (const control of controls) {
+          if (busy) {
+            control.dataset.reserveDisabledBeforeRequest = control.disabled ? '1' : '0';
+            control.disabled = true;
+          } else if (Object.prototype.hasOwnProperty.call(control.dataset, 'reserveDisabledBeforeRequest')) {
+            control.disabled = control.dataset.reserveDisabledBeforeRequest === '1';
+            delete control.dataset.reserveDisabledBeforeRequest;
+          }
+        }
+        $('form-box')?.setAttribute('aria-busy', busy ? 'true' : 'false');
       }
 
       function currentSlotSignature() {
@@ -514,6 +600,7 @@
         const button = event.target.closest('.slot-btn');
         if (!button || button.disabled || !button.dataset.time) return;
         if (!$('slots').contains(button)) return;
+        if (selectedTime !== button.dataset.time) invalidateReservationRetryKey();
 
         if (selectedSlotButton && selectedSlotButton !== button) {
           selectedSlotButton.classList.remove('is-on');
@@ -527,6 +614,10 @@
       $('date').addEventListener('change', () => scheduleSlotRefresh());
       $('party').addEventListener('change', () => scheduleSlotRefresh());
       $('branch').addEventListener('change', () => scheduleSlotRefresh());
+      for (const id of ['branch', 'date', 'party', 'name', 'phone', 'note']) {
+        $(id).addEventListener('input', invalidateReservationRetryKey);
+        $(id).addEventListener('change', invalidateReservationRetryKey);
+      }
 
       $('submit').addEventListener('click', async () => {
         setMsg('');
@@ -549,22 +640,12 @@
           return;
         }
 
-        /*
-         * Reservation creation is intentionally NOT AbortController/timeout
-         * driven. This endpoint is non-idempotent in the current server
-         * contract; aborting after the server has committed could encourage a
-         * retry and create a duplicate reservation.
-         */
         try {
+          reservationRequestInFlight = true;
           submitButton.disabled = true;
+          setReservationFormBusy(true);
 
-          const response = await fetch('/api/reservations', {
-            method: 'POST',
-            credentials: 'same-origin',
-            cache: 'no-store',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload),
-          });
+          const response = await submitReservationRequest(payload);
 
           const data = await readJsonResponse(response);
           const reservation = data.reservation;
@@ -573,6 +654,7 @@
             throw new Error(tr('reserve.invalidResponse'));
           }
 
+          clearReservationRetryKey();
           reservationCompleted = true;
           abortController(slotsController);
           slotsController = null;
@@ -585,8 +667,19 @@
           $('done-meta').textContent =
             `${reservation.branchName || ''} · ${displayDate} · ${reservation.time} · ${tr('reserve.people', { n: reservation.partySize })}`;
         } catch (error) {
-          setMsg(error?.message || tr('reserve.error'));
+          const hasHttpStatus = Number.isInteger(error?.status);
+          const retryable = !hasHttpStatus || error.status >= 500;
+          if (!retryable) clearReservationRetryKey();
+          if (error?.code === 'reservation_retry_storage_unavailable') {
+            setMsg(error.message);
+          } else if (retryable) {
+            setMsg('نتیجهٔ ثبت رزرو مشخص نیست. اتصال را بررسی کنید و دوباره تلاش کنید؛ همان کلید درخواست برای جلوگیری از رزرو تکراری حفظ شده است.');
+          } else {
+            setMsg(error?.message || tr('reserve.error'));
+          }
         } finally {
+          reservationRequestInFlight = false;
+          setReservationFormBusy(false);
           submitButton.disabled = reservationCompleted;
         }
       });
@@ -613,8 +706,8 @@
           slotRefreshTimer = 0;
         }
 
-        // Safe GET requests can be aborted. The reservation POST above is not
-        // aborted because the server route has no idempotency key contract.
+        // Safe GET requests can be aborted. The reservation POST deliberately
+        // keeps its idempotency key so a user can retry an unknown outcome.
         abortController(metaController);
         abortController(slotsController);
         metaController = null;

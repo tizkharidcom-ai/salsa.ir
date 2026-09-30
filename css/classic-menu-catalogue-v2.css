@@ -1269,3 +1269,135 @@ html body.classic-menu :is(button,a,input,[tabindex]):focus-visible {
   outline-color: var(--cm-accent) !important;
   outline-offset: 3px !important;
 }
+
+/* Readable option cards in the paper catalogue theme, including high-contrast focus. */
+html body.classic-menu :is(.cm-modifier,.menu-modifier-group) {
+  color: var(--cm-ink) !important;
+  border-color: var(--cm-line-strong) !important;
+  background: var(--cm-surface) !important;
+}
+html body.classic-menu :is(.cm-modifier__option,.menu-modifier-option) {
+  color: var(--cm-ink) !important;
+  border-color: var(--cm-line) !important;
+  background: var(--cm-surface-raised) !important;
+}
+html body.classic-menu :is(.cm-modifier__option,.menu-modifier-option):has(input:checked) {
+  color: var(--cm-accent-deep) !important;
+  border-color: var(--cm-accent-line) !important;
+  background: #e9f4f5 !important;
+}
+html body.classic-menu :is(.cm-modifier legend,.menu-modifier-group legend,.cm-modifier__option span,.menu-modifier-option__name) {
+  color: var(--cm-ink) !important;
+}
+html body.classic-menu :is(.cm-modifier legend small,.cm-modifier__unavailable,.menu-modifier-group__hint,.menu-modifier-option__price,.table-line__modifiers) {
+  color: var(--cm-muted) !important;
+}
+html body.classic-menu :is(.menu-modifier-message,.cm-detail__modifier-message:not([hidden])) {
+  color: var(--cm-danger, #a12820) !important;
+}
+html body.classic-menu :is(.cm-modifier__option,.menu-modifier-option):focus-within {
+  outline: 3px solid var(--cm-accent) !important;
+  outline-offset: 2px !important;
+}
+html body.classic-menu .qty-modal.has-modifiers .qty-modal__card {
+  color: var(--cm-ink) !important;
+  border-color: var(--cm-line-strong) !important;
+  background: var(--cm-surface-raised) !important;
+}
+
+html body.classic-menu .cm-detail__price {
+  white-space: normal !important;
+  overflow-wrap: anywhere;
+  line-height: 1.6;
+}
+html body.classic-menu .cm-detail-add:disabled {
+  opacity: 1 !important;
+  color: var(--cm-muted) !important;
+  border-color: var(--cm-line-strong) !important;
+  background: var(--cm-surface-muted) !important;
+  box-shadow: none !important;
+  transform: none !important;
+}
+html body.classic-menu .menu-modifier-option {
+  min-height: 3rem;
+  touch-action: manipulation;
+}
+html body.classic-menu .menu-modifier-option.is-unavailable {
+  opacity: 1 !important;
+  color: var(--cm-muted) !important;
+  background: var(--cm-surface-disabled) !important;
+  cursor: not-allowed;
+}
+html body.classic-menu .table-cart-validation:not([hidden]) {
+  color: var(--cm-danger, #8c2c24) !important;
+  border-color: var(--cm-danger-line, rgba(140, 44, 36, 0.28)) !important;
+  background: var(--cm-danger-soft, #fff0ed) !important;
+}
+
+@media (max-width: 559px) {
+  html body.classic-menu .cm-detail__footer {
+    align-items: stretch;
+    flex-wrap: wrap;
+  }
+  html body.classic-menu .cm-detail__price {
+    flex: 1 1 8rem;
+    min-width: 0;
+  }
+  html body.classic-menu .cm-detail__actions {
+    flex: 1 1 100%;
+    width: 100%;
+    min-width: 0;
+  }
+  html body.classic-menu .cm-qty button {
+    min-width: 2.75rem;
+    min-height: 2.75rem;
+  }
+  html body.classic-menu .cm-item__body {
+    justify-content: flex-start !important;
+    gap: 0.2rem !important;
+  }
+  html body.classic-menu .cm-item__summary {
+    margin: 0.12rem 0 0 !important;
+    font-size: 0.8rem !important;
+    line-height: 1.55 !important;
+  }
+  html body.classic-menu .cm-item__price small {
+    font-size: 0.75rem !important;
+    line-height: 1.4;
+  }
+  html body.classic-menu .cm-item__badge {
+    position: static !important;
+    align-self: flex-start !important;
+    max-width: 100%;
+    margin: 0.18rem 0 0 !important;
+    font-size: 0.75rem !important;
+    line-height: 1.4;
+    white-space: normal;
+  }
+}
+
+@media (max-width: 370px) {
+  html body.classic-menu .cm-item {
+    grid-template-columns: minmax(0, 1fr) 6.25rem !important;
+  }
+}
+
+@media (max-width: 559px) {
+  html body.classic-menu .cm-detail__media-expand {
+    width: 44px !important;
+    min-width: 44px !important;
+    height: 44px !important;
+    min-height: 44px !important;
+  }
+  html body.classic-menu .cm-icon-btn,
+  html body.classic-menu .cm-lang-btn,
+  html body.classic-menu .cm-table-btn {
+    width: 44px !important;
+    min-width: 44px !important;
+    height: 44px !important;
+    min-height: 44px !important;
+    flex: 0 0 44px;
+  }
+  html body.classic-menu #cm-login { display: none !important; }
+  html body.classic-menu .cm-logo { width: 5.5rem !important; height: 1.65rem !important; }
+}

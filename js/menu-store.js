@@ -8,7 +8,11 @@
   const existing = window.westoMenuStore;
   if (existing && existing.ready) return;
 
-  const LOCAL_KEY = 'westo_menu_cache';
+  const LEGACY_LOCAL_KEY = 'westo_menu_cache';
+  const menuBranch = requestedBranch();
+  const LOCAL_KEY = menuBranch
+    ? `westo_menu_cache:v2:branch:${encodeURIComponent(menuBranch)}`
+    : LEGACY_LOCAL_KEY;
   const LOCAL_SOFT_TTL_MS = 6 * 60 * 60 * 1000;
   const PERSIST_IDLE_TIMEOUT_MS = 2500;
   const PERSIST_FALLBACK_DELAY_MS = 900;
@@ -53,11 +57,71 @@
     return Array.isArray(value) ? value : [];
   }
 
-  function applyData(data, { fromCache = false, savedAt = 0 } = {}) {
-    if (!data || typeof data !== 'object') return store;
+  function isPositiveSafeInteger(value) {
+    if (typeof value !== 'number' && typeof value !== 'string') return false;
+    if (typeof value === 'string' && !value.trim()) return false;
+    const number = Number(value);
+    return Number.isSafeInteger(number) && number > 0;
+  }
 
-    const menuItems = safeArray(data.menuItems);
-    const menuCategories = safeArray(data.menuCategories);
+  function isRecord(value) {
+    return Boolean(value && typeof value === 'object' && !Array.isArray(value));
+  }
+
+  function validateMenuPayload(data) {
+    if (!isRecord(data)) throw new Error('menu payload must be an object');
+    if (!Array.isArray(data.menuItems)) throw new Error('menuItems must be an array');
+    if (!Array.isArray(data.menuCategories)) throw new Error('menuCategories must be an array');
+    if (Object.prototype.hasOwnProperty.call(data, 'siteCategories') && !Array.isArray(data.siteCategories)) {
+      throw new Error('siteCategories must be an array when present');
+    }
+
+    const validateEntries = (entries, label, validate) => {
+      for (let index = 0; index < entries.length; index += 1) {
+        const entry = entries[index];
+        if (!isRecord(entry) || !validate(entry)) {
+          throw new Error(`${label}[${index}] is malformed`);
+        }
+      }
+    };
+
+    validateEntries(data.menuItems, 'menuItems', (item) =>
+      isPositiveSafeInteger(item.id) && isPositiveSafeInteger(item.categoryId),
+    );
+    validateEntries(data.menuCategories, 'menuCategories', (category) =>
+      isPositiveSafeInteger(category.id),
+    );
+    if (Array.isArray(data.siteCategories)) {
+      validateEntries(data.siteCategories, 'siteCategories', (category) =>
+        isPositiveSafeInteger(category.id),
+      );
+    }
+
+    return data;
+  }
+
+  function requestedBranch() {
+    if (typeof location === 'undefined' || typeof URLSearchParams === 'undefined') return '';
+    const params = new URLSearchParams(location.search || '');
+    const raw = String(params.get('branch') || params.get('branchId') || '').trim();
+    if (!raw) return '';
+    const normalized = raw
+      .replace(/[۰-۹]/g, (digit) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(digit)))
+      .replace(/[٠-٩]/g, (digit) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(digit)));
+    if (/^\d+$/.test(normalized)) {
+      const numeric = Number(normalized);
+      return Number.isSafeInteger(numeric) && numeric > 0 ? String(numeric) : '';
+    }
+    // Public menu routes also accept branch slugs. Keep the token intact for
+    // the request/cache identity; the server remains authoritative for lookup.
+    return raw.toLowerCase();
+  }
+
+  function applyData(data, { fromCache = false, savedAt = 0 } = {}) {
+    validateMenuPayload(data);
+
+    const menuItems = data.menuItems;
+    const menuCategories = data.menuCategories;
     const siteCategories = safeArray(data.siteCategories);
     const byCategory = Object.create(null);
 
@@ -177,7 +241,10 @@
   }
 
   async function fetchFreshMenu() {
-    const response = await fetch('/api/menu', {
+    const menuUrl = menuBranch
+      ? `/api/menu?branch=${encodeURIComponent(menuBranch)}`
+      : '/api/menu';
+    const response = await fetch(menuUrl, {
       method: 'GET',
       credentials: 'same-origin',
       cache: 'no-cache',
@@ -272,7 +339,9 @@
   // guest-menu payload. Prefer it over localStorage and skip the redundant
   // startup /api/menu request entirely. Older/static deployments keep the
   // original cache -> refresh fallback below.
-  const bootMenu = window.__WESTO_CONTENT__?.menu;
+  // The parser-preloaded menu is branch-agnostic. Do not use it for a QR
+  // carrying branch context: it can contain default-branch stock/prices.
+  const bootMenu = menuBranch ? null : window.__WESTO_CONTENT__?.menu;
   if (bootMenu && typeof bootMenu === 'object') {
     try {
       applyData(bootMenu, { fromCache: false });

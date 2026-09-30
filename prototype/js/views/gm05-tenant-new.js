@@ -10,7 +10,7 @@ let wizardData = {
   name: 'کافه وستو (Westo Café)',
   slug: 'westo-new',
   organization: 'مجموعه کافه‌رستوران وستو',
-  domain: 'westo-new.neem.ir',
+  domain: 'westo-new.salsa.ir',
   plan: 'Growth (رشد)',
   templateCode: 'tpl-blank-cafe-v1',
   cellId: 'cell-teh-01',
@@ -273,7 +273,7 @@ function renderStepContent(step, templates, plans) {
         </label>
         <div class="input-group">
           <input type="text" id="wizSlug" class="form-control cell-mono" value="${esc(wizardData.slug)}" oninput="updateWizardField('slug', this.value)" aria-required="true" style="direction: ltr; text-align: left;" />
-          <span class="input-group-addon cell-mono">.neem.ir</span>
+          <span class="input-group-addon cell-mono">.salsa.ir</span>
         </div>
         <div class="form-hint">فقط حروف کوچک انگلیسی، ارقام و خط فاصله (بدون فاصله یا کاراکتر خاص)</div>
       </div>
@@ -287,7 +287,7 @@ function renderStepContent(step, templates, plans) {
           <span class="input-group-addon cell-mono">https://</span>
           <input type="text" id="wizDomain" class="form-control cell-mono" value="${esc(wizardData.domain)}" readonly style="background: var(--bg-surface-subtle); color: var(--accent-cyan); direction: ltr; text-align: left;" />
         </div>
-        <div class="form-hint">هاست پیش‌فرض مشتری بر روی پلتفرم نیم؛ مشتری می‌تواند در آینده دامنه اختصاصی خود (مانند order.mycafe.ir) را به این ساب‌دامین متصل کند.</div>
+        <div class="form-hint">هاست پیش‌فرض مشتری بر روی پلتفرم سالسا؛ مشتری می‌تواند در آینده دامنه اختصاصی خود (مانند order.mycafe.ir) را به این ساب‌دامین متصل کند.</div>
       </div>
     `;
   }
@@ -458,7 +458,7 @@ function renderStepContent(step, templates, plans) {
           <h3 style="color: var(--text-primary); font-size: 1.1rem; font-weight: 800; margin-bottom: 0.35rem;">گام ۸: مرور جامع پرونده و صف‌بندی کار تحویل</h3>
           <p style="color: var(--text-secondary); font-size: 0.85rem; margin: 0;">اطلاعات واردشده را بازبینی کنید. با کلیک بر روی دکمه ویرایش مستقیم هر بخش، مشخصات اصلاح شده و دکمه بازگشت فوری در دسترس شما خواهد بود.</p>
         </div>
-        <span class="badge badge-success" style="font-size: 0.75rem;"><span class="status-dot dot-active"></span> آماده استقرار پروداکشن (VPS)</span>
+        <span class="badge badge-warning" style="font-size: 0.75rem;"><span class="status-dot dot-amber"></span> استقرار پروداکشن هنوز تأیید نشده</span>
       </div>
 
       <div class="grid-cols-2" style="margin-top: 1rem; margin-bottom: 1rem; gap: 0.85rem;">
@@ -792,7 +792,7 @@ function updateWizardField(key, val) {
   wizardData[key] = val;
   if (key === 'slug') {
     const cleanSlug = window.GMApp && typeof window.GMApp.sanitizeSlug === 'function' ? window.GMApp.sanitizeSlug(val) : val;
-    wizardData.domain = `${cleanSlug || 'domain'}.neem.ir`;
+    wizardData.domain = `${cleanSlug || 'domain'}.salsa.ir`;
     const dEl = document.getElementById('wizDomain');
     if (dEl) dEl.value = wizardData.domain;
   }
@@ -880,7 +880,7 @@ function submitTenantCreation() {
     }
     return false;
   }
-  const toastMsg = `مشتری ${result.tenant.name} با موفقیت ثبت شد؛ ساب‌دامین ${result.tenant.slug || 'westo'}.neem.ir تخصیص یافته و استقرار پایگاه‌داده آغاز گردید.`;
+  const toastMsg = `مشتری ${result.tenant.name} با موفقیت ثبت شد؛ ساب‌دامین ${result.tenant.slug || 'westo'}.salsa.ir تخصیص یافته و استقرار پایگاه‌داده آغاز گردید.`;
   if (window.GMApp && typeof window.GMApp.showToast === 'function') {
     window.GMApp.showToast(toastMsg, 'success');
   } else if (typeof showToast === 'function') {
@@ -896,7 +896,7 @@ window.resetWizardToWestoDefaults = function() {
     name: 'کافه وستو (Westo Café)',
     slug: 'westo',
     organization: 'مجموعه کافه‌رستوران وستو',
-    domain: 'westo.neem.ir',
+    domain: 'westo.salsa.ir',
     plan: 'Enterprise (سراسری)',
     templateCode: 'tpl-blank-cafe-v1',
     cellId: 'cell-teh-01',

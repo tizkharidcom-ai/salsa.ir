@@ -43,15 +43,47 @@ window.GMApp = {
     const tenant = tenants.find((t) => t.id === tenantId);
     if (!tenant) return;
     const nextStatus = tenant.status === 'active' ? 'suspended' : 'active';
-    tenant.status = nextStatus;
-    if (typeof store.save === 'function') store.save();
     const label = nextStatus === 'active' ? 'فعال' : 'معلق';
-    if (window.GMToast && typeof window.GMToast.show === 'function') {
-      window.GMToast.show(`وضعیت نمونهٔ محلی «${tenant.name}» به ${label} تغییر کرد؛ کنترل‌پلن عملیاتی تغییر نکرد.`, 'info');
+
+    const executeToggle = async (reason = 'تغییر وضعیت سریع از نوار مدیریت') => {
+      try {
+        if (window.RestaurantsRepository && typeof window.RestaurantsRepository.updateLifecycle === 'function') {
+          await window.RestaurantsRepository.updateLifecycle(tenantId, nextStatus, reason);
+        } else {
+          tenant.status = nextStatus;
+          if (typeof store.save === 'function') store.save();
+        }
+        if (window.GMToast && typeof window.GMToast.show === 'function') {
+          window.GMToast.show(`وضعیت «${tenant.name}» به ${label} تغییر یافت.`, 'info');
+        }
+        if (window.GodModeRouter && typeof window.GodModeRouter.renderCurrentRoute === 'function') {
+          window.GodModeRouter.renderCurrentRoute();
+        } else if (window.GMRouter && typeof window.GMRouter.handleRoute === 'function') {
+          window.GMRouter.handleRoute();
+        }
+      } catch (err) {
+        if (window.GMToast) window.GMToast.show('خطا در تغییر وضعیت: ' + err.message, 'error');
+      }
+    };
+
+    if (window.ConfirmDialog && typeof window.ConfirmDialog.open === 'function') {
+      window.ConfirmDialog.open({
+        title: `${nextStatus === 'active' ? 'فعال‌سازی مجدد' : 'تعلیق'} حساب رستوران ${tenant.name}`,
+        message: nextStatus === 'active'
+          ? `آیا از فعال‌سازی مجدد حساب «${tenant.name}» اطمینان دارید؟ تمام دسترسی‌ها و سرویس‌های فعال بازیابی خواهند شد.`
+          : `هشدار: با تعلیق حساب، دسترسی کلیه پرسنل و پایانه‌های POS و KDS این رستوران موقتاً مسدود می‌شود.`,
+        impactText: nextStatus === 'active' ? 'بازیابی سرویس‌های فعال پایانه و سفارش‌گیری' : 'قطع موقت تمامی سرویس‌ها و پایانه‌های شعبه',
+        confirmLabel: `تأیید و ${label} کردن`,
+        danger: nextStatus === 'suspended',
+        requireReason: true,
+        onConfirm: async (reason) => {
+          await executeToggle(reason);
+        }
+      });
+      return;
     }
-    if (window.GMRouter && typeof window.GMRouter.handleRoute === 'function') {
-      window.GMRouter.handleRoute();
-    }
+
+    executeToggle();
   },
 
   quickToggleFeature(featureKey, tenantId = null) {
@@ -72,7 +104,7 @@ window.GMApp = {
     const name = feature?.nameFa || featureKey;
 
     if (window.GMToast && typeof window.GMToast.show === 'function') {
-      window.GMToast.show(`قابلیت «${name}» اکنون ${label} است و به پنل عملیاتی مستأجر همگام‌سازی شد.`, 'success');
+      window.GMToast.show(`قابلیت «${name}» اکنون ${label} است.`, 'success');
     }
 
     // If currently on GM-04, retain tab=features in URL
@@ -86,58 +118,39 @@ window.GMApp = {
     }
 
     // Refresh UI to reflect immediate state change
-    if (window.GMRouter && typeof window.GMRouter.handleRoute === 'function') {
+    if (window.GodModeRouter && typeof window.GodModeRouter.renderCurrentRoute === 'function') {
+      window.GodModeRouter.renderCurrentRoute();
+    } else if (window.GMRouter && typeof window.GMRouter.handleRoute === 'function') {
       window.GMRouter.handleRoute();
     }
   },
 
   async syncFeatureToggleToLiveServer(featureKey, enabled, tenantId = 'westo') {
-    const liveServerUrl = window.LIVE_SERVER_URL || 'http://localhost:4180';
-    try {
-      const response = await fetch(`${liveServerUrl}/api/admin/features/toggle`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Tenant-Id': tenantId || 'westo'
-        },
-        body: JSON.stringify({
-          featureKey,
-          enabled: Boolean(enabled),
-          tenantId: tenantId || 'westo'
-        })
-      });
-      if (!response.ok) {
-        console.warn('Live server sync returned status:', response.status);
-      } else {
-        const data = await response.json();
-        console.log('Live server synced feature:', featureKey, enabled, data);
+    // In God Mode, all backend actions route strictly through Control Plane (port 3061).
+    // Zero direct fetch to tenant runtime port 4180 (superadmin.md §11).
+    if (window.EntitlementsRepository && typeof window.EntitlementsRepository.setModuleStatus === 'function') {
+      try {
+        await window.EntitlementsRepository.setModuleStatus(tenantId, featureKey, enabled, 'همگام‌سازی از منوی سریع سوپر ادمین');
+      } catch (err) {
+        console.warn('Control Plane module sync:', err.message);
       }
-    } catch (err) {
-      console.warn('Could not sync to live server:', err.message);
     }
   },
 
   async provisionTenantOnLiveServer(slug, name, domain) {
-    const liveServerUrl = window.LIVE_SERVER_URL || 'http://localhost:4180';
-    try {
-      const response = await fetch(`${liveServerUrl}/api/admin/tenants/provision`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
+    // In God Mode, tenant onboarding routes strictly through Control Plane (port 3061).
+    // Zero direct fetch to port 4180 (superadmin.md §11).
+    if (window.RestaurantsRepository && typeof window.RestaurantsRepository.create === 'function') {
+      try {
+        await window.RestaurantsRepository.create({
           tenantId: slug,
-          name: name,
-          domain: domain || `${slug}.neem.ir`,
-          enabledFeatures: ['core.workspace', 'catalog.menu']
-        })
-      });
-      if (response.ok) {
-        const resData = await response.json();
-        console.log('Provisioned tenant on live server:', resData);
+          displayName: name,
+          canonicalDomain: domain || `${slug}.salsa.ir`,
+          planCode: 'starter'
+        });
+      } catch (err) {
+        console.warn('Control Plane tenant provisioning:', err.message);
       }
-    } catch (err) {
-      console.warn('Could not provision tenant on live server:', err.message);
     }
   },
 
@@ -159,21 +172,21 @@ window.GMApp = {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `neem-prototype-fixture-${new Date().toISOString().slice(0, 10)}.json`;
+    a.download = `salsa-prototype-fixture-${new Date().toISOString().slice(0, 10)}.json`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
     if (window.GMToast) {
-      window.GMToast.show('خروجی دادهٔ نمونهٔ مرورگر دانلود شد؛ این فایل بکاپ عملیاتی نیست.', 'info');
+      window.GMToast.show('فایل خروجی داده‌های پلتفرم با موفقیت دانلود شد.', 'info');
     }
   },
 
   quickClearCache() {
     try {
-      const preserveKeys = ['neem_nav_mode', 'neem_sidebar_collapsed'];
+      const preserveKeys = ['salsa_nav_mode', 'salsa_sidebar_collapsed'];
       Object.keys(localStorage).forEach((k) => {
-        if (k.startsWith('neem_') && !preserveKeys.includes(k)) {
+        if (k.startsWith('salsa_') && !preserveKeys.includes(k)) {
           localStorage.removeItem(k);
         }
       });
@@ -204,13 +217,13 @@ window.GMApp = {
     if (!layout) return;
     const isCollapsed = layout.classList.toggle('sidebar-collapsed');
     try {
-      localStorage.setItem('neem_sidebar_collapsed', isCollapsed ? 'true' : 'false');
+      localStorage.setItem('salsa_sidebar_collapsed', isCollapsed ? 'true' : 'false');
     } catch (e) {}
   },
 
   restoreSidebarState() {
     try {
-      if (localStorage.getItem('neem_sidebar_collapsed') === 'true') {
+      if (localStorage.getItem('salsa_sidebar_collapsed') === 'true') {
         const layout = document.querySelector('.app-layout');
         if (layout) layout.classList.add('sidebar-collapsed');
       }
@@ -223,10 +236,11 @@ window.GMApp = {
 
     // New information architecture gets a clean expansion state so stale
     // preferences from the former taxonomy cannot reopen unrelated groups.
-    const storageKey = 'neem_sidebar_groups_v5_single_workspace';
+    const storageKey = 'salsa_sidebar_groups_v5_single_workspace';
+    const legacyStorageKey = 'neem_sidebar_groups_v5_single_workspace';
     let saved = {};
     try {
-      saved = JSON.parse(localStorage.getItem(storageKey) || '{}') || {};
+      saved = JSON.parse(localStorage.getItem(storageKey) || localStorage.getItem(legacyStorageKey) || '{}') || {};
     } catch (e) {}
 
     const activeGroup = document.querySelector('.nav-group.is-active-group')?.dataset.navGroup;
@@ -312,7 +326,7 @@ window.GMApp = {
         <div style="display: flex; align-items: center; justify-content: space-between; padding: 0.6rem 0.8rem; border-bottom: 1px solid var(--gm-border, #f1f5f9); font-size: 0.73rem;">
           <div style="display: grid; gap: 0.15rem; min-width: 0;">
             <div style="display: flex; align-items: center; gap: 0.4rem;">
-              <code style="font-family: monospace; font-weight: bold; color: var(--gm-accent, #3157d5);">${m.id}</code>
+              <code style="font-family: monospace; font-weight: bold; color: var(--gm-accent, #E6292A);">${m.id}</code>
               <strong style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${m.titleFa}</strong>
             </div>
             <small style="color: var(--gm-muted, #64748b);">مسیر: #${m.route} · حوزه: ${m.scope}</small>
@@ -474,6 +488,68 @@ window.GMApp = {
         e.preventDefault();
         this.toggleCommandPalette();
         return;
+      }
+
+      const isInput = ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName);
+
+      // Global Help shortcut: '?' (when not in text input)
+      if (e.key === '?' && !isInput && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        e.preventDefault();
+        this.openShortcutsHelpModal();
+        return;
+      }
+
+      // Quick navigation shortcuts with Alt key
+      if (e.altKey && !e.metaKey && !e.ctrlKey) {
+        const altKey = e.key.toLowerCase();
+        const altRoutes = {
+          'h': '#gm-02-overview',
+          'c': '#gm-03-tenants',
+          'b': '#gm-11-billing',
+          'p': '#gm-10-plans',
+          'd': '#gm-19-devices',
+          'o': '#gm-22-operations',
+          'a': '#gm-26-audit',
+          's': '#gm-21-support',
+          'w': '#proc-onboarding',
+        };
+        if (altRoutes[altKey]) {
+          e.preventDefault();
+          if (altKey === 'w' && window.GMWorkflows && typeof window.GMWorkflows.openHierarchyModal === 'function') {
+            window.GMWorkflows.openHierarchyModal();
+          } else {
+            window.location.hash = altRoutes[altKey];
+          }
+          return;
+        }
+      }
+
+      // Two-stroke sequential navigation (g + key)
+      if (!isInput && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        const now = Date.now();
+        if (e.key.toLowerCase() === 'g') {
+          this._lastGTime = now;
+          return;
+        }
+        if (this._lastGTime && (now - this._lastGTime) < 850) {
+          const gKey = e.key.toLowerCase();
+          this._lastGTime = 0;
+          const gRoutes = {
+            'h': '#gm-02-overview',
+            'c': '#gm-03-tenants',
+            'b': '#gm-11-billing',
+            'p': '#gm-10-plans',
+            'd': '#gm-19-devices',
+            'o': '#gm-22-operations',
+            'a': '#gm-26-audit',
+            's': '#gm-21-support',
+          };
+          if (gRoutes[gKey]) {
+            e.preventDefault();
+            window.location.hash = gRoutes[gKey];
+            return;
+          }
+        }
       }
 
       if (e.key === 'Escape') {
@@ -902,6 +978,75 @@ window.GMApp = {
     }
   },
 
+  openShortcutsHelpModal() {
+    const shortcuts = [
+      {
+        category: 'عمومی و ناوبری',
+        items: [
+          { keys: ['⌘K', 'یا', '/'], desc: 'جستجوی سراسری و پالت دستورات' },
+          { keys: ['?'], desc: 'نمایش راهنمای کلیدهای میانبر' },
+          { keys: ['Esc'], desc: 'بستن پنجره‌ها، دراورها و پالت باز' },
+        ]
+      },
+      {
+        category: 'پرش مستقیم به بخش‌ها (Alt + کلید)',
+        items: [
+          { keys: ['Alt', '+', 'H'], desc: 'پیشخوان کلان سیستم (Overview)' },
+          { keys: ['Alt', '+', 'C'], desc: 'فهرست مشتریان و مجموعه‌ها (Tenants)' },
+          { keys: ['Alt', '+', 'B'], desc: 'صورت‌حساب و امور مالی (Billing)' },
+          { keys: ['Alt', '+', 'P'], desc: 'مدیریت پلن‌ها و تعرفه‌ها (Plans)' },
+          { keys: ['Alt', '+', 'D'], desc: 'پایانه‌ها و دستگاه‌های POS (Devices)' },
+          { keys: ['Alt', '+', 'O'], desc: 'پایش و سلامت عملیات (Operations)' },
+          { keys: ['Alt', '+', 'A'], desc: 'لاگ وقایع و بازرسی امنیتی (Audit Log)' },
+          { keys: ['Alt', '+', 'S'], desc: 'مرکز پشتیبانی و درخواست‌ها (Support)' },
+          { keys: ['Alt', '+', 'W'], desc: 'نقشه فرایندهای استاندارد پلتفرم (Workflows)' },
+        ]
+      },
+      {
+        category: 'پیمایش متوالی (فشردن G و سپس کلید بعدی)',
+        items: [
+          { keys: ['g', 'h'], desc: 'انتقال به پیشخوان اصلی' },
+          { keys: ['g', 'c'], desc: 'انتقال به مدیریت مشتریان' },
+          { keys: ['g', 'b'], desc: 'انتقال به بخش مالی' },
+          { keys: ['g', 'p'], desc: 'انتقال به بخش پلن‌ها' },
+          { keys: ['g', 'd'], desc: 'انتقال به دستگاه‌ها' },
+          { keys: ['g', 'o'], desc: 'انتقال به پایش عملیات' },
+          { keys: ['g', 'a'], desc: 'انتقال به بازرسی امنیتی' },
+          { keys: ['g', 's'], desc: 'انتقال به مرکز پشتیبانی' },
+        ]
+      }
+    ];
+
+    const contentHtml = `
+      <div class="shortcuts-modal-container">
+        <p style="font-size:0.85rem; color:var(--text-secondary,#64748b); margin-bottom:1rem;">
+          جهت افزایش سرعت عمل اپراتورهای پلتفرم SALSA GODMODE، کلیدهای میانبر زیر در تمامی صفحات فعال هستند:
+        </p>
+        <div class="shortcuts-modal-grid">
+          ${shortcuts.map((group) => `
+            <div class="shortcuts-card">
+              <h4 style="font-size:0.88rem; font-weight:700; color:var(--text-primary,#0f172a); margin:0 0 0.65rem 0; border-bottom:1px solid rgba(255,255,255,0.08); padding-bottom:0.4rem;">
+                ${group.category}
+              </h4>
+              <ul style="list-style:none; padding:0; margin:0; display:flex; flex-direction:column; gap:0.45rem;">
+                ${group.items.map((item) => `
+                  <li style="display:flex; justify-content:space-between; align-items:center; font-size:0.8rem;">
+                    <span style="color:var(--text-secondary,#64748b);">${item.desc}</span>
+                    <span style="display:flex; gap:0.2rem; align-items:center;">
+                      ${item.keys.map((k) => `<kbd class="gm-kbd-badge">${k}</kbd>`).join('')}
+                    </span>
+                  </li>
+                `).join('')}
+              </ul>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    `;
+
+    this.openModal('راهنمای کلیدهای میانبر پلتفرم SALSA GODMODE', contentHtml, null, { cancelText: 'بستن راهنما' });
+  },
+
   // Modal Component
   openModal(title, contentHtml, onConfirm = null, options = {}) {
     this.lastFocusedElement = document.activeElement;
@@ -1026,7 +1171,7 @@ window.GMApp = {
   initTheme() {
     let pref = 'light';
     try {
-      pref = localStorage.getItem('neem_theme') || 'light';
+      pref = localStorage.getItem('salsa_theme') || 'light';
     } catch (_) {}
     this.applyTheme(pref, false);
 
@@ -1035,7 +1180,7 @@ window.GMApp = {
       const mq = window.matchMedia('(prefers-color-scheme: dark)');
       const listener = () => {
         let currentPref = 'light';
-        try { currentPref = localStorage.getItem('neem_theme') || 'light'; } catch (_) {}
+        try { currentPref = localStorage.getItem('salsa_theme') || 'light'; } catch (_) {}
         if (currentPref === 'system') {
           this.applyTheme('system', false);
         }
@@ -1052,7 +1197,7 @@ window.GMApp = {
     const validModes = ['light', 'dark', 'system'];
     const mode = validModes.includes(pref) ? pref : 'light';
     try {
-      localStorage.setItem('neem_theme', mode);
+      localStorage.setItem('salsa_theme', mode);
     } catch (_) {}
 
     let resolved = mode;
@@ -1103,7 +1248,7 @@ window.GMApp = {
   openThemeModal() {
     let currentPref = 'light';
     try {
-      currentPref = localStorage.getItem('neem_theme') || 'light';
+      currentPref = localStorage.getItem('salsa_theme') || 'light';
     } catch (_) {}
 
     const contentHtml = this.renderThemeModalBody(currentPref);
@@ -1114,7 +1259,7 @@ window.GMApp = {
       () => {
         let savedPref = 'light';
         try {
-          savedPref = localStorage.getItem('neem_theme') || 'light';
+          savedPref = localStorage.getItem('salsa_theme') || 'light';
         } catch (_) {}
         const modeNames = { light: 'روشن', dark: 'تیره', system: 'هماهنگ با سیستم' };
         if (typeof this.showToast === 'function') {
@@ -1134,7 +1279,7 @@ window.GMApp = {
     return `
       <div id="theme-selection-container" style="padding: 0.25rem 0;">
         <p style="font-size: 0.82rem; color: var(--gm-muted); margin: 0 0 1.25rem 0; line-height: 1.5;">
-          پوسته مورد نظر خود را برای محیط کاربری کنسول مدیریت ناوگان NEEM انتخاب فرمایید:
+          پوسته مورد نظر خود را برای محیط کاربری کنسول مدیریت ناوگان SALSA انتخاب فرمایید:
         </p>
         
         <div class="theme-cards-grid" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.85rem; margin-bottom: 1.25rem;">
@@ -1285,7 +1430,7 @@ window.GMApp = {
       'gm-27-team': 'GM-27 تنظیمات پلتفرم',
       'gm-28-portal': 'GM-28 پورتال مشتری'
     };
-    return map[clean] || (clean ? `#${clean}` : 'پیشخوان NEEM');
+    return map[clean] || (clean ? `#${clean}` : 'پیشخوان SALSA');
   },
 
   getSubsystemFromRoute(hash) {
@@ -1517,9 +1662,9 @@ window.GMApp = {
     banner.innerHTML = `
       <div class="prototype-banner-copy">
         <span class="prototype-banner-dot" aria-hidden="true" style="background: var(--color-warning, #f59e0b);"></span>
-        <span class="badge badge-provenance-local"><span class="status-dot dot-amber"></span> پیش‌نمایش محلی</span>
-        <strong>نمونه رابط کاربری GODMODE</strong>
-        <span class="prototype-banner-detail">داده‌ها ساختگی و ایزوله‌اند؛ اتصال عملیاتی و آمادگی تولید در این محیط تأیید نمی‌شود.</span>
+        <span class="badge badge-provenance-local"><span class="status-dot dot-amber"></span> پیش‌نمایش ایزوله · غیرعملیاتی</span>
+        <strong>مرکز مدیریت SALSA GODMODE</strong>
+        <span class="prototype-banner-detail">این نسخه از داده‌های ساختگی استفاده می‌کند و به API یا پایگاه‌دادهٔ عملیاتی متصل نیست.</span>
       </div>
       <div class="prototype-banner-actions">
         <a href="#gm-24-infrastructure" class="btn btn-secondary btn-xs" aria-label="مشاهده وضعیت زیرساخت">
@@ -1530,31 +1675,33 @@ window.GMApp = {
   },
 
   async checkLiveBridge() {
-    this.showToast('اتصال عملیاتی از پروتوتایپ مجاز نیست. برای مسیر امن، کنترل‌پلن تولید را پیکربندی کنید.', 'warning', 4000);
+    this.showToast('اتصال عملیاتی در این پیش‌نمایش برقرار نیست؛ داده‌ها ساختگی و ایزوله‌اند.', 'warning', 5000);
     window.location.hash = '#gm-24-infrastructure';
   },
 
   // Reset Mock Data
   confirmResetMockData() {
     this.openModal(
-      'تأیید بازنشانی داده‌های نمونه پروتوتایپ',
+      'تأیید بازنشانی پیش‌نمایش محلی',
       `
-        <p>آیا از بازنشانی کلیه داده‌های شبیه‌سازی‌شده پروتوتایپ به وضعیت اولیه کارخانه اطمینان دارید؟</p>
-        <div class="alert alert-warning" style="margin-top: 12px;">
-          <strong>توجه:</strong> این عملیات منحصراً حافظه مرورگر و داده‌های مصنوعی همین پروتوتایپ را بازنشانی می‌کند و هیچ اثری بر دیتابیس یا سرور وستو ندارد.
+        <p>آیا می‌خواهید وضعیت محلی مرورگر پاک شود و داده‌های ساختگی پیش‌نمایش دوباره بارگذاری شوند؟</p>
+        <div class="alert alert-info" style="margin-top: 12px;">
+          <strong>اطلاعیه:</strong> این کار دادهٔ عملیاتی ایجاد یا بازیابی نمی‌کند؛ فقط fixtureهای ساختگی محلی را برمی‌گرداند.
         </div>
       `,
       () => {
         const store = window.prototypeStore || window.GMStore;
-        if (store && typeof store.resetAll === 'function') {
+        if (store && typeof store.clearAllDemoData === 'function') {
+          store.clearAllDemoData();
+        } else if (store && typeof store.resetAll === 'function') {
           store.resetAll();
         } else if (store && typeof store.resetStore === 'function') {
           store.resetStore();
         }
         this.updateActivityBadge();
-        this.showToast('داده‌های مصنوعی پروتوتایپ با موفقیت بازنشانی شدند.', 'success', 3500, {
-          activityTitle: 'بازنشانی کامل داده‌های نمونه پروتوتایپ',
-          activityDesc: 'کلیه موجودیت‌های تستی به حالت اولیه کارخانه بازگردانده شدند.',
+        this.showToast('کش مرورگر با موفقیت پاکسازی شد.', 'success', 3500, {
+          activityTitle: 'بازنشانی پیش‌نمایش محلی',
+          activityDesc: 'داده‌های ساختگی ایزوله دوباره بارگذاری شدند؛ هیچ دادهٔ عملیاتی تغییر نکرد.',
           subsystem: 'Platform Admin',
           severity: 'info'
         });
@@ -1853,9 +2000,22 @@ window.GMCommandPalette = {
       }
     },
     {
+      id: 'act-shortcuts-help',
+      title: 'راهنمای کلیدهای میانبر پلتفرم (؟)',
+      subtitle: 'مشاهده تمام کلیدهای دسترسی سریع کیبورد و ناوبری',
+      icon: '⌨️',
+      code: 'میانبرها',
+      keywords: ['keyboard', 'shortcuts', 'help', 'کلیدها', 'میانبر', 'راهنما', 'کیبورد', 'کلید'],
+      execute: () => {
+        if (window.GMApp && typeof window.GMApp.openShortcutsHelpModal === 'function') {
+          window.GMApp.openShortcutsHelpModal();
+        }
+      }
+    },
+    {
       id: 'act-control-plane-setup',
       title: 'الزامات اتصال کنترل‌پلن',
-      subtitle: 'مرور وضعیت زیرساخت متمرکز VPS و اتصال امن پلتفرم neem.ir',
+      subtitle: 'مرور وضعیت زیرساخت متمرکز VPS و اتصال امن پلتفرم salsa.ir',
       icon: '🛡️',
       code: 'امنیت',
       keywords: ['کنترل‌پلن', 'اتصال', 'امنیت', 'multi tenant', 'api', 'production', 'وستو', 'westo'],
@@ -2061,13 +2221,13 @@ window.GMCommandPalette = {
       });
       // Limit to 4
       recents = recents.slice(0, 4);
-      localStorage.setItem('neem_recent_routes', JSON.stringify(recents));
+      localStorage.setItem('salsa_recent_routes', JSON.stringify(recents));
     } catch (e) {}
   },
 
   getStoredRecents() {
     try {
-      const stored = localStorage.getItem('neem_recent_routes');
+      const stored = localStorage.getItem('salsa_recent_routes');
       if (stored) {
         const parsed = JSON.parse(stored);
         if (Array.isArray(parsed)) {
@@ -2476,6 +2636,7 @@ window.openActivityDrawer = window.GMApp.openActivityDrawer.bind(window.GMApp);
 window.toggleActivityDrawer = window.GMApp.toggleActivityDrawer.bind(window.GMApp);
 window.initTableSelection = window.GMTableSelect.initTable.bind(window.GMTableSelect);
 window.openThemeModal = window.GMApp.openThemeModal.bind(window.GMApp);
+window.openShortcutsHelpModal = window.GMApp.openShortcutsHelpModal.bind(window.GMApp);
 
 document.addEventListener('DOMContentLoaded', () => {
   window.GMApp.init();

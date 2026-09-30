@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * WESTO Finance — AI CFO Assistant & Executive Brief Engine
+ * WESTO Finance — Executive Brief & Financial Intelligence Engine
  * Synthesizes GL data, Sales POS, Inventory COGS, Payroll and Treasury into actionable CFO insights.
  * Implements:
  * 1. Daily Executive Financial Brief
@@ -12,6 +12,8 @@
  */
 
 const { toFaDigits, toIRR, formatNumber } = require('./money');
+const { classifyRestaurantCost } = require('./restaurant-cost-classifier');
+const WASTE_COST_CODES = new Set(['5110', '5120', '5130', '5400']);
 
 function generateCFOBrief(db, filter = {}) {
   const acc = db.accounting || {};
@@ -22,7 +24,9 @@ function generateCFOBrief(db, filter = {}) {
 
   const todayStr = new Date().toISOString().slice(0, 10);
   const todaysOrders = orders.filter(
-    (o) => (o.createdAt || '').slice(0, 10) === todayStr && (o.paymentStatus === 'paid' || ['paid', 'delivered', 'done', 'preparing', 'ready'].includes(o.status))
+    (o) => (o.createdAt || '').slice(0, 10) === todayStr
+      && o.paymentStatus !== 'unpaid' && o.paymentStatus !== 'pending'
+      && (o.paymentStatus === 'paid' || ['paid', 'delivered', 'done', 'preparing', 'ready'].includes(o.status))
   );
   const todayRevenue = todaysOrders.reduce((s, o) => s + toIRR(o.total || 0), 0);
   const todayOrderCount = todaysOrders.length;
@@ -42,8 +46,8 @@ function generateCFOBrief(db, filter = {}) {
     (e.lines || []).forEach((l) => {
       if (branchId != null && Number(l.branchId ?? e.branchId) !== branchId) return;
       const code = String(l.accountCode);
-      const debit = Number(l.debit || 0);
-      const credit = Number(l.credit || 0);
+      const debit = Number(l.debit ?? l.debitIrr ?? 0);
+      const credit = Number(l.credit ?? l.creditIrr ?? 0);
       const netDeb = debit - credit;
       const netCred = credit - debit;
 
@@ -51,12 +55,13 @@ function generateCFOBrief(db, filter = {}) {
         totalRevenue += netCred;
       } else if (code.startsWith('49')) {
         totalDiscounts += netDeb;
-      } else if (code === '5100') {
-        totalFoodCogs += netDeb;
-      } else if (code === '5200') {
-        totalBeverageCogs += netDeb;
-      } else if (code === '5400') {
-        totalWaste += netDeb;
+      } else if (classifyRestaurantCost(code)?.behavior === 'variable') {
+        // Keep the CFO brief aligned with the official variable-cost
+        // classifier: packaging, inventory variance, platform commission and
+        // bank fees must not disappear from food/prime cost percentages.
+        if (code === '5200') totalBeverageCogs += netDeb;
+        else if (WASTE_COST_CODES.has(code)) totalWaste += netDeb;
+        else totalFoodCogs += netDeb;
       } else if (code.startsWith('61')) {
         totalLabor += netDeb;
       } else if (code.startsWith('6') && !code.startsWith('61')) {

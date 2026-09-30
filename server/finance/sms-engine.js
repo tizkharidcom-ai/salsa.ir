@@ -99,13 +99,12 @@ function appendSmsLog(db, entry) {
     provider: entry.provider || 'simulator',
     status: entry.status || 'sent', // 'sent' | 'failed' | 'simulated'
     triggerType: entry.triggerType || 'manual', // 'event' | 'automated_rfm' | 'manual'
-    costIrr: Number(entry.costIrr) || 1200,
-    costToman: Math.round((Number(entry.costIrr) || 1200) / 10),
+    costIrr: Number(entry.costIrr) || 0,
+    costToman: Math.round((Number(entry.costIrr) || 0) / 10),
     meta: entry.meta || {},
     at: entry.at || new Date().toISOString(),
   };
   db.smsLog.unshift(item);
-  db.smsLog = db.smsLog.slice(0, 5000);
   return item;
 }
 
@@ -136,9 +135,12 @@ async function sendSms(db, { phone, name = '', templateKey = 'custom', customTex
     throw Object.assign(new Error('متن پیامک خالی است.'), { code: 'sms_text_empty' });
   }
 
-  // Delivery simulation or provider dispatch
-  const isSimulated = config.provider === 'simulator' || !config.apiKey;
-  const status = isSimulated ? 'simulated' : 'sent';
+  // Queue only; provider dispatch happens after durable commit.
+  const isSimulated = config.provider === 'simulator';
+  const configured = config.provider === 'kavenegar' && /^[a-fA-F0-9]{20,256}$/.test(config.apiKey || '') && !!config.senderLine;
+  if (!isSimulated && !configured) return { ok: false, status: 'unavailable', error: 'سرویس پیامک متصل نشده است.', costToman: 0 };
+  if (isSimulated && process.env.NODE_ENV === 'production') return { ok: false, status: 'unavailable', error: 'شبیه‌ساز پیامک در پروداکشن مجاز نیست.', costToman: 0 };
+  const status = isSimulated ? 'simulated' : 'queued';
 
   const logEntry = appendSmsLog(db, {
     phone: normPhone,
@@ -148,7 +150,7 @@ async function sendSms(db, { phone, name = '', templateKey = 'custom', customTex
     provider: isSimulated ? 'simulator (شبیه‌ساز هوشمند وستو)' : config.provider,
     status,
     triggerType,
-    costIrr: config.costPerSmsIrr || 1200,
+    costIrr: 0,
     meta: { patternId, vars },
   });
 
@@ -260,12 +262,13 @@ function calculateCustomerRfm(db, now = new Date()) {
 }
 
 /* ---- Automated Win-back Execution ---- */
-async function executeWinbackCampaign(db, { segment = 'at_risk', rewardWalletToman = 50000, maxRecipients = 50 }) {
+async function executeWinbackCampaign(db, { segment = 'at_risk', rewardWalletToman = 50000, maxRecipients = 50, walletTopup = null }) {
   const rfm = calculateCustomerRfm(db);
   const targetList = segment === 'dormant' ? rfm.dormant : rfm.atRisk;
   const candidates = targetList.slice(0, maxRecipients);
 
   const results = [];
+  const failures = [];
   db.smsLog = db.smsLog || [];
 
   for (const cust of candidates) {
@@ -279,14 +282,21 @@ async function executeWinbackCampaign(db, { segment = 'at_risk', rewardWalletTom
     // Disburse winback wallet incentive
     if (rewardWalletToman > 0) {
       try {
-        walletEngine.topupWallet(db, {
+        const topup = {
           phone: cust.phone,
           amountToman: rewardWalletToman,
           paymentMethod: 'winback_incentive',
-          reference: `WINBACK-${Date.now()}`,
+          reference: `WINBACK-${cust.phone}-${new Date().toISOString().slice(0, 10)}`,
           actor: 'automated-retention',
-        });
-      } catch (_) {}
+        };
+        if (typeof walletTopup === 'function') walletTopup(topup);
+        else walletEngine.topupWallet(db, topup);
+      } catch (error) {
+        // Never send a win-back message promising credit that Finance V2
+        // rejected (for example because the fiscal period is closed).
+        failures.push({ phone: cust.phone, name: cust.name, rewardWalletToman, error: error.code || 'wallet_bonus_finance_blocked' });
+        continue;
+      }
     }
 
     // Send Winback SMS
@@ -314,6 +324,8 @@ async function executeWinbackCampaign(db, { segment = 'at_risk', rewardWalletTom
     segment,
     targetedCount: candidates.length,
     sentCount: results.length,
+    failedCount: failures.length,
+    failures,
     rewardDisbursedTotalToman: results.length * rewardWalletToman,
     results,
   };
@@ -324,14 +336,17 @@ function summarizeSmsEngine(db) {
   const logs = db.smsLog || [];
   const rfm = calculateCustomerRfm(db);
 
-  const totalSent = logs.length;
+  const totalSent = logs.filter((entry) => ['sent', 'accepted', 'delivered'].includes(entry.status)).length;
   const totalCostIrr = logs.reduce((sum, l) => sum + (l.costIrr || 0), 0);
   const totalCostToman = Math.round(totalCostIrr / 10);
 
   return {
-    config,
+    config: { ...config, apiKey: '', apiKeyConfigured: !!config.apiKey },
     stats: {
       totalSentCount: totalSent,
+      queuedCount: logs.filter((entry) => entry.status === 'queued').length,
+      simulatedCount: logs.filter((entry) => entry.status === 'simulated').length,
+      unknownCount: logs.filter((entry) => ['unknown', 'sending'].includes(entry.status)).length,
       totalCostToman,
       activeTemplatesCount: Object.values(config.templates).filter((t) => t.enabled).length,
       atRiskCustomersCount: rfm.summary.atRiskCount,

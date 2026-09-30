@@ -1,0 +1,1401 @@
+/* ==========================================================================
+   WESTO ARCHITECTURAL FLOOR STUDIO (ECOSYSTEM V2)
+   Modern Restaurant Floor Plan & CAD Studio Workspace
+   ========================================================================== */
+
+:root {
+  --fs-cad-bg: #0b111e;
+  --fs-cad-surface: #10192a;
+  --fs-cad-surface-raised: #162238;
+  --fs-cad-surface-elevated: #1e2c46;
+  --fs-cad-border: rgba(255, 255, 255, 0.08);
+  --fs-cad-border-subtle: rgba(255, 255, 255, 0.05);
+  --fs-cad-border-accent: #38bdf8;
+  --fs-cad-text: #f8fafc;
+  --fs-cad-text-muted: #94a3b8;
+  --fs-cad-text-dim: #64748b;
+  --fs-cad-teal: #48d6c6;
+  --fs-cad-teal-glow: rgba(72, 214, 198, 0.25);
+  --fs-state-avail: #10b981;
+  --fs-state-avail-glow: rgba(16, 185, 129, 0.25);
+  --fs-state-busy: #0ea5e9;
+  --fs-state-busy-glow: rgba(14, 165, 233, 0.25);
+  --fs-state-attn: #f59e0b;
+  --fs-state-attn-glow: rgba(245, 158, 11, 0.3);
+  --fs-state-inactive: #64748b;
+}
+
+/* Expand admin-main for immersive CAD floor studio experience */
+body.admin-app:has(.admin-floor-page) .admin-main,
+.admin-app:has(.admin-floor-page) .admin-main,
+body.admin-floor-active .admin-main {
+  max-width: 100% !important;
+  padding-top: 8px !important;
+  padding-bottom: 16px !important;
+  padding-inline: 16px !important;
+}
+
+body.admin-app .admin-floor-page.floor-simple {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 12px;
+  width: 100%;
+  min-height: calc(100vh - 110px);
+  color: var(--fs-cad-text);
+  box-sizing: border-box;
+}
+
+body.admin-app .admin-floor-page.floor-simple [hidden] {
+  display: none !important;
+}
+
+/* ==========================================================================
+   1. STUDIO TOP COMMAND BAR / HEADER
+   ========================================================================== */
+.floor-studio-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 14px;
+  padding: 12px 18px;
+  background: var(--fs-cad-surface);
+  border: 1px solid var(--fs-cad-border);
+  border-radius: 16px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.35);
+}
+
+.floor-studio-header__left {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.floor-studio-branding {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.floor-studio-badge {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--fs-cad-teal);
+  letter-spacing: 0.5px;
+}
+
+.floor-studio-title {
+  margin: 0;
+  font-size: 19px;
+  font-weight: 900;
+  color: var(--fs-cad-text);
+}
+
+/* Floor Level Switcher Pills in Header */
+.floor-levels-pills-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--fs-cad-surface-raised);
+  padding: 4px;
+  border-radius: 12px;
+  border: 1px solid var(--fs-cad-border-subtle);
+}
+
+.floor-level-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--fs-cad-text-muted);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.16s ease;
+}
+
+.floor-level-pill:hover {
+  color: var(--fs-cad-text);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.floor-level-pill.is-active {
+  background: var(--fs-cad-teal);
+  color: #072624;
+  font-weight: 900;
+  box-shadow: 0 2px 10px var(--fs-cad-teal-glow);
+}
+
+.floor-level-pill__count {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 99px;
+  background: rgba(0, 0, 0, 0.25);
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.floor-level-pill.is-active .floor-level-pill__count {
+  background: rgba(0, 0, 0, 0.18);
+  color: #072624;
+}
+
+.floor-level-pill--add {
+  border: 1px dashed rgba(255, 255, 255, 0.2);
+  color: var(--fs-cad-teal);
+}
+
+.floor-level-pill--add:hover {
+  border-color: var(--fs-cad-teal);
+  background: rgba(72, 214, 198, 0.1);
+}
+
+.floor-level-pill__settings {
+  opacity: 0.6;
+  margin-right: 4px;
+  cursor: pointer;
+}
+.floor-level-pill__settings:hover {
+  opacity: 1;
+}
+
+/* Telemetry Chips (Live Stats) */
+.floor-studio-telemetry {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.floor-stat-chip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border-radius: 8px;
+  background: var(--fs-cad-surface-raised);
+  border: 1px solid var(--fs-cad-border-subtle);
+  font-size: 12px;
+}
+
+.floor-stat-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+
+.floor-stat-chip--avail .floor-stat-dot { background: var(--fs-state-avail); box-shadow: 0 0 6px var(--fs-state-avail); }
+.floor-stat-chip--busy .floor-stat-dot { background: var(--fs-state-busy); box-shadow: 0 0 6px var(--fs-state-busy); }
+.floor-stat-chip--attn .floor-stat-dot { background: var(--fs-state-attn); box-shadow: 0 0 8px var(--fs-state-attn); animation: stat-pulse 1s infinite alternate; }
+
+@keyframes stat-pulse {
+  from { opacity: 0.6; transform: scale(0.9); }
+  to { opacity: 1; transform: scale(1.2); }
+}
+
+.floor-stat-label {
+  color: var(--fs-cad-text-muted);
+  font-size: 11px;
+}
+
+/* Top Action Buttons */
+.floor-studio-header__actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.floor-sidebar-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 38px;
+  padding: 6px 11px;
+  border: 1px solid var(--fs-cad-border);
+  border-radius: 10px;
+  background: var(--fs-cad-surface-raised);
+  color: var(--fs-cad-text);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.floor-sidebar-toggle:hover,
+.floor-sidebar-toggle:focus-visible {
+  border-color: var(--fs-cad-teal);
+  outline: 2px solid transparent;
+}
+
+.floor-save-status {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--fs-cad-text-muted);
+}
+
+.floor-save-status.is-dirty {
+  color: #fbbf24;
+}
+
+.floor-edit-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 38px;
+  padding: 6px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--fs-cad-teal);
+  background: rgba(72, 214, 198, 0.12);
+  color: var(--fs-cad-teal);
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+  transition: all 0.16s ease;
+}
+
+.floor-edit-toggle:hover {
+  background: rgba(72, 214, 198, 0.22);
+}
+
+.floor-edit-toggle.is-editing {
+  background: var(--fs-cad-teal);
+  color: #072624;
+  box-shadow: 0 0 16px var(--fs-cad-teal-glow);
+}
+
+#map-save-layout {
+  min-height: 38px;
+  padding: 6px 14px;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+/* ==========================================================================
+   2. MAIN STUDIO BODY (2-COLUMN ECOSYSTEM)
+   ========================================================================== */
+.floor-studio-body {
+  display: grid;
+  grid-template-columns: 330px 1fr;
+  grid-template-rows: minmax(0, 1fr);
+  gap: 14px;
+  flex: 1;
+  min-height: 0;
+  height: calc(100vh - 155px);
+  max-height: calc(100vh - 155px);
+  position: relative;
+  overflow: hidden;
+}
+
+.floor-studio-body.is-sidebar-collapsed {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+/* RTL: In Persian right-to-left layout, the first grid column is on the RIGHT */
+.floor-studio-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  background: var(--fs-cad-surface);
+  border: 1px solid var(--fs-cad-border);
+  border-radius: 16px;
+  padding: 14px;
+  min-height: 0 !important;
+  height: 100% !important;
+  max-height: 100% !important;
+  overflow-y: auto !important;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+  box-sizing: border-box;
+}
+
+/* Sidebar Custom Scrollbar */
+.floor-studio-sidebar::-webkit-scrollbar {
+  width: 5px;
+}
+.floor-studio-sidebar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.floor-studio-sidebar::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 99px;
+}
+
+.floor-sidebar-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.floor-sidebar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--fs-cad-border-subtle);
+}
+
+.floor-sidebar-title {
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--fs-cad-text-muted);
+}
+
+/* Zone Pills Row */
+.floor-zone-pills-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.floor-zone-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border: 1px solid var(--fs-cad-border);
+  border-radius: 8px;
+  background: var(--fs-cad-surface-raised);
+  color: var(--fs-cad-text);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.16s ease;
+}
+
+.floor-zone-pill:hover {
+  border-color: var(--fs-cad-teal);
+  transform: translateY(-1px);
+}
+
+.floor-zone-pill.active {
+  border-color: var(--fs-cad-teal);
+  background: rgba(72, 214, 198, 0.12);
+  color: var(--fs-cad-teal);
+  box-shadow: inset 0 0 0 1px var(--fs-cad-teal);
+}
+
+.zone-badge-num {
+  font-size: 10px;
+  font-weight: 800;
+  padding: 1px 5px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--fs-cad-text-muted);
+}
+
+.floor-zone-pill.active .zone-badge-num {
+  background: rgba(72, 214, 198, 0.25);
+  color: var(--fs-cad-teal);
+}
+
+/* ==========================================================================
+   3. TABLE CARDS (SIDEBAR LIST V2)
+   ========================================================================== */
+.floor-table-search-box {
+  position: relative;
+  display: flex;
+  align-items: center;
+  margin-bottom: 2px;
+}
+
+.floor-search-input {
+  width: 100%;
+  padding: 8px 12px 8px 30px;
+  background: var(--fs-cad-surface-raised);
+  border: 1px solid var(--fs-cad-border);
+  border-radius: 10px;
+  color: var(--fs-cad-text);
+  font-size: 12px;
+  font-family: inherit;
+  transition: all 0.16s ease;
+  box-sizing: border-box;
+}
+
+.floor-search-input:focus {
+  outline: none;
+  border-color: var(--fs-cad-teal);
+  box-shadow: 0 0 0 2px var(--fs-cad-teal-glow);
+  background: var(--fs-cad-surface-elevated);
+}
+
+.floor-search-input::placeholder {
+  color: var(--fs-cad-text-dim);
+  font-size: 11px;
+}
+
+.floor-search-clear {
+  position: absolute;
+  left: 8px;
+  background: transparent;
+  border: none;
+  color: var(--fs-cad-text-muted);
+  font-size: 12px;
+  cursor: pointer;
+  padding: 4px;
+  display: grid;
+  place-items: center;
+}
+
+.floor-search-clear:hover {
+  color: #fff;
+}
+
+.floor-sidebar-tables-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.floor-table-card-v2 {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--fs-cad-surface-raised);
+  border: 1px solid var(--fs-cad-border);
+  color: var(--fs-cad-text);
+  text-align: right;
+  cursor: pointer;
+  transition: all 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+}
+
+.floor-table-card-v2:hover {
+  transform: translateX(-3px);
+  border-color: var(--fs-cad-teal);
+  background: var(--fs-cad-surface-elevated);
+}
+
+.floor-table-card-v2.is-selected {
+  border-color: var(--fs-cad-border-accent);
+  background: rgba(56, 189, 248, 0.1);
+  box-shadow: 0 0 0 1.5px var(--fs-cad-border-accent), 0 4px 14px rgba(0, 0, 0, 0.35);
+}
+
+.floor-table-card-v2__main {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.floor-table-card-v2__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+}
+
+.floor-table-card-v2__title {
+  font-size: 14px;
+  font-weight: 850;
+  color: var(--fs-cad-text);
+}
+
+.floor-table-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 7px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.status-indicator-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+
+.floor-table-status-pill.status--available {
+  background: rgba(16, 185, 129, 0.12);
+  color: var(--fs-state-avail);
+}
+.floor-table-status-pill.status--available .status-indicator-dot {
+  background: var(--fs-state-avail);
+  box-shadow: 0 0 6px var(--fs-state-avail);
+}
+
+.floor-table-status-pill.status--busy {
+  background: rgba(14, 165, 233, 0.12);
+  color: var(--fs-state-busy);
+}
+.floor-table-status-pill.status--busy .status-indicator-dot {
+  background: var(--fs-state-busy);
+  box-shadow: 0 0 6px var(--fs-state-busy);
+}
+
+.floor-table-status-pill.status--attention {
+  background: rgba(245, 158, 11, 0.15);
+  color: var(--fs-state-attn);
+}
+.floor-table-status-pill.status--attention .status-indicator-dot {
+  background: var(--fs-state-attn);
+  box-shadow: 0 0 6px var(--fs-state-attn);
+}
+
+.floor-table-card-v2__meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 11px;
+  color: var(--fs-cad-text-muted);
+}
+
+.badge-merge {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(56, 189, 248, 0.15);
+  color: #38bdf8;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+/* ==========================================================================
+   4. INSPECTOR & MOBILE QUICK EDITOR IN SIDEBAR
+   ========================================================================== */
+body.admin-app .admin-floor-page .floor-studio-sidebar .floor-table-inspector,
+body.admin-app .admin-floor-page .floor-studio-sidebar .floor-mobile-table-editor,
+.floor-sidebar-inspector .floor-table-inspector,
+.floor-sidebar-mobile-editor .floor-mobile-table-editor,
+.floor-studio-sidebar .floor-table-inspector,
+.floor-studio-sidebar .floor-mobile-table-editor,
+.floor-table-inspector,
+.floor-mobile-table-editor {
+  display: block !important;
+  position: static !important;
+  inset: auto !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  margin: 0 0 10px 0 !important;
+  background: var(--fs-cad-surface-elevated) !important;
+  border: 1px solid rgba(56, 189, 248, 0.35) !important;
+  border-radius: 14px !important;
+  padding: 14px !important;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45) !important;
+  box-sizing: border-box !important;
+  animation: none !important;
+  transform: none !important;
+  z-index: 10 !important;
+}
+
+.floor-table-inspector__head,
+.floor-mobile-table-editor__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--fs-cad-border);
+}
+
+.floor-table-inspector__title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 900;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.floor-table-inspector__body {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 12px;
+  font-size: 12px;
+}
+
+.floor-table-inspector__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 6px;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 6px;
+}
+
+.floor-table-inspector__actions {
+  display: grid;
+  gap: 6px;
+}
+
+.floor-table-inspector__btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 7px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--fs-cad-border);
+  background: var(--fs-cad-surface-raised);
+  color: var(--fs-cad-text);
+  font-size: 12px;
+  font-weight: 700;
+  text-decoration: none;
+  cursor: pointer;
+  transition: all 0.16s ease;
+}
+
+.floor-table-inspector__btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: var(--fs-cad-teal);
+}
+
+.floor-table-inspector__btn--resolve {
+  background: var(--fs-state-avail);
+  color: #04251b;
+  font-weight: 800;
+  border: none;
+}
+
+/* Mobile Quick Editor Steppers */
+.floor-mobile-table-editor__grid {
+  display: grid;
+  gap: 8px;
+}
+
+.floor-mobile-table-editor__stepper {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: rgba(0, 0, 0, 0.25);
+  padding: 4px 8px;
+  border-radius: 8px;
+  border: 1px solid var(--fs-cad-border-subtle);
+}
+
+.floor-mobile-table-editor__stepper button {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  border: 1px solid var(--fs-cad-border);
+  background: var(--fs-cad-surface-raised);
+  color: var(--fs-cad-text);
+  font-size: 15px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.floor-mobile-table-editor__action {
+  padding: 7px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--fs-cad-border);
+  background: var(--fs-cad-surface-raised);
+  color: var(--fs-cad-text);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.floor-mobile-table-editor__zone select {
+  width: 100%;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: var(--fs-cad-surface-raised);
+  border: 1px solid var(--fs-cad-border);
+  color: var(--fs-cad-text);
+  font-size: 12px;
+  margin-top: 4px;
+}
+
+.floor-mobile-table-editor__done {
+  padding: 8px;
+  border-radius: 8px;
+  background: var(--fs-cad-teal);
+  color: #072624;
+  font-size: 13px;
+  font-weight: 800;
+  border: none;
+  cursor: pointer;
+}
+
+/* ==========================================================================
+   5. ARCHITECTURAL CAD CANVAS (HERO MAIN STAGE)
+   ========================================================================== */
+.floor-studio-canvas-stage {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0 !important;
+  border-radius: 16px;
+  overflow: hidden;
+  border: 1px solid var(--fs-cad-border);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+  height: 100%;
+  max-height: 100%;
+}
+
+.floor-zone-focus-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  padding: 10px 14px;
+  background: var(--fs-cad-surface);
+  border-bottom: 1px solid var(--fs-cad-border);
+  color: var(--fs-cad-text);
+}
+
+.floor-zone-focus-bar__identity,
+.floor-zone-focus-bar__actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.floor-zone-focus-bar__identity strong { font-size: 14px; }
+.floor-zone-focus-bar__identity span,
+.floor-zone-focus-bar__hint { color: var(--fs-cad-text-muted); font-size: 11px; }
+.floor-zone-focus-bar__identity .floor-zone-focus-bar__warning {
+  color: #fbbf24;
+  background: rgba(245, 158, 11, 0.1);
+  border: 1px solid rgba(245, 158, 11, 0.28);
+  border-radius: 7px;
+  padding: 3px 7px;
+}
+
+.floor-zone-mobile-picker { display: none; }
+
+.floor-zone-focus-bar__button {
+  min-height: 30px;
+  padding: 4px 10px;
+  border: 1px solid var(--fs-cad-border);
+  border-radius: 8px;
+  background: var(--fs-cad-surface-raised);
+  color: var(--fs-cad-text);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.floor-zone-focus-bar__button:hover,
+.floor-zone-focus-bar__button:focus-visible { border-color: var(--fs-cad-teal); color: var(--fs-cad-teal); }
+
+.floor-zone-canvas-empty {
+  position: absolute;
+  inset: 32% 10%;
+  display: grid;
+  place-items: center;
+  text-align: center;
+  color: var(--fs-cad-text-muted);
+  font-size: 13px;
+  pointer-events: none;
+}
+
+.floor-zone-metrics-note {
+  margin: 0 0 12px;
+  color: var(--fs-cad-text-muted);
+  font-size: 12px;
+  line-height: 1.8;
+}
+
+body.admin-app .admin-floor-page .architectural-canvas-wrap,
+.floor-studio-canvas-stage .architectural-canvas-wrap,
+.architectural-canvas-wrap {
+  width: 100% !important;
+  height: 100% !important;
+  min-height: 520px !important;
+  max-height: none !important;
+  flex: 1 1 auto !important;
+  position: relative !important;
+  overflow: hidden !important;
+  user-select: none;
+  background-color: var(--fs-cad-bg) !important;
+  background-image: 
+    linear-gradient(rgba(56, 189, 248, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(56, 189, 248, 0.05) 1px, transparent 1px) !important;
+  background-size: 32px 32px !important;
+}
+
+.architectural-canvas-wrap.is-edit-mode {
+  cursor: crosshair;
+}
+
+/* Keep the map inside the visible studio frame on short desktop viewports. */
+@media (min-width: 841px) {
+  body.admin-app .admin-floor-page .floor-studio-canvas-stage > #admin-floor-canvas {
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: 100% !important;
+    flex: 1 1 0 !important;
+  }
+}
+
+.admin-floor-page.is-architecture-mode .architectural-canvas-wrap {
+  cursor: grab;
+}
+
+.admin-floor-page.is-architecture-mode .plan-zone--interactive {
+  cursor: move;
+  touch-action: none;
+}
+
+.architectural-canvas-wrap.is-panning {
+  cursor: grabbing !important;
+}
+
+/* Dotted room boundaries can be resized directly while editing the layout. */
+.admin-floor-page.is-edit-mode .plan-zone--interactive .zone-handle {
+  display: block !important;
+  pointer-events: auto !important;
+  opacity: 0.55;
+  touch-action: none;
+}
+
+.admin-floor-page.is-edit-mode.is-furniture-mode .plan-zone--interactive .zone-handle {
+  display: block !important;
+  pointer-events: auto !important;
+}
+
+.admin-floor-page.is-edit-mode .plan-zone--interactive .zone-handle--nw,
+.admin-floor-page.is-edit-mode .plan-zone--interactive .zone-handle--ne,
+.admin-floor-page.is-edit-mode .plan-zone--interactive .zone-handle--se,
+.admin-floor-page.is-edit-mode .plan-zone--interactive .zone-handle--sw {
+  opacity: 0.85;
+}
+
+.admin-floor-page.is-edit-mode .plan-zone--interactive .zone-handle:hover,
+.admin-floor-page.is-edit-mode .plan-zone--interactive .zone-handle.is-resizing {
+  opacity: 1;
+}
+
+/* Keep fixture names within their saved geometry instead of spilling over neighbours. */
+.admin-floor-page .plan-fixture-content {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
+}
+.admin-floor-page .plan-fixture-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.admin-floor-page .plan-fixture--entrance .plan-fixture-label,
+.admin-floor-page .plan-fixture--plant .plan-fixture-label { display: none; }
+
+/* Canvas Rulers */
+.floor-canvas-ruler-x,
+.floor-canvas-ruler-y {
+  position: absolute;
+  z-index: 20;
+  background: rgba(11, 17, 30, 0.85);
+  backdrop-filter: blur(8px);
+  pointer-events: none;
+  color: var(--fs-cad-text-dim);
+  font-size: 10px;
+  font-family: var(--font-mono, monospace);
+}
+
+.floor-canvas-ruler-x {
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 20px;
+  border-bottom: 1px solid var(--fs-cad-border-subtle);
+}
+
+.floor-canvas-ruler-y {
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 24px;
+  border-left: 1px solid var(--fs-cad-border-subtle);
+}
+
+/* Scaler container */
+.admin-floor-canvas-scaler {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+/* Legacy zone presets set right/bottom in addition to saved x/y/w/h. In RTL
+   that over-constrains absolute positioning and moves the drawn room away from
+   its persisted coordinates (and from its resize handles). */
+.admin-floor-page .plan-zone--interactive {
+  right: auto;
+  bottom: auto;
+  box-sizing: border-box;
+}
+
+/* ==========================================================================
+   6. TABLE OBJECTS ON CANVAS (MODERN VIBRANT STYLING)
+   ========================================================================== */
+.plan-table {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  cursor: pointer;
+  touch-action: none;
+  z-index: 10;
+  transition: transform 0.16s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.18s ease;
+}
+
+.plan-table-surface {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  border-radius: 12px;
+  background: #141d2f !important;
+  border: 2px solid #334155 !important;
+  color: #f8fafc !important;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45) !important;
+  transition: all 0.18s ease;
+  position: relative;
+  overflow: visible;
+}
+
+.plan-table-label {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
+  transform: scale(var(--table-label-inverse-x, 1), var(--table-label-inverse-y, 1)) rotate(calc(0deg - var(--table-rot, 0deg)));
+  transform-origin: center;
+  pointer-events: none;
+}
+
+.plan-table-number {
+  font-size: 13px !important;
+  font-weight: 900 !important;
+  color: #fff !important;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
+}
+
+.plan-table-meta {
+  font-size: 9.5px !important;
+  font-weight: 700 !important;
+  color: #94a3b8 !important;
+}
+
+/* State-based Vibrant Colors for Tables */
+.plan-table[data-state="available"] .plan-table-surface {
+  border-color: #10b981 !important;
+  background: linear-gradient(135deg, #101c2a 0%, #0d2621 100%) !important;
+  box-shadow: 0 0 0 1px rgba(16, 185, 129, 0.3), 0 4px 16px rgba(0, 0, 0, 0.45) !important;
+}
+
+.plan-table[data-state="busy"] .plan-table-surface {
+  border-color: #0ea5e9 !important;
+  background: linear-gradient(135deg, #101c2a 0%, #0d2238 100%) !important;
+  box-shadow: 0 0 0 1px rgba(14, 165, 233, 0.35), 0 4px 16px rgba(0, 0, 0, 0.45) !important;
+}
+
+.plan-table[data-state="attention"] .plan-table-surface {
+  border-color: #f59e0b !important;
+  background: linear-gradient(135deg, #1f1a18 0%, #2e1d10 100%) !important;
+  box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.4), 0 0 18px rgba(245, 158, 11, 0.4) !important;
+  animation: table-pulse 1.2s infinite alternate;
+}
+
+@keyframes table-pulse {
+  from { box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.3), 0 0 12px rgba(245, 158, 11, 0.2); }
+  to { box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.6), 0 0 22px rgba(245, 158, 11, 0.5); }
+}
+
+.plan-table[data-state="inactive"] .plan-table-surface {
+  border-color: #475569 !important;
+  opacity: 0.6;
+}
+
+/* Selected Table on Canvas */
+.plan-table.is-selected {
+  z-index: 60 !important;
+}
+
+.plan-table.is-selected .plan-table-surface {
+  border-color: #38bdf8 !important;
+  box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.55), 0 12px 30px rgba(0, 0, 0, 0.6) !important;
+  transform: scale(1.06);
+}
+
+/* Dragging Table Elevation */
+.plan-table.is-dragging {
+  z-index: 100 !important;
+  cursor: grabbing !important;
+  opacity: 0.95;
+}
+
+.plan-table.is-dragging .plan-table-surface {
+  border-color: var(--fs-cad-teal) !important;
+  box-shadow: 0 0 0 3px var(--fs-cad-teal-glow), 0 20px 40px rgba(0, 0, 0, 0.7) !important;
+  transform: scale(1.1) !important;
+}
+
+.plan-table-coords-badge {
+  position: absolute;
+  top: -28px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(15, 23, 42, 0.92);
+  backdrop-filter: blur(8px);
+  border: 1px solid var(--fs-cad-teal);
+  color: #fff;
+  padding: 2px 8px;
+  border-radius: 99px;
+  font-size: 10px;
+  font-weight: 800;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 120;
+}
+
+.plan-table-coords-badge.is-clearance-warn {
+  border-color: #ef4444;
+  color: #fca5a5;
+  background: rgba(127, 29, 29, 0.95);
+}
+
+/* Chairs around Table */
+.plan-chair {
+  background: #334155;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+}
+
+.plan-table:hover .plan-chair {
+  border-color: rgba(255, 255, 255, 0.25);
+}
+
+/* The editing tools live directly beneath the studio header. */
+.floor-studio-dock {
+  position: relative;
+  flex: 0 0 auto;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border-radius: 12px;
+  background: var(--fs-cad-surface);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+}
+
+.floor-studio-dock .dock-segment,
+.floor-studio-dock .dock-divider {
+  flex: 0 0 auto;
+}
+
+.admin-floor-page.is-edit-mode .floor-studio-body {
+  height: calc(100vh - 215px);
+  max-height: calc(100vh - 215px);
+}
+
+.dock-segment {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.dock-divider {
+  width: 1px;
+  height: 24px;
+  background: rgba(255, 255, 255, 0.12);
+  margin: 0 4px;
+}
+
+.dock-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 8px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--fs-cad-text);
+  font-size: 12px;
+  font-weight: 750;
+  cursor: pointer;
+  transition: all 0.16s ease;
+  white-space: nowrap;
+}
+
+.dock-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.18);
+  transform: translateY(-1px);
+}
+
+.dock-btn.is-active {
+  background: var(--fs-cad-teal);
+  color: #072624;
+  font-weight: 900;
+  box-shadow: 0 2px 10px var(--fs-cad-teal-glow);
+}
+
+.dock-btn--accent {
+  background: rgba(72, 214, 198, 0.15);
+  color: var(--fs-cad-teal);
+  border-color: rgba(72, 214, 198, 0.35);
+}
+
+.dock-btn--accent:hover {
+  background: rgba(72, 214, 198, 0.25);
+  border-color: var(--fs-cad-teal);
+}
+
+.dock-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  transform: none !important;
+}
+
+/* Snap Grid Buttons in Dock */
+.floor-snapping-ctrl {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  background: rgba(0, 0, 0, 0.3);
+  padding: 2px 6px;
+  border-radius: 8px;
+}
+
+.snap-label {
+  font-size: 11px;
+  color: var(--fs-cad-text-dim);
+  margin-left: 2px;
+}
+
+.floor-snap-pill {
+  padding: 3px 7px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--fs-cad-text-muted);
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.floor-snap-pill.is-active {
+  background: rgba(255, 255, 255, 0.15);
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+/* Zoom Controls Floating at top-left of canvas */
+body.admin-app .admin-floor-page .floor-canvas-controls,
+.floor-studio-canvas-stage .floor-canvas-controls,
+.architectural-canvas-wrap .floor-canvas-controls,
+.floor-canvas-controls {
+  position: absolute !important;
+  top: 16px !important;
+  left: 16px !important;
+  bottom: auto !important;
+  right: auto !important;
+  width: auto !important;
+  height: auto !important;
+  max-width: max-content !important;
+  max-height: max-content !important;
+  margin: 0 !important;
+  z-index: 70 !important;
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  gap: 3px !important;
+  background: rgba(15, 23, 42, 0.92) !important;
+  backdrop-filter: blur(14px) !important;
+  border: 1px solid rgba(255, 255, 255, 0.14) !important;
+  padding: 4px !important;
+  border-radius: 12px !important;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.45) !important;
+  color: #fff !important;
+  pointer-events: auto !important;
+}
+
+body.admin-app .admin-floor-page .floor-canvas-controls button,
+.floor-canvas-controls button {
+  width: 30px !important;
+  height: 30px !important;
+  min-width: 30px !important;
+  min-height: 30px !important;
+  border-radius: 8px !important;
+  border: none !important;
+  background: transparent !important;
+  color: #f8fafc !important;
+  font-size: 14px !important;
+  font-weight: 800 !important;
+  cursor: pointer !important;
+  display: grid !important;
+  place-items: center !important;
+  transition: all 0.14s ease !important;
+  padding: 0 !important;
+}
+
+body.admin-app .admin-floor-page .floor-canvas-controls button:hover,
+.floor-canvas-controls button:hover {
+  background: rgba(255, 255, 255, 0.15) !important;
+  color: var(--fs-cad-teal, #48d6c6) !important;
+}
+
+body.admin-app .admin-floor-page .floor-canvas-controls .zoom-indicator,
+.floor-canvas-controls .zoom-indicator {
+  font-size: 11px !important;
+  font-weight: 800 !important;
+  color: var(--fs-cad-text-muted, #94a3b8) !important;
+  padding: 0 6px !important;
+  min-width: 38px !important;
+  text-align: center !important;
+}
+
+#map-zoom-reset {
+  width: auto !important;
+  padding: 0 8px !important;
+  font-size: 11px !important;
+}
+
+/* Batch Toolbar for Multi-select */
+.floor-batch-toolbar {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  z-index: 70;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.92);
+  backdrop-filter: blur(14px);
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.floor-batch-toolbar__btn {
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--fs-cad-text);
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.floor-batch-toolbar__btn:hover {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.floor-batch-toolbar__btn--primary {
+  background: rgba(56, 189, 248, 0.2);
+  color: #38bdf8;
+  border-color: rgba(56, 189, 248, 0.4);
+}
+
+.floor-batch-toolbar__btn--danger {
+  color: #f87171;
+  background: rgba(239, 68, 68, 0.15);
+  border-color: rgba(239, 68, 68, 0.3);
+}
+
+/* Empty State */
+.floor-table-empty {
+  padding: 24px 16px;
+  text-align: center;
+  color: var(--fs-cad-text-dim);
+  font-size: 13px;
+  background: rgba(0, 0, 0, 0.15);
+  border-radius: 8px;
+  border: 1px dashed var(--fs-cad-border);
+}
+
+/* ==========================================================================
+   8. RESPONSIVE BREAKPOINTS
+   ========================================================================== */
+@media (max-width: 1024px) {
+  .floor-studio-body {
+    grid-template-columns: 280px 1fr;
+  }
+  .dock-btn {
+    padding: 0 8px;
+    font-size: 11px;
+  }
+}
+
+@media (max-width: 840px) {
+  .floor-studio-body {
+    display: flex;
+    flex-direction: column-reverse;
+    height: auto;
+    max-height: none;
+    overflow: visible;
+  }
+  .admin-floor-page.is-edit-mode .floor-studio-body {
+    height: auto;
+    max-height: none;
+  }
+  body.admin-app .admin-floor-page .floor-studio-sidebar {
+    height: auto !important;
+    max-height: 360px !important;
+    overflow-y: auto !important;
+  }
+  body.admin-app .admin-floor-page .floor-studio-canvas-stage {
+    height: auto;
+    min-height: 0;
+    max-height: none;
+    flex: 0 0 auto;
+  }
+  body.admin-app .admin-floor-page .architectural-canvas-wrap {
+    height: min(58vh, 520px) !important;
+    min-height: 360px !important;
+    flex: 0 0 auto !important;
+  }
+  .floor-zone-mobile-picker {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    color: var(--fs-cad-text-muted);
+    font-size: 11px;
+    font-weight: 700;
+  }
+  .floor-zone-mobile-picker select {
+    flex: 1;
+    min-width: 0;
+    min-height: 38px;
+    padding: 6px 10px;
+    border: 1px solid var(--fs-cad-border);
+    border-radius: 9px;
+    background: var(--fs-cad-surface-raised);
+    color: var(--fs-cad-text);
+    font: inherit;
+  }
+  .floor-zone-focus-bar__actions { width: 100%; }
+  .floor-zone-focus-bar__hint { width: 100%; }
+  .floor-studio-sidebar .floor-sidebar-zones { display: none; }
+  .admin-floor-page.is-edit-mode .plan-zone--interactive .zone-handle--nw,
+  .admin-floor-page.is-edit-mode .plan-zone--interactive .zone-handle--ne,
+  .admin-floor-page.is-edit-mode .plan-zone--interactive .zone-handle--se,
+  .admin-floor-page.is-edit-mode .plan-zone--interactive .zone-handle--sw {
+    width: 24px;
+    height: 24px;
+  }
+  .floor-studio-dock {
+    width: 100%;
+  }
+}

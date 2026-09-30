@@ -15,6 +15,9 @@
 'use strict';
 
 const { normalizedSchemaAvailable, syncFinanceState } = require('./finance-postgres-repository');
+const { ensureTenantMetadata } = require('./salsa/tenant-metadata');
+const { normalizePersistedOperationalOrder } = require('./operational-order-retention');
+const { normalizeOrderHistoryCursor, encodeOrderHistoryCursor, historyPageSize } = require('./order-history');
 
 function stateSummary(state = {}) {
   return {
@@ -40,7 +43,7 @@ function reconciliationSummary(state = {}) {
     finiteStockUnits: items.reduce((sum, item) => sum + (typeof item.stock === 'number' ? Math.max(0, Number(item.stock) || 0) : 0), 0),
     orderGrossTotal: orders.reduce((sum, order) => sum + Math.max(0, Number(order.total) || 0), 0),
     paidOrderTotal: orders
-      .filter((order) => order.paymentStatus === 'paid' || ['paid', 'preparing', 'ready', 'dispatched', 'picked_up', 'delivered', 'done'].includes(order.status))
+      .filter((order) => order.paymentStatus !== 'unpaid' && order.paymentStatus !== 'pending' && (order.paymentStatus === 'paid' || ['paid', 'preparing', 'ready', 'dispatched', 'picked_up', 'delivered', 'done'].includes(order.status)))
       .reduce((sum, order) => sum + Math.max(0, Number(order.total) || 0), 0),
     activeReservations: reservations.filter((item) => !['cancelled', 'no_show'].includes(item.status)).length,
     paymentAttempts: payments.length,
@@ -48,11 +51,30 @@ function reconciliationSummary(state = {}) {
   };
 }
 
+function isPlainObject(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
+}
+
 function mergeState(fallback, stored) {
-  const source = stored && typeof stored === 'object' ? stored : {};
+  const source = isPlainObject(stored) ? stored : {};
   // New code can always expect fields added after the first migration while
   // existing production data remains authoritative for populated fields.
-  return { ...fallback, ...source };
+  // Merge plain objects recursively, but keep arrays atomic: an empty array in
+  // PostgreSQL is an authoritative empty collection and must not be filled
+  // from the fallback snapshot.
+  const merge = (base, override) => {
+    if (!isPlainObject(base) || !isPlainObject(override)) return override;
+    const result = { ...base };
+    for (const key of Object.keys(override)) {
+      result[key] = isPlainObject(base[key]) && isPlainObject(override[key])
+        ? merge(base[key], override[key])
+        : override[key];
+    }
+    return result;
+  };
+  return merge(isPlainObject(fallback) ? fallback : {}, source);
 }
 
 function sslOptions(env = process.env) {
@@ -76,11 +98,23 @@ function createDisabledStore({ required = false, reason = 'postgres_disabled' } 
     async write() {
       return false;
     },
+    async loadActionableOrders() {
+      return { available: false, reason, orders: [] };
+    },
+    async listClosedOrders() {
+      return { available: false, reason, orders: [], hasMore: false, nextCursor: null, invalidRows: 0 };
+    },
     async appendAudit() {
       return false;
     },
     financeStatus() {
       return { available: false, required, reason };
+    },
+    poolMetrics() {
+      return { totalCount: 0, idleCount: 0, waitingCount: 0 };
+    },
+    async ping() {
+      return { ok: false, reason };
     },
     async close() {},
   };
@@ -91,6 +125,8 @@ function createPostgresStateStore({
   required = process.env.WESTO_POSTGRES_REQUIRED === 'true',
   logger = console,
   Pool,
+  tenantConfig = null,
+  requireTenantMetadata = process.env.NEEM_REQUIRE_TENANT_METADATA === 'true',
 } = {}) {
   if (!connectionString) return createDisabledStore({ required, reason: required ? 'database_url_required' : 'postgres_disabled' });
 
@@ -113,6 +149,14 @@ function createPostgresStateStore({
     idleTimeoutMillis: Math.max(5000, Number(process.env.DATABASE_IDLE_TIMEOUT_MS) || 30000),
     connectionTimeoutMillis: Math.max(1000, Number(process.env.DATABASE_CONNECT_TIMEOUT_MS) || 5000),
   });
+
+  // Guard against unhandled idle client errors terminating the Node.js process
+  if (typeof pool.on === 'function') {
+    pool.on('error', (error) => {
+      logger.error?.('[postgres] unexpected idle client error:', error?.message || error);
+    });
+  }
+
   let initialized = false;
   let schemaPromise = null;
   let closed = false;
@@ -154,6 +198,14 @@ function createPostgresStateStore({
         CREATE INDEX IF NOT EXISTS westo_audit_events_at_idx ON westo_audit_events (at DESC);
         CREATE INDEX IF NOT EXISTS westo_audit_events_branch_idx ON westo_audit_events (branch_id, at DESC);
       `);
+      if (requireTenantMetadata) {
+        if (!tenantConfig?.tenantId) {
+          const error = new Error('Tenant metadata is required, but no tenant configuration was supplied.');
+          error.code = 'tenant_config_required';
+          throw error;
+        }
+        await ensureTenantMetadata(pool, tenantConfig, { required: true });
+      }
       initialized = true;
     })();
 
@@ -307,6 +359,78 @@ function createPostgresStateStore({
       return queueWrite(state);
     },
 
+    async loadActionableOrders() {
+      if (closed) throw new Error('PostgreSQL state store is closed');
+      await ensureSchema();
+      const table = await pool.query("SELECT to_regclass('public.unified_orders') AS tbl");
+      if (!table.rows[0]?.tbl) return { available: false, reason: 'operational_order_store_missing', orders: [] };
+      const result = await pool.query(`
+        SELECT id, branch_id, status, created_at, data
+        FROM unified_orders
+        WHERE lower(status) NOT IN ('cancelled', 'done', 'delivered', 'picked_up')
+        ORDER BY created_at ASC, id ASC
+      `);
+      const orders = [];
+      let invalidRows = 0;
+      for (const row of result.rows || []) {
+        const order = normalizePersistedOperationalOrder(row);
+        if (!order) { invalidRows += 1; continue; }
+        orders.push(order);
+      }
+      return { available: true, orders, invalidRows };
+    },
+
+    async listClosedOrders({ branchId = null, cursor = null, limit = 30 } = {}) {
+      if (closed) throw new Error('PostgreSQL state store is closed');
+      await ensureSchema();
+      const table = await pool.query("SELECT to_regclass('public.unified_orders') AS tbl");
+      if (!table.rows[0]?.tbl) {
+        return { available: false, reason: 'operational_order_store_missing', orders: [], hasMore: false, nextCursor: null, invalidRows: 0 };
+      }
+      const branch = branchId == null ? null : Number(branchId);
+      if (branch != null && (!Number.isSafeInteger(branch) || branch <= 0)) {
+        throw Object.assign(new Error('Invalid branch for order history.'), { code: 'branch_invalid', status: 400 });
+      }
+      const normalizedCursor = normalizeOrderHistoryCursor(cursor);
+      const pageSize = historyPageSize(limit);
+      const params = [branch];
+      let cursorClause = '';
+      if (normalizedCursor) {
+        params.push(normalizedCursor.createdAt, normalizedCursor.id);
+        cursorClause = `AND (COALESCE(created_at, 'epoch'::timestamptz), id) < ($2::timestamptz, $3::bigint)`;
+      }
+      params.push(pageSize + 1);
+      const result = await pool.query(`
+        SELECT id, branch_id, status, created_at,
+          to_char(COALESCE(created_at, 'epoch'::timestamptz) AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS created_at_cursor,
+          data
+        FROM unified_orders
+        WHERE lower(status) IN ('cancelled', 'done', 'delivered', 'picked_up')
+          AND ($1::bigint IS NULL OR branch_id = $1)
+          ${cursorClause}
+        ORDER BY COALESCE(created_at, 'epoch'::timestamptz) DESC, id DESC
+        LIMIT $${params.length}
+      `, params);
+      const rows = result.rows || [];
+      const pageRows = rows.slice(0, pageSize);
+      const orders = [];
+      let invalidRows = 0;
+      for (const row of pageRows) {
+        const order = normalizePersistedOperationalOrder(row);
+        if (!order) { invalidRows += 1; continue; }
+        orders.push(order);
+      }
+      return {
+        available: true,
+        orders,
+        hasMore: rows.length > pageSize,
+        nextCursor: rows.length > pageSize && pageRows.length
+          ? encodeOrderHistoryCursor(pageRows[pageRows.length - 1]) : null,
+        limit: pageSize,
+        invalidRows,
+      };
+    },
+
     async appendAudit(entry) {
       if (closed) throw new Error('PostgreSQL state store is closed');
       await ensureSchema();
@@ -323,7 +447,7 @@ function createPostgresStateStore({
           entry.targetType,
           entry.targetId,
           entry.branchId,
-          JSON.stringify(entry.meta || {}),
+          JSON.stringify({ ...(entry.meta || {}), tenantId: entry.tenantId || entry.meta?.tenantId || null }),
         ],
       );
       return true;
@@ -331,6 +455,29 @@ function createPostgresStateStore({
 
     financeStatus() {
       return { required, snapshotVersion: loadedVersion, ...normalizedFinance };
+    },
+
+    get pool() {
+      return pool;
+    },
+
+    poolMetrics() {
+      return {
+        totalCount: typeof pool.totalCount === 'number' ? pool.totalCount : null,
+        idleCount: typeof pool.idleCount === 'number' ? pool.idleCount : null,
+        waitingCount: typeof pool.waitingCount === 'number' ? pool.waitingCount : null,
+      };
+    },
+
+    async ping() {
+      if (closed) return { ok: false, reason: 'store_closed' };
+      const started = Date.now();
+      try {
+        await pool.query('SELECT 1');
+        return { ok: true, latencyMs: Math.max(0, Date.now() - started) };
+      } catch (error) {
+        return { ok: false, error: error.message, code: error.code };
+      }
     },
 
     async close() {

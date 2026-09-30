@@ -20,11 +20,11 @@
   <link rel="icon" type="image/png" sizes="32x32" href="assets/images/6a1d9bb2854e5557fe84e7d1_westo-fav-dark.png" />
   <link rel="stylesheet" href="css/westo-glass.css?v=glassAction1" />
   <link rel="stylesheet" href="css/panel.css?v=logic9" />
-  <link rel="stylesheet" href="css/checkout.css?v=logic10" />
+  <link rel="stylesheet" href="css/checkout.css?v=guest-receipt-tax-inclusive-v2" />
   <script src="js/theme.js?v=stable1" defer></script>
   <script src="js/i18n.js?v=logic10-persian2" defer></script>
   <script src="js/persian-format.js?v=persianNumbers3-safe-fields"></script>
-  <script src="js/checkout.js?v=logic10-persianNumbers" defer></script>
+  <script src="js/checkout.js?v=guest-receipt-rejected-status-v1-20260924" defer></script>
   <link rel="stylesheet" href="css/vazir-system.css?v=font1" />
   <link rel="stylesheet" href="css/westo-production-v11.css?v=prod11" />
   <link rel="stylesheet" href="css/westo-production-v12.css?v=prod13r9" />
@@ -32,32 +32,85 @@
 </head>
 <body class="panel-body checkout-body">
   <header class="checkout-header">
-    <a href="/" class="checkout-brand" data-i18n-aria="checkout.backSite" aria-label="بازگشت به سایت">
+    <a href="/" class="checkout-brand" data-i18n-aria="checkout.backSite" aria-label="بازگشت به سایت" style="min-height:44px; display:inline-flex; align-items:center;">
       <img src="assets/images/brand/westo-wordmark.png?v=brandCyan2" alt="WESTO" width="768" height="431" />
     </a>
     <a class="checkout-back" href="/menu" data-i18n="checkout.backMenu">بازگشت به منو</a>
   </header>
 
   <main class="checkout-layout">
-    <section class="checkout-menu" data-i18n-aria="checkout.menuAria" aria-label="انتخاب غذا">
-      <div class="checkout-heading">
-        <p class="eyebrow" data-i18n="checkout.eyebrow">سفارش آنلاین</p>
-        <h1 data-i18n="checkout.chooseFood">انتخاب غذا</h1>
-        <p data-i18n="checkout.intro">برای داخل مجموعه، تحویل حضوری یا ارسال با پیک.</p>
+    <nav class="checkout-stepper" id="checkout-stepper" aria-label="مراحل سفارش">
+      <ol class="checkout-stepper__list">
+        <li id="checkout-step-basket" data-state="current"><span id="checkout-step-label-basket" aria-controls="checkout-stage-basket" aria-current="step">۱. غذا و سبد</span></li>
+        <li id="checkout-step-fulfillment" data-state="upcoming"><span id="checkout-step-label-fulfillment" aria-controls="checkout-panel-fulfillment">۲. نحوه دریافت</span></li>
+        <li id="checkout-step-customer" data-state="upcoming"><span id="checkout-step-label-customer" aria-controls="checkout-panel-customer">۳. اطلاعات و پرداخت</span></li>
+        <li id="checkout-step-review" data-state="upcoming"><span id="checkout-step-label-review" aria-controls="checkout-panel-review">۴. بازبینی و ثبت</span></li>
+      </ol>
+    </nav>
+    <p class="checkout-stage-announcement" id="checkout-stage-announcement" role="status" aria-live="polite" aria-atomic="true"></p>
+    <p class="checkout-note checkout-recovery-notice" id="checkout-recovery-notice" role="alert" aria-live="assertive" aria-atomic="true" hidden>
+      یک ثبت سفارش قبلی هنوز نتیجهٔ قطعی ندارد. برای جلوگیری از سفارش تکراری، با کد رسید قبلی وضعیت را بررسی کنید.
+    </p>
+    <p class="msg checkout-message" id="checkout-message" role="status" aria-live="polite" aria-atomic="true"></p>
+
+    <details class="checkout-recovery-lookup" id="checkout-recovery-lookup">
+      <summary>پیگیری سفارش با کد رسید</summary>
+      <form id="checkout-recovery-form" novalidate>
+        <label for="checkout-recovery-code-input">کد پیگیری ۳۲ نویسه‌ای</label>
+        <div class="checkout-recovery-lookup__controls">
+          <input id="checkout-recovery-code-input" type="text" dir="ltr" inputmode="text" autocomplete="off" autocapitalize="characters" maxlength="39" aria-describedby="checkout-recovery-help checkout-recovery-result" placeholder="مثلاً 1a2b3c4d-…" />
+          <button class="btn" type="submit" id="checkout-recovery-submit">پیگیری سفارش</button>
+        </div>
+        <small id="checkout-recovery-help">این کد را در بازبینی سفارش یادداشت یا کپی کنید. برای بازیابی، شماره تلفن لازم نیست.</small>
+        <p id="checkout-recovery-result" role="status" aria-live="polite" aria-atomic="true"></p>
+      </form>
+    </details>
+
+    <section class="checkout-stage checkout-stage--basket" id="checkout-stage-basket" aria-labelledby="checkout-stage-heading-basket">
+      <header class="checkout-stage__heading">
+        <p class="eyebrow">مرحله ۱ از ۴</p>
+        <h2 id="checkout-stage-heading-basket" tabindex="-1">انتخاب غذا و بررسی سبد</h2>
+        <p>غذاها را انتخاب کنید، تعداد را بررسی کنید و بعد روش دریافت را مشخص کنید.</p>
+      </header>
+      <div class="checkout-stage__basket-grid">
+        <section class="checkout-menu" data-i18n-aria="checkout.menuAria" aria-label="انتخاب غذا">
+          <div class="checkout-heading">
+            <p class="eyebrow" data-i18n="checkout.eyebrow">سفارش آنلاین</p>
+            <h1 data-i18n="checkout.chooseFood">انتخاب غذا</h1>
+            <p data-i18n="checkout.intro">برای داخل مجموعه، تحویل حضوری یا ارسال با پیک.</p>
+          </div>
+          <nav class="checkout-categories" id="checkout-categories" data-i18n-aria="checkout.categoriesAria" aria-label="دسته‌های منو"></nav>
+          <div class="checkout-items" id="checkout-items" aria-live="polite"></div>
+        </section>
+
+        <aside class="checkout-side" id="checkout-side" data-i18n-aria="checkout.sideAria" aria-label="سبد سفارش">
+          <section class="checkout-card">
+            <div class="checkout-card__head"><h2 data-i18n="checkout.yourCart">سبد شما</h2><span id="cart-count" aria-live="polite">0</span></div>
+            <div id="checkout-cart" class="checkout-cart"></div>
+            <div class="checkout-totals" id="checkout-totals"></div>
+            <section class="checkout-price-review" id="checkout-price-review" hidden role="alert" aria-live="assertive" aria-labelledby="checkout-price-review-title">
+              <h3 id="checkout-price-review-title">مبلغ نهایی با منو فرق دارد</h3>
+              <p>قیمت معتبر سرور تغییر کرده است. پیش از ثبت سفارش، مبلغ‌های زیر را بررسی و تأیید کنید.</p>
+              <ul id="checkout-price-review-rows"></ul>
+              <button type="button" id="checkout-price-review-accept">مبلغ جدید را بررسی و تأیید می‌کنم</button>
+            </section>
+          </section>
+        </aside>
       </div>
-      <nav class="checkout-categories" id="checkout-categories" data-i18n-aria="checkout.categoriesAria" aria-label="دسته‌های منو"></nav>
-      <div class="checkout-items" id="checkout-items" aria-live="polite"></div>
+      <footer class="checkout-stage-actions checkout-stage-actions--next">
+        <span>مرحله بعد: نحوه دریافت سفارش</span>
+        <button class="btn checkout-step-action" type="button" id="checkout-next-fulfillment">ادامه</button>
+      </footer>
     </section>
 
-    <aside class="checkout-side" data-i18n-aria="checkout.sideAria" aria-label="سبد و تکمیل سفارش">
-      <section class="checkout-card">
-        <div class="checkout-card__head"><h2 data-i18n="checkout.yourCart">سبد شما</h2><span id="cart-count" aria-live="polite">0</span></div>
-        <div id="checkout-cart" class="checkout-cart"></div>
-        <div class="checkout-totals" id="checkout-totals"></div>
-      </section>
-
-      <form id="checkout-form" class="checkout-card checkout-form" novalidate>
-        <div class="checkout-card__head"><h2 data-i18n="checkout.fulfillmentTitle">نحوه دریافت</h2><span class="checkout-live" id="checkout-live" data-i18n="checkout.ready">آماده</span></div>
+    <form id="checkout-form" class="checkout-card checkout-form checkout-stage--form" aria-label="تکمیل سفارش" novalidate hidden>
+      <section class="checkout-flow-panel" id="checkout-panel-fulfillment" aria-labelledby="checkout-stage-heading-fulfillment" data-checkout-panel="fulfillment">
+        <header class="checkout-stage__heading checkout-stage__heading--compact">
+          <p class="eyebrow">مرحله ۲ از ۴</p>
+          <h2 id="checkout-stage-heading-fulfillment" tabindex="-1">نحوه دریافت سفارش</h2>
+          <p>شعبه و اطلاعات لازم برای دریافت را وارد کنید.</p>
+        </header>
+        <div class="checkout-card__head"><span class="checkout-live" id="checkout-live" data-i18n="checkout.ready">آماده</span></div>
         <div class="checkout-segment" role="radiogroup" data-i18n-aria="checkout.fulfillmentAria" aria-label="نحوه دریافت">
           <label><input type="radio" name="fulfillment" value="dine_in" checked /><span data-i18n="checkout.dineIn">داخل مجموعه</span></label>
           <label><input type="radio" name="fulfillment" value="pickup" /><span data-i18n="checkout.pickup">تحویل حضوری</span></label>
@@ -76,73 +129,157 @@
           </div>
           <label id="checkout-address-wrap" hidden><span data-i18n="checkout.address">آدرس دقیق تحویل</span><textarea id="checkout-address" rows="2" data-i18n-placeholder="checkout.ph.address" placeholder="خیابان، پلاک، طبقه…"></textarea></label>
           <label id="checkout-instructions-wrap" hidden><span data-i18n="checkout.instructions">توضیح برای پیک (اختیاری)</span><input id="checkout-instructions" autocomplete="off" data-i18n-placeholder="checkout.ph.instructions" placeholder="مثلاً تماس قبل از رسیدن" /></label>
+        </div>
+        <footer class="checkout-stage-actions">
+          <button class="btn btn-ghost checkout-step-action" type="button" id="checkout-back-basket">بازگشت به سبد</button>
+          <button class="btn checkout-step-action" type="button" id="checkout-next-customer">ادامه</button>
+        </footer>
+      </section>
+
+      <section class="checkout-flow-panel" id="checkout-panel-customer" aria-labelledby="checkout-stage-heading-customer" data-checkout-panel="customer" hidden>
+        <header class="checkout-stage__heading checkout-stage__heading--compact">
+          <p class="eyebrow">مرحله ۳ از ۴</p>
+          <h2 id="checkout-stage-heading-customer" tabindex="-1">اطلاعات مشتری و پرداخت</h2>
+          <p>روش پرداخت فقط از گزینه‌هایی قابل انتخاب است که سرور برای این شعبه فعال اعلام کند.</p>
+        </header>
+        <div class="checkout-fields checkout-fields--customer">
           <label><span data-i18n="cart.name">نام</span><input id="checkout-name" autocomplete="name" required /></label>
           <label><span data-i18n="cart.phone">موبایل</span><input id="checkout-phone" dir="ltr" inputmode="numeric" autocomplete="tel" maxlength="11" placeholder="09xxxxxxxxx" required /></label>
-          <label><span data-i18n="checkout.paymentMethod">روش پرداخت</span><select id="checkout-payment"><option value="online" data-i18n="cart.online">پرداخت آنلاین</option><option value="cashier" data-i18n="checkout.cashierDelivery">پرداخت در صندوق / هنگام تحویل</option></select></label>
-          <label><span data-i18n="checkout.orderNote">یادداشت سفارش (اختیاری)</span><textarea id="checkout-note" rows="2" data-i18n-placeholder="checkout.ph.note" placeholder="حساسیت، بدون پیاز، توضیح دیگر…"></textarea></label>
+          <label><span data-i18n="checkout.paymentMethod">روش پرداخت</span><select id="checkout-payment" aria-describedby="checkout-payment-note"><option value="online" data-i18n="cart.online">پرداخت آنلاین</option><option value="cashier" data-i18n="checkout.cashierDelivery" selected>پرداخت در صندوق / هنگام تحویل</option></select></label>
+          <p class="checkout-note" id="checkout-payment-note" role="status">در حال بررسی روش‌های پرداخت…</p>
+          <label class="checkout-field--full"><span data-i18n="checkout.orderNote">یادداشت سفارش (اختیاری)</span><textarea id="checkout-note" rows="2" data-i18n-placeholder="checkout.ph.note" placeholder="حساسیت، بدون پیاز، توضیح دیگر…"></textarea></label>
         </div>
-        <p class="checkout-note" id="checkout-note-text" data-i18n="checkout.initialNote">مبلغ و زمان تحویل با انتخاب روش دریافت به‌روزرسانی می‌شود.</p>
-        <button class="btn" type="submit" id="checkout-submit" data-i18n="checkout.continuePayment">ادامه به پرداخت</button>
-        <p class="msg" id="checkout-message" role="status"></p>
-      </form>
-
-      <section class="checkout-card checkout-success" id="checkout-success" hidden style="text-align:center; padding:1.5rem 1rem;">
-        <div style="font-size:2.5rem; margin-bottom:0.4rem;">🎉</div>
-        <p class="eyebrow" data-i18n="checkout.successKicker" style="color:#10b981; font-weight:700;">سفارش شما با موفقیت ثبت شد</p>
-        <h2 id="checkout-success-title" data-i18n="checkout.pendingPayment" style="font-size:1.15rem; margin:0.35rem 0 0.5rem 0;">ثبت سفارش نهایی شد</h2>
-        <div id="checkout-order-badge" class="ltr"></div>
-        <p id="checkout-success-body" style="font-size:0.85rem; color:var(--text-muted); line-height:1.5; margin-bottom:1rem;"></p>
-        
-        <div style="display:flex; flex-direction:column; gap:0.5rem; max-width:320px; margin:0 auto;">
-          <button class="btn" type="button" id="sandbox-confirm" hidden data-i18n="checkout.sandboxConfirm" style="background:#10b981; border-color:#10b981; font-weight:700;">✓ تأیید پرداخت آنلاین</button>
-          <a class="btn btn-sm btn-accent" id="checkout-view-history-btn" href="/profile#orders" style="text-decoration:none; padding:0.6rem 1rem; font-weight:700;">📦 مشاهده در تاریخچه سفارش‌های من</a>
-          <a class="btn btn-sm btn-ghost" href="/order" data-i18n="checkout.backMenu" style="text-decoration:none; padding:0.5rem 1rem;">🍽️ ثبت سفارش جدید از منو</a>
-        </div>
+        <footer class="checkout-stage-actions">
+          <button class="btn btn-ghost checkout-step-action" type="button" id="checkout-back-fulfillment">بازگشت</button>
+          <button class="btn checkout-step-action" type="button" id="checkout-next-review">بازبینی سفارش</button>
+        </footer>
       </section>
-    </aside>
+
+      <section class="checkout-flow-panel" id="checkout-panel-review" aria-labelledby="checkout-stage-heading-review" data-checkout-panel="review" hidden>
+        <header class="checkout-stage__heading checkout-stage__heading--compact">
+          <p class="eyebrow">مرحله ۴ از ۴</p>
+          <h2 id="checkout-stage-heading-review" tabindex="-1">بازبینی نهایی سفارش</h2>
+          <p>پیش از ثبت، اقلام، اطلاعات دریافت و مبلغ را یک‌بار بررسی کنید.</p>
+        </header>
+        <section class="checkout-final-review" aria-label="خلاصه نهایی سفارش">
+          <ul class="checkout-review-items" id="checkout-review-items"></ul>
+          <dl class="checkout-review-details">
+            <div><dt>روش دریافت</dt><dd id="checkout-review-fulfillment"></dd></div>
+            <div><dt>شعبه</dt><dd id="checkout-review-branch"></dd></div>
+            <div id="checkout-review-table-row"><dt>شماره میز</dt><dd id="checkout-review-table"></dd></div>
+            <div id="checkout-review-zone-row" hidden><dt>محدوده ارسال</dt><dd id="checkout-review-zone"></dd></div>
+            <div id="checkout-review-address-row" hidden><dt>نشانی</dt><dd id="checkout-review-address"></dd></div>
+            <div><dt>نام گیرنده</dt><dd id="checkout-review-name"></dd></div>
+            <div><dt>شماره همراه</dt><dd id="checkout-review-phone" dir="ltr"></dd></div>
+            <div><dt>روش پرداخت</dt><dd id="checkout-review-payment"></dd></div>
+            <div id="checkout-review-note-row" hidden><dt>یادداشت</dt><dd id="checkout-review-note"></dd></div>
+            <div id="checkout-review-instructions-row" hidden><dt>توضیح پیک</dt><dd id="checkout-review-instructions"></dd></div>
+          </dl>
+          <div class="checkout-review-totals">
+            <div><span>جمع اقلام</span><b id="checkout-review-subtotal"></b></div>
+            <div id="checkout-review-delivery-row" hidden><span>هزینه ارسال در پیش‌فاکتور</span><b id="checkout-review-delivery"></b></div>
+            <div id="checkout-review-discount-row" hidden><span>تخفیف</span><b id="checkout-review-discount"></b></div>
+            <div id="checkout-review-tax-row" hidden><span>سهم مالیات (داخل قیمت)</span><b id="checkout-review-tax"></b></div>
+            <div class="checkout-review-totals__total"><span id="checkout-review-total-label">مبلغ برآوردی</span><b id="checkout-review-total"></b></div>
+          </div>
+          <p class="checkout-review-quote-status" id="checkout-review-quote-status" role="status" aria-live="polite"></p>
+          <section class="checkout-receipt-code" id="checkout-receipt-code-box" hidden aria-labelledby="checkout-receipt-code-title">
+            <h3 id="checkout-receipt-code-title">کد پیگیری سفارش</h3>
+            <p>این کد را پیش از ثبت یادداشت یا کپی کنید؛ اگر پاسخ ثبت سفارش به شما نرسید، با همین کد سفارش را بازیابی می‌کنید.</p>
+            <output class="checkout-receipt-code__value" id="checkout-receipt-code" dir="ltr" aria-label="کد امن پیگیری"></output>
+            <button class="btn btn-ghost" type="button" id="checkout-receipt-code-copy">کپی کد رسید</button>
+            <p id="checkout-receipt-code-status" role="status" aria-live="polite" aria-atomic="true"></p>
+          </section>
+          <p class="checkout-review-dependency" id="checkout-review-delivery-dependency" hidden>در ارسال با پیک، زمان و نحوه دریافت هزینه ارسال تابع سیاست فعلی پذیرنده است. این مرحله آن سیاست را تغییر نمی‌دهد.</p>
+          <button class="btn btn-ghost checkout-step-action" type="button" id="checkout-review-price-return" hidden>بازگشت به سبد برای بررسی تغییر مبلغ</button>
+        </section>
+        <p class="checkout-note" id="checkout-note-text" data-i18n="checkout.initialNote">مبلغ و زمان تحویل با انتخاب روش دریافت به‌روزرسانی می‌شود.</p>
+        <footer class="checkout-stage-actions">
+          <button class="btn btn-ghost checkout-step-action" type="button" id="checkout-back-customer">بازگشت به اطلاعات</button>
+          <button class="btn checkout-step-action" type="submit" id="checkout-submit" data-i18n="checkout.continuePayment">ثبت سفارش</button>
+        </footer>
+      </section>
+    </form>
+
+    <section class="checkout-card checkout-success" id="checkout-success" hidden aria-labelledby="checkout-success-title" style="text-align:center; padding:1.5rem 1rem;">
+      <div id="checkout-success-icon" aria-hidden="true" style="font-size:2.5rem; margin-bottom:0.4rem;">🎉</div>
+      <p class="eyebrow" data-i18n="checkout.successKicker" style="color:#10b981; font-weight:700;">سفارش شما با موفقیت ثبت شد</p>
+      <h2 id="checkout-success-title" data-i18n="checkout.pendingPayment" style="font-size:1.15rem; margin:0.35rem 0 0.5rem 0;">ثبت سفارش نهایی شد</h2>
+      <div id="checkout-order-badge" class="ltr"></div>
+      <section class="checkout-receipt-code checkout-receipt-code--success" id="checkout-success-receipt-code" hidden aria-labelledby="checkout-success-receipt-code-title">
+        <h3 id="checkout-success-receipt-code-title">کد پیگیری سفارش</h3>
+        <p>این کد را تا پایان سفارش نگه دارید. برای پیگیری دوباره، آن را در بخش «پیگیری سفارش با کد رسید» وارد کنید.</p>
+        <output class="checkout-receipt-code__value" id="checkout-success-receipt-code-value" dir="ltr" aria-label="کد امن پیگیری"></output>
+        <button class="btn btn-ghost" type="button" id="checkout-success-receipt-code-copy">کپی کد رسید</button>
+        <p id="checkout-success-receipt-code-status" role="status" aria-live="polite" aria-atomic="true"></p>
+      </section>
+      <p id="checkout-success-body" style="font-size:0.85rem; color:var(--text-muted); line-height:1.5; margin-bottom:1rem;"></p>
+      <div style="display:flex; flex-direction:column; gap:0.5rem; max-width:320px; margin:0 auto;">
+        <button class="btn" type="button" id="sandbox-confirm" hidden data-i18n="checkout.sandboxConfirm" style="min-height:44px; background:#10b981; border-color:#10b981; font-weight:700;">✓ تأیید پرداخت آنلاین</button>
+        <a class="btn btn-sm btn-accent" id="checkout-payment-handoff" rel="noopener noreferrer" referrerpolicy="no-referrer" hidden style="min-height:44px; display:inline-flex; align-items:center; justify-content:center; text-decoration:none; padding:0.65rem 1rem; font-weight:800;">ادامهٔ پرداخت امن</a>
+        <a class="btn btn-sm btn-accent" id="checkout-view-history-btn" href="/profile#orders" style="min-height:44px; display:inline-flex; align-items:center; justify-content:center; text-decoration:none; padding:0.6rem 1rem; font-weight:700;">📦 ورود به حساب و پیگیری سفارش‌های من</a>
+        <a class="btn btn-sm btn-ghost" id="checkout-new-order-btn" href="/order" data-i18n="checkout.backMenu" style="min-height:44px; display:inline-flex; align-items:center; justify-content:center; text-decoration:none; padding:0.5rem 1rem;">🍽️ ثبت سفارش جدید از منو</a>
+      </div>
+    </section>
   </main>
 
-  <!-- Address Modal (پاپ‌آپ تک‌صفحه‌ای فشرده، بدون نیاز به اسکرول حتی در موبایل با پیش‌فرض مشهد) -->
-  <div id="address-modal" class="address-modal-overlay" style="display:none;">
+  <dialog class="checkout-modifier-dialog" id="checkout-modifier-dialog" aria-labelledby="checkout-modifier-title" aria-describedby="checkout-modifier-price-note">
+    <form id="checkout-modifier-form" novalidate>
+      <header class="checkout-modifier-dialog__head">
+        <div><p class="eyebrow">انتخاب‌های غذا</p><h2 id="checkout-modifier-title">سفارشی‌سازی غذا</h2></div>
+        <button type="button" class="checkout-modifier-close" id="checkout-modifier-close" aria-label="بستن انتخاب‌ها">×</button>
+      </header>
+      <p class="checkout-note" id="checkout-modifier-price-note">قیمت گزینه‌های انتخاب‌شده در پیش‌فاکتور نهایی بررسی می‌شود.</p>
+      <div class="checkout-modifier-groups" id="checkout-modifier-groups"></div>
+      <p class="checkout-modifier-error" id="checkout-modifier-error" role="alert" aria-live="polite"></p>
+      <footer class="checkout-modifier-dialog__actions">
+        <button type="button" class="checkout-modifier-cancel" id="checkout-modifier-cancel">بازگشت</button>
+        <button type="submit" class="checkout-modifier-submit">افزودن به سبد</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <!-- Address editor: optional locality details are entered for the customer's actual delivery address. -->
+  <div id="address-modal" class="address-modal-overlay" role="dialog" aria-modal="true" aria-labelledby="address-modal-title" aria-hidden="true" style="display:none;">
     <div class="address-modal-box">
       
       <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid rgba(255,255,255,0.12); padding-bottom:0.4rem; margin-bottom:0.45rem;">
         <h3 id="address-modal-title">📍 افزودن نشانی جدید</h3>
-        <button type="button" class="btn btn-sm btn-ghost" id="close-address-modal-btn" style="padding:0.15rem 0.5rem; font-size:0.75rem;">✕ بستن</button>
+        <button type="button" class="btn btn-sm btn-ghost" id="close-address-modal-btn" style="min-width:44px; min-height:44px; padding:0.15rem 0.5rem; font-size:0.75rem;">✕ بستن</button>
       </div>
 
       <input type="hidden" id="modal-addr-id" value="" />
 
       <!-- Row 1: Title chips + custom title inline -->
-      <div style="display:flex; gap:0.35rem; align-items:center; margin-bottom:0.35rem;">
+      <div class="address-modal-row address-modal-row--title" style="display:flex; gap:0.35rem; align-items:center; margin-bottom:0.35rem;">
         <div style="display:flex; gap:0.25rem; flex-shrink:0;">
-          <button type="button" class="addr-title-pill is-active" data-title="🏠 منزل">🏠 منزل</button>
-          <button type="button" class="addr-title-pill" data-title="🏢 محل کار">🏢 کار</button>
-          <button type="button" class="addr-title-pill" data-title="📍 سایر">📍 سایر</button>
+          <button type="button" class="addr-title-pill is-active" data-title="🏠 منزل" aria-pressed="true">🏠 منزل</button>
+          <button type="button" class="addr-title-pill" data-title="🏢 محل کار" aria-pressed="false">🏢 کار</button>
+          <button type="button" class="addr-title-pill" data-title="📍 سایر" aria-pressed="false">📍 سایر</button>
         </div>
-        <input id="modal-addr-title" placeholder="عنوان نشانی" value="🏠 منزل" style="flex:1; height:32px; font-size:0.75rem;" />
+        <input id="modal-addr-title" aria-label="عنوان نشانی" placeholder="عنوان نشانی" value="🏠 منزل" style="flex:1; height:32px; font-size:0.75rem;" />
       </div>
 
-      <!-- Row 2: City (Default Mashhad) & District -->
-      <div style="display:grid; grid-template-columns:1fr 1.3fr; gap:0.4rem; margin-bottom:0.35rem;">
+      <!-- Row 2: City and district -->
+      <div class="address-modal-row address-modal-row--city" style="display:grid; grid-template-columns:1fr 1.3fr; gap:0.4rem; margin-bottom:0.35rem;">
         <div class="field">
           <label for="modal-addr-city">شهر</label>
-          <input id="modal-addr-city" placeholder="مشهد" value="مشهد" />
+          <input id="modal-addr-city" autocomplete="address-level2" placeholder="نام شهر" />
         </div>
         <div class="field">
           <label for="modal-addr-district">محله / منطقه</label>
-          <input id="modal-addr-district" placeholder="مثلاً: سجاد، احمدآباد، وکیل‌آباد…" />
+          <input id="modal-addr-district" autocomplete="address-level3" placeholder="نام محله یا منطقه" />
         </div>
       </div>
 
       <!-- Row 3: Detailed Street Address -->
-      <div class="field" style="margin-bottom:0.35rem;">
+      <div class="field address-modal-row--street" style="margin-bottom:0.35rem;">
         <label for="modal-addr-street">نشانی دقیق (خیابان اصلی، فرعی، کوچه)</label>
         <input id="modal-addr-street" placeholder="خیابان، کوچه، بن‌بست…" />
       </div>
 
       <!-- Row 4: Plaque, Floor, Unit, Receiver Name -->
-      <div style="display:grid; grid-template-columns:0.8fr 0.8fr 0.8fr 1.6fr; gap:0.35rem; margin-bottom:0.35rem;">
+      <div class="address-modal-row address-modal-row--details" style="display:grid; grid-template-columns:0.8fr 0.8fr 0.8fr 1.6fr; gap:0.35rem; margin-bottom:0.35rem;">
         <div class="field">
           <label for="modal-addr-plaque">پلاک</label>
           <input id="modal-addr-plaque" placeholder="۱۲" />
@@ -162,10 +299,10 @@
       </div>
 
       <!-- Row 5: Receiver Phone & Delivery Note -->
-      <div style="display:grid; grid-template-columns:1fr 1.2fr; gap:0.4rem; margin-bottom:0.35rem;">
+      <div class="address-modal-row address-modal-row--receiver" style="display:grid; grid-template-columns:1fr 1.2fr; gap:0.4rem; margin-bottom:0.35rem;">
         <div class="field">
           <label for="modal-addr-receiver-phone">شماره تحویل‌گیرنده</label>
-          <input id="modal-addr-receiver-phone" class="ltr" placeholder="0915..." />
+          <input id="modal-addr-receiver-phone" class="ltr" autocomplete="tel" inputmode="tel" placeholder="09xxxxxxxxx" />
         </div>
         <div class="field">
           <label for="modal-addr-note">توضیحات پیک</label>
@@ -174,9 +311,9 @@
       </div>
 
       <!-- Row 6: Default Checkbox & Save Button -->
-      <div style="display:flex; justify-content:space-between; align-items:center; gap:0.5rem; margin-top:0.4rem;">
-        <label style="display:flex; align-items:center; gap:0.35rem; font-size:0.75rem; cursor:pointer; margin:0;">
-          <input type="checkbox" id="modal-addr-default" style="width:16px; height:16px; margin:0; cursor:pointer;" checked />
+      <div class="address-modal-row address-modal-row--actions" style="display:flex; justify-content:space-between; align-items:center; gap:0.5rem; margin-top:0.4rem;">
+        <label style="display:flex; align-items:center; gap:0.35rem; min-height:44px; padding-block:0.25rem; font-size:0.75rem; cursor:pointer; margin:0;">
+          <input type="checkbox" id="modal-addr-default" style="width:16px; height:16px; margin:0; cursor:pointer;" />
           <span>⭐️ نشانی پیش‌فرض تحویل غذا</span>
         </label>
         <button type="button" class="btn" id="save-address-modal-btn" style="padding:0.45rem 1.25rem; font-size:0.82rem; font-weight:700; background:#10b981; border-color:#10b981; color:#fff; flex-shrink:0;">
@@ -184,7 +321,7 @@
         </button>
       </div>
 
-      <div id="modal-addr-msg" class="msg" style="margin-top:0.25rem; font-size:0.75rem;"></div>
+      <div id="modal-addr-msg" class="msg" role="status" aria-live="polite" style="margin-top:0.25rem; font-size:0.75rem;"></div>
     </div>
   </div>
 </body>

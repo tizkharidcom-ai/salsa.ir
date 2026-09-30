@@ -93,50 +93,50 @@ function produceSubRecipeBatch(acc, subRecipeId, batchCount = 1, context = {}) {
   const subRecipe = list(acc.subRecipes).find((s) => String(s.id) === String(subRecipeId) && sameBranch(s, branchId));
   const itemFromOtherBranch = subRecipe ? null : list(acc.subRecipes).find((s) => String(s.id) === String(subRecipeId));
   if (!subRecipe) {
-    if (itemFromOtherBranch) throw new Error('ساب‌رسپی به شعبهٔ دیگری تعلق دارد.');
-    throw new Error(`ساب‌رسپی با شناسه ${subRecipeId} یافت نشد.`);
+    if (itemFromOtherBranch) throw new Error('دستور تهیه نیمه‌آماده به شعبهٔ دیگری تعلق دارد.');
+    throw new Error(`دستور تهیه نیمه‌آماده با شناسه ${subRecipeId} یافت نشد.`);
   }
 
   const batchMultiplier = number(batchCount);
-  if (batchMultiplier == null || batchMultiplier <= 0) throw new Error('تعداد بچ باید بزرگتر از صفر باشد.');
+  if (batchMultiplier == null || batchMultiplier <= 0) throw new Error('تعداد دسته باید بزرگتر از صفر باشد.');
   const baseYieldUnits = number(subRecipe.batchYieldUnits ?? subRecipe.yieldUnits ?? subRecipe.yieldQty ?? subRecipe.yieldQuantity);
-  if (baseYieldUnits == null || baseYieldUnits <= 0) throw new Error('بازده ساب‌رسپی معتبر نیست.');
+  if (baseYieldUnits == null || baseYieldUnits <= 0) throw new Error('بازده دستور تهیه نیمه‌آماده معتبر نیست.');
   const requirements = new Map();
   const ingredientLines = [];
 
   // Validate and aggregate every input before mutating inventory.
   list(subRecipe.ingredients).forEach((ing) => {
     const invItem = findItem(acc.inventoryItems, ing.itemId, branchId);
-    if (!invItem) throw new Error(`مادهٔ اولیهٔ ساب‌رسپی در این شعبه یافت نشد: ${ing.itemId}`);
+    if (!invItem) throw new Error(`مادهٔ اولیهٔ دستور تهیه نیمه‌آماده در این شعبه یافت نشد: ${ing.itemId}`);
     const rawQty = number(ing.qty ?? ing.quantity);
-    if (rawQty == null || rawQty <= 0) throw new Error('مقدار مادهٔ اولیهٔ ساب‌رسپی معتبر نیست.');
+    if (rawQty == null || rawQty <= 0) throw new Error('مقدار مادهٔ اولیهٔ دستور تهیه نیمه‌آماده معتبر نیست.');
     const required = ingredientRequirement({
       ...ing,
       quantity: rawQty,
       quantityBasis: ing.quantityBasis ?? ing.quantity_basis ?? 'raw',
     }, { ...subRecipe, yieldQuantity: 1 }, invItem);
-    if (!required.ok) throw new Error(`مقدار یا واحد مادهٔ اولیهٔ ساب‌رسپی معتبر نیست (${required.code}).`);
+    if (!required.ok) throw new Error(`مقدار یا واحد مادهٔ اولیهٔ دستور تهیه نیمه‌آماده معتبر نیست (${required.code}).`);
     const requiredQty = required.value * batchMultiplier;
-    if (!Number.isFinite(requiredQty) || requiredQty <= 0) throw new Error('مقدار مصرف ساب‌رسپی از محدودهٔ امن خارج است.');
+    if (!Number.isFinite(requiredQty) || requiredQty <= 0) throw new Error('مقدار مصرف دستور تهیه نیمه‌آماده از محدودهٔ امن خارج است.');
     const existing = requirements.get(String(invItem.id)) || { item: invItem, requiredQty: 0, unitCost: unitCost(invItem, ing) };
     existing.requiredQty += requiredQty;
     requirements.set(String(invItem.id), existing);
     ingredientLines.push({ item: invItem, qtyConsumed: requiredQty, unit: invItem.unit, unitCost: existing.unitCost });
   });
-  if (!requirements.size) throw new Error('ساب‌رسپی حداقل به یک مادهٔ اولیه نیاز دارد.');
+  if (!requirements.size) throw new Error('دستور تهیه نیمه‌آماده حداقل به یک مادهٔ اولیه نیاز دارد.');
   let totalBatchCost = 0;
   for (const requirement of requirements.values()) {
     const available = availableQuantity(requirement.item);
-    if (requirement.requiredQty > available + 1e-9) throw new Error('موجودی کافی برای تولید ساب‌رسپی وجود ندارد.');
+    if (requirement.requiredQty > available + 1e-9) throw new Error('موجودی کافی برای تولید دستور تهیه نیمه‌آماده وجود ندارد.');
     totalBatchCost += Math.round(requirement.unitCost * requirement.requiredQty);
   }
 
-  if (!Number.isSafeInteger(Math.round(totalBatchCost))) throw new Error('بهای تولید ساب‌رسپی از محدودهٔ امن خارج است.');
+  if (!Number.isSafeInteger(Math.round(totalBatchCost))) throw new Error('بهای تولید دستور تهیه نیمه‌آماده از محدودهٔ امن خارج است.');
 
   const totalYieldUnits = baseYieldUnits * batchMultiplier;
-  if (!Number.isFinite(totalYieldUnits) || totalYieldUnits <= 0) throw new Error('بازده ساب‌رسپی از محدودهٔ امن خارج است.');
+  if (!Number.isFinite(totalYieldUnits) || totalYieldUnits <= 0) throw new Error('بازده دستور تهیه نیمه‌آماده از محدودهٔ امن خارج است.');
   const unitCostPrepared = Math.round(totalBatchCost / totalYieldUnits);
-  if (!Number.isSafeInteger(unitCostPrepared)) throw new Error('بهای واحد ساب‌رسپی از محدودهٔ امن خارج است.');
+  if (!Number.isSafeInteger(unitCostPrepared)) throw new Error('بهای واحد دستور تهیه نیمه‌آماده از محدودهٔ امن خارج است.');
 
   // Validate the output item before changing any input quantity.
   let prepItem = findItem(acc.inventoryItems, subRecipe.prepItemId || subRecipe.sku, branchId);
@@ -211,7 +211,7 @@ function produceSubRecipeBatch(acc, subRecipeId, batchCount = 1, context = {}) {
  */
 function explodeRecipeBOM(acc, recipeId) {
   const recipe = (acc.recipes || []).find((r) => r.id === recipeId);
-  if (!recipe) throw new Error(`رسپی با شناسه ${recipeId} یافت نشد.`);
+  if (!recipe) throw new Error(`دستور تهیه با شناسه ${recipeId} یافت نشد.`);
   const branchId = recipe.branchId == null || recipe.branchId === '' ? null : normalizedBranchId(recipe.branchId);
 
   let totalCost = 0;
@@ -220,21 +220,21 @@ function explodeRecipeBOM(acc, recipeId) {
       sameBranch(s, branchId) && (String(s.prepItemId) === String(ing.itemId) || String(s.id) === String(ing.itemId))
     ));
     const invItem = findItem(acc.inventoryItems, ing.itemId, branchId);
-    if (!invItem) throw new Error(`مادهٔ اولیهٔ رسپی در شعبه یافت نشد: ${ing.itemId}`);
+    if (!invItem) throw new Error(`مادهٔ اولیهٔ دستور تهیه در شعبه یافت نشد: ${ing.itemId}`);
     const rawQty = number(ing.qty ?? ing.quantity);
-    if (rawQty == null || rawQty <= 0) throw new Error('مقدار مادهٔ اولیهٔ رسپی معتبر نیست.');
+    if (rawQty == null || rawQty <= 0) throw new Error('مقدار مادهٔ اولیهٔ دستور تهیه معتبر نیست.');
     const yieldPercent = number(ing.yieldPercent ?? recipe.yieldPercent ?? 100);
-    if (yieldPercent == null || yieldPercent <= 0 || yieldPercent > 100) throw new Error('بازده رسپی باید بین صفر و صد باشد.');
+    if (yieldPercent == null || yieldPercent <= 0 || yieldPercent > 100) throw new Error('بازده دستور تهیه باید بین صفر و صد باشد.');
     const required = ingredientRequirement({
       ...ing,
       quantity: rawQty,
       quantityBasis: ing.quantityBasis ?? ing.quantity_basis ?? 'raw',
       yieldPercent,
     }, recipe, invItem);
-    if (!required.ok) throw new Error(`مقدار یا واحد مادهٔ اولیهٔ رسپی معتبر نیست (${required.code}).`);
+    if (!required.ok) throw new Error(`مقدار یا واحد مادهٔ اولیهٔ دستور تهیه معتبر نیست (${required.code}).`);
     const unitCostValue = unitCost(invItem, ing);
     const lineCost = Math.round(unitCostValue * required.value);
-    if (!Number.isSafeInteger(lineCost)) throw new Error('بهای رسپی از محدودهٔ امن خارج است.');
+    if (!Number.isSafeInteger(lineCost)) throw new Error('بهای دستور تهیه از محدودهٔ امن خارج است.');
 
     totalCost += lineCost;
 
@@ -253,7 +253,7 @@ function explodeRecipeBOM(acc, recipeId) {
   });
 
   const sellingPrice = Number(recipe.sellingPrice ?? 0);
-  if (!Number.isFinite(sellingPrice) || sellingPrice < 0) throw new Error('قیمت فروش رسپی معتبر نیست.');
+  if (!Number.isFinite(sellingPrice) || sellingPrice < 0) throw new Error('قیمت فروش دستور تهیه معتبر نیست.');
   const grossMargin = sellingPrice - totalCost;
   const foodCostPercent = sellingPrice > 0 ? Number(((totalCost / sellingPrice) * 100).toFixed(1)) : 0;
 

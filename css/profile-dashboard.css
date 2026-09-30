@@ -496,7 +496,9 @@ body.profile-body-v1 {
 }
 
 .v1-achievement-card.is-locked {
-  opacity: 0.45;
+  /* A lock indicates status; dimming the entire card made progress and labels
+     unreadable, especially in the dark theme. Keep the distinction on the icon. */
+  opacity: 1;
 }
 
 .v1-achievement-card.is-locked .v1-achievement-icon {
@@ -539,6 +541,13 @@ body.profile-body-v1 {
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
+
+.v1-achievement-progress { width: 100%; height: 4px; overflow: hidden; border-radius: 999px; background: var(--w-border); }
+.v1-achievement-progress > span { display: block; height: 100%; border-radius: inherit; background: var(--w-accent); }
+.v1-achievement-reward { color: var(--w-accent); font-size: .66rem; font-weight: 750; line-height: 1.3; }
+.v1-achievement-card.is-unavailable { flex: 1 1 100%; min-height: 80px; justify-content: center; cursor: default; opacity: 1; text-align: start; }
+.v1-achievement-card.is-unavailable:hover { transform: none; }
+.v1-achievement-card .v1-achievement-state { font-size: .65rem; color: var(--w-text-secondary); line-height: 1.35; }
 
 /* ─────────────────────────────────────────────────────────────
    11 — Recent Orders (Compact List)
@@ -601,6 +610,98 @@ body.profile-body-v1 {
   font-size: 0.9rem;
   font-weight: 800;
   color: var(--w-text);
+}
+
+.v1-order-history {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--w-border);
+}
+
+.v1-order-history__title {
+  margin: 0 0 4px;
+  color: var(--w-text);
+  font-size: 0.92rem;
+  font-weight: 800;
+}
+
+.v1-order-history__note,
+.v1-order-history__empty {
+  margin: 0 0 10px;
+  color: var(--w-text-secondary);
+  font-size: 0.76rem;
+}
+
+.v1-order-history-freshness {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 10px;
+  padding: 9px 11px;
+  border: 1px solid color-mix(in srgb, #d97706 45%, var(--w-border));
+  border-radius: var(--w-radius-md);
+  background: color-mix(in srgb, #d97706 9%, var(--w-surface));
+  color: var(--w-text);
+  font-size: .76rem;
+}
+
+.v1-order-history-freshness[hidden] { display: none; }
+.v1-order-history-freshness button { min-height: 44px; border: 0; border-radius: var(--w-radius-sm); padding: 6px 10px; background: var(--w-accent-soft); color: var(--w-accent); font: inherit; font-weight: 750; cursor: pointer; }
+.v1-order-history-freshness button:focus-visible { outline: 2px solid var(--w-accent); outline-offset: 2px; }
+
+.v1-order-history-list { display: grid; gap: 10px; }
+
+.v1-order-history-card {
+  min-width: 0;
+  padding: 12px;
+  background: var(--w-surface);
+  border: 1px solid var(--w-border);
+  border-radius: var(--w-radius-md);
+}
+
+.v1-order-history-card__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 10px;
+  color: var(--w-text);
+  font-size: 0.82rem;
+}
+
+.v1-order-history-card__status {
+  padding: 3px 8px;
+  border-radius: var(--w-radius-full);
+  background: var(--w-accent-soft);
+  color: var(--w-accent);
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.v1-order-history-card__meta,
+.v1-order-history-card__items {
+  margin: 5px 0 0;
+  color: var(--w-text-secondary);
+  font-size: 0.74rem;
+  overflow-wrap: anywhere;
+}
+
+.v1-order-history-card__facts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 10px 0 0;
+}
+
+.v1-order-history-card__facts div { min-width: 0; }
+.v1-order-history-card__facts dt { color: var(--w-text-secondary); font-size: 0.7rem; }
+.v1-order-history-card__facts dd { margin: 2px 0 0; color: var(--w-text); font-size: 0.74rem; font-weight: 700; overflow-wrap: anywhere; }
+
+.v1-section-link:focus-visible {
+  outline: 2px solid var(--w-accent);
+  outline-offset: 2px;
 }
 
 .v1-btn-reorder {

@@ -22,3 +22,282 @@ html[data-theme='light'] .inv-status.is-spot { background: rgba(107, 33, 168, 0.
 html[data-theme='light'] .inv-category-pill { background: rgba(26, 23, 20, 0.06); color: #4a453e; }
 html[data-theme='light'] .inv-vendor-tag { background: rgba(15, 118, 110, 0.1); color: #0f766e; border-color: rgba(15, 118, 110, 0.25); }
 
+/* ==========================================================================
+   Phase 5: Stocktaking, Wastage, Receiving Dock & Inventory Ergonomics
+   ========================================================================== */
+.inv-counts-kpis, .inv-waste-kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 0.75rem;
+  margin: 1rem 0;
+}
+.inv-counts-kpis article, .inv-waste-kpis article {
+  padding: 0.9rem 1.1rem;
+  border: 1px solid var(--admin-line);
+  border-radius: 0.85rem;
+  background: color-mix(in srgb, var(--p-surface) 94%, transparent);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+}
+.inv-counts-kpis small, .inv-waste-kpis small {
+  display: block;
+  color: var(--p-text-dim);
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+.inv-counts-kpis strong, .inv-waste-kpis strong {
+  display: block;
+  margin: 0.25rem 0 0.15rem;
+  font-size: 1.25rem;
+  letter-spacing: -0.02em;
+}
+.inv-counts-kpis span, .inv-waste-kpis span {
+  display: block;
+  font-size: 0.64rem;
+  color: var(--p-text-dim);
+}
+.inv-counts-kpis article.is-warn { border-color: color-mix(in srgb, #e3a050 60%, var(--admin-line)); }
+.inv-waste-kpis article.is-danger { border-color: color-mix(in srgb, #e77878 60%, var(--admin-line)); }
+
+.inv-counts-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.85rem;
+  flex-wrap: wrap;
+  padding: 0.75rem 0.5rem;
+  margin-bottom: 0.85rem;
+  border-bottom: 1px solid var(--admin-line);
+}
+.inv-counts-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.inv-stocktake-table input.inv-count-input {
+  width: 100%;
+  max-width: 130px;
+  min-height: 2.2rem;
+  padding: 0.35rem 0.6rem;
+  border: 1px solid var(--admin-line);
+  border-radius: 0.55rem;
+  background: var(--p-surface-2);
+  color: var(--p-text);
+  font-family: inherit;
+  font-size: 0.82rem;
+  font-weight: 700;
+  text-align: center;
+  transition: all 0.15s ease;
+}
+.inv-stocktake-table input.inv-count-input:focus {
+  border-color: var(--p-accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--p-accent) 20%, transparent);
+  outline: none;
+}
+
+.inv-variance-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.22rem 0.55rem;
+  border-radius: 0.45rem;
+  font-size: 0.68rem;
+  font-weight: 750;
+  white-space: nowrap;
+}
+.inv-variance-pill.is-good {
+  background: color-mix(in srgb, #48bd9f 18%, transparent);
+  color: #38a183;
+}
+.inv-variance-pill.is-danger {
+  background: color-mix(in srgb, #e77878 20%, transparent);
+  color: #e05353;
+}
+.inv-variance-pill.is-warn {
+  background: color-mix(in srgb, #3b82f6 18%, transparent);
+  color: #3b82f6;
+}
+.inv-variance-pill.is-none {
+  background: transparent;
+  color: var(--p-text-dim);
+}
+.inv-variance-cost {
+  font-size: 0.72rem;
+  font-weight: 750;
+  color: var(--p-text);
+}
+.inv-unit-pill {
+  display: inline-flex;
+  padding: 0.15rem 0.45rem;
+  border-radius: 0.35rem;
+  font-size: 0.65rem;
+  background: color-mix(in srgb, var(--p-surface-2) 80%, transparent);
+  color: var(--p-text-dim);
+}
+.inv-book-qty {
+  font-size: 0.82rem;
+}
+
+/* Pareto Analysis Panel for Waste */
+.inv-pareto-panel {
+  padding: 1rem 1.2rem;
+  margin: 1rem 0;
+  border: 1px solid var(--admin-line);
+  border-radius: 0.95rem;
+  background: color-mix(in srgb, var(--p-surface-2) 75%, transparent);
+}
+.inv-pareto-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.85rem;
+}
+.inv-pareto-head strong { font-size: 0.82rem; }
+.inv-pareto-head small { color: var(--p-text-dim); font-size: 0.66rem; }
+.inv-pareto-bars {
+  display: grid;
+  gap: 0.65rem;
+}
+.inv-pareto-row {
+  display: grid;
+  gap: 0.3rem;
+}
+.inv-pareto-label {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.72rem;
+}
+.inv-pareto-track {
+  height: 0.5rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--admin-line) 80%, transparent);
+  overflow: hidden;
+}
+.inv-pareto-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #f87171, #ef4444);
+  transition: width 0.3s ease;
+}
+
+/* Inbound Goods Receiving Dock */
+.inv-receiving-dock {
+  margin: 1.25rem 0;
+  display: grid;
+  gap: 1rem;
+}
+.inv-po-card {
+  padding: 1.15rem;
+  border: 1px solid color-mix(in srgb, var(--p-accent) 25%, var(--admin-line));
+  border-radius: 1rem;
+  background: color-mix(in srgb, var(--p-surface) 96%, transparent);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.05);
+}
+.inv-po-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 1rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid var(--admin-line);
+}
+.inv-po-card-head h3 {
+  margin: 0 0 0.2rem;
+  font-size: 0.95rem;
+}
+.inv-po-card-head p {
+  margin: 0;
+  font-size: 0.68rem;
+  color: var(--p-text-dim);
+}
+.inv-receive-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.74rem;
+  margin-bottom: 1rem;
+}
+.inv-receive-table th, .inv-receive-table td {
+  padding: 0.6rem 0.5rem;
+  text-align: right;
+  border-bottom: 1px solid color-mix(in srgb, var(--admin-line) 60%, transparent);
+}
+.inv-receive-table th { color: var(--p-text-dim); font-size: 0.66rem; }
+.inv-receive-qty-input {
+  width: 90px;
+  min-height: 2.1rem;
+  padding: 0.3rem 0.5rem;
+  border: 1px solid var(--admin-line);
+  border-radius: 0.5rem;
+  background: var(--p-surface-2);
+  color: var(--p-text);
+  font-family: inherit;
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-align: center;
+}
+.inv-qc-chips {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+}
+.inv-qc-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.3rem 0.65rem;
+  border-radius: 0.55rem;
+  border: 1px solid var(--admin-line);
+  background: var(--p-surface-2);
+  font-size: 0.68rem;
+  font-weight: 700;
+  cursor: pointer;
+  user-select: none;
+  transition: all 0.14s ease;
+}
+.inv-qc-chip.is-checked {
+  background: color-mix(in srgb, #48bd9f 18%, var(--p-surface));
+  border-color: #48bd9f;
+  color: #38a183;
+}
+
+/* Material Search Strip */
+.inv-search-strip {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  margin-bottom: 0.85rem;
+}
+.inv-search-strip input {
+  flex: 1;
+  min-height: 2.5rem;
+  padding: 0.45rem 0.85rem;
+  border: 1px solid var(--admin-line);
+  border-radius: 0.65rem;
+  background: var(--p-surface-2);
+  color: var(--p-text);
+  font-family: inherit;
+  font-size: 0.78rem;
+}
+.inv-search-strip input:focus {
+  border-color: var(--p-accent);
+  outline: none;
+}
+.inv-button--xs {
+  min-height: 1.95rem;
+  padding: 0.2rem 0.55rem;
+  font-size: 0.68rem;
+  border-radius: 0.45rem;
+}
+
+/* Print Optimization for Physical Stocktaking */
+@media print {
+  body { background: #fff !important; color: #000 !important; }
+  .inv-nav, .inv-card-actions, .ops-page-head, .inv-counts-actions, [data-inv-open-form], [data-inv-quick-count], [data-inv-submit-counts-batch] {
+    display: none !important;
+  }
+  .inv-workspace { padding: 0 !important; max-width: 100% !important; }
+  .inv-stocktake-table { width: 100% !important; border: 1px solid #999 !important; font-size: 10pt !important; }
+  .inv-stocktake-table th, .inv-stocktake-table td { border: 1px solid #ccc !important; padding: 6px !important; color: #000 !important; }
+  .inv-count-input { border: 1px solid #666 !important; background: transparent !important; }
+}
+

@@ -101,11 +101,11 @@ function normalizePrinterConfig(raw = {}, existing = {}) {
   if (transport === 'system' && !/^[A-Za-z0-9._-]{1,127}$/.test(systemPrinterName)) {
     throw printerError('printer_config_invalid', 'برای اتصال USB، یک پرینتر نصب‌شده در سیستم انتخاب کنید.', 'systemPrinterName');
   }
-  const host = String(source.host || '').trim();
+  const host = asciiDigits(source.host || '').trim();
   if (!isLocalNetworkHost(host)) {
     throw printerError('printer_config_invalid', 'آدرس پرینتر باید یک IPv4 از شبکهٔ محلی باشد.', 'host');
   }
-  const port = Number(source.port);
+  const port = Number(asciiDigits(source.port));
   if (!Number.isInteger(port) || port < 1 || port > 65535) {
     throw printerError('printer_config_invalid', 'پورت پرینتر باید بین ۱ تا ۶۵۵۳۵ باشد.', 'port');
   }
@@ -113,14 +113,14 @@ function normalizePrinterConfig(raw = {}, existing = {}) {
   if (!SUPPORTED_ENCODINGS.has(encoding) || !iconv.encodingExists(encoding === 'utf8' ? 'utf8' : encoding)) {
     throw printerError('printer_config_invalid', 'کدگذاری انتخاب‌شده برای چاپ پشتیبانی نمی‌شود.', 'encoding');
   }
-  const paperWidth = Number(source.paperWidth) === 58 ? 58 : 80;
+  const paperWidth = Number(asciiDigits(source.paperWidth)) === 58 ? 58 : 80;
   const renderMode = source.renderMode === 'text' ? 'text' : 'raster';
-  const charsPerLine = Math.max(16, Math.min(64, Math.round(Number(source.charsPerLine) || (paperWidth === 58 ? 32 : 48))));
+  const charsPerLine = Math.max(16, Math.min(64, Math.round(Number(asciiDigits(source.charsPerLine)) || (paperWidth === 58 ? 32 : 48))));
   const defaultCodePage = DEFAULT_CODE_PAGE_BY_ENCODING[encoding] ?? DEFAULT_PRINTER_CONFIG.codePage;
   const hasRawCodePage = Object.prototype.hasOwnProperty.call(raw || {}, 'codePage');
   const hasExistingCodePage = Object.prototype.hasOwnProperty.call(existing || {}, 'codePage');
   const codePageInput = hasRawCodePage ? raw.codePage : hasExistingCodePage ? existing.codePage : defaultCodePage;
-  const requestedCodePage = Number(codePageInput);
+  const requestedCodePage = Number(asciiDigits(codePageInput));
   const codePage = codePageInput === null || codePageInput === '' || encoding === 'utf8'
     ? null
     : Math.max(0, Math.min(255, Number.isFinite(requestedCodePage)
@@ -130,7 +130,7 @@ function normalizePrinterConfig(raw = {}, existing = {}) {
     id: cleanText(source.id || DEFAULT_PRINTER_CONFIG.id, 64).replace(/[^a-zA-Z0-9_-]/g, '-') || DEFAULT_PRINTER_CONFIG.id,
     name: cleanText(source.name || DEFAULT_PRINTER_CONFIG.name, 80) || DEFAULT_PRINTER_CONFIG.name,
     model: cleanText(source.model || DEFAULT_PRINTER_CONFIG.model, 64).toLowerCase() || DEFAULT_PRINTER_CONFIG.model,
-    branchId: Number(source.branchId) || DEFAULT_PRINTER_CONFIG.branchId,
+    branchId: Number(asciiDigits(source.branchId)) || DEFAULT_PRINTER_CONFIG.branchId,
     protocol: 'raw',
     transport,
     systemPrinterName,
@@ -143,7 +143,7 @@ function normalizePrinterConfig(raw = {}, existing = {}) {
     encoding,
     codePage,
     cut: source.cut !== false,
-    timeoutMs: Math.max(1000, Math.min(15000, Math.round(Number(source.timeoutMs) || DEFAULT_PRINTER_CONFIG.timeoutMs))),
+    timeoutMs: Math.max(1000, Math.min(15000, Math.round(Number(asciiDigits(source.timeoutMs)) || DEFAULT_PRINTER_CONFIG.timeoutMs))),
   };
 }
 
@@ -160,7 +160,7 @@ function ensurePrintingData(data, branchId = 1) {
       // migration recoverable and gives the manager a valid row to edit.
     }
   }
-  const primaryBranchId = Number(branchId) || 1;
+  const primaryBranchId = Number(asciiDigits(branchId)) || 1;
   if (!printers.some((printer) => Number(printer.branchId) === primaryBranchId)) {
     printers.push(normalizePrinterConfig({ ...DEFAULT_PRINTER_CONFIG, branchId: primaryBranchId }));
   }
@@ -184,7 +184,7 @@ function ensurePrintingData(data, branchId = 1) {
 
 function printerForBranch(data, branchId, printerId = '') {
   ensurePrintingData(data, branchId);
-  const wantedBranchId = Number(branchId) || 1;
+  const wantedBranchId = Number(asciiDigits(branchId)) || 1;
   const rows = data.printing.printers.filter((printer) => Number(printer.branchId) === wantedBranchId);
   if (printerId) return rows.find((printer) => String(printer.id) === String(printerId)) || null;
   return rows.find((printer) => printer.id === data.printing.defaultPrinterId) || rows[0] || null;
@@ -269,6 +269,7 @@ function paymentLabel(order) {
   return {
     cash: 'نقدی',
     card: 'کارت‌خوان',
+    manual_card: 'کارت بانکی · ثبت دستی',
     online: 'آنلاین',
     wallet: 'کیف پول',
     cashier: 'صندوق',
@@ -312,7 +313,24 @@ function buildReceiptBuffer(order, printer, { restaurantName = 'وستو', test 
     if (customerName) text(`مهمان: ${customerName}`);
     if (phone) text(`تلفن: ${phone}`);
     if (createdAt) text(`زمان: ${createdAt}`);
-    if (tender) text(`پرداخت: ${tender}`);
+    const paymentRows = (Array.isArray(order?.partialPayments) ? order.partialPayments : [])
+      .map((payment) => ({
+        payment,
+        amount: Number(payment?.amount),
+        label: ({ cash: 'نقدی', card: 'کارت‌خوان', manual_card: 'کارت بانکی · ثبت دستی', gift_card: 'کارت هدیه',
+          card_on_file: 'کارت ذخیره‌شده', online: 'آنلاین', wallet: 'کیف پول' })[String(payment?.tender || '')] || 'روش ثبت‌نشده',
+      }))
+      .filter((row) => Number.isSafeInteger(row.amount) && row.amount > 0);
+    if (paymentRows.length) {
+      text('ریز دریافت‌ها:');
+      for (const row of paymentRows) {
+        text(`${row.label}: ${formatAmount(row.amount)} تومان`);
+        const cashReceived = Number(row.payment?.amountTendered);
+        if (row.payment?.tender === 'cash' && Number.isSafeInteger(cashReceived) && cashReceived > row.amount) {
+          text(`نقد دریافتی ${formatAmount(cashReceived)} · برگشت ${formatAmount(cashReceived - row.amount)} تومان`);
+        }
+      }
+    } else if (tender) text(`پرداخت: ${tender}`);
     if (order?.note) text(`یادداشت: ${cleanText(order.note, 150)}`);
   }
   align(2);

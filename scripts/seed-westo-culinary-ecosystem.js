@@ -11,6 +11,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { assertTestSeedAllowed } = require('./lib/test-seed-safety');
 
 const DB_PATH = path.join(__dirname, '..', 'server', 'data', 'db.json');
 
@@ -378,6 +379,7 @@ function buildRecipeForMenuItem(menuItem) {
 }
 
 function executeSeeding() {
+  assertTestSeedAllowed({ scriptName: 'seed-westo-culinary-ecosystem' });
   console.log('Reading database from', DB_PATH);
   const rawDb = fs.readFileSync(DB_PATH, 'utf8');
   const db = JSON.parse(rawDb);

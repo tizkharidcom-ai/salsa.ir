@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * Standalone High-Performance HTTP server for the NEEM GODMODE prototype (Port 3050).
+ * Standalone High-Performance HTTP server for the SALSA GODMODE prototype (Port 3050).
  *
  * Fully lightweighted and optimized:
  * - High-speed in-memory static buffer cache (<0.1ms TTFB)
@@ -42,24 +42,19 @@ const MIME_TYPES = Object.freeze({
 const COMPRESSIBLE_EXTENSIONS = new Set(['.html', '.css', '.js', '.mjs', '.json', '.svg']);
 
 const STATIC_HEADERS = Object.freeze({
-  'X-Prototype-Mode': 'NEEM-GODMODE-MOCK',
+  'X-Prototype-Mode': 'SALSA-GODMODE-MOCK',
   'X-Content-Type-Options': 'nosniff',
   'X-Frame-Options': 'DENY',
   'Referrer-Policy': 'no-referrer',
-  'Content-Security-Policy': "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; connect-src 'self' http://localhost:4180; img-src 'self' data: blob:; font-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'"
+  'Content-Security-Policy': "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; connect-src 'self' http://localhost:4180 http://localhost:3061 ws: wss:; img-src 'self' data: blob:; font-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'"
 });
 
 function getCacheControl(ext, pathname) {
   if (ext === '.woff2' || ext === '.woff' || ext === '.ttf') {
     return 'public, max-age=86400, must-revalidate';
   }
-  if (ext === '.css' || ext === '.js' || ext === '.mjs') {
-    return 'public, max-age=3600, must-revalidate';
-  }
-  if (pathname === '/' || ext === '.html') {
-    return 'no-cache, must-revalidate';
-  }
-  return 'no-cache, must-revalidate';
+  // Disable caching completely for rapid UI iteration & prototype review
+  return 'no-store, no-cache, must-revalidate, max-age=0';
 }
 
 function isWithinStaticRoot(filePath, staticRoot = STATIC_ROOT) {
@@ -335,7 +330,7 @@ const server = createPrototypeServer();
 
 if (require.main === module) {
   server.listen(PORT, HOST, () => {
-    console.log('NEEM GODMODE prototype server is running (optimized, compressed, cached)');
+    console.log('SALSA GODMODE prototype server is running (optimized, compressed, cached)');
     console.log(`Address: http://${HOST}:${PORT}`);
     console.log('Mode: isolated mock data; in-memory cache active');
   });

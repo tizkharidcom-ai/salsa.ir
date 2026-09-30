@@ -1,6 +1,102 @@
 /* Restaurant table cart + sushi menu boards on scroll sections. */
 (function () {
-  const STORAGE_KEY = 'westo_table';
+  function readCartContext(params) {
+    const first = (keys) => {
+      for (const key of keys) {
+        const value = String(params?.get?.(key) ?? '').trim();
+        if (value) return value;
+      }
+      return '';
+    };
+    return {
+      branch: first(['branch', 'branchId']),
+      // `t` is a QR-friendly alias for the canonical public `table` value.
+      // Keep the canonical key first so a conflicting alias cannot override it.
+      table: first(['table', 't', 'tableNo']),
+    };
+  }
+
+  function branchIdFromContext(context) {
+    const digits = normalizeDigits(String(context?.branch || '')).trim();
+    if (!/^\d+$/.test(digits)) return undefined;
+    const id = Number(digits);
+    return digits && Number.isSafeInteger(id) && id > 0 ? id : undefined;
+  }
+
+  function branchSelectorFromContext(context) {
+    const branchId = branchIdFromContext(context);
+    if (branchId !== undefined) return { branchId };
+    const branch = String(context?.branch || '').trim();
+    return branch ? { branch } : {};
+  }
+
+  function waiterBranchRequestContext(context) {
+    const branch = String(context?.branch || '').trim();
+    const branchId = branchIdFromContext(context);
+    // The waiter API accepts numeric branchId only. Never omit an explicit
+    // textual/invalid branch and let the server silently choose its default.
+    if (branch && branchId === undefined) return null;
+    return branchId === undefined ? {} : { branchId };
+  }
+
+  function canonicalCartIdentity(value, { requirePositive = false } = {}) {
+    const raw = String(value ?? '').trim();
+    const digits = normalizeDigits(raw);
+    if (!/^\d+$/.test(digits)) return digits;
+
+    // Canonicalize numeric IDs without Number(), which would lose precision
+    // for long IDs. In textual names, normalize numeral glyphs but preserve
+    // wording, spacing, and zero padding (for example, "VIP ۰۷" -> "VIP 07").
+    const canonical = digits.replace(/^0+(?=\d)/, '');
+    if (requirePositive && canonical === '0') return '';
+    return canonical;
+  }
+
+  function hasInvalidNumericBranchContext(context) {
+    const rawBranch = String(context?.branch ?? '').trim();
+    if (!rawBranch) return false;
+    const normalized = normalizeDigits(rawBranch);
+    if (!/^\d+$/.test(normalized)) return false;
+    const id = Number(normalized);
+    return !Number.isSafeInteger(id) || id <= 0;
+  }
+
+  function tableContextIsWithinServerLimit(context) {
+    return String(context?.table ?? '').trim().length <= 20;
+  }
+
+  function cartStorageKeyForContext(context) {
+    const branch = hasInvalidNumericBranchContext(context)
+      ? `invalid:${canonicalCartIdentity(context?.branch)}`
+      : canonicalCartIdentity(context?.branch, { requirePositive: true });
+    const table = canonicalCartIdentity(context?.table);
+    // A QR cart belongs to one branch/table. Never reuse its items at another
+    // table; keep the old key only for the unscoped public menu.
+    return table
+      ? `westo_table:v2:${encodeURIComponent(branch || 'default')}:table:${encodeURIComponent(table)}`
+      : branch
+        ? `westo_table:v2:${encodeURIComponent(branch)}:menu`
+        : 'westo_table';
+  }
+
+  function matchesCartTableContext(context, submittedTable) {
+    const expectedTable = canonicalCartIdentity(context?.table);
+    return tableContextIsWithinServerLimit(context)
+      && (!expectedTable || canonicalCartIdentity(submittedTable) === expectedTable);
+  }
+
+  function waiterCallStorageKey(tableNo, branchContext) {
+    const branch = canonicalCartIdentity(branchContext) || 'unscoped';
+    const table = canonicalCartIdentity(tableNo);
+    return `westo_active_call:${encodeURIComponent(branch)}:${encodeURIComponent(table)}`;
+  }
+
+  const cartParams = new URLSearchParams(location.search);
+  const initialCartContext = readCartContext(cartParams);
+  const invalidNumericCartBranch = hasInvalidNumericBranchContext(initialCartContext);
+  const cartBranch = canonicalCartIdentity(initialCartContext.branch, { requirePositive: true });
+  const cartTable = canonicalCartIdentity(initialCartContext.table);
+  const STORAGE_KEY = cartStorageKeyForContext(initialCartContext);
   const DISH_FAVORITES_KEY = 'westo_dish_favorites_v1';
 
   const $ = (s, r) => (r || document).querySelector(s);
@@ -103,6 +199,268 @@
   function formatPrice(n) {
     const unit = window.westoI18n?.t ? window.westoI18n.t('currency.toman') : 'تومان';
     return `${formatUiNumber(n)} ${unit}`;
+  }
+
+  function safeCartPrice(value) {
+    if (typeof value === 'number') return Number.isSafeInteger(value) && value >= 0 ? value : null;
+    if (typeof value !== 'string' || !value.trim()) return null;
+    const normalized = normalizeDigits(value.trim());
+    if (!/^[0-9]+$/.test(normalized)) return null;
+    const amount = Number(normalized);
+    return Number.isSafeInteger(amount) && amount >= 0 ? amount : null;
+  }
+
+  function itemStockLimit(item) {
+    return typeof item?.stock === 'number' && Number.isSafeInteger(item.stock) && item.stock >= 0
+      ? item.stock
+      : null;
+  }
+
+  function cartQuantityForItem(lines, menuItemId, excludeLine = null) {
+    const id = String(menuItemId ?? '');
+    return (Array.isArray(lines) ? lines : []).reduce((total, line) => {
+      if (!line || line === excludeLine || String(line.menuItemId ?? '') !== id) return total;
+      const quantity = Number(line.qty);
+      return Number.isSafeInteger(quantity) && quantity > 0 ? total + quantity : total;
+    }, 0);
+  }
+
+  function cartQuantityWithinStock(item, lines, proposedQty, excludeLine = null) {
+    const quantity = Number(proposedQty);
+    if (!item || !Number.isSafeInteger(quantity) || quantity < 0) return false;
+    const stockLimit = itemStockLimit(item);
+    return stockLimit === null || cartQuantityForItem(lines, item.id, excludeLine) + quantity <= stockLimit;
+  }
+
+  function isInActiveDaypart(item, currentDayparts = activeDayparts) {
+    const dayparts = Array.isArray(item?.dayparts) && item.dayparts.length ? item.dayparts : ['all'];
+    return dayparts.includes('all') || (Array.isArray(currentDayparts) && currentDayparts.length > 0 && dayparts.some((part) => currentDayparts.includes(part)));
+  }
+
+  function itemAvailabilityError(item, currentDayparts = activeDayparts) {
+    if (!item || item.available !== true) return 'unavailable';
+    if (itemStockLimit(item) === 0) return 'stock';
+    if (!isInActiveDaypart(item, currentDayparts)) return 'daypart';
+    if (safeCartPrice(item.price) == null) return 'price';
+    return '';
+  }
+
+  function modifierCopy(fa, en, ar = en) {
+    const language = window.westoI18n?.lang || document.documentElement.lang || 'fa';
+    return language === 'en' ? en : language === 'ar' ? ar : fa;
+  }
+
+  function modifierDefinition(item) {
+    const raw = item?.modifierGroups;
+    if (raw == null) return { ok: true, groups: [] };
+    if (!Array.isArray(raw) || raw.length > 8) return { ok: false, groups: [], error: 'configuration' };
+    const ids = new Set();
+    const groups = [];
+    for (const candidate of raw) {
+      const id = String(candidate?.id ?? '').trim();
+      const title = String(candidate?.title ?? '').trim();
+      const mode = candidate?.selection;
+      if (!id || !title || ids.has(id) || !['single', 'multiple'].includes(mode) || !Array.isArray(candidate.options) || !candidate.options.length || candidate.options.length > 16) {
+        return { ok: false, groups: [], error: 'configuration' };
+      }
+      ids.add(id);
+      const optionIds = new Set();
+      const options = [];
+      for (const rawOption of candidate.options) {
+        const optionId = String(rawOption?.id ?? '').trim();
+        const name = String(rawOption?.name ?? '').trim();
+        const price = safeCartPrice(rawOption?.price);
+        if (!optionId || !name || optionIds.has(optionId) || (rawOption?.available != null && typeof rawOption.available !== 'boolean')) {
+          return { ok: false, groups: [], error: 'configuration' };
+        }
+        optionIds.add(optionId);
+        // Match the server's canonical rule: an omitted availability flag is
+        // available unless explicitly disabled. Keep malformed prices closed.
+        options.push({ id: optionId, name, price, available: rawOption.available !== false && price != null });
+      }
+      const required = candidate.required === true;
+      const minSelections = Number.isInteger(candidate.minSelections) ? candidate.minSelections : (required ? 1 : 0);
+      const maxSelections = Number.isInteger(candidate.maxSelections) ? candidate.maxSelections : (mode === 'single' ? 1 : 16);
+      if (minSelections < 0 || minSelections > 16 || maxSelections < 1 || maxSelections > 16 || maxSelections < minSelections || (mode === 'single' && maxSelections > 1)) {
+        return { ok: false, groups: [], error: 'configuration' };
+      }
+      if ((candidate.required === true && minSelections === 0) || (candidate.required === false && minSelections > 0)) {
+        return { ok: false, groups: [], error: 'configuration' };
+      }
+      if (options.filter((option) => option.available).length < minSelections) {
+        return { ok: false, groups: [], error: 'configuration' };
+      }
+      groups.push({ id, title, mode, required, minSelections, maxSelections, options });
+    }
+    return { ok: true, groups };
+  }
+
+  function validateModifierSelection(item, requested = []) {
+    const definition = modifierDefinition(item);
+    if (!definition.ok) return { ok: false, error: 'configuration', modifiers: [], modifierTotal: 0 };
+    const basePrice = safeCartPrice(item?.price);
+    if (basePrice == null) return { ok: false, error: 'configuration', modifiers: [], modifierTotal: 0 };
+    if (!Array.isArray(requested) || requested.length > 128) return { ok: false, error: 'selection', modifiers: [], modifierTotal: 0 };
+    const picked = new Map();
+    for (const entry of requested) {
+      const groupId = String(entry?.groupId ?? '').trim();
+      const optionId = String(entry?.id ?? '').trim();
+      const group = definition.groups.find((candidate) => candidate.id === groupId);
+      const option = group?.options.find((candidate) => candidate.id === optionId && candidate.available);
+      if (!group || !option) return { ok: false, error: 'selection', modifiers: [], modifierTotal: 0 };
+      const groupPicks = picked.get(groupId) || [];
+      if (groupPicks.some((selected) => selected.id === optionId)) return { ok: false, error: 'selection', modifiers: [], modifierTotal: 0 };
+      groupPicks.push(option);
+      picked.set(groupId, groupPicks);
+    }
+    const modifiers = [];
+    for (const group of definition.groups) {
+      const selected = picked.get(group.id) || [];
+      if (selected.length < group.minSelections) return { ok: false, error: 'required', group, modifiers: [], modifierTotal: 0 };
+      if (selected.length > group.maxSelections) return { ok: false, error: 'maximum', group, modifiers: [], modifierTotal: 0 };
+      for (const option of selected) modifiers.push({
+        id: option.id,
+        groupId: group.id,
+        groupTitle: group.title,
+        name: option.name,
+        price: option.price,
+      });
+    }
+    const modifierTotal = modifiers.reduce((sum, entry) => sum + entry.price, 0);
+    if (!Number.isSafeInteger(modifierTotal) || !Number.isSafeInteger(basePrice + modifierTotal)) {
+      return { ok: false, error: 'configuration', modifiers: [], modifierTotal: 0 };
+    }
+    return { ok: true, modifiers, modifierTotal, unitPrice: basePrice + modifierTotal };
+  }
+
+  function renderModifierPicker(container, item, namePrefix = 'menu', initialSelection = []) {
+    if (!container) return;
+    const definition = modifierDefinition(item);
+    container.dataset.modifierOwner = namePrefix;
+    container.hidden = definition.ok && !definition.groups.length;
+    if (!definition.ok) {
+      container.innerHTML = `<p class="menu-modifier-message" role="alert">${escapeHtml(modifierCopy('گزینه‌های این محصول فعلاً قابل ثبت نیست. از کارکنان کمک بگیرید.', 'Options for this item cannot be ordered right now. Please ask staff for help.', 'لا يمكن طلب خيارات هذا المنتج الآن. يرجى سؤال الموظفين.'))}</p>`;
+      return;
+    }
+    container.innerHTML = definition.groups.map((group, groupIndex) => {
+      const effectiveMax = Math.min(group.maxSelections, group.options.filter((option) => option.available).length);
+      const prompt = group.mode === 'single'
+        ? (group.required ? modifierCopy('یک گزینه را انتخاب کنید · اجباری', 'Choose one · Required', 'اختر خيارًا واحدًا · مطلوب') : modifierCopy('یک گزینه را انتخاب کنید · اختیاری', 'Choose one · Optional', 'اختر خيارًا واحدًا · اختياري'))
+        : modifierCopy(`حداقل ${group.minSelections} و حداکثر ${effectiveMax} انتخاب`, `Choose ${group.minSelections}–${effectiveMax}`, `اختر ${group.minSelections}–${effectiveMax}`);
+      const type = group.mode === 'single' ? 'radio' : 'checkbox';
+      const name = `${namePrefix}-modifier-${groupIndex}`;
+      const noChoice = group.mode === 'single' && group.minSelections === 0
+        ? `<label class="menu-modifier-option"><input type="radio" name="${escapeHtml(name)}" value="" data-modifier-group="${escapeHtml(group.id)}" checked /><span class="menu-modifier-option__name">${escapeHtml(modifierCopy('بدون انتخاب', 'No preference', 'دون تفضيل'))}</span><strong class="menu-modifier-option__price">${escapeHtml(modifierCopy('اختیاری', 'Optional', 'اختياري'))}</strong></label>`
+        : '';
+      const options = group.options.map((option) => `<label class="menu-modifier-option${option.available ? '' : ' is-unavailable'}">
+        <input type="${type}" name="${escapeHtml(name)}" value="${escapeHtml(option.id)}" data-modifier-group="${escapeHtml(group.id)}" ${option.available ? '' : 'disabled'} />
+        <span class="menu-modifier-option__name" dir="auto">${escapeHtml(option.name)}${option.available ? '' : ` · ${escapeHtml(modifierCopy('ناموجود', 'Unavailable', 'غير متوفر'))}`}</span>
+        <strong class="menu-modifier-option__price">${option.price == null ? escapeHtml(modifierCopy('قیمت نامشخص', 'Price unavailable', 'السعر غير متاح')) : option.price > 0 ? `+ ${escapeHtml(formatPrice(option.price))}` : escapeHtml(modifierCopy('بدون هزینه', 'No extra charge', 'بدون تكلفة إضافية'))}</strong>
+      </label>`).join('');
+      return `<fieldset class="menu-modifier-group" data-modifier-group-id="${escapeHtml(group.id)}" role="${group.mode === 'single' ? 'radiogroup' : 'group'}"${group.mode === 'single' ? ` aria-required="${group.minSelections > 0 ? 'true' : 'false'}"` : ''} aria-describedby="${escapeHtml(name)}-hint">
+        <legend>${escapeHtml(group.title)}</legend><p id="${escapeHtml(name)}-hint" class="menu-modifier-group__hint">${escapeHtml(prompt)}</p>
+        <div class="menu-modifier-group__options">${noChoice}${options}</div>
+      </fieldset>`;
+    }).join('');
+    const requested = new Set((Array.isArray(initialSelection) ? initialSelection : [])
+      .map((entry) => `${String(entry?.groupId ?? '')}:${String(entry?.id ?? '')}`));
+    if (requested.size) {
+      container.querySelectorAll('input[data-modifier-group]').forEach((input) => {
+        if (input.value && requested.has(`${input.dataset.modifierGroup}:${input.value}`)) input.checked = true;
+      });
+    }
+  }
+
+  function readModifierPicker(container, item) {
+    const selected = container ? Array.from(container.querySelectorAll('input[data-modifier-group]:checked')).filter((input) => input.value).map((input) => ({
+      groupId: input.dataset.modifierGroup,
+      id: input.value,
+    })) : [];
+    return validateModifierSelection(item, selected);
+  }
+
+  function modifierLineKey(line) {
+    const refs = (Array.isArray(line?.modifiers) ? line.modifiers : [])
+      .map((entry) => [String(entry.groupId || ''), String(entry.id || '')])
+      .sort((left, right) => left[0].localeCompare(right[0]) || left[1].localeCompare(right[1]));
+    return `${String(line?.menuItemId ?? '')}:${JSON.stringify(refs)}`;
+  }
+
+  function restoreRemovedCartLine(lines, removed) {
+    const current = Array.isArray(lines) ? lines : [];
+    const line = removed?.line;
+    if (!line || typeof line !== 'object') return { ok: false, reason: 'invalid_line', lines: current };
+    const lineKey = modifierLineKey(line);
+    const existingIndex = current.findIndex((entry) => modifierLineKey(entry) === lineKey);
+    if (existingIndex >= 0) {
+      const currentQty = Number(current[existingIndex]?.qty);
+      const removedQty = Number(line.qty);
+      if (!Number.isSafeInteger(currentQty) || !Number.isSafeInteger(removedQty) || currentQty < 1 || removedQty < 1 || currentQty + removedQty > 99) {
+        return { ok: false, reason: 'quantity_limit', lines: current, lineKey };
+      }
+      const next = current.slice();
+      next[existingIndex] = { ...current[existingIndex], qty: currentQty + removedQty };
+      return { ok: true, lines: next, lineKey };
+    }
+    const next = current.slice();
+    const index = Number.isSafeInteger(removed.index) ? Math.max(0, Math.min(removed.index, next.length)) : next.length;
+    next.splice(index, 0, {
+      ...line,
+      modifiers: Array.isArray(line.modifiers) ? line.modifiers.map((modifier) => ({ ...modifier })) : [],
+    });
+    return { ok: true, lines: next, lineKey };
+  }
+
+  function replaceCartLineWithSelection(lines, sourceKey, replacement) {
+    const current = Array.isArray(lines) ? lines : [];
+    const sourceIndex = current.findIndex((entry) => modifierLineKey(entry) === String(sourceKey));
+    if (sourceIndex < 0 || !replacement || typeof replacement !== 'object') {
+      return { ok: false, reason: 'missing_line', lines: current };
+    }
+    const quantity = Number(replacement.qty);
+    if (!Number.isSafeInteger(quantity) || quantity < 1 || quantity > 99) {
+      return { ok: false, reason: 'quantity_limit', lines: current };
+    }
+    const replacementKey = modifierLineKey(replacement);
+    const targetIndex = current.findIndex((entry, index) => index !== sourceIndex && modifierLineKey(entry) === replacementKey);
+    if (targetIndex < 0) {
+      const next = current.slice();
+      next[sourceIndex] = { ...replacement, modifiers: Array.isArray(replacement.modifiers) ? replacement.modifiers.map((entry) => ({ ...entry })) : [] };
+      return { ok: true, lines: next, lineKey: replacementKey };
+    }
+    const targetQuantity = Number(current[targetIndex]?.qty);
+    if (!Number.isSafeInteger(targetQuantity) || targetQuantity < 1 || targetQuantity + quantity > 99) {
+      return { ok: false, reason: 'quantity_limit', lines: current, lineKey: replacementKey };
+    }
+    const next = current.slice();
+    next[targetIndex] = {
+      ...current[targetIndex],
+      ...replacement,
+      qty: targetQuantity + quantity,
+      modifiers: Array.isArray(replacement.modifiers) ? replacement.modifiers.map((entry) => ({ ...entry })) : [],
+    };
+    next.splice(sourceIndex, 1);
+    return { ok: true, lines: next, lineKey: replacementKey };
+  }
+
+  function modifierUnitPrice(line) {
+    const item = findMenuItem(line?.menuItemId);
+    if (itemAvailabilityError(item)) return null;
+    const selection = validateModifierSelection(item, (Array.isArray(line?.modifiers) ? line.modifiers : []).map(({ groupId, id }) => ({ groupId, id })));
+    return selection.ok ? selection.unitPrice : null;
+  }
+
+  function cartSnapshotUnitPrice(line) {
+    const basePrice = safeCartPrice(line?.price);
+    if (basePrice == null) return null;
+    const modifiers = Array.isArray(line?.modifiers) ? line.modifiers : [];
+    let total = basePrice;
+    for (const modifier of modifiers) {
+      const price = safeCartPrice(modifier?.price);
+      if (price == null || !Number.isSafeInteger(total + price)) return null;
+      total += price;
+    }
+    return total;
   }
 
   const ALLERGEN_META = {
@@ -218,26 +576,428 @@
     }
   }  // #endregion
 
+  let cartStorageAvailable = true;
+  let cartLoadWarning = '';
+  let unreadableCartSnapshotRaw = null;
+  let cartRecoveryPending = false;
+  let acceptedCartPriceSignature = null;
+  let renderedCartPriceSignature = null;
+  let pendingCartUndo = null;
+  let cartUndoTimer = 0;
+  let cartToastTimer = 0;
+
+  function storedCartInteger(value) {
+    if (typeof value === 'number') return Number.isSafeInteger(value) ? value : null;
+    if (typeof value !== 'string' || !value.trim()) return null;
+    const normalized = normalizeDigits(value.trim());
+    if (!/^\d+$/.test(normalized)) return null;
+    const parsed = Number(normalized);
+    return Number.isSafeInteger(parsed) ? parsed : null;
+  }
+
+  function parseStoredCartSnapshot(rawText) {
+    let parsed;
+    try {
+      parsed = JSON.parse(rawText == null ? '[]' : rawText);
+    } catch (_) {
+      return { lines: [], recoveredCount: 0, invalidPayload: true };
+    }
+    const source = Array.isArray(parsed) ? parsed : Array.isArray(parsed?.lines) ? parsed.lines : null;
+    if (!source) return { lines: [], recoveredCount: 0, invalidPayload: true };
+    let recoveredCount = 0;
+    const lines = [];
+    for (const candidate of source) {
+      const id = storedCartInteger(candidate?.menuItemId ?? candidate?.id);
+      const qty = storedCartInteger(candidate?.qty);
+      if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate) || id == null || id <= 0 || qty == null || qty < 1) {
+        recoveredCount += 1;
+        continue;
+      }
+      const line = { ...candidate, menuItemId: id, qty: Math.min(99, qty) };
+      if (qty > 99) recoveredCount += 1;
+      lines.push(line);
+    }
+    return { lines, recoveredCount, invalidPayload: false };
+  }
+
+  function preserveUnreadableCartSnapshot(storage, storageKey, rawSnapshot) {
+    if (!storage || typeof storage.getItem !== 'function' || typeof storage.setItem !== 'function'
+        || typeof storageKey !== 'string' || !storageKey || typeof rawSnapshot !== 'string') {
+      throw new TypeError('cart_recovery_storage_invalid');
+    }
+    if (storage.getItem(storageKey) !== rawSnapshot) throw new Error('cart_recovery_snapshot_changed');
+    const prefix = `${storageKey}:recovery:v1`;
+    for (let index = 0; index < 64; index += 1) {
+      const recoveryKey = index === 0 ? prefix : `${prefix}:${index}`;
+      const existing = storage.getItem(recoveryKey);
+      if (existing === rawSnapshot) {
+        if (storage.getItem(storageKey) !== rawSnapshot) throw new Error('cart_recovery_snapshot_changed');
+        return recoveryKey;
+      }
+      if (existing !== null) continue;
+      storage.setItem(recoveryKey, rawSnapshot);
+      if (storage.getItem(recoveryKey) !== rawSnapshot) throw new Error('cart_recovery_backup_unverified');
+      if (storage.getItem(storageKey) !== rawSnapshot) throw new Error('cart_recovery_snapshot_changed');
+      return recoveryKey;
+    }
+    throw new Error('cart_recovery_slots_exhausted');
+  }
+
   function loadCart() {
     try {
-      const raw = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
-      // Migrate classic-menu `{ lines: [...] }` shape → flat array
-      if (raw && !Array.isArray(raw) && Array.isArray(raw.lines)) return raw.lines;
-      return Array.isArray(raw) ? raw : [];
+      cartStorageAvailable = true;
+      const rawSnapshot = localStorage.getItem(STORAGE_KEY);
+      const snapshot = parseStoredCartSnapshot(rawSnapshot);
+      if (snapshot.invalidPayload) {
+        unreadableCartSnapshotRaw = rawSnapshot;
+        cartRecoveryPending = true;
+        cartLoadWarning = modifierCopy(
+          'سبد قبلی خوانا نیست و دست‌نخورده نگه داشته شده است. برای شروع سبد تازه، ابتدا نسخهٔ بازیابی آن را با دکمهٔ زیر ذخیره کنید.',
+          'The previous cart is unreadable and has been left untouched. Save a recovery copy with the button below before starting a fresh cart.',
+          'السلة السابقة غير قابلة للقراءة وقد تُركت دون تغيير. احفظ نسخة استرداد بالزر أدناه قبل بدء سلة جديدة.',
+        );
+      } else {
+        unreadableCartSnapshotRaw = null;
+        cartRecoveryPending = false;
+      }
+      if (!snapshot.invalidPayload && snapshot.recoveredCount) cartLoadWarning = modifierCopy(
+        `${snapshot.recoveredCount} مورد نامعتبر از سبد قبلی قابل بازیابی نبود؛ پیش از ادامه سبد را بررسی کنید.`,
+        `${snapshot.recoveredCount} invalid cart item(s) could not be recovered. Review the cart before continuing.`,
+        `تعذر استعادة ${snapshot.recoveredCount} عنصر غير صالح من السلة السابقة. راجع السلة قبل المتابعة.`,
+      );
+      else if (!snapshot.invalidPayload) cartLoadWarning = '';
+      return snapshot.lines;
     } catch {
+      cartStorageAvailable = false;
+      cartLoadWarning = modifierCopy(
+        'ذخیره‌سازی سبد در این مرورگر در دسترس نیست؛ محتوای سبد قبلی قابل تأیید نیست.',
+        'Cart storage is unavailable in this browser; the previous cart cannot be verified.',
+        'تخزين السلة غير متاح في هذا المتصفح؛ لا يمكن التحقق من السلة السابقة.',
+      );
       return [];
     }
   }
-  function saveCart(cart) {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(cart));
+
+  function startFreshCartAfterRecovery() {
+    if (!cartRecoveryPending || typeof unreadableCartSnapshotRaw !== 'string') return false;
+    let recoveryBackupReady = false;
+    try {
+      preserveUnreadableCartSnapshot(localStorage, STORAGE_KEY, unreadableCartSnapshotRaw);
+      recoveryBackupReady = true;
+      // Keep the backup verified before replacing the active cart. A quota or
+      // storage failure here leaves the original unreadable value recoverable.
+      localStorage.setItem(STORAGE_KEY, '[]');
+    } catch (_) {
+      cartStorageAvailable = false;
+      cartLoadWarning = recoveryBackupReady
+        ? modifierCopy(
+          'نسخهٔ بازیابی ذخیره شد، اما شروع سبد تازه کامل نشد؛ دادهٔ قبلی همچنان قابل بازیابی است. فضا را بررسی و دوباره تلاش کنید.',
+          'The recovery copy was saved, but the fresh cart could not be started. The previous data remains recoverable; check storage and retry.',
+          'حُفظت نسخة الاسترداد لكن تعذر بدء السلة الجديدة. لا تزال البيانات السابقة قابلة للاسترداد؛ تحقق من التخزين وأعد المحاولة.',
+        )
+        : modifierCopy(
+          'نسخهٔ بازیابی تأیید نشد؛ دادهٔ قبلی دست‌نخورده است و ادامهٔ سفارش غیرفعال مانده. فضای ذخیره‌سازی را آزاد کنید و دوباره تلاش کنید.',
+          'The recovery copy could not be verified. The original data is untouched and checkout remains disabled. Free storage space and try again.',
+          'تعذر التحقق من نسخة الاسترداد. البيانات الأصلية دون تغيير والمتابعة معطلة. أفرغ مساحة التخزين ثم أعد المحاولة.',
+        );
+      renderCart();
+      return false;
+    }
+    cart = [];
+    pendingCartUndo = null;
+    if (cartUndoTimer) clearTimeout(cartUndoTimer);
+    cartUndoTimer = 0;
+    unreadableCartSnapshotRaw = null;
+    cartRecoveryPending = false;
+    cartStorageAvailable = true;
+    cartLoadWarning = '';
     updateBadge();
     renderCart();
     document.dispatchEvent(new CustomEvent('westo:cartchange', { detail: { cart } }));
+    toast(modifierCopy(
+      'نسخهٔ قبلی در این مرورگر نگه‌داری شد و سبد تازه آماده است.',
+      'The previous snapshot was kept in this browser and a fresh cart is ready.',
+      'تم الاحتفاظ بالنسخة السابقة في هذا المتصفح وأصبحت السلة الجديدة جاهزة.',
+    ));
+    return true;
+  }
+
+  function saveCart(cart) {
+    let persisted = false;
+    if (cartRecoveryPending) {
+      cartStorageAvailable = false;
+      cartLoadWarning = modifierCopy(
+        'سبد قبلی هنوز بازیابی نشده؛ ابتدا نسخهٔ امن آن را ذخیره و سبد تازه را صریحاً آغاز کنید.',
+        'The previous cart has not been recovered. Save its recovery copy and explicitly start a fresh cart first.',
+        'لم تُستعد السلة السابقة بعد. احفظ نسخة الاسترداد وابدأ سلة جديدة صراحةً أولاً.',
+      );
+      updateBadge();
+      renderCart();
+      document.dispatchEvent(new CustomEvent('westo:cartchange', { detail: { cart } }));
+      return false;
+    }
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(cart));
+      persisted = true;
+      cartStorageAvailable = true;
+      cartLoadWarning = '';
+    } catch (_) {
+      cartStorageAvailable = false;
+      cartLoadWarning = modifierCopy(
+        'ذخیرهٔ سبد ناموفق بود؛ سبد فقط تا وقتی این صفحه باز است در حافظه می‌ماند و پس از تازه‌سازی ممکن است از دست برود.',
+        'The cart could not be saved. It is only in this page’s memory and may be lost if you refresh.',
+        'تعذر حفظ السلة. ستبقى في ذاكرة هذه الصفحة فقط وقد تُفقد عند التحديث.',
+      );
+    }
+    updateBadge();
+    renderCart();
+    document.dispatchEvent(new CustomEvent('westo:cartchange', { detail: { cart } }));
+    return persisted;
   }
 
   let menuByCategory = {};
   let categoryOrder = []; // ordered category ids that actually have items
+  let activeDayparts = [];
   let cart = loadCart();
+  let tableOrderSubmitting = false;
+  let tableQuoteReview = null;
+  let tableReceiptReadySignature = '';
+  const tableSubmitControlStates = new WeakMap();
+
+  // #region table checkout safety helpers
+  function tableCheckoutIntentFingerprint(value) {
+    const signature = String(value || '');
+    let first = 0x811c9dc5;
+    let second = 0x9e3779b9;
+    for (let index = 0; index < signature.length; index += 1) {
+      const code = signature.charCodeAt(index);
+      first = Math.imul(first ^ code, 0x01000193);
+      second = Math.imul(second ^ code, 0x85ebca6b);
+    }
+    return `intent-${(first >>> 0).toString(16).padStart(8, '0')}${(second >>> 0).toString(16).padStart(8, '0')}`;
+  }
+
+  function normalizeTableCheckoutIntent(intent) {
+    if (!intent || typeof intent.key !== 'string' || !intent.key || typeof intent.signature !== 'string' || !intent.signature) return null;
+    return {
+      key: intent.key,
+      // Old records had no explicit submission marker. Treat them as submitted
+      // so a legacy in-flight order can never be replaced by a fresh receipt.
+      submitted: intent.submitted !== false,
+      // Earlier builds persisted the raw JSON signature, including guest data.
+      // Fingerprint it immediately so any subsequent storage write removes PII.
+      signature: intent.signature.startsWith('intent-')
+        ? intent.signature
+        : tableCheckoutIntentFingerprint(intent.signature),
+      ...(typeof intent.quoteToken === 'string' && intent.quoteToken ? { quoteToken: intent.quoteToken } : {}),
+    };
+  }
+
+  function readTableCheckoutIntentRecords(storageKey, legacyStorageKey) {
+    const keys = [storageKey];
+    if (legacyStorageKey && legacyStorageKey !== storageKey) keys.push(legacyStorageKey);
+    const records = [];
+    keys.forEach((key) => {
+      ['localStorage', 'sessionStorage'].forEach((storageName) => {
+        let raw = null;
+        try { raw = window[storageName]?.getItem(key) || null; } catch (_) {}
+        if (!raw) return;
+        try {
+          records.push({ intent: JSON.parse(raw), storageKey: key, storageName, legacy: key !== storageKey });
+        } catch (_) {}
+      });
+    });
+    return records;
+  }
+
+  function writeTableCheckoutIntent(storageKey, intent) {
+    const safeValue = JSON.stringify({ signature: intent.signature, key: intent.key, submitted: intent.submitted !== false });
+    try {
+      window.localStorage.setItem(storageKey, safeValue);
+      try { window.sessionStorage.removeItem(storageKey); } catch (_) {}
+      return true;
+    } catch (_) {}
+    try {
+      window.sessionStorage.setItem(storageKey, safeValue);
+      return true;
+    } catch (_) {}
+    return false;
+  }
+
+  function clearTableCheckoutIntent(storageKey) {
+    ['localStorage', 'sessionStorage'].forEach((storageName) => {
+      try { window[storageName]?.removeItem(storageKey); } catch (_) {}
+    });
+  }
+
+  function finalizeAcceptedTableOrder(intent, storageKey) {
+    let cartCleared = saveCart(cart);
+    if (cartCleared) {
+      try {
+        cartCleared = localStorage.getItem(STORAGE_KEY) === '[]';
+      } catch (_) {
+        cartCleared = false;
+      }
+    }
+
+    if (cartCleared) {
+      window.__westoTableCheckoutIntent = null;
+      clearTableCheckoutIntent(storageKey);
+      return true;
+    }
+
+    // The server accepted the order, but this browser still has the old cart.
+    // Keep its idempotency key so a reload can only replay the same order;
+    // disable another checkout until local storage is healthy again.
+    cartStorageAvailable = false;
+    cartLoadWarning = modifierCopy(
+      'سفارش ثبت شد، اما پاک‌کردن سبد در این مرورگر تأیید نشد. کد سفارش نگه داشته شد تا ارسال دوباره، سفارش تازه نسازد. فضای مرورگر را آزاد کنید و همین سفارش را بازیابی کنید.',
+      'The order was accepted, but this browser could not confirm that its cart was cleared. The order key was retained to prevent a duplicate; free browser storage and recover this same order.',
+      'تم قبول الطلب، لكن تعذر تأكيد مسح السلة في هذا المتصفح. تم الاحتفاظ بمفتاح الطلب لمنع التكرار؛ أفرغ مساحة المتصفح واستعد الطلب نفسه.',
+    );
+    window.__westoTableCheckoutIntent = intent;
+    updateBadge();
+    renderCart();
+    return false;
+  }
+
+  function tableCheckoutIntentDisposition(intent, signature) {
+    if (!intent?.key) return 'new';
+    if (intent.signature === signature) return intent.submitted === false ? 'review' : 'retry';
+    return intent.submitted === false ? 'replace-unsent' : 'unresolved';
+  }
+
+  function createTableReceiptCode() {
+    if (typeof window.crypto?.getRandomValues !== 'function') {
+      throw Object.assign(new Error('این مرورگر امکان ساخت کد امن سفارش را ندارد؛ سفارش ارسال نشد.'), {
+        code: 'table_receipt_crypto_unavailable',
+      });
+    }
+    const bytes = new Uint8Array(16);
+    window.crypto.getRandomValues(bytes);
+    return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
+  }
+
+  function formatTableReceiptCode(code) {
+    return String(code || '').match(/.{1,4}/g)?.join('-') || '';
+  }
+
+  function setTableReceiptCodeView(code, status = '') {
+    const box = document.getElementById('table-receipt-code-box');
+    if (!box) return;
+    box.hidden = !code;
+    const value = document.getElementById('table-receipt-code-value');
+    const live = document.getElementById('table-receipt-code-status');
+    if (value) value.textContent = formatTableReceiptCode(code);
+    if (live) live.textContent = status;
+  }
+
+  function recoveryOrderStatusLabel(order) {
+    const status = String(order?.status || '').toLowerCase();
+    const payment = String(order?.paymentStatus || '').toLowerCase();
+    const statusLabels = {
+      awaiting_confirmation: 'در انتظار تأیید مجموعه', pending_online: 'در انتظار تأیید پرداخت',
+      pay_at_cashier: 'در انتظار پرداخت در صندوق', sent_to_kitchen: 'در صف آشپزخانه',
+      preparing: 'در حال آماده‌سازی', ready: 'آمادهٔ تحویل', dispatched: 'در مسیر ارسال',
+      picked_up: 'تحویل گرفته شده', delivered: 'تحویل شده', done: 'تکمیل شده', cancelled: 'لغو شده',
+    };
+    const paymentLabels = { unpaid: 'پرداخت‌نشده', partial: 'پرداخت بخشی از مبلغ', pending: 'در انتظار تأیید پرداخت', paid: 'پرداخت‌شده', failed: 'پرداخت ناموفق', refunded: 'بازپرداخت‌شده' };
+    return `${statusLabels[status] || 'وضعیت سفارش در دست بررسی است'} · ${paymentLabels[payment] || 'وضعیت پرداخت نامشخص'}`;
+  }
+
+  function tableCheckoutQuoteNeedsReview(review, signature, visibleTotal, quotedTotal) {
+    const alreadyAccepted = review?.signature === signature && review.total === quotedTotal;
+    return quotedTotal !== visibleTotal && !alreadyAccepted;
+  }
+
+  function tableCheckoutFailureIsDefinitive(status, code) {
+    const statusCode = Number(status);
+    const errorCode = String(code || '').trim();
+    return (statusCode >= 400 && statusCode < 500
+      && ![408, 409, 425, 429].includes(statusCode)
+      && !['idempotency_key_conflict', 'idempotency_replay_unavailable'].includes(errorCode))
+      || (statusCode === 503 && errorCode === 'payment_provider_not_ready');
+  }
+
+  function tableCheckoutFailureMessage(payload, fallback) {
+    const code = String(payload?.code || payload?.error || '').trim();
+    if (code === 'payment_provider_not_ready') {
+      return 'پرداخت آنلاین در دسترس نیست و سفارش ثبت نشد؛ پرداخت در صندوق را انتخاب کنید و پس از بازبینی دوباره ادامه دهید.';
+    }
+    return String(payload?.message || payload?.error || fallback || 'ثبت سفارش انجام نشد؛ دوباره بررسی کنید.');
+  }
+
+  function tableCheckoutOrderMatchesQuote(orderTotal, quotedTotal) {
+    return Number.isSafeInteger(orderTotal) && orderTotal >= 0
+      && Number.isSafeInteger(quotedTotal) && quotedTotal >= 0
+      && orderTotal === quotedTotal;
+  }
+
+  function validateTableOnlinePayment(order, payment) {
+    const status = String(payment?.status || '').trim().toLowerCase();
+    const provider = String(payment?.provider || '').trim().toLowerCase();
+    const orderPaymentStatus = String(order?.paymentStatus || '').trim().toLowerCase();
+    const rejectedProviders = new Set(['sandbox', 'test', 'mock', 'demo']);
+    if (!payment || payment.id == null || String(payment.id).trim() === ''
+        || order?.id == null || String(payment.orderId) !== String(order.id)
+        || !Number.isSafeInteger(Number(payment.amount)) || Number(payment.amount) !== Number(order.total)
+        || !['pending', 'paid'].includes(status) || !provider || rejectedProviders.has(provider)
+        || (orderPaymentStatus && orderPaymentStatus !== status)) return null;
+    let redirectUrl = '';
+    if (status === 'pending') {
+      const raw = String(payment.redirectUrl || payment.checkoutUrl || '').trim();
+      if (!raw || raw.startsWith('//')) return null;
+      try {
+        const target = new URL(raw, globalThis.location?.href || window.location?.href);
+        if (target.protocol !== 'https:' || target.username || target.password) return null;
+        redirectUrl = target.href;
+      } catch (_) {
+        return null;
+      }
+    }
+    return { status, redirectUrl };
+  }
+
+  function tableCartMutationAllowed() {
+    if (tableOrderSubmitting) return false;
+    if (!cartRecoveryPending) return true;
+    toast(modifierCopy(
+      'برای حفظ سبد قبلی، ابتدا نسخهٔ بازیابی را ذخیره و سبد تازه را شروع کنید.',
+      'Save a recovery copy and start a fresh cart before adding or changing items.',
+      'احفظ نسخة استرداد وابدأ سلة جديدة قبل إضافة العناصر أو تعديلها.',
+    ));
+    return false;
+  }
+
+  function setTableOrderSubmitting(submitting) {
+    tableOrderSubmitting = !!submitting;
+    const controls = document.querySelectorAll('[data-menu-add], #qty-inc, #qty-dec, #qty-confirm, [data-inc], [data-dec], [data-rm], [data-edit-options]');
+    controls.forEach((control) => {
+      if (tableOrderSubmitting) {
+        if (!tableSubmitControlStates.has(control)) {
+          tableSubmitControlStates.set(control, {
+            disabled: !!control.disabled,
+            ariaDisabled: control.getAttribute('aria-disabled'),
+            tabIndex: control.getAttribute('tabindex'),
+          });
+        }
+        control.disabled = true;
+        control.setAttribute('aria-disabled', 'true');
+        if (control.matches?.('[data-menu-add]') && control.tagName !== 'BUTTON') control.setAttribute('tabindex', '-1');
+      } else if (tableSubmitControlStates.has(control)) {
+        const previous = tableSubmitControlStates.get(control);
+        control.disabled = previous.disabled;
+        if (previous.ariaDisabled == null) control.removeAttribute('aria-disabled');
+        else control.setAttribute('aria-disabled', previous.ariaDisabled);
+        if (previous.tabIndex == null) control.removeAttribute('tabindex');
+        else control.setAttribute('tabindex', previous.tabIndex);
+        tableSubmitControlStates.delete(control);
+      }
+    });
+    renderCart();
+    return tableOrderSubmitting;
+  }
+  // #endregion
 
   const badge = $('#table-badge');
   const drawer = $('#table-drawer');
@@ -250,14 +1010,23 @@
   const viewDone = $('#table-view-done');
 
   function cartCount() {
-    return cart.reduce((s, l) => s + l.qty, 0);
+    return cart.reduce((s, l) => s + (Number.isSafeInteger(Number(l.qty)) ? Math.max(0, Number(l.qty)) : 0), 0);
   }
   function cartTotal() {
-    return cart.reduce((s, l) => s + l.price * l.qty, 0);
+    let total = 0;
+    for (const line of cart) {
+      const qty = Number(line?.qty);
+      const unitPrice = modifierUnitPrice(line);
+      if (!Number.isSafeInteger(qty) || qty < 1 || qty > 99 || unitPrice == null) return null;
+      const lineTotal = unitPrice * qty;
+      if (!Number.isSafeInteger(lineTotal) || !Number.isSafeInteger(total + lineTotal)) return null;
+      total += lineTotal;
+    }
+    return total;
   }
 
   function qrTableNumber() {
-    const raw = String(new URLSearchParams(location.search).get('table') || '').trim();
+    const raw = initialCartContext.table;
     if (!raw) return '';
     const normalized = normalizeDigits(raw);
     return /^\d+$/.test(normalized)
@@ -314,22 +1083,57 @@
     }
   }
 
-  function toast(text) {
+  function toast(text, { actionLabel = '', onAction = null, duration = 1400 } = {}) {
     let el = $('.toast-add');
     if (!el) {
       el = document.createElement('div');
       el.className = 'toast-add';
+      el.setAttribute('role', 'status');
+      el.setAttribute('aria-live', 'polite');
+      el.setAttribute('aria-atomic', 'true');
       document.body.appendChild(el);
     }
-    el.textContent = text;
+    if (cartToastTimer) clearTimeout(cartToastTimer);
+    if (!actionLabel && pendingCartUndo) {
+      if (cartUndoTimer) clearTimeout(cartUndoTimer);
+      cartUndoTimer = 0;
+      pendingCartUndo = null;
+    }
+    el.replaceChildren(document.createTextNode(String(text)));
+    el.style.pointerEvents = actionLabel && typeof onAction === 'function' ? 'auto' : 'none';
+    if (actionLabel && typeof onAction === 'function') {
+      const action = document.createElement('button');
+      action.type = 'button';
+      action.textContent = actionLabel;
+      action.style.cssText = 'min-width:44px;min-height:44px;margin-inline-start:.65rem;padding:.35rem .8rem;border:1px solid currentColor;border-radius:.5rem;background:transparent;color:inherit;font:inherit;cursor:pointer';
+      action.addEventListener('click', onAction, { once: true });
+      el.appendChild(action);
+    }
     el.classList.add('show');
-    setTimeout(() => el.classList.remove('show'), 1400);
+    cartToastTimer = setTimeout(() => {
+      el.classList.remove('show');
+      el.style.pointerEvents = 'none';
+      const expiredAction = el.querySelector('button');
+      if (expiredAction && document.activeElement === expiredAction) {
+        (linesEl?.querySelector('[data-rm]') || $('button[data-table-close]'))?.focus?.();
+      }
+      expiredAction?.remove();
+      if (pendingCartUndo) {
+        if (cartUndoTimer) clearTimeout(cartUndoTimer);
+        cartUndoTimer = 0;
+        pendingCartUndo = null;
+      }
+    }, Math.max(1400, Number(duration) || 1400));
   }
 
   // Exposed so classic menu / overlay can add to the same table.
   window.westoTable = {
-    add: (item, qty) => (qty > 1 ? addItem(item, qty) : openQtyModal(item)),
-    addDirect: (item, qty) => addItem(item, qty),
+    add: (item, qty) => (modifierDefinition(item).groups.length || !(Number(qty) > 1) ? openQtyModal(item, qty) : addItem(item, qty)),
+    addDirect: (item, qty, options = {}) => addItem(item, qty, options),
+    renderModifierPicker,
+    readModifierPicker,
+    validateModifierSelection,
+    modifierUnitPrice,
     open: () => openDrawer(),
     refresh: () => {
       cart = loadCart();
@@ -539,10 +1343,73 @@
   }
 
   function addItem(item, qty, opts = {}) {
-    const q = Math.max(1, Math.min(99, Math.round(Number(qty) || 1)));
-    const existing = cart.find((l) => l.menuItemId === item.id);
+    if (!tableCartMutationAllowed()) return false;
+    if (invalidNumericCartBranch) {
+      toast(modifierCopy('شعبهٔ درج‌شده در نشانی معتبر نیست؛ پیش از افزودن غذا، QR معتبر همان شعبه را اسکن کنید.', 'The branch in this link is invalid. Scan a valid QR code for the intended branch before adding items.', 'الفرع الموجود في الرابط غير صالح. امسح رمز QR صالحاً للفرع المقصود قبل إضافة العناصر.'));
+      return false;
+    }
+    const q = Number(qty);
+    const basePrice = safeCartPrice(item?.price);
+    const numericId = item?.id == null || String(item.id).trim() === '' ? NaN : Number(item.id);
+    const currentDayparts = Array.isArray(opts.activeDayparts) ? opts.activeDayparts : activeDayparts;
+    const availabilityError = itemAvailabilityError(item, currentDayparts);
+    if (availabilityError || basePrice == null || !Number.isSafeInteger(numericId) || numericId <= 0 || !Number.isSafeInteger(q) || q < 1 || q > 99) {
+      toast(availabilityError === 'daypart'
+        ? modifierCopy('این محصول در ساعت فعلی سرو نمی‌شود.', 'This item is not served at this time.', 'لا يقدم هذا المنتج في الوقت الحالي.')
+        : availabilityError === 'unavailable'
+          ? modifierCopy('این محصول در حال حاضر موجود نیست.', 'This item is currently unavailable.', 'هذا المنتج غير متوفر حالياً.')
+          : availabilityError === 'stock'
+            ? modifierCopy('موجودی این محصول تمام شده است.', 'This item is out of stock.', 'نفدت كمية هذا المنتج.')
+          : modifierCopy('این محصول یا قیمت آن در حال حاضر قابل تأیید نیست؛ به سبد افزوده نشد.', 'This item or its price cannot currently be verified; it was not added.', 'لا يمكن التحقق من هذا المنتج أو سعره الآن؛ لم تتم إضافته.'));
+      return false;
+    }
+    const stockLimit = itemStockLimit(item);
+    if (!cartQuantityWithinStock(item, cart, q)) {
+      const remaining = Math.max(0, (stockLimit ?? 0) - cartQuantityForItem(cart, item.id));
+      toast(modifierCopy(
+        remaining
+          ? `از این محصول فقط ${formatUiNumber(remaining)} عدد باقی مانده است.`
+          : 'موجودی این محصول برای تعداد بیشتری کافی نیست.',
+        remaining
+          ? `Only ${formatUiNumber(remaining)} of this item remain.`
+          : 'There is no remaining stock for this item.',
+        remaining
+          ? `المتبقي من هذا المنتج ${formatUiNumber(remaining)} فقط.`
+          : 'لا توجد كمية متبقية من هذا المنتج.',
+      ));
+      return false;
+    }
+    const selection = validateModifierSelection(item, opts.modifiers || []);
+    if (!selection.ok || !Number.isSafeInteger(selection.unitPrice * q)) {
+      toast(selection.error === 'configuration'
+        ? modifierCopy('تنظیم گزینه‌های این محصول معتبر نیست.', 'This item’s options are not configured correctly.', 'إعداد خيارات هذا المنتج غير صالح.')
+        : modifierCopy('گزینه‌های لازم را انتخاب کنید.', 'Choose the required options first.', 'اختر الخيارات المطلوبة أولاً.'));
+      return false;
+    }
+    const line = {
+      menuItemId: item.id,
+      name: item.name,
+      price: basePrice,
+      qty: q,
+      en: item.en,
+      ar: item.ar,
+      img: item.img || item.image || '',
+      desc: item.desc || item.description || '',
+      descEn: item.descEn || item.descriptionEn || '',
+      descAr: item.descAr || item.descriptionAr || '',
+      allergens: Array.isArray(item.allergens) ? item.allergens : [],
+      categoryId: item.categoryId ?? null,
+      modifiers: selection.modifiers,
+    };
+    const lineKey = modifierLineKey(line);
+    const existing = cart.find((entry) => modifierLineKey(entry) === lineKey);
     if (existing) {
-      existing.qty += q;
+      const nextQty = (Number(existing.qty) || 0) + q;
+      if (nextQty > 99) {
+        toast(modifierCopy('حداکثر تعداد هر انتخاب ۹۹ است.', 'The maximum quantity for each option set is 99.', 'الحد الأقصى لكل مجموعة خيارات هو 99.'));
+        return false;
+      }
+      existing.qty = nextQty;
       if (!existing.img && (item.img || item.image)) existing.img = item.img || item.image || '';
       if (!existing.desc && (item.desc || item.description)) {
         existing.desc = item.desc || item.description || '';
@@ -554,35 +1421,152 @@
         existing.allergens = item.allergens;
       }
       if (!existing.categoryId && item.categoryId != null) existing.categoryId = item.categoryId;
-    } else
-      cart.push({
-        menuItemId: item.id,
-        name: item.name,
-        price: item.price,
-        qty: q,
-        en: item.en,
-        ar: item.ar,
-        img: item.img || item.image || '',
-        desc: item.desc || item.description || '',
-        descEn: item.descEn || item.descriptionEn || '',
-        descAr: item.descAr || item.descriptionAr || '',
-        allergens: Array.isArray(item.allergens) ? item.allergens : [],
-        categoryId: item.categoryId ?? null,
-      });
-    saveCart(cart);
+    } else cart.push(line);
+    if (item.categoryId != null) {
+      const key = String(item.categoryId);
+      if (!Array.isArray(menuByCategory[key])) menuByCategory[key] = [];
+      const menuIndex = menuByCategory[key].findIndex((entry) => Number(entry.id) === Number(item.id));
+      if (menuIndex >= 0) menuByCategory[key][menuIndex] = item;
+      else menuByCategory[key].push(item);
+    }
+    const persisted = saveCart(cart);
     const displayName = window.westoI18n?.itemName ? window.westoI18n.itemName(item) : item.name;
-    toast((q > 1 ? `${q.toLocaleString(localeTag())}× ` : '') + displayName);
+    toast(persisted
+      ? (q > 1 ? `${q.toLocaleString(localeTag())}× ` : '') + displayName
+      : modifierCopy('به سبد همین صفحه اضافه شد، اما ذخیره نشد.', 'Added for this page, but could not be saved.', 'أضيف إلى هذه الصفحة، لكن تعذر حفظه.'));
     if (!opts.skipFly) {
       playFlyToTable(item, opts.fromEl || pendingFlyFromEl || resolveDishFlySource(item));
     }
     pendingFlyFromEl = null;
+    return true;
+  }
+
+  function updateCartLineOptions(lineKey, item, qty, requestedModifiers) {
+    if (!tableCartMutationAllowed()) return false;
+    const source = cart.find((entry) => modifierLineKey(entry) === String(lineKey));
+    const quantity = Number(qty);
+    const availabilityError = itemAvailabilityError(item);
+    const basePrice = safeCartPrice(item?.price);
+    if (!source || !item || Number(item.id) !== Number(source.menuItemId)) return false;
+    if (availabilityError || basePrice == null || !Number.isSafeInteger(quantity) || quantity < 1 || quantity > 99) {
+      toast(availabilityError === 'daypart'
+        ? modifierCopy('این محصول در ساعت فعلی سرو نمی‌شود.', 'This item is not served at this time.', 'لا يقدم هذا المنتج في الوقت الحالي.')
+        : availabilityError === 'stock'
+          ? modifierCopy('موجودی این محصول تمام شده است.', 'This item is out of stock.', 'نفدت كمية هذا المنتج.')
+          : modifierCopy('این محصول یا قیمت آن در حال حاضر قابل تأیید نیست.', 'This item or its price cannot currently be verified.', 'لا يمكن التحقق من هذا المنتج أو سعره الآن.'));
+      return false;
+    }
+    if (!cartQuantityWithinStock(item, cart, quantity, source)) {
+      toast(modifierCopy('تعداد انتخاب‌شده از موجودی باقی‌مانده بیشتر است.', 'The selected quantity exceeds the remaining stock.', 'الكمية المحددة تتجاوز المخزون المتبقي.'));
+      return false;
+    }
+    const selection = validateModifierSelection(item, requestedModifiers);
+    if (!selection.ok || !Number.isSafeInteger(selection.unitPrice * quantity)) {
+      toast(selection.error === 'configuration'
+        ? modifierCopy('تنظیم گزینه‌های این محصول معتبر نیست.', 'This item’s options are not configured correctly.', 'إعداد خيارات هذا المنتج غير صالح.')
+        : modifierCopy('گزینه‌های لازم را انتخاب کنید.', 'Choose the required options first.', 'اختر الخيارات المطلوبة أولاً.'));
+      return false;
+    }
+    const replacement = {
+      ...source,
+      menuItemId: item.id,
+      name: item.name,
+      price: basePrice,
+      qty: quantity,
+      en: item.en,
+      ar: item.ar,
+      img: item.img || item.image || '',
+      desc: item.desc || item.description || '',
+      descEn: item.descEn || item.descriptionEn || '',
+      descAr: item.descAr || item.descriptionAr || '',
+      allergens: Array.isArray(item.allergens) ? item.allergens : [],
+      categoryId: item.categoryId ?? null,
+      modifiers: selection.modifiers,
+    };
+    const updated = replaceCartLineWithSelection(cart, lineKey, replacement);
+    if (!updated.ok) {
+      toast(modifierCopy('این انتخاب با مورد دیگری یکی می‌شود و تعداد کل از سقف ۹۹ می‌گذرد.', 'This selection would merge with another line and exceed the limit of 99.', 'سيتحد هذا الاختيار مع عنصر آخر ويتجاوز الحد الأقصى 99.'));
+      return false;
+    }
+    cart = updated.lines;
+    saveCart(cart);
+    toast(modifierCopy('انتخاب‌های سفارش به‌روز شد.', 'Order options updated.', 'تم تحديث خيارات الطلب.'));
+    return true;
+  }
+
+  function removeCartLine(id) {
+    if (!tableCartMutationAllowed()) return;
+    const index = cart.findIndex((entry) => modifierLineKey(entry) === String(id));
+    if (index < 0) return;
+    const line = cart[index];
+    pendingCartUndo = {
+      index,
+      line: { ...line, modifiers: Array.isArray(line.modifiers) ? line.modifiers.map((modifier) => ({ ...modifier })) : [] },
+    };
+    if (cartUndoTimer) clearTimeout(cartUndoTimer);
+    cart = cart.filter((_, lineIndex) => lineIndex !== index);
+    saveCart(cart);
+    cartUndoTimer = setTimeout(() => {
+      pendingCartUndo = null;
+      cartUndoTimer = 0;
+    }, 7000);
+    toast(modifierCopy('از سبد حذف شد.', 'Removed from cart.', 'حُذف من السلة.'), {
+      actionLabel: modifierCopy('بازگردانی', 'Undo', 'تراجع'),
+      onAction: undoCartRemoval,
+      duration: 7000,
+    });
+    const nextControl = linesEl?.querySelector('[data-rm]') || $('button[data-table-close]');
+    nextControl?.focus?.();
+  }
+
+  function undoCartRemoval() {
+    if (!pendingCartUndo) return;
+    const restored = restoreRemovedCartLine(cart, pendingCartUndo);
+    if (cartUndoTimer) clearTimeout(cartUndoTimer);
+    cartUndoTimer = 0;
+    pendingCartUndo = null;
+    if (!restored.ok) {
+      toast(modifierCopy('بازگردانی ممکن نشد؛ تعداد این انتخاب از سقف مجاز بیشتر می‌شود.', 'Undo was not possible because this option set would exceed its quantity limit.', 'تعذرت الاستعادة لأن مجموعة الخيارات ستتجاوز الحد المسموح.'));
+      return;
+    }
+    cart = restored.lines;
+    saveCart(cart);
+    toast(modifierCopy('مورد به سبد بازگردانده شد.', 'Item restored to cart.', 'تمت استعادة العنصر إلى السلة.'));
+    const restoredControl = Array.from(linesEl?.querySelectorAll('[data-rm]') || [])
+      .find((button) => button.dataset.rm === restored.lineKey);
+    (restoredControl || $('button[data-table-close]'))?.focus?.();
   }
 
   function setQty(id, qty) {
-    const line = cart.find((l) => l.menuItemId === id);
+    if (!tableCartMutationAllowed()) return;
+    const line = cart.find((entry) => modifierLineKey(entry) === String(id));
     if (!line) return;
-    if (qty <= 0) cart = cart.filter((l) => l.menuItemId !== id);
-    else line.qty = qty;
+    if (Number(qty) <= 0) {
+      removeCartLine(id);
+      return;
+    }
+    const nextQty = Math.max(1, Math.min(99, Math.round(Number(qty) || 1)));
+    if (nextQty > Number(line.qty || 0)) {
+      const item = findMenuItem(line.menuItemId);
+      const stockLimit = itemStockLimit(item);
+      const otherLinesQty = cartQuantityForItem(cart, line.menuItemId, line);
+      if (!cartQuantityWithinStock(item, cart, nextQty, line)) {
+        const remaining = Math.max(0, (stockLimit ?? 0) - otherLinesQty - Number(line.qty || 0));
+        toast(modifierCopy(
+          remaining
+            ? `از این محصول فقط ${formatUiNumber(remaining)} عدد دیگر می‌توانید اضافه کنید.`
+            : 'موجودی این محصول اجازهٔ افزایش تعداد را نمی‌دهد.',
+          remaining
+            ? `You can add only ${formatUiNumber(remaining)} more of this item.`
+            : 'The available stock does not allow increasing this quantity.',
+          remaining
+            ? `يمكنك إضافة ${formatUiNumber(remaining)} فقط من هذا المنتج.`
+            : 'الكمية المتاحة لا تسمح بزيادة العدد.',
+        ));
+        return;
+      }
+    }
+    line.qty = nextQty;
     saveCart(cart);
   }
 
@@ -660,6 +1644,7 @@
 
   function renderCart() {
     if (!linesEl) return;
+    const storageWarning = $('#table-cart-storage-warning');
     let enriched = false;
     cart.forEach((l) => {
       const before = `${l.img || ''}|${l.desc || ''}|${l.categoryId ?? ''}`;
@@ -667,14 +1652,51 @@
       const after = `${l.img || ''}|${l.desc || ''}|${l.categoryId ?? ''}`;
       if (before !== after) enriched = true;
     });
-    if (enriched) {
+    if (enriched && cartStorageAvailable && !cartLoadWarning) {
       try {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(cart));
-      } catch (_) {}
+      } catch (_) {
+        cartStorageAvailable = false;
+        cartLoadWarning = modifierCopy(
+          'ذخیرهٔ اطلاعات تکمیلی سبد ناموفق بود؛ تا رفع مشکل ذخیره‌سازی، ادامه سفارش ممکن نیست.',
+          'Cart details could not be saved. Continuing is disabled until cart storage works again.',
+          'تعذر حفظ تفاصيل السلة. تم تعطيل المتابعة حتى يعمل تخزين السلة مجدداً.',
+        );
+      }
+    }
+    if (storageWarning) {
+      storageWarning.hidden = cartStorageAvailable && !cartLoadWarning && !cartRecoveryPending;
+      const warningText = !cartStorageAvailable
+        ? modifierCopy(
+          'ذخیره‌سازی سبد در دسترس نیست؛ سفارش تا زمان موفقیت ذخیره‌سازی قابل ادامه نیست. اگر سبدی فقط در این صفحه ساخته شده باشد، با تازه‌سازی از دست می‌رود.',
+          'Cart storage is unavailable, so you cannot continue until saving works. Items held only in this page may be lost if you refresh.',
+          'تخزين السلة غير متاح، لذلك لا يمكنك المتابعة حتى ينجح الحفظ. قد تُفقد العناصر الموجودة في هذه الصفحة فقط عند التحديث.',
+        )
+        : cartLoadWarning;
+      if (cartRecoveryPending) {
+        const recoverButton = document.createElement('button');
+        recoverButton.type = 'button';
+        recoverButton.className = 'table-cart-recovery-action';
+        recoverButton.textContent = modifierCopy(
+          'نگه‌داری نسخهٔ قبلی و شروع سبد تازه',
+          'Keep previous copy and start fresh',
+          'احتفظ بالنسخة السابقة وابدأ من جديد',
+        );
+        recoverButton.addEventListener('click', () => {
+          recoverButton.disabled = true;
+          startFreshCartAfterRecovery();
+        });
+        storageWarning.replaceChildren(document.createTextNode(warningText), recoverButton);
+      } else {
+        storageWarning.textContent = warningText;
+      }
     }
     const removeLabel = tr('cart.remove');
     const decLabel = tr('cart.dec');
     const incLabel = tr('cart.inc');
+    let pricesVerified = true;
+    let cartItemsVerified = true;
+    const priceChanges = [];
     linesEl.innerHTML = cart
       .map((raw) => {
         const l = enrichCartLine(raw);
@@ -682,9 +1704,68 @@
         const desc = lineDisplayDesc(l);
         const cat = categoryLabelForLine(l);
         const img = l.img || '';
-        const unit = formatPrice(l.price);
-        const lineTotal = formatPrice(l.price * l.qty);
-        const qtyStr = l.qty.toLocaleString(localeTag());
+        const unitPrice = modifierUnitPrice(l);
+        const previousUnitPrice = cartSnapshotUnitPrice(l);
+        const quantity = Number(l.qty);
+        const lineAmount = unitPrice == null || !Number.isSafeInteger(quantity) || quantity < 1 || quantity > 99
+          ? null
+          : unitPrice * quantity;
+        if (unitPrice == null || !Number.isSafeInteger(lineAmount)) pricesVerified = false;
+        if (unitPrice != null && (previousUnitPrice == null || previousUnitPrice !== unitPrice)) {
+          priceChanges.push({
+            key: modifierLineKey(l),
+            name,
+            previous: previousUnitPrice,
+            current: unitPrice,
+          });
+        }
+        const unit = unitPrice == null ? '—' : formatPrice(unitPrice);
+        const lineTotal = lineAmount == null || !Number.isSafeInteger(lineAmount) ? '—' : formatPrice(lineAmount);
+        const lineKey = modifierLineKey(l);
+        const stockLimit = itemStockLimit(l.item);
+        const otherItemQty = cartQuantityForItem(cart, l.menuItemId, l);
+        const stockExceeded = stockLimit !== null && otherItemQty + quantity > stockLimit;
+        const itemMissing = !l.item;
+        const availabilityError = l.item ? itemAvailabilityError(l.item) : 'unavailable';
+        const staleAvailability = availabilityError === 'unavailable' || availabilityError === 'daypart';
+        const incrementBlocked = itemMissing || !!availabilityError || (stockLimit !== null && otherItemQty + quantity >= stockLimit);
+        if (itemMissing || stockExceeded || staleAvailability) cartItemsVerified = false;
+        const cartItemWarning = itemMissing
+          ? modifierCopy(
+            'این محصول دیگر در منوی فعال این شعبه نیست؛ برای ادامه آن را از سبد حذف کنید.',
+            'This item is no longer on this branch’s active menu. Remove it to continue.',
+            'لم يعد هذا المنتج ضمن القائمة النشطة لهذا الفرع. احذفه للمتابعة.',
+          )
+          : stockExceeded
+            ? modifierCopy(
+              `تعداد سبد از موجودی فعلی بیشتر است؛ حداکثر ${formatUiNumber(Math.max(0, stockLimit - otherItemQty))} عدد از این انتخاب قابل سفارش است.`,
+              `The cart exceeds current stock; at most ${formatUiNumber(Math.max(0, stockLimit - otherItemQty))} of this option set can be ordered.`,
+              `تتجاوز السلة المخزون الحالي؛ الحد الأقصى لهذا الاختيار هو ${formatUiNumber(Math.max(0, stockLimit - otherItemQty))}.`,
+            )
+            : availabilityError === 'unavailable'
+              ? modifierCopy(
+                'این محصول دیگر برای سفارش فعال نیست؛ آن را از سبد حذف کنید.',
+                'This item is no longer available to order. Remove it from the cart.',
+                'لم يعد هذا المنتج متاحاً للطلب. احذفه من السلة.',
+              )
+              : availabilityError === 'daypart'
+                ? modifierCopy(
+                  'این غذا در ساعت فعلی سرو نمی‌شود؛ برای ادامه آن را از سبد حذف کنید.',
+                  'This item is not served at this time. Remove it from the cart to continue.',
+                  'لا يقدم هذا المنتج في الوقت الحالي. احذفه من السلة للمتابعة.',
+                )
+            : '';
+        const canonicalSelection = l.item
+          ? validateModifierSelection(l.item, (Array.isArray(l.modifiers) ? l.modifiers : []).map(({ groupId, id }) => ({ groupId, id })))
+          : { ok: false, modifiers: [] };
+        const modifierSummary = (canonicalSelection.ok ? canonicalSelection.modifiers : [])
+          .map((entry) => `${entry.groupTitle}: ${entry.name}`)
+          .filter(Boolean)
+          .map(escapeHtml)
+          .join('، ');
+        const itemModifierDefinition = l.item ? modifierDefinition(l.item) : { ok: false, groups: [] };
+        const canEditOptions = itemModifierDefinition.ok && itemModifierDefinition.groups.length > 0;
+        const qtyStr = Number.isSafeInteger(quantity) && quantity > 0 ? quantity.toLocaleString(localeTag()) : '—';
         const allergenSummary = allergenIdsFor(l.item || l).length
           ? renderAllergenPanel(l.item || l, { compact: true })
           : '';
@@ -700,11 +1781,13 @@
               ${cat ? `<span class="table-line__cat">${escapeHtml(cat)}</span>` : ''}
               <h3 class="table-line__name">${escapeHtml(name)}</h3>
             </div>
-            <button type="button" class="table-line__remove" data-rm="${l.menuItemId}" aria-label="${escapeHtml(removeLabel)}" title="${escapeHtml(removeLabel)}">
+            <button type="button" class="table-line__remove" data-rm="${escapeHtml(lineKey)}" aria-label="${escapeHtml(`${removeLabel} ${name}`)}" title="${escapeHtml(removeLabel)}" style="min-width:44px;min-height:44px"${tableOrderSubmitting ? ' disabled aria-disabled="true"' : ''}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 7h14M10 7V5h4v2m-6 3v8m4-8v8M7 7l1 12a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2l1-12" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
             </button>
           </div>
           ${desc ? `<p class="table-line__desc">${escapeHtml(desc)}</p>` : ''}
+          ${canEditOptions ? `<div class="table-line__modifier-row"><p class="table-line__modifiers">${escapeHtml(modifierSummary ? `${modifierCopy('انتخاب‌ها:', 'Options:', 'الخيارات:')} ${modifierSummary}` : modifierCopy('گزینه‌ای انتخاب نشده است', 'No options selected', 'لم يتم اختيار خيارات'))}</p><button type="button" class="table-line__edit-options" data-edit-options="${escapeHtml(lineKey)}" aria-label="${escapeHtml(`${modifierCopy('ویرایش انتخاب‌های', 'Edit options for', 'تعديل خيارات')} ${name}`)}"${tableOrderSubmitting ? ' disabled aria-disabled="true"' : ''}>${escapeHtml(modifierCopy('ویرایش گزینه‌ها', 'Edit options', 'تعديل الخيارات'))}</button></div>` : modifierSummary ? `<p class="table-line__modifiers">${escapeHtml(modifierCopy('انتخاب‌ها:', 'Options:', 'الخيارات:'))} ${modifierSummary}</p>` : ''}
+          ${cartItemWarning ? `<p class="table-line__stock-warning" role="alert">${escapeHtml(cartItemWarning)}</p>` : ''}
           ${allergenSummary}
           <div class="table-line__foot">
             <div class="table-line__prices">
@@ -712,9 +1795,9 @@
               <strong class="table-line__price">${escapeHtml(lineTotal)}</strong>
             </div>
             <div class="table-line__qty" role="group" aria-label="${escapeHtml(tr('cart.qty'))}">
-              <button type="button" data-dec="${l.menuItemId}" aria-label="${escapeHtml(decLabel)}">−</button>
+              <button type="button" data-dec="${escapeHtml(lineKey)}" aria-label="${escapeHtml(`${decLabel} ${name}`)}" style="min-width:44px;min-height:44px"${quantity <= 1 || tableOrderSubmitting ? ' disabled aria-disabled="true"' : ''}>−</button>
               <span aria-live="polite">${qtyStr}</span>
-              <button type="button" data-inc="${l.menuItemId}" aria-label="${escapeHtml(incLabel)}">+</button>
+              <button type="button" data-inc="${escapeHtml(lineKey)}" aria-label="${escapeHtml(`${incLabel} ${name}`)}" style="min-width:44px;min-height:44px"${quantity >= 99 || incrementBlocked || tableOrderSubmitting ? ' disabled aria-disabled="true"' : ''}>+</button>
             </div>
           </div>
         </div>
@@ -728,8 +1811,49 @@
         parts[1] ? `<br/><span class="table-empty__hint">${escapeHtml(parts[1])}</span>` : ''
       }`;
     }
-    if (totalEl) totalEl.textContent = formatPrice(cartTotal());
-    if (checkoutBtn) checkoutBtn.disabled = cart.length === 0;
+    const currentTotal = cartTotal();
+    if (currentTotal == null) pricesVerified = false;
+    if (totalEl) totalEl.textContent = currentTotal == null ? '—' : formatPrice(currentTotal);
+    const priceReview = $('#table-cart-price-review');
+    const priceChangesEl = $('#table-cart-price-changes');
+    const priceReviewNote = $('#table-cart-price-review-note');
+    const priceAccept = $('#table-cart-price-accept');
+    const priceSignature = JSON.stringify(priceChanges
+      .map(({ key, previous, current }) => [key, previous, current])
+      .sort((left, right) => left[0].localeCompare(right[0])));
+    renderedCartPriceSignature = priceChanges.length ? priceSignature : null;
+    const priceReviewAccepted = priceChanges.length > 0 && acceptedCartPriceSignature === priceSignature;
+    if (priceReview) priceReview.hidden = priceChanges.length === 0;
+    if (priceReviewNote) priceReviewNote.textContent = priceChanges.length
+      ? (priceReviewAccepted
+        ? modifierCopy('قیمت‌های به‌روز بررسی و تأیید شده‌اند.', 'Updated prices have been reviewed and accepted.', 'تمت مراجعة الأسعار المحدثة وقبولها.')
+        : modifierCopy('قیمت بعضی اقلام تغییر کرده یا قیمت قبلی نامشخص است. پیش از ادامه، قیمت‌های زیر را بررسی و تأیید کنید.', 'Some item prices have changed or the previous price is unknown. Review and accept the prices below before continuing.', 'تغيرت أسعار بعض العناصر أو أن السعر السابق غير معروف. راجع الأسعار أدناه واقبلها قبل المتابعة.')
+      )
+      : '';
+    if (priceChangesEl) priceChangesEl.innerHTML = priceChanges.map(({ name, previous, current }) => {
+      const oldPrice = previous == null
+        ? modifierCopy('قیمت قبلی نامشخص', 'Previous price unknown', 'السعر السابق غير معروف')
+        : formatPrice(previous);
+      return `<p>${escapeHtml(name)}: ${escapeHtml(oldPrice)} ← ${escapeHtml(formatPrice(current))}</p>`;
+    }).join('');
+    if (priceAccept) {
+      priceAccept.hidden = priceChanges.length === 0 || priceReviewAccepted;
+      priceAccept.disabled = priceChanges.length === 0;
+      priceAccept.textContent = modifierCopy('قیمت‌های به‌روز را می‌پذیرم', 'Accept updated prices', 'أقبل الأسعار المحدثة');
+    }
+    const cartValidation = $('#table-cart-validation');
+    if (cartValidation) {
+      cartValidation.hidden = cart.length === 0 || pricesVerified;
+      cartValidation.textContent = cartValidation.hidden ? '' : modifierCopy(
+        'قیمت یا گزینه‌های یکی از غذاها قابل تأیید نیست. آن را از سبد حذف کنید و پس از انتخاب دوباره از منو اضافه کنید.',
+        'The price or options for an item can no longer be verified. Remove it and add it again from the menu.',
+        'لم يعد من الممكن التحقق من سعر أو خيارات أحد العناصر. احذفه وأضفه مجدداً من القائمة.',
+      );
+    }
+    if (checkoutBtn) {
+      checkoutBtn.disabled = cart.length === 0 || cartRecoveryPending || !pricesVerified || !cartItemsVerified || !cartStorageAvailable || (priceChanges.length > 0 && !priceReviewAccepted);
+      checkoutBtn.setAttribute('aria-disabled', checkoutBtn.disabled ? 'true' : 'false');
+    }
     paintTableChrome();
     const foot = $('.table-cart-foot');
     if (foot) foot.hidden = cart.length === 0;
@@ -744,21 +1868,21 @@
 
     linesEl.querySelectorAll('[data-inc]').forEach((b) =>
       b.addEventListener('click', () => {
-        const id = Number(b.dataset.inc);
-        const line = cart.find((l) => l.menuItemId === id);
+        const id = b.dataset.inc;
+        const line = cart.find((entry) => modifierLineKey(entry) === id);
         if (line) setQty(id, line.qty + 1);
       }),
     );
     linesEl.querySelectorAll('[data-dec]').forEach((b) =>
       b.addEventListener('click', () => {
-        const id = Number(b.dataset.dec);
-        const line = cart.find((l) => l.menuItemId === id);
+        const id = b.dataset.dec;
+        const line = cart.find((entry) => modifierLineKey(entry) === id);
         if (line) setQty(id, line.qty - 1);
       }),
     );
     linesEl.querySelectorAll('[data-rm]').forEach((b) =>
       b.addEventListener('click', () => {
-        const id = Number(b.dataset.rm);
+        const id = b.dataset.rm;
         setQty(id, 0);
       }),
     );
@@ -964,9 +2088,11 @@
     if (visible) {
       if (sec.hasAttribute('hidden')) sec.removeAttribute('hidden');
       if (sec.style.display === 'none') sec.style.display = '';
+      sec.setAttribute('aria-hidden', 'false');
     } else {
       if (!sec.hasAttribute('hidden')) sec.setAttribute('hidden', '');
       if (sec.style.display !== 'none') sec.style.display = 'none';
+      sec.setAttribute('aria-hidden', 'true');
     }
   }
 
@@ -2839,17 +3965,99 @@
     else if (window.ScrollTrigger) window.ScrollTrigger.refresh();
   }
 
-  async function loadMenu() {
-    const hasBoards = !!document.querySelector('section.is-benefits');
+  function ensureMenuLoadState() {
+    let state = document.getElementById('westo-menu-load-state');
+    if (state) return state;
+    const firstBoard = allDishBoards()[0];
+    const parent = firstBoard?.parentNode || document.querySelector('main') || document.body;
+    if (!parent) return null;
+    state = document.createElement('section');
+    state.id = 'westo-menu-load-state';
+    state.className = 'westo-menu-load-state';
+    state.setAttribute('aria-atomic', 'true');
+    if (firstBoard?.parentNode === parent) parent.insertBefore(state, firstBoard);
+    else parent.prepend(state);
+    return state;
+  }
+
+  async function loadTablePaymentAvailability() {
+    const onlineOption = document.querySelector('input[name="pay"][value="online"]');
+    const cashierOption = document.querySelector('input[name="pay"][value="cashier"]');
+    const note = $('#table-payment-note');
+    if (!onlineOption) return;
+
+    const setAvailability = (available) => {
+      onlineOption.disabled = tableOrderSubmitting || !available;
+      if (cashierOption) cashierOption.disabled = tableOrderSubmitting;
+      if (!available && onlineOption.checked && cashierOption) cashierOption.checked = true;
+      if (note) {
+        note.hidden = available;
+        note.textContent = available ? '' : modifierCopy(
+          'پرداخت آنلاین در این صفحه در دسترس نیست؛ پرداخت در صندوق را انتخاب کنید.',
+          'Online payment is unavailable here; choose payment at the counter.',
+          'الدفع عبر الإنترنت غير متاح هنا؛ اختر الدفع عند الصندوق.',
+        );
+      }
+    };
+
+    // Keep the option disabled unless the server confirms a configured,
+    // usable provider. The order endpoint remains the final authority.
+    setAvailability(false);
     try {
-      const store = window.westoMenuStore
-        ? await window.westoMenuStore.ready
-        : await fetch('/api/menu')
+      const response = await fetch('/api/checkout/meta', {
+        credentials: 'same-origin',
+        cache: 'no-store',
+      });
+      if (!response.ok) throw new Error(`checkout meta failed (${response.status})`);
+      const meta = await response.json();
+      setAvailability(meta?.payment?.onlineEnabled === true);
+    } catch (_) {
+      setAvailability(false);
+    }
+  }
+
+  async function loadMenu() {
+    void loadTablePaymentAvailability();
+    const hasBoards = !!document.querySelector('section.is-benefits');
+    const loadState = hasBoards ? ensureMenuLoadState() : null;
+    const setLoadState = (message, { role = 'status', retry = false, hidden = false } = {}) => {
+      if (!loadState) return;
+      loadState.hidden = hidden;
+      loadState.setAttribute('role', role);
+      loadState.setAttribute('aria-live', role === 'alert' ? 'assertive' : 'polite');
+      loadState.textContent = '';
+      const copy = document.createElement('p');
+      copy.textContent = message;
+      loadState.appendChild(copy);
+      if (retry) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'westo-menu-load-retry';
+        button.textContent = modifierCopy('تلاش دوباره', 'Try again', 'أعد المحاولة');
+        button.addEventListener('click', () => { void loadMenu(); });
+        loadState.appendChild(button);
+      }
+    };
+    if (loadState) {
+      setLoadState(modifierCopy('در حال بارگذاری منوی به‌روز…', 'Loading the current menu…', 'جارٍ تحميل القائمة الحالية…'));
+    }
+    if (hasBoards) allDishBoards().forEach((board) => board.setAttribute('aria-busy', 'true'));
+    try {
+      if (invalidNumericCartBranch) {
+        throw Object.assign(new Error('invalid branch context'), { code: 'cart_branch_invalid' });
+      }
+      const menuStore = window.westoMenuStore;
+      const store = menuStore
+        ? await (menuStore.lastError && typeof menuStore.refresh === 'function' ? menuStore.refresh() : menuStore.ready)
+        : await fetch(cartBranch ? `/api/menu?branch=${encodeURIComponent(cartBranch)}` : '/api/menu')
             .then((r) => {
               if (!r.ok) throw new Error(`menu request failed (${r.status})`);
               return r.json();
             })
             .then((d) => {
+              if (!d || !Array.isArray(d.menuItems) || !Array.isArray(d.menuCategories)) {
+                throw new Error('menu response is missing catalogue collections');
+              }
               const byCategory = {};
               (d.menuItems || []).forEach((m) => {
                 if (m.available === false) return;
@@ -2857,6 +4065,7 @@
                 byCategory[m.categoryId].push(m);
               });
               return {
+                data: d,
                 byCategory,
                 categoryOrder: (d.menuCategories || [])
                   .map((c) => Number(c.id))
@@ -2865,6 +4074,20 @@
             });
       menuByCategory = store.byCategory || {};
       categoryOrder = (store.categoryOrder || []).slice();
+      activeDayparts = Array.isArray(store.data?.activeDayparts) ? store.data.activeDayparts : [];
+      renderCart();
+      const hasCurrentItems = Object.values(menuByCategory).some((list) => Array.isArray(list) && list.length > 0);
+      if (store.lastError && !hasCurrentItems) throw store.lastError;
+      if (store.lastError && hasCurrentItems) {
+        setLoadState(modifierCopy(
+          'ارتباط برقرار نشد؛ فهرست ذخیره‌شده نمایش داده می‌شود و ثبت سفارش پس از اتصال به سرور بررسی خواهد شد.',
+          'Connection failed. The saved menu is shown; order submission will be verified when the server is reachable.',
+          'تعذر الاتصال. تُعرض القائمة المحفوظة وسيتم التحقق من الطلب عند توفر الخادم.',
+        ), { role: 'alert', retry: true });
+      } else {
+        setLoadState('', { hidden: true });
+      }
+      if (hasBoards) allDishBoards().forEach((board) => board.removeAttribute('aria-busy'));
       resourceScheduler()?.registerMenu?.(store.data || store);
       if (!hasBoards) return;
       skipProfileForMenuStory();
@@ -2887,6 +4110,13 @@
       }
     } catch (e) {
       console.warn('menu load failed', e);
+      if (hasBoards) {
+        allDishBoards().forEach((board) => setBoardVisibility(board, false));
+        allDishBoards().forEach((board) => board.removeAttribute('aria-busy'));
+        setLoadState(e?.code === 'cart_branch_invalid'
+          ? modifierCopy('شعبهٔ درج‌شده در نشانی معتبر نیست؛ QR یا پیوند شعبه را بررسی کنید.', 'The branch in this link is invalid. Check the branch QR code or link.', 'الفرع الموجود في الرابط غير صالح. تحقق من رمز QR أو رابط الفرع.')
+          : modifierCopy('بارگذاری منو انجام نشد؛ تا دریافت فهرست معتبر، سفارشی نمایش داده نمی‌شود.', 'The menu could not be loaded. Ordering stays unavailable until a valid menu is received.', 'تعذر تحميل القائمة. يبقى الطلب غير متاح حتى استلام قائمة صالحة.'), { role: 'alert', retry: true });
+      }
     }
   }
 
@@ -2916,27 +4146,79 @@
   // --- quantity modal ---
   let pendingItem = null;
   let pendingQty = 1;
+  let pendingCartLineKey = null;
+  let qtyFocusReturnLineKey = null;
   let qtyFocusBeforeOpen = null;
   const qtyModal = $('#qty-modal');
   const qtyName = $('#qty-modal-name');
   const qtyPrice = $('#qty-modal-price');
   const qtyValue = $('#qty-value');
+  const qtyModifiers = $('#qty-modifiers');
+  const qtyModifierMessage = $('#qty-modifier-message');
+  const qtyConfirm = $('#qty-confirm');
 
-  function openQtyModal(item) {
+  function syncQtyModifierState(showError = false) {
+    if (!pendingItem) return { ok: false, error: 'selection' };
+    const definition = modifierDefinition(pendingItem);
+    const selection = readModifierPicker(qtyModifiers, pendingItem);
+    const availabilityError = itemAvailabilityError(pendingItem);
+    const hasModifiers = definition.ok && definition.groups.length > 0;
+    qtyModal?.classList.toggle('has-modifiers', hasModifiers || !definition.ok);
+    const itemTotalSafe = !availabilityError && selection.ok && Number.isSafeInteger(selection.unitPrice * pendingQty);
+    if (qtyConfirm) qtyConfirm.disabled = !itemTotalSafe;
+    const decButton = $('#qty-dec');
+    const incButton = $('#qty-inc');
+    if (decButton) decButton.disabled = pendingQty <= 1;
+    if (incButton) incButton.disabled = pendingQty >= 99;
+    if (qtyModifierMessage) {
+      qtyModifierMessage.textContent = itemTotalSafe || (!showError && !availabilityError) ? '' : availabilityError === 'daypart'
+        ? modifierCopy('این محصول در ساعت فعلی سرو نمی‌شود.', 'This item is not served at this time.', 'لا يقدم هذا المنتج في الوقت الحالي.')
+        : availabilityError === 'unavailable'
+          ? modifierCopy('این محصول در حال حاضر موجود نیست.', 'This item is currently unavailable.', 'هذا المنتج غير متوفر حالياً.')
+          : !selection.ok && selection.error === 'configuration'
+            ? modifierCopy('تنظیم گزینه‌های این محصول معتبر نیست؛ سفارش ثبت نمی‌شود.', 'This item’s options are misconfigured; it cannot be ordered.', 'خيارات هذا المنتج غير صالحة؛ لا يمكن طلبه.')
+            : !selection.ok && selection.error === 'maximum'
+              ? modifierCopy(`حداکثر ${selection.group?.maxSelections || ''} انتخاب از «${selection.group?.title || ''}» مجاز است.`, `Choose no more than ${selection.group?.maxSelections || ''} from “${selection.group?.title || ''}”.`, `اختر بحد أقصى ${selection.group?.maxSelections || ''} من «${selection.group?.title || ''}».`)
+              : !selection.ok
+                ? modifierCopy(`گزینهٔ لازم «${selection.group?.title || ''}» را انتخاب کنید.`, `Choose a required option for “${selection.group?.title || ''}”.`, `اختر خيارًا مطلوبًا لـ «${selection.group?.title || ''}».`)
+                : modifierCopy('مبلغ این تعداد از محدودهٔ مجاز بیشتر است.', 'This quantity exceeds the supported amount.', 'تتجاوز هذه الكمية المبلغ المسموح.');
+    }
+    if (qtyPrice) {
+      const unit = availabilityError ? null : selection.ok ? selection.unitPrice : safeCartPrice(pendingItem.price);
+      qtyPrice.textContent = unit == null
+        ? modifierCopy('قیمت معتبر ثبت نشده', 'No valid price configured', 'لم يتم إعداد سعر صالح')
+        : hasModifiers
+          ? `${formatPrice(unit)} × ${pendingQty.toLocaleString(localeTag())} = ${itemTotalSafe ? formatPrice(unit * pendingQty) : '—'}`
+          : formatPrice(unit);
+    }
+    return selection;
+  }
+
+  function openQtyModal(item, initialQty = 1, options = {}) {
     qtyFocusBeforeOpen = document.activeElement;
+    pendingCartLineKey = typeof options?.lineKey === 'string' ? options.lineKey : null;
+    qtyFocusReturnLineKey = null;
     pendingItem = item;
-    pendingQty = 1;
-    pendingFlyFromEl = resolveDishFlySource(item);
+    pendingQty = Math.max(1, Math.min(99, Math.round(Number(initialQty) || 1)));
+    pendingFlyFromEl = pendingCartLineKey ? null : resolveDishFlySource(item);
     if (qtyName) {
       qtyName.textContent = window.westoI18n?.itemName ? window.westoI18n.itemName(item) : item.name;
     }
-    if (qtyPrice) qtyPrice.textContent = formatPrice(item.price);
     if (qtyValue) qtyValue.textContent = pendingQty.toLocaleString(localeTag());
+    if (qtyModifiers) {
+      renderModifierPicker(qtyModifiers, item, 'qty', options?.modifiers);
+      qtyModifiers.hidden = !qtyModifiers.childElementCount;
+    }
+    const confirmText = qtyConfirm?.querySelector('.glass-button-text');
+    if (confirmText) confirmText.textContent = pendingCartLineKey
+      ? modifierCopy('ذخیره تغییرات', 'Save changes', 'حفظ التغييرات')
+      : tr('cart.add');
+    if (qtyModifierMessage) qtyModifierMessage.textContent = '';
+    syncQtyModifierState(false);
     if (qtyModal) {
       const wasHidden = qtyModal.hidden;
       qtyModal.hidden = false;
-      qtyModal.setAttribute('aria-modal', 'true');
-      qtyModal.setAttribute('role', 'dialog');
+      qtyModal.querySelector('.qty-modal__card')?.setAttribute('aria-modal', 'true');
       if (wasHidden) lockScroll();
       bindQtyViewport();
       syncQtyViewport();
@@ -2948,26 +4230,44 @@
   }
   function closeQtyModal() {
     pendingItem = null;
+    pendingCartLineKey = null;
     pendingFlyFromEl = null;
     if (qtyModal) {
       qtyModal.hidden = true;
+      qtyModal.classList.remove('has-modifiers');
+      qtyModal.removeAttribute('role');
       qtyModal.removeAttribute('aria-modal');
+      qtyModal.querySelector('.qty-modal__card')?.removeAttribute('aria-modal');
       qtyModal.classList.remove('is-keyboard-open');
       qtyModal.style.removeProperty('--vv-height');
     }
     unlockScroll();
     const back = qtyFocusBeforeOpen;
     qtyFocusBeforeOpen = null;
-    if (back?.isConnected && typeof back.focus === 'function') {
+    const updatedLineFocus = qtyFocusReturnLineKey
+      ? Array.from(linesEl?.querySelectorAll('[data-edit-options]') || []).find((button) => button.dataset.editOptions === qtyFocusReturnLineKey)
+      : null;
+    qtyFocusReturnLineKey = null;
+    const focusTarget = back?.isConnected ? back : updatedLineFocus || linesEl?.querySelector('[data-edit-options]') || $('button[data-table-close]');
+    if (focusTarget && typeof focusTarget.focus === 'function') {
       try {
-        back.focus({ preventScroll: true });
+        focusTarget.focus({ preventScroll: true });
       } catch (_) {}
     }
   }
   function setPendingQty(n) {
     pendingQty = Math.max(1, Math.min(99, n));
     if (qtyValue) qtyValue.textContent = pendingQty.toLocaleString(localeTag());
+    syncQtyModifierState(false);
+    const dec = $('#qty-dec');
+    const inc = $('#qty-inc');
+    if (dec) dec.disabled = pendingQty <= 1;
+    if (inc) inc.disabled = pendingQty >= 99;
   }
+
+  document.addEventListener('change', (event) => {
+    if (pendingItem && event.target.closest('#qty-modifiers')) syncQtyModifierState(true);
+  });
 
   document.addEventListener('click', (e) => {
     const favorite = e.target.closest('[data-dish-favorite]');
@@ -2984,13 +4284,26 @@
       e.stopPropagation();
       const id = Number(add.dataset.itemId);
       const items = Object.values(menuByCategory).flat();
-      const item = items.find((m) => m.id === id);
+      const item = items.find((m) => Number(m.id) === id);
       if (item) {
-        // Motion-style: photo arcs into #nav-table-btn on the Add press.
-        // Qty can still be adjusted from the table drawer.
-        const fromEl = resolveDishFlySource(item);
-        addItem(item, 1, { fromEl });
+        if ((Array.isArray(item.modifierGroups) && item.modifierGroups.length) || !modifierDefinition(item).ok) {
+          openQtyModal(item, 1);
+        } else {
+          // Motion-style quick add stays one tap for items without required choices.
+          const fromEl = resolveDishFlySource(item);
+          addItem(item, 1, { fromEl });
+        }
       }
+      return;
+    }
+
+    const editOptions = e.target.closest('[data-edit-options]');
+    if (editOptions && !editOptions.disabled) {
+      e.preventDefault();
+      const lineKey = editOptions.dataset.editOptions;
+      const line = cart.find((entry) => modifierLineKey(entry) === lineKey);
+      const item = line ? findMenuItem(line.menuItemId) : null;
+      if (line && item) openQtyModal(item, line.qty, { lineKey, modifiers: line.modifiers });
       return;
     }
 
@@ -3010,8 +4323,22 @@
         const item = pendingItem;
         const qty = pendingQty;
         const fromEl = pendingFlyFromEl;
-        closeQtyModal();
-        addItem(item, qty, { fromEl });
+        const selection = readModifierPicker(qtyModifiers, item);
+        if (!selection.ok) {
+          syncQtyModifierState(true);
+          const firstInvalid = selection.group && Array.from(qtyModifiers?.querySelectorAll('[data-modifier-group-id]') || [])
+            .find((group) => group.dataset.modifierGroupId === selection.group.id)
+            ?.querySelector('input:not(:disabled)');
+          firstInvalid?.focus({ preventScroll: true });
+          return;
+        }
+        if (pendingCartLineKey) {
+          const sourceKey = pendingCartLineKey;
+          if (updateCartLineOptions(sourceKey, item, qty, selection.modifiers)) {
+            qtyFocusReturnLineKey = modifierLineKey({ menuItemId: item.id, modifiers: selection.modifiers });
+            closeQtyModal();
+          }
+        } else if (addItem(item, qty, { fromEl, modifiers: selection.modifiers })) closeQtyModal();
       }
       return;
     }
@@ -3052,6 +4379,15 @@
   if (checkoutBtn) {
     checkoutBtn.addEventListener('click', () => showView('checkout'));
   }
+  const priceAcceptBtn = $('#table-cart-price-accept');
+  if (priceAcceptBtn) {
+    priceAcceptBtn.addEventListener('click', () => {
+      if (!renderedCartPriceSignature) return;
+      acceptedCartPriceSignature = renderedCartPriceSignature;
+      renderCart();
+      if (checkoutBtn && !checkoutBtn.disabled) checkoutBtn.focus();
+    });
+  }
   const backBtn = $('#table-back-btn');
   if (backBtn) backBtn.addEventListener('click', () => showView('cart'));
 
@@ -3059,14 +4395,19 @@
   if (callWaiterBtn) {
     callWaiterBtn.addEventListener('click', async () => {
       const msg = $('#order-msg');
-      const params = new URLSearchParams(location.search);
-      const rawTable = normalizeDigits((($('#order-table') || {}).value || '').trim() || params.get('table') || '');
+      const rawTable = normalizeDigits((($('#order-table') || {}).value || '').trim() || initialCartContext.table || '');
       const tableNo = rawTable.trim();
-      const rawBranch = normalizeDigits(params.get('branch') || params.get('branchId') || '').replace(/\D/g, '');
-      const branchId = rawBranch ? Number(rawBranch) : undefined;
+      const waiterBranch = waiterBranchRequestContext(initialCartContext);
       if (!tableNo) {
         if (msg) {
           msg.textContent = tr('cart.needTable');
+          msg.className = 'msg error';
+        }
+        return;
+      }
+      if (!waiterBranch) {
+        if (msg) {
+          msg.textContent = 'شناسهٔ عددی شعبه برای فراخوان در دسترس نیست؛ برای جلوگیری از ارسال به شعبهٔ اشتباه، فراخوان ثبت نشد.';
           msg.className = 'msg error';
         }
         return;
@@ -3076,7 +4417,7 @@
         const r = await fetch('/api/call-waiter', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ tableNo, note: tr('cart.waiterNote'), branchId }),
+          body: JSON.stringify({ tableNo, requestType: 'service', note: tr('cart.waiterNote'), ...waiterBranch }),
         });
         const d = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(d.error || 'خطا');
@@ -3097,26 +4438,37 @@
 
   }
 
-  // Prefill table from QR link ?table=
-  const tableFromQr = new URLSearchParams(location.search).get('table');
-  if (tableFromQr && $('#order-table') && !$('#order-table').value) {
-    $('#order-table').value = tableFromQr;
+  // The QR table is authoritative for this cart. Keep the visible value fixed
+  // and validate it again at submit time so stale scripts/state cannot retarget
+  // a table-scoped cart to another table.
+  const tableFromQr = initialCartContext.table;
+  const orderTableInput = $('#order-table');
+  if (tableFromQr && orderTableInput) {
+    orderTableInput.value = tableFromQr;
+    orderTableInput.readOnly = true;
+    orderTableInput.setAttribute('aria-readonly', 'true');
+  }
+
+  function floatingWaiterTableMarkup(tableNo) {
+    const safeTableNo = escapeHtml(tableNo);
+    return {
+      title: `فراخوان گارسون برای میز ${safeTableNo}`,
+      badge: `میز ${safeTableNo}`,
+      heading: `شماره میز شما: <b>${safeTableNo}</b>`,
+    };
   }
 
   function initFloatingWaiterCall() {
-    const params = new URLSearchParams(location.search);
-    const rawTable = normalizeDigits(params.get('table') || params.get('t') || (($('#order-table') || {}).value || '')).trim();
-    if (rawTable) {
-      try { sessionStorage.setItem('westo_active_table', rawTable); } catch(e) {}
-    }
-    const savedTable = (() => {
-      try { return sessionStorage.getItem('westo_active_table') || ''; } catch(e) { return ''; }
-    })();
-    const tableNo = rawTable || savedTable;
+    const queryContext = initialCartContext;
+    const rawTable = normalizeDigits(queryContext.table || (($('#order-table') || {}).value || '')).trim();
+    const tableNo = rawTable;
     if (!tableNo) return; // Only show floating call button when table is known from QR
+    const tableMarkup = floatingWaiterTableMarkup(tableNo);
 
-    const rawBranch = normalizeDigits(params.get('branch') || params.get('branchId') || '').replace(/\D/g, '');
-    const branchId = rawBranch ? Number(rawBranch) : undefined;
+    const waiterBranch = waiterBranchRequestContext(queryContext);
+    if (!waiterBranch) return;
+    const branchId = waiterBranch.branchId;
+    const callStorageKey = waiterCallStorageKey(tableNo, queryContext.branch);
 
     if ($('#westo-call-fab-wrap')) return;
 
@@ -3124,10 +4476,10 @@
     fabWrap.id = 'westo-call-fab-wrap';
     fabWrap.className = 'westo-call-fab-wrap';
     fabWrap.innerHTML = `
-      <button type="button" id="westo-call-fab" class="westo-call-fab" aria-label="فراخوان گارسون" title="فراخوان گارسون برای میز ${tableNo}">
+      <button type="button" id="westo-call-fab" class="westo-call-fab" aria-label="فراخوان گارسون" title="${tableMarkup.title}">
         <span class="fab-icon">🛎️</span>
         <span class="fab-text">فراخوان گارسون</span>
-        <span class="fab-table-badge">میز ${tableNo}</span>
+        <span class="fab-table-badge">${tableMarkup.badge}</span>
       </button>`;
     document.body.appendChild(fabWrap);
 
@@ -3142,29 +4494,29 @@
             <span class="sheet-icon">🛎️</span>
             <div>
               <h3 id="westo-call-sheet-title">فراخوان گارسون</h3>
-              <p>شماره میز شما: <b>${tableNo}</b></p>
+              <p>${tableMarkup.heading}</p>
             </div>
           </div>
           <button type="button" class="sheet-close-btn" id="westo-call-sheet-close" aria-label="بستن">✕</button>
         </div>
 
         <div class="westo-call-presets" id="westo-call-presets">
-          <button type="button" class="call-preset-btn active" data-note="حضور گارسون در کنار میز">
+          <button type="button" class="call-preset-btn active" data-request-type="service" data-note="حضور گارسون در کنار میز">
             <span class="p-icon">🙋‍♂️</span>
             <span class="p-title">حضور گارسون</span>
             <small>درخواست حضور گارسون در کنار میز</small>
           </button>
-          <button type="button" class="call-preset-btn" data-note="درخواست صورت‌حساب و فاکتور">
+          <button type="button" class="call-preset-btn" data-request-type="bill" data-note="درخواست صورت‌حساب و فاکتور">
             <span class="p-icon">🧾</span>
             <span class="p-title">صورت‌حساب / فاکتور</span>
             <small>تسویه و آوردن دستگاه کارتخوان</small>
           </button>
-          <button type="button" class="call-preset-btn" data-note="درخواست قاشق و چنگال، دستمال یا لیوان">
+          <button type="button" class="call-preset-btn" data-request-type="supplies" data-note="درخواست قاشق و چنگال، دستمال یا لیوان">
             <span class="p-icon">🍴</span>
             <span class="p-title">سرویس و ملزومات</span>
             <small>قاشق، چنگال، دستمال، لیوان، آب</small>
           </button>
-          <button type="button" class="call-preset-btn" data-note="سفارش مجدد و مشاوره درباره منو">
+          <button type="button" class="call-preset-btn" data-request-type="other" data-note="سفارش مجدد و مشاوره درباره منو">
             <span class="p-icon">💬</span>
             <span class="p-title">سفارش مجدد / راهنمایی</span>
             <small>مشاوره آیتم‌ها یا ثبت سفارش تکمیلی</small>
@@ -3190,6 +4542,7 @@
     const submitBtn = $('#westo-call-submit');
     const noteInput = $('#westo-call-custom-note');
     let selectedNote = 'حضور گارسون در کنار میز';
+    let selectedRequestType = 'service';
     let activeCallId = null;
     let cooldownTimer = null;
 
@@ -3198,6 +4551,7 @@
         modal.querySelectorAll('.call-preset-btn').forEach((b) => b.classList.remove('active'));
         btn.classList.add('active');
         selectedNote = btn.dataset.note || 'حضور گارسون در کنار میز';
+        selectedRequestType = btn.dataset.requestType || 'service';
       });
     });
 
@@ -3226,7 +4580,7 @@
       fab.classList.add('is-calling');
       let remaining = Math.max(1, Math.min(60, initialRemaining));
       try {
-        sessionStorage.setItem('westo_active_call', JSON.stringify({
+        sessionStorage.setItem(callStorageKey, JSON.stringify({
           tableNo,
           callId,
           startedAt: Date.now() - (60 - remaining) * 1000
@@ -3260,15 +4614,26 @@
         if (cancelBtn) {
           cancelBtn.addEventListener('click', async (e) => {
             e.stopPropagation();
+            if (cancelBtn.disabled) return;
+            cancelBtn.disabled = true;
             try {
-              await fetch('/api/call-waiter/cancel', {
+              const response = await fetch('/api/call-waiter/cancel', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ tableNo, callId: activeCallId })
+                body: JSON.stringify({ tableNo, callId: activeCallId, branchId })
               });
-            } catch(err) {}
-            clearInterval(cooldownTimer);
-            resetCallingState();
+              const data = await response.json().catch(() => ({}));
+              if (!response.ok || data.ok !== true) throw new Error(data.message || data.error || 'لغو فراخوان ثبت نشد');
+              clearInterval(cooldownTimer);
+              resetCallingState();
+            } catch (err) {
+              cancelBtn.disabled = false;
+              const textEl = fab.querySelector('.fab-text');
+              if (textEl) textEl.textContent = err.message || 'لغو فراخوان ثبت نشد؛ دوباره تلاش کنید';
+              window.setTimeout(() => {
+                if (fab.classList.contains('is-calling')) updateFabText(remaining);
+              }, 3000);
+            }
           });
         }
       };
@@ -3276,25 +4641,25 @@
     };
 
     const resetCallingState = () => {
-      try { sessionStorage.removeItem('westo_active_call'); } catch(e) {}
+      try { sessionStorage.removeItem(callStorageKey); } catch(e) {}
       fab.classList.remove('is-calling');
       activeCallId = null;
       fab.innerHTML = `
         <span class="fab-icon">🛎️</span>
         <span class="fab-text">فراخوان گارسون</span>
-        <span class="fab-table-badge">میز ${tableNo}</span>
+        <span class="fab-table-badge">${tableMarkup.badge}</span>
       `;
     };
 
     // Restore active cooldown across page navigation or refresh
     try {
-      const savedCall = JSON.parse(sessionStorage.getItem('westo_active_call') || 'null');
+      const savedCall = JSON.parse(sessionStorage.getItem(callStorageKey) || 'null');
       if (savedCall && savedCall.startedAt) {
         const elapsed = Math.floor((Date.now() - savedCall.startedAt) / 1000);
         if (elapsed < 60) {
           setCallingState(savedCall.callId, 60 - elapsed);
         } else {
-          sessionStorage.removeItem('westo_active_call');
+          sessionStorage.removeItem(callStorageKey);
         }
       }
     } catch(e) {}
@@ -3317,7 +4682,7 @@
         const res = await fetch('/api/call-waiter', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ tableNo, note: finalNote, branchId })
+          body: JSON.stringify({ tableNo, requestType: selectedRequestType, note: finalNote, branchId })
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data.error || 'خطا در برقراری ارتباط');
@@ -3346,6 +4711,57 @@
     });
   }
 
+  document.addEventListener('click', async (event) => {
+    const button = event.target?.closest?.('[data-table-copy-receipt]');
+    if (!button) return;
+    const code = String(window.__westoTableCheckoutReceiptCode || '');
+    const status = button.parentElement?.querySelector?.('[data-table-copy-status]')
+      || document.getElementById('table-receipt-code-status');
+    try {
+      if (!/^[a-f\d]{32}$/i.test(code)) throw new Error('receipt_code_missing');
+      await navigator.clipboard.writeText(formatTableReceiptCode(code));
+      if (status) status.textContent = 'کد رسید کپی شد؛ آن را نگه دارید.';
+    } catch (_) {
+      if (status) status.textContent = 'کپی خودکار ممکن نشد؛ کد را از روی صفحه یادداشت کنید.';
+    }
+  });
+
+  document.getElementById('table-recovery-form')?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const field = document.getElementById('table-recovery-code');
+    const button = document.getElementById('table-recovery-submit');
+    const output = document.getElementById('table-recovery-result');
+    const code = String(field?.value || '').trim().replace(/[\s-]/g, '').toLowerCase();
+    if (!/^[a-f\d]{32}$/.test(code)) {
+      if (field) { field.setAttribute('aria-invalid', 'true'); field.focus({ preventScroll: true }); }
+      if (output) output.textContent = 'کد باید شامل ۳۲ رقم یا حرف لاتین باشد.';
+      return;
+    }
+    field?.removeAttribute('aria-invalid');
+    if (button) { button.disabled = true; button.setAttribute('aria-busy', 'true'); }
+    if (output) output.textContent = 'در حال جست‌وجوی سفارش…';
+    try {
+      const response = await fetch('/api/checkout/recovery', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ receiptCode: code }),
+      });
+      const result = await response.json().catch(() => ({}));
+      const order = result?.order;
+      const id = Number(order?.id);
+      const total = Number(order?.total);
+      const taxIrr = Number(order?.tax?.totalTaxIrr);
+      if (!response.ok || result?.ok !== true || !Number.isSafeInteger(id) || id <= 0 || !Number.isSafeInteger(total) || total < 0
+          || order?.tax?.inclusive !== true || !Number.isSafeInteger(taxIrr) || taxIrr < 0 || taxIrr > total * 10) {
+        throw new Error(response.status === 404 ? 'سفارشی با این کد پیدا نشد؛ کد را بررسی کنید.' : 'پیگیری فعلاً انجام نشد؛ کمی بعد دوباره تلاش کنید.');
+      }
+      if (output) output.textContent = `سفارش #${id} · ${formatPrice(total)} · ${recoveryOrderStatusLabel(order)} · سهم مالیات ${formatUiNumber(taxIrr)} ریال (داخل قیمت)${order.tableNo ? ` · میز ${order.tableNo}` : ''}`;
+    } catch (error) {
+      if (output) output.textContent = error.message || 'پیگیری سفارش انجام نشد.';
+    } finally {
+      if (button) { button.disabled = false; button.removeAttribute('aria-busy'); }
+    }
+  });
+
   const submitBtn = $('#table-submit-btn');
   if (submitBtn) {
     submitBtn.addEventListener('click', async () => {
@@ -3360,11 +4776,35 @@
         msg.textContent = '';
         msg.className = 'msg';
       }
+      if (invalidNumericCartBranch) {
+        if (msg) {
+          msg.textContent = 'شعبهٔ درج‌شده در نشانی معتبر نیست؛ QR یا پیوند شعبه را بررسی کنید.';
+          msg.className = 'msg error';
+        }
+        return;
+      }
       if (!tableNo.trim()) {
         if (msg) {
           msg.textContent = tr('cart.needTable');
           msg.className = 'msg error';
         }
+        return;
+      }
+      if (!matchesCartTableContext(initialCartContext, tableNo)) {
+        if (msg) {
+          msg.textContent = tableContextIsWithinServerLimit(initialCartContext)
+            ? 'این سبد به میز انتخاب‌شده در QR تعلق دارد؛ شماره میز را تغییر ندهید و QR همان میز را اسکن کنید.'
+            : 'شناسهٔ میز در QR از حد مجاز بیشتر است؛ QR معتبر همان میز را دوباره اسکن کنید.';
+          msg.className = 'msg error';
+        }
+        return;
+      }
+      if (!name.trim()) {
+        if (msg) {
+          msg.textContent = 'برای پیگیری سفارش، نام خود را وارد کنید.';
+          msg.className = 'msg error';
+        }
+        $('#order-name')?.focus?.({ preventScroll: true });
         return;
       }
       if (!/^09\d{9}$/.test(phone)) {
@@ -3374,58 +4814,243 @@
         }
         return;
       }
+    if (!cart.length || cartTotal() == null) {
+        if (msg) {
+          msg.textContent = modifierCopy('قیمت یا گزینه‌های سبد معتبر نیست؛ سفارش ارسال نشد.', 'The cart price or selections could not be verified; the order was not sent.', 'تعذر التحقق من سعر السلة أو خياراتها؛ لم يتم إرسال الطلب.');
+          msg.className = 'msg error';
+      }
+      return;
+    }
+    if (tableOrderSubmitting) return;
 
-      submitBtn.disabled = true;
-      submitBtn.classList.add('is-busy');
-      submitBtn.setAttribute('aria-busy', 'true');
-      const prevLabel = submitBtn.textContent;
-      submitBtn.textContent = tr('cart.submitting');
-      try {
-        const params = new URLSearchParams(location.search);
-        const rawBranch = normalizeDigits(params.get('branch') || params.get('branchId') || '').replace(/\D/g, '');
-        const branchId = rawBranch ? Number(rawBranch) : undefined;
-        const r = await fetch('/api/orders', {
+    submitBtn.disabled = true;
+    submitBtn.classList.add('is-busy');
+    submitBtn.setAttribute('aria-busy', 'true');
+    const prevLabel = submitBtn.textContent;
+    submitBtn.textContent = tr('cart.submitting');
+    const orderFields = [$('#order-table'), $('#order-name'), $('#order-phone'), ...document.querySelectorAll('input[name="pay"]')].filter(Boolean);
+    const previousFieldDisabled = orderFields.map((field) => field.disabled);
+    let checkoutIntent = null;
+    setTableOrderSubmitting(true);
+    orderFields.forEach((field) => { field.disabled = true; });
+    viewCheckout?.setAttribute('aria-busy', 'true');
+    try {
+        const branchSelector = branchSelectorFromContext(initialCartContext);
+        const shownSubtotal = cartTotal();
+        if (shownSubtotal == null) throw new Error(modifierCopy(
+          'قیمت یا گزینه‌های سبد معتبر نیست؛ سفارش ارسال نشد.',
+          'The cart price or selections could not be verified; the order was not sent.',
+          'تعذر التحقق من سعر السلة أو خياراتها؛ لم يتم إرسال الطلب.',
+        ));
+        const orderPayload = {
+          tableNo: tableNo.trim(),
+          name: name.trim(),
+          phone,
+          paymentMethod,
+          ...branchSelector,
+          items: cart.map((l) => ({
+            menuItemId: l.menuItemId,
+            qty: l.qty,
+            modifiers: (Array.isArray(l.modifiers) ? l.modifiers : []).map(({ groupId, id }) => ({ groupId, id })),
+          })),
+        };
+        const checkoutSignature = tableCheckoutIntentFingerprint(JSON.stringify(orderPayload));
+        const checkoutIntentStorageKey = `westo_table_checkout_intent_v2:${encodeURIComponent(cartBranch || 'unscoped')}:${encodeURIComponent(cartTable || 'no-table')}`;
+        const legacyCheckoutIntentStorageKey = 'westo_table_checkout_intent_v1';
+        const storedCheckoutIntents = readTableCheckoutIntentRecords(checkoutIntentStorageKey, legacyCheckoutIntentStorageKey)
+          .map((record) => ({ ...record, normalized: normalizeTableCheckoutIntent(record.intent) }))
+          .filter((record) => record.normalized);
+        storedCheckoutIntents.forEach((record) => {
+          if (!record.legacy || record.normalized.signature === checkoutSignature) {
+            writeTableCheckoutIntent(checkoutIntentStorageKey, record.normalized);
+            if (record.legacy) clearTableCheckoutIntent(legacyCheckoutIntentStorageKey);
+          } else {
+            // Keep an older unresolved request fail-closed, but rewrite its
+            // legacy raw signature so guest data is not retained in storage.
+            writeTableCheckoutIntent(legacyCheckoutIntentStorageKey, record.normalized);
+          }
+        });
+        const inMemoryIntent = normalizeTableCheckoutIntent(window.__westoTableCheckoutIntent);
+        const knownIntents = [];
+        [inMemoryIntent, ...storedCheckoutIntents.map((record) => record.normalized)].filter(Boolean).forEach((intent) => {
+          if (!knownIntents.some((known) => known.key === intent.key)) knownIntents.push(intent);
+        });
+        const staleUnsent = knownIntents.filter((intent) => tableCheckoutIntentDisposition(intent, checkoutSignature) === 'replace-unsent');
+        if (staleUnsent.length) {
+          clearTableCheckoutIntent(checkoutIntentStorageKey);
+          if (inMemoryIntent && staleUnsent.some((intent) => intent.key === inMemoryIntent.key)) window.__westoTableCheckoutIntent = null;
+          staleUnsent.forEach((intent) => {
+            const index = knownIntents.findIndex((known) => known.key === intent.key);
+            if (index >= 0) knownIntents.splice(index, 1);
+          });
+        }
+        if (knownIntents.some((intent) => tableCheckoutIntentDisposition(intent, checkoutSignature) === 'unresolved')) {
+          throw Object.assign(new Error('نتیجهٔ تلاش قبلی برای ثبت سفارش نامشخص است. برای جلوگیری از سفارش تکراری، سفارش یا اطلاعات را تغییر ندهید و ابتدا با شعبه بررسی کنید؛ اگر همین سفارش بوده، آن را عیناً بازیابی کنید و فقط همان درخواست را دوباره بفرستید.'), {
+            code: 'table_checkout_unresolved_intent',
+          });
+        }
+        const reusableIntent = knownIntents.find((intent) => ['retry', 'review'].includes(tableCheckoutIntentDisposition(intent, checkoutSignature))) || null;
+        if (reusableIntent && !/^[a-f\d]{32}$/i.test(reusableIntent.key)) {
+          throw Object.assign(new Error('یک تلاش قدیمی با نتیجهٔ نامشخص پیدا شد. برای جلوگیری از ثبت تکراری، کد یا وضعیت آن را از شعبه پیگیری کنید؛ درخواست تازه ارسال نشد.'), {
+            code: 'table_checkout_legacy_intent_unrecoverable',
+            manualFollowup: true,
+          });
+        }
+        const quoteResponse = await fetch('/api/checkout/quote', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            tableNo: tableNo.trim(),
-            name: name.trim(),
-            phone,
-            paymentMethod,
-            branchId,
-            items: cart.map((l) => ({ menuItemId: l.menuItemId, qty: l.qty })),
-          }),
+          body: JSON.stringify({ ...orderPayload, fulfillment: 'dine_in' }),
         });
-        const d = await r.json();
-        if (!r.ok) throw new Error(d.error || tr('cart.submitFail'));
+        const quote = await quoteResponse.json().catch(() => ({}));
+        if (!quoteResponse.ok || quote?.ok !== true || typeof quote.quoteToken !== 'string'
+            || !quote.quoteToken.trim() || quote.quoteToken.length > 2048
+            || quote.fulfillment !== 'dine_in'
+            || !Number.isSafeInteger(quote.subtotal) || !Number.isSafeInteger(quote.total)
+            || quote.subtotal < 0 || quote.total < 0
+            || quote.tax?.inclusive !== true || !Number.isSafeInteger(quote.tax?.totalTaxIrr) || quote.tax.totalTaxIrr < 0) {
+          throw new Error(quote.message || quote.error || 'پیش‌فاکتور سفارش آماده نشد؛ سبد را دوباره بررسی کنید.');
+        }
+        if (Number(quote.subtotal) !== shownSubtotal) {
+          tableQuoteReview = null;
+          throw new Error('قیمت منو تغییر کرده است؛ صفحه را تازه کنید و مبلغ جدید را پیش از ثبت سفارش بررسی کنید.');
+        }
+        // A retry may receive a newly calculated quote. Reusing the same
+        // idempotency intent must not silently accept a changed payable total.
+        if (tableCheckoutQuoteNeedsReview(tableQuoteReview, checkoutSignature, shownSubtotal, quote.total)) {
+          tableQuoteReview = { signature: checkoutSignature, total: quote.total };
+          if (msg) {
+            msg.textContent = `مبلغ نهایی سرور ${formatPrice(quote.total)} است. اگر مبلغ را تأیید می‌کنید، دکمهٔ ثبت سفارش را دوباره بزنید.`;
+            msg.className = 'msg';
+          }
+          return;
+        }
+        tableQuoteReview = null;
+        checkoutIntent = reusableIntent;
+        if (!checkoutIntent) {
+          checkoutIntent = { signature: checkoutSignature, key: createTableReceiptCode(), submitted: false };
+        }
+        // Keep the quote token only in memory; persistent storage holds only a
+        // request fingerprint and receipt code scoped to this branch and table.
+        checkoutIntent.quoteToken = quote.quoteToken;
+        orderPayload.quoteToken = checkoutIntent.quoteToken;
+        window.__westoTableCheckoutIntent = checkoutIntent;
+        window.__westoTableCheckoutReceiptCode = checkoutIntent.key;
+        if (!writeTableCheckoutIntent(checkoutIntentStorageKey, checkoutIntent)) {
+          throw Object.assign(new Error('شناسهٔ امن سفارش در این مرورگر ذخیره نشد؛ برای جلوگیری از سفارش تکراری، ارسال متوقف شد.'), {
+            code: 'table_checkout_intent_storage_unavailable',
+          });
+        }
+        setTableReceiptCodeView(checkoutIntent.key, 'پیش از ثبت، کد را کپی یا یادداشت کنید.');
+        if (tableReceiptReadySignature !== checkoutSignature) {
+          tableReceiptReadySignature = checkoutSignature;
+          if (msg) {
+            msg.textContent = `مالیات داخل قیمت منو محاسبه شده است (سهم مالیات ${formatUiNumber(quote.tax.totalTaxIrr)} ریال). کد بازیابی را نگه دارید؛ سپس برای ثبت سفارش دوباره همین دکمه را بزنید.`;
+            msg.className = 'msg';
+          }
+          return;
+        }
+
+        checkoutIntent.submitted = true;
+        if (!writeTableCheckoutIntent(checkoutIntentStorageKey, checkoutIntent)) {
+          throw Object.assign(new Error('وضعیت ارسال سفارش در این مرورگر ذخیره نشد؛ برای جلوگیری از ثبت تکراری، سفارش ارسال نشد.'), {
+            code: 'table_checkout_submit_state_storage_unavailable',
+          });
+        }
+        const r = await fetch('/api/checkout/orders', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Idempotency-Key': checkoutIntent.key },
+          body: JSON.stringify(orderPayload),
+        });
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok) {
+          const definitiveRejection = tableCheckoutFailureIsDefinitive(r.status, d.code || d.error);
+          if (definitiveRejection) {
+            try {
+              const current = readTableCheckoutIntentRecords(checkoutIntentStorageKey)
+                .map((record) => normalizeTableCheckoutIntent(record.intent))
+                .find((intent) => intent?.key === checkoutIntent.key);
+              if (current?.key === checkoutIntent.key) clearTableCheckoutIntent(checkoutIntentStorageKey);
+            } catch (_) {}
+            if (window.__westoTableCheckoutIntent?.key === checkoutIntent.key) window.__westoTableCheckoutIntent = null;
+            if (window.__westoTableCheckoutReceiptCode === checkoutIntent.key) window.__westoTableCheckoutReceiptCode = '';
+            tableReceiptReadySignature = '';
+            setTableReceiptCodeView('', '');
+          }
+          throw Object.assign(new Error(tableCheckoutFailureMessage(d, tr('cart.submitFail'))), {
+            status: r.status,
+            code: d.code,
+            definitiveRejection,
+          });
+        }
+        const acceptedOrder = d?.order;
+        const acceptedOrderId = Number(acceptedOrder?.id);
+        const acceptedTotal = Number(acceptedOrder?.total);
+        const acceptedTableNo = String(acceptedOrder?.tableNo || '').trim();
+        if (!acceptedOrder || !Number.isSafeInteger(acceptedOrderId) || acceptedOrderId <= 0
+            || !Number.isSafeInteger(acceptedTotal) || acceptedTotal < 0 || !acceptedTableNo
+            || acceptedOrder.tax?.inclusive !== true || !Number.isSafeInteger(acceptedOrder.tax?.totalTaxIrr)
+            || acceptedOrder.tax.totalTaxIrr < 0 || acceptedOrder.tax.totalTaxIrr > acceptedTotal * 10) {
+          throw new Error('پاسخ ثبت سفارش کامل نیست؛ سبد حفظ شد و تلاش بعدی با همان شناسهٔ یکتا انجام می‌شود.');
+        }
+        if (!tableCheckoutOrderMatchesQuote(acceptedTotal, quote.total)) {
+          throw Object.assign(new Error(`مبلغ سفارش #${acceptedOrderId} با پیش‌فاکتور تأییدشده یکسان نیست. سبد و شناسهٔ پیگیری حفظ شد؛ سفارش دیگری ثبت نکنید و برای تطبیق مبلغ با شعبه تماس بگیرید.`), {
+            manualFollowup: true,
+            confirmedOrderId: acceptedOrderId,
+            code: 'table_checkout_total_mismatch',
+          });
+        }
+        const onlinePayment = paymentMethod === 'online'
+          ? validateTableOnlinePayment(acceptedOrder, d.payment)
+          : null;
+        if (paymentMethod === 'online' && !onlinePayment) {
+          throw Object.assign(new Error(`سفارش #${acceptedOrderId} پاسخ پرداخت کامل و قابل‌تأیید نداد. سفارش دیگری ثبت نکنید؛ ابتدا وضعیت این سفارش را از مسیر پیگیری یا شعبه بررسی کنید.`), {
+            manualFollowup: true,
+            confirmedOrderId: acceptedOrderId,
+          });
+        }
 
         cart = [];
-        saveCart(cart);
+        const cartCleared = finalizeAcceptedTableOrder(checkoutIntent, checkoutIntentStorageKey);
         const done = $('#table-done-msg');
         if (done) {
-          const payLabel =
-            paymentMethod === 'online'
-              ? tr('cart.onlineDone')
-              : tr('cart.counterDone');
+          const payLabel = paymentMethod !== 'online'
+            ? tr('cart.counterDone')
+            : onlinePayment.status === 'pending'
+              ? `پرداخت در انتظار تأیید است؛ سفارش تا تأیید درگاه نهایی نیست.${onlinePayment.redirectUrl
+                ? ` <a href="${escapeHtml(onlinePayment.redirectUrl)}" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer">ادامهٔ پرداخت امن</a>`
+                : ''}`
+              : 'پرداخت آنلاین تأیید شد؛ وضعیت ادامهٔ سفارش از سوی شعبه به‌روزرسانی می‌شود.';
           done.innerHTML = `
             <span class="table-done-kicker">${escapeHtml(tr('cart.doneKicker'))}</span>
-            <span class="table-done-id" dir="ltr">#${escapeHtml(String(d.order.id))}</span>
-            <span class="table-done-meta">${escapeHtml(tr('cart.tableLabel'))} ${escapeHtml(d.order.tableNo)}</span>
+            <span class="table-done-id" dir="ltr">#${escapeHtml(String(acceptedOrderId))}</span>
+            <span class="table-done-meta">${escapeHtml(tr('cart.tableLabel'))} ${escapeHtml(acceptedTableNo)}</span>
             <span class="table-done-pay">${payLabel}</span>
-            <span class="table-done-total">${formatPrice(d.order.total)}</span>
-            <a class="table-done-feedback" href="/feedback?order=${encodeURIComponent(d.order.id)}${branchId ? `&branch=${branchId}` : ''}&src=order">${escapeHtml(tr('cart.feedback'))}</a>`;
+            <span class="table-done-total">${formatPrice(acceptedTotal)}</span>
+            <span class="table-done-tax">سهم مالیات ${formatUiNumber(acceptedOrder.tax.totalTaxIrr)} ریال · داخل قیمت منو</span>
+            <span class="table-done-receipt-code"><strong>کد بازیابی سفارش</strong><output dir="ltr">${escapeHtml(formatTableReceiptCode(checkoutIntent.key))}</output><button type="button" class="btn btn-ghost" data-table-copy-receipt>کپی کد رسید</button><small data-table-copy-status role="status" aria-live="polite">این کد را برای پیگیری در نشست دیگر نگه دارید.</small></span>
+            ${cartCleared ? '' : `<span class="table-done-storage-warning" role="status">${escapeHtml(modifierCopy('سفارش ثبت شده؛ پاکسازی سبد تأیید نشد. برای جلوگیری از سفارش تکراری، ثبت سفارش تازه تا بازیابی همین سفارش غیرفعال است.', 'Order accepted; cart cleanup could not be confirmed. New checkout is paused to prevent a duplicate until this order is recovered.', 'تم قبول الطلب؛ تعذر تأكيد مسح السلة. تم إيقاف الطلب الجديد لمنع التكرار حتى استعادة هذا الطلب.'))}</span>`}
+            <a class="table-done-feedback" href="/feedback?order=${encodeURIComponent(acceptedOrderId)}${branchId ? `&branch=${branchId}` : ''}&src=order">${escapeHtml(tr('cart.feedback'))}</a>`;
         }
         showView('done');
       } catch (err) {
         if (msg) {
-          msg.textContent = err.message;
+          msg.textContent = err.manualFollowup
+            ? err.message
+            : checkoutIntent && !err.definitiveRejection
+            ? 'نتیجهٔ ثبت سفارش هنوز قطعی نیست و ممکن است سفارش ثبت شده باشد. برای جلوگیری از ثبت تکراری، سبد و اطلاعات را تغییر ندهید؛ فقط همین سفارش را دوباره ارسال کنید یا ابتدا با شعبه پیگیری کنید.'
+            : err.message;
           msg.className = 'msg error';
         }
       } finally {
+        setTableOrderSubmitting(false);
+        orderFields.forEach((field, index) => { field.disabled = previousFieldDisabled[index]; });
+        viewCheckout?.removeAttribute('aria-busy');
         submitBtn.disabled = false;
         submitBtn.classList.remove('is-busy');
         submitBtn.removeAttribute('aria-busy');
-        submitBtn.textContent = prevLabel || tr('cart.submit');
+        submitBtn.textContent = tableReceiptReadySignature
+          ? 'کد را نگه داشتم؛ ثبت سفارش'
+          : prevLabel || tr('cart.submit');
       }
     });
   }
@@ -6134,8 +7759,8 @@
     syncDishCatBar({ instantCenter: true });
   });
 
-  document.addEventListener('westo:cartchange', () => {
-    cart = loadCart();
+  document.addEventListener('westo:cartchange', (event) => {
+    cart = Array.isArray(event.detail?.cart) ? event.detail.cart : loadCart();
     updateBadge();
     renderCart();
   });

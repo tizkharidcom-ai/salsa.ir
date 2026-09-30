@@ -320,6 +320,14 @@ BEGIN
     RAISE EXCEPTION 'posted_journal_is_immutable';
   END IF;
   IF TG_OP = 'UPDATE' AND OLD.status IN ('posted','reversed') THEN
+    IF OLD.period_id IS NOT DISTINCT FROM NEW.period_id
+       AND OLD.description IS NOT DISTINCT FROM NEW.description
+       AND OLD.debit_irr IS NOT DISTINCT FROM NEW.debit_irr
+       AND OLD.credit_irr IS NOT DISTINCT FROM NEW.credit_irr
+       AND OLD.posted_by IS NOT DISTINCT FROM NEW.posted_by
+       AND OLD.posted_at IS NOT DISTINCT FROM NEW.posted_at THEN
+      RETURN NEW;
+    END IF;
     RAISE EXCEPTION 'posted_journal_is_immutable_use_reversal';
   END IF;
   RETURN CASE WHEN TG_OP = 'DELETE' THEN OLD ELSE NEW END;
@@ -332,11 +340,20 @@ CREATE TRIGGER finance_journal_immutable_guard
   FOR EACH ROW EXECUTE FUNCTION finance_guard_posted_immutable();
 
 CREATE OR REPLACE FUNCTION finance_guard_posted_lines_immutable() RETURNS trigger AS $$
-DECLARE target_id UUID; target_status TEXT;
+DECLARE target_id UUID; target_status TEXT; line_exists BOOLEAN;
 BEGIN
   target_id := CASE WHEN TG_OP = 'DELETE' THEN OLD.journal_entry_id ELSE NEW.journal_entry_id END;
   SELECT status INTO target_status FROM journal_entries_v2 WHERE id = target_id;
   IF target_status IN ('posted','reversed') THEN
+    IF TG_OP = 'UPDATE' AND (OLD IS NOT DISTINCT FROM NEW OR OLD.id = NEW.id) THEN
+      RETURN NEW;
+    END IF;
+    IF TG_OP = 'INSERT' THEN
+      SELECT EXISTS(SELECT 1 FROM journal_lines_v2 WHERE id = NEW.id) INTO line_exists;
+      IF line_exists THEN
+        RETURN NEW;
+      END IF;
+    END IF;
     RAISE EXCEPTION 'posted_journal_lines_are_immutable_use_reversal';
   END IF;
   RETURN CASE WHEN TG_OP = 'DELETE' THEN OLD ELSE NEW END;

@@ -50,7 +50,7 @@
     menu: 'ویرایش غذاها، قیمت، تصویر و دسترس‌پذیری', inventory: 'مواد اولیه، موجودی واقعی و گردش انبار', costControl: 'بهای تمام‌شده، دستور تهیه و اثر مواد بر فروش', expenses: 'ثبت، پیگیری و اثر هزینه‌ها در دفتر مالی', complements: 'مدیریت مکمل‌های فروش‌محور و اتصال هوشمند آن‌ها به محصول یا دسته', prices: 'ویرایش سریع و گروهی قیمت‌ها', products: 'دسته‌بندی‌ها و ترتیب نمایش منو',
     promotions: 'مدیریت تخفیف‌های موجود', promoSlides: 'مدیریت اسلایدهای تبلیغاتی موجود', restaurant: 'اطلاعات عمومی و مشخصات مجموعه', branches: 'مشخصات و وضعیت شعبه‌ها',
     theme: 'رنگ‌ها و ظاهر برند', hours: 'ساعت فعالیت هر روز', tables: 'میزها، ظرفیت و رمزینه سفارش', content: 'متن‌های فعلی سایت', media: 'لوگو و فایل‌های رسانه‌ای', faq: 'پرسش‌های متداول سایت',
-    users: 'تفکیک پرسنل، مشتریان باشگاه و مدیریت ماتریس دسترسی‌ها', loyalty: 'تنظیم و مانده باشگاه مشتریان', club: 'مشتریان، وفاداری، بازاریابی، بازخورد و خبرنامه', feedback: 'بازخوردها و رضایت مهمان', newsletter: 'عضویت‌های خبرنامه', settings: 'تنظیمات شفاف و بخش‌بندی‌شده مجموعه', delivery: 'محدوده ارسال، پیک و وضعیت پرداخت', finance: 'مسیر قدیمی مالی؛ به فضای یکپارچه هدایت می‌شود',
+    users: 'مدیریت کارکنان، نقش‌ها و دسترسی‌های سامانه', loyalty: 'تنظیم و مانده باشگاه مشتریان', club: 'مشتریان، وفاداری، بازاریابی، بازخورد و خبرنامه', feedback: 'بازخوردها و رضایت مهمان', newsletter: 'عضویت‌های خبرنامه', settings: 'تنظیمات شفاف و بخش‌بندی‌شده مجموعه', delivery: 'محدوده ارسال، پیک و وضعیت پرداخت', finance: 'مسیر قدیمی مالی؛ به فضای یکپارچه هدایت می‌شود',
     accounting: 'کارتابل حسابدار، فروش و صندوق، خرید، بهای تمام‌شده، دفاتر و پایان دوره'
   };
 
@@ -73,6 +73,7 @@
   let kitchenSeenIds = new Set();
   let currentUserRole = 'guest';
   let currentUser = null;
+  let crmAllBranchesScope = false;
   let activeTab = 'dashboard';
   let commandCenterStream = null;
   let commandCenterStreamKey = '';
@@ -84,6 +85,8 @@
   let branchesCache = [];
   let branchSelectionError = null;
   let networkInFlight = 0;
+  const deliveryAcceptanceKeys = new Map();
+  const deliveryRejectionKeys = new Map();
   let workspaceEnhanceTimer = null;
   // ── Floor Studio refactored module instance ──────────────────────────
   // هنگام navigate بین tabها، cleanup شود
@@ -96,15 +99,20 @@
   }
 
   const financeWorkspaceHref = (workspace = 'workbench') => `/admin?financeWorkspace=${encodeURIComponent(workspace)}&branchId=${encodeURIComponent(currentBranchId || 1)}#accounting`;
-  const paymentModeLabel = (value) => ({ sandbox: 'آزمایشی', test: 'آزمایشی', live: 'عملیاتی', production: 'عملیاتی', disabled: 'غیرفعال' }[String(value || '').toLowerCase()] || String(value || 'آزمایشی'));
-  const paymentProviderLabel = (value) => String(value || '').toLowerCase() === 'sandbox' ? 'پرداخت آزمایشی' : String(value || 'پرداخت آزمایشی');
+  const paymentModeLabel = (value) => ({ unavailable: 'در دسترس نیست', sandbox: 'آزمایشی', test: 'آزمایشی', live: 'عملیاتی', production: 'عملیاتی', disabled: 'غیرفعال' }[String(value || '').toLowerCase()] || String(value || 'نامشخص'));
+  const paymentProviderLabel = (value) => {
+    const provider = String(value || '').trim();
+    if (!provider) return 'بدون درگاه';
+    return provider.toLowerCase() === 'sandbox' ? 'پرداخت آزمایشی' : provider;
+  };
 
   function statusLabel(status) {
     return {
       pending_online: 'در انتظار پرداخت آنلاین',
-      awaiting_confirmation: 'نیازمند تأیید',
+      awaiting_confirmation: 'نیازمند بررسی',
       pay_at_cashier: 'پرداخت در صندوق',
       paid: 'پرداخت‌شده',
+      sent_to_kitchen: 'ارسال به آشپزخانه',
       preparing: 'در حال آماده‌سازی',
       ready: 'آماده تحویل',
       dispatched: 'ارسال با پیک',
@@ -119,12 +127,36 @@
     return { dine_in: 'داخل مجموعه', pickup: 'تحویل حضوری', delivery: 'ارسال با پیک' }[kind] || '—';
   }
 
+  function adminOrderStatusLabel(order) {
+    const status = String(order?.status || '').trim().toLowerCase();
+    const fulfillment = String(order?.fulfillment || (order?.tableNo ? 'dine_in' : 'pickup')).trim().toLowerCase();
+    if (fulfillment !== 'delivery') return statusLabel(status);
+    const acceptance = String(order?.deliveryAcceptance?.status || '').trim().toLowerCase();
+    const payment = String(order?.paymentStatus || '').trim().toLowerCase();
+    if (status === 'awaiting_confirmation') {
+      if (acceptance === 'accepted') return ['pending', 'unpaid', 'partial', 'unknown'].includes(payment)
+        ? 'پذیرش رستوران ثبت شد · پرداخت نیازمند پیگیری'
+        : 'پذیرش رستوران ثبت شد · منتظر آشپزخانه';
+      if (acceptance === 'rejected') return 'پذیرش ارسال رد شده';
+      return 'نیازمند تصمیم رستوران';
+    }
+    if (status === 'ready') return 'آماده تحویل به پیک';
+    if (status === 'dispatched') return 'نزد پیک · تحویل نهایی مانده';
+    return statusLabel(status);
+  }
+
   function nextStatusesForOrder(order) {
+    const validTransitions = new Set(['pending_online', 'awaiting_confirmation', 'pay_at_cashier', 'sent_to_kitchen', 'paid', 'preparing', 'ready', 'dispatched', 'picked_up', 'delivered', 'done', 'cancelled']);
+    if (Array.isArray(order?.allowedStatusTransitions)) {
+      const transitions = [...new Set(order.allowedStatusTransitions.filter((status) => validTransitions.has(status)))];
+      return [order.status, ...transitions];
+    }
     const fulfillment = order.fulfillment || (order.tableNo ? 'dine_in' : 'pickup');
     const map = {
       pending_online: ['cancelled'],
-      awaiting_confirmation: ['paid', 'cancelled'],
-      pay_at_cashier: ['paid', 'cancelled'],
+      awaiting_confirmation: ['cancelled'],
+      pay_at_cashier: ['cancelled'],
+      sent_to_kitchen: ['preparing', 'cancelled'],
       paid: ['preparing', 'cancelled'],
       preparing: ['ready', 'cancelled'],
       ready: fulfillment === 'delivery' ? ['dispatched', 'cancelled'] : fulfillment === 'pickup' ? ['picked_up', 'cancelled'] : ['done', 'cancelled'],
@@ -138,13 +170,36 @@
   const TERMINAL_ORDER_STATUSES = new Set(['picked_up', 'delivered', 'done', 'cancelled']);
 
   function orderAgeMinutes(order) {
-    const at = new Date(order?.createdAt || 0).getTime();
-    return at ? Math.max(0, Math.floor((Date.now() - at) / 60000)) : 0;
+    const status = String(order?.status || '');
+    const history = Array.isArray(order?.statusHistory) ? order.statusHistory : [];
+    let at = null;
+    for (let index = history.length - 1; index >= 0; index -= 1) {
+      if (String(history[index]?.status || '') !== status) continue;
+      const parsed = new Date(history[index]?.at || '').getTime();
+      if (Number.isFinite(parsed)) { at = parsed; break; }
+    }
+    if (at === null) {
+      const statusTimeField = { paid: 'paidAt', preparing: 'startedAt', ready: 'readyAt', dispatched: 'dispatchedAt', done: 'doneAt', delivered: 'doneAt', picked_up: 'doneAt' }[status];
+      const statusTime = statusTimeField ? new Date(order?.[statusTimeField] || '').getTime() : NaN;
+      const fallbackTime = new Date(order?.statusAt || order?.createdAt || '').getTime();
+      at = Number.isFinite(statusTime) ? statusTime : Number.isFinite(fallbackTime) ? fallbackTime : Date.now();
+    }
+    return Math.max(0, Math.floor((Date.now() - at) / 60000));
   }
 
   function orderUrgency(order) {
     if (TERMINAL_ORDER_STATUSES.has(String(order?.status || ''))) return { key: 'closed', label: 'بسته', className: '' };
     const age = orderAgeMinutes(order);
+    if (['pending_online', 'awaiting_confirmation', 'pay_at_cashier'].includes(String(order?.status || ''))) {
+      return age >= 20
+        ? { key: 'payment-review', label: `${fmtNum(age)} دقیقه · پیگیری پرداخت`, className: ' is-warn' }
+        : { key: 'payment-wait', label: `${fmtNum(age)} دقیقه · انتظار پرداخت`, className: '' };
+    }
+    if (['ready', 'dispatched'].includes(String(order?.status || ''))) {
+      return age >= 20
+        ? { key: 'handoff-wait', label: `${fmtNum(age)} دقیقه · انتظار تحویل`, className: ' is-warn' }
+        : { key: 'handoff', label: `${fmtNum(age)} دقیقه`, className: '' };
+    }
     if (age >= 20) return { key: 'late', label: `${fmtNum(age)} دقیقه · دیرکرد`, className: ' is-late' };
     if (age >= 10) return { key: 'warn', label: `${fmtNum(age)} دقیقه`, className: ' is-warn' };
     return { key: 'normal', label: `${fmtNum(age)} دقیقه`, className: '' };
@@ -154,11 +209,195 @@
     return nextStatusesForOrder(order).find((status) => status !== order.status && status !== 'cancelled') || '';
   }
 
+  function adminDeliveryAcceptanceView(order, canManageDelivery) {
+    const fulfillment = String(order?.fulfillment || (order?.tableNo ? 'dine_in' : 'pickup')).trim().toLowerCase();
+    const orderStatus = String(order?.status || '').trim().toLowerCase();
+    if (fulfillment !== 'delivery' || !['pending_online', 'awaiting_confirmation', 'pay_at_cashier', 'paid'].includes(orderStatus)) return null;
+
+    const status = String(order?.deliveryAcceptance?.status || '').trim().toLowerCase();
+    const paymentStatus = String(order?.paymentStatus || '').trim().toLowerCase();
+    if (status === 'accepted') {
+      return {
+        status,
+        badge: 'پذیرش انجام شده',
+        detail: ['pending', 'unknown'].includes(paymentStatus)
+          ? 'پذیرش رستوران ثبت شده است؛ پرداخت هنوز در انتظار یا نیازمند تطبیق است و سفارش تا روشن‌شدن وضعیت پرداخت وارد آشپزخانه نمی‌شود.'
+          : 'پذیرش رستوران ثبت شده است؛ پذیرش و پرداخت دو مرحلهٔ مستقل‌اند و ورود به آشپزخانه فقط طبق وضعیت مجاز پرداخت انجام می‌شود.',
+        canAccept: false,
+      };
+    }
+    if (status === 'rejected') {
+      const rejectionReason = String(order?.deliveryAcceptance?.reason || '').trim();
+      return {
+        status,
+        badge: 'پذیرش رد شده',
+        detail: rejectionReason
+          ? `علت ثبت‌شده: ${rejectionReason} · این سفارش وارد صف آشپزخانه نمی‌شود.`
+          : 'این سفارش وارد صف آشپزخانه نمی‌شود؛ برای بررسی با مسئول مجاز تحویل هماهنگ کنید.',
+        canAccept: false,
+      };
+    }
+    if (status && !['pending', 'unrecorded'].includes(status)) {
+      return {
+        status: 'unknown',
+        badge: 'وضعیت پذیرش نامشخص',
+        detail: 'برای جلوگیری از ارسال تکراری، وضعیت پذیرش را تازه‌سازی و بررسی کنید.',
+        canAccept: false,
+      };
+    }
+    return {
+      status: status || 'unrecorded',
+      badge: status === 'pending' ? 'در انتظار پذیرش رستوران' : 'پذیرش رستوران ثبت نشده',
+      detail: canManageDelivery
+        ? 'پذیرش مستقل از پرداخت است و اکنون قابل ثبت است؛ پس از پذیرش، سفارش فقط وقتی وضعیت پرداخت اجازه دهد وارد صف آشپزخانه می‌شود.'
+        : 'این اقدام فقط برای کاربر دارای دسترسی پذیرش تحویل فعال است.',
+      canAccept: canManageDelivery === true,
+    };
+  }
+
+  function adminDeliveryNextStep(order) {
+    const fulfillment = String(order?.fulfillment || (order?.tableNo ? 'dine_in' : 'pickup')).trim().toLowerCase();
+    if (fulfillment !== 'delivery') return null;
+    const status = String(order?.status || '').trim().toLowerCase();
+    const acceptance = String(order?.deliveryAcceptance?.status || '').trim().toLowerCase();
+    const payment = String(order?.paymentStatus || '').trim().toLowerCase();
+    if (acceptance === 'rejected') return {
+      key: 'rejected', label: 'پذیرش ارسال رد شده',
+      detail: 'این سفارش به آشپزخانه یا مرحلهٔ تحویل به پیک نمی‌رود؛ برای اقدام بعدی با مسئول مجاز هماهنگ کنید.',
+    };
+    if (['pending_online', 'awaiting_confirmation', 'pay_at_cashier', 'paid'].includes(status)
+      && !['accepted', 'rejected'].includes(acceptance)) {
+      return {
+        key: 'restaurant-decision', label: 'گام بعد: تصمیم رستوران',
+        detail: ['pending_online', 'pay_at_cashier'].includes(status) || ['pending', 'unpaid', 'partial', 'unknown'].includes(payment)
+          ? 'پذیرش سفارش و پرداخت دو پیگیری جدا هستند؛ وضعیت پرداخت را هم بررسی کنید.'
+          : 'پیش از ورود به آشپزخانه، سفارش را بپذیرید یا با دلیل رد کنید.',
+      };
+    }
+    if (status === 'ready') {
+      const dispatchAllowed=!Array.isArray(order?.allowedStatusTransitions)||order.allowedStatusTransitions.includes('dispatched');
+      return dispatchAllowed?{
+        key: 'courier-handoff', label: 'گام بعد: تحویل سفارش به پیک',
+        detail: 'فقط پس از تحویل فیزیکی سفارش به پیک، «تحویل به پیک» را ثبت کنید.',
+      }:{
+        key: 'courier-handoff-blocked', label: 'تحویل به پیک فعلاً مسدود است',
+        detail: 'سامانه مرحلهٔ بعد را مجاز اعلام نکرده است؛ وضعیت پذیرش رستوران را تازه‌سازی کنید و علت را با مدیر سامانه پیگیری کنید.',
+      };
+    }
+    if (status === 'dispatched') {
+      const deliveryAllowed=!Array.isArray(order?.allowedStatusTransitions)||order.allowedStatusTransitions.includes('delivered');
+      return deliveryAllowed?{
+        key: 'customer-delivery', label: 'سفارش نزد پیک است',
+        detail: 'پس از تأیید تحویل به مشتری، تحویل نهایی را ثبت کنید.',
+      }:{
+        key: 'customer-delivery-blocked', label: 'ثبت تحویل نهایی فعلاً مسدود است',
+        detail: 'سامانه مرحلهٔ تحویل نهایی را مجاز اعلام نکرده است؛ وضعیت سفارش و پذیرش رستوران را تازه‌سازی کنید.',
+      };
+    }
+    if (status === 'delivered') return { key: 'delivered', label: 'تحویل نهایی ثبت شده', detail: 'مسیر ارسال این سفارش پایان یافته است.' };
+    if (status === 'sent_to_kitchen' || status === 'preparing') return {
+      key: 'kitchen', label: 'سفارش در آشپزخانه است', detail: 'پس از آماده‌شدن سفارش، مرحلهٔ تحویل به پیک فعال می‌شود.',
+    };
+    if (status === 'cancelled') return { key: 'cancelled', label: 'سفارش لغو شده', detail: 'اقدام تحویل برای این سفارش انجام نمی‌شود.' };
+    if (status === 'done') return { key: 'done', label: 'سفارش تکمیل شده', detail: 'مسیر عملیاتی این سفارش پایان یافته است.' };
+    return { key: 'review', label: 'وضعیت ارسال نیازمند بررسی', detail: 'پیش از هر اقدامی وضعیت تازهٔ سفارش را بررسی کنید.' };
+  }
+
+  function adminDeliveryRejectionPayload(reason) {
+    const normalized = String(reason ?? '').trim();
+    return normalized && normalized.length <= 500 && !/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/u.test(normalized)
+      ? { reason: normalized }
+      : null;
+  }
+
+  function adminDeliveryRejectionValidationMessage(reason) {
+    const normalized = String(reason ?? '').trim();
+    if (!normalized) return 'علت رد سفارش را بنویسید.';
+    if (normalized.length > 500) return 'علت رد سفارش حداکثر ۵۰۰ نویسه است.';
+    if (/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/u.test(normalized)) return 'علت رد شامل نویسهٔ نامعتبر است؛ متن را پاک‌نویس کنید.';
+    return '';
+  }
+
+  function adminDeliveryRejectionIntent(orderId, reason) {
+    const normalizedReason = String(reason ?? '').trim();
+    const storageKey = `westo:delivery-reject:${currentBranchId || 'branch'}:${String(orderId)}`;
+    let intent = deliveryRejectionKeys.get(storageKey) || null;
+    if (!intent) {
+      let persistedKey = '';
+      try { persistedKey = sessionStorage.getItem(storageKey) || ''; } catch (_) { /* storage will be checked before sending */ }
+      if (persistedKey) {
+        intent = { key: persistedKey, reason: null, needsStatusCheck: true };
+        deliveryRejectionKeys.set(storageKey, intent);
+      }
+    }
+    if (intent?.needsStatusCheck) return { ok: false, storageKey, needsStatusCheck: true };
+    if (intent && intent.reason !== normalizedReason) return { ok: false, storageKey, reasonConflict: true };
+    if (intent) return { ok: true, storageKey, key: intent.key };
+
+    const key = globalThis.crypto?.randomUUID?.()
+      || `delivery-reject-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const nextIntent = { key, reason: normalizedReason };
+    try {
+      sessionStorage.setItem(storageKey, key);
+      if (sessionStorage.getItem(storageKey) !== key) return { ok: false, storageKey, storageUnavailable: true };
+    } catch (_) {
+      return { ok: false, storageKey, storageUnavailable: true };
+    }
+    deliveryRejectionKeys.set(storageKey, nextIntent);
+    return { ok: true, storageKey, key };
+  }
+
+  function clearAdminDeliveryRejectionIntent(storageKey) {
+    deliveryRejectionKeys.delete(storageKey);
+    try { sessionStorage.removeItem(storageKey); } catch (_) { /* the server state remains authoritative */ }
+  }
+
+  function adminDeliveryRejectionConfirmed(response, orderId) {
+    const order = response?.order;
+    return response?.ok === true
+      && String(order?.id ?? '') === String(orderId)
+      && String(order?.deliveryAcceptance?.status || '').trim().toLowerCase() === 'rejected';
+  }
+
+  function adminDeliveryAcceptanceIdempotencyKey(orderId) {
+    const storageKey = `westo:delivery-accept:${currentBranchId || 'branch'}:${String(orderId)}`;
+    let key = deliveryAcceptanceKeys.get(storageKey) || '';
+    try { key = sessionStorage.getItem(storageKey) || key; } catch (_) { /* use a tab-local fallback */ }
+    if (!key) {
+      key = globalThis.crypto?.randomUUID?.()
+        || `delivery-accept-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      try { sessionStorage.setItem(storageKey, key); } catch (_) { /* the current request still has a stable key */ }
+    }
+    deliveryAcceptanceKeys.set(storageKey, key);
+    return { storageKey, key };
+  }
+
+  function clearAdminDeliveryAcceptanceIdempotencyKey(storageKey) {
+    deliveryAcceptanceKeys.delete(storageKey);
+    try { sessionStorage.removeItem(storageKey); } catch (_) { /* persisted confirmation is already authoritative */ }
+  }
+
   function primaryActionLabel(status) {
     return {
       paid: 'تأیید پرداخت', preparing: 'شروع آماده‌سازی', ready: 'آماده شد', dispatched: 'تحویل به پیک',
       picked_up: 'تحویل حضوری شد', delivered: 'تحویل داده شد', done: 'تکمیل سفارش'
     }[status] || (status ? `مرحله بعد: ${statusLabel(status)}` : '');
+  }
+
+  function adminDeliveryStatusConfirmation(orderId, nextStatus) {
+    if (nextStatus === 'dispatched') {
+      return `تحویل فیزیکی سفارش #${orderId} به پیک انجام شده است؟ فقط پس از تحویل واقعی، این مرحله را ثبت کنید.`;
+    }
+    if (nextStatus === 'delivered') {
+      return `مشتری سفارش #${orderId} را تحویل گرفته است؟ ثبت این مرحله، ارسال را نهایی می‌کند.`;
+    }
+    return '';
+  }
+
+  function adminRestoreDeliveryStatusSelection(select, status) {
+    if (!select || !('value' in select)) return false;
+    select.value = String(status ?? '');
+    return true;
   }
 
 
@@ -183,6 +422,180 @@
     if (currentBranchId) q.set('branchId', String(currentBranchId));
     const s = q.toString();
     return s ? `?${s}` : '';
+  }
+
+  function adminKdsIsHeldLine(item) {
+    return String(item?.courseStatus || '').trim().toLowerCase() === 'hold';
+  }
+
+  function adminKitchenTicketProgress(ticket) {
+    const items = Array.isArray(ticket?.items) ? ticket.items : [];
+    const activeItems = items.filter((item) => !adminKdsIsHeldLine(item));
+    const heldItems = [
+      ...(Array.isArray(ticket?.heldCourseItems) ? ticket.heldCourseItems : []),
+      ...items.filter(adminKdsIsHeldLine),
+    ];
+    const seenHeldKeys = new Set();
+    const heldCount = heldItems.filter((item) => {
+      const key = String(item?.key || '');
+      if (!key) return true;
+      if (seenHeldKeys.has(key)) return false;
+      seenHeldKeys.add(key);
+      return true;
+    }).length;
+    const completedCount = activeItems.filter((item) => Boolean(item?.completedAt)).length;
+    const remainingCount = Math.max(0, activeItems.length - completedCount);
+
+    return {
+      activeCount: activeItems.length,
+      completedCount,
+      remainingCount,
+      heldCount,
+      canCompleteTicket: activeItems.length > 0 && remainingCount === 0 && heldCount === 0,
+    };
+  }
+
+  function adminKitchenPaymentGuard(ticket) {
+    const status = String(ticket?.paymentStatus || '').trim().toLowerCase();
+    const orderStatus = String(ticket?.status || '').trim().toLowerCase();
+    if (!['unpaid', 'partial', 'failed', 'paid'].includes(status)) {
+      return { eligible: false, message: 'وضعیت پرداخت ثبت یا تطبیق نشده است؛ این سفارش فقط برای بررسی نمایش داده می‌شود.' };
+    }
+    if (orderStatus === 'paid' && status !== 'paid') {
+      return { eligible: false, message: 'وضعیت سفارش و پرداخت با هم سازگار نیست؛ پیش از آماده‌سازی با مسئول صندوق بررسی کنید.' };
+    }
+    return { eligible: true, message: '' };
+  }
+
+  function adminKitchenLineAction(item, ticketColumn) {
+    if (!item || adminKdsIsHeldLine(item) || !String(item.key || '').trim()) return null;
+    if (!['preparing', 'ready'].includes(String(ticketColumn || ''))) return null;
+    const completed = Boolean(item.completedAt);
+    if (ticketColumn === 'ready' && !completed) return null;
+    return { action: completed ? 'undo_item' : 'complete_item', lineKey: String(item.key) };
+  }
+
+  function adminKitchenCompletionAction(ticket, progress) {
+    if (ticket?.column !== 'preparing') return null;
+    if (progress?.canCompleteTicket === true) {
+      return { action: 'complete_ticket', enabled: true, label: 'ثبت آماده‌بودن سفارش' };
+    }
+    const label = progress?.heldCount && progress?.remainingCount
+      ? 'منتظر تکمیل قلم‌ها و ارسال دوره از سالن'
+      : progress?.heldCount
+        ? 'منتظر ارسال دوره از سالن'
+        : 'ابتدا همهٔ اقلام را تکمیل کنید';
+    return { action: null, enabled: false, label };
+  }
+
+  function adminKitchenActionPayload(dataset = {}) {
+    const action = String(dataset.kdsAction || '');
+    if (!['start_ticket', 'complete_item', 'undo_item', 'complete_ticket'].includes(action)) return null;
+    if (action === 'complete_ticket' && dataset.kdsCanComplete !== 'true') return null;
+    if (action === 'complete_item' || action === 'undo_item') {
+      const lineKey = String(dataset.lineKey || '').trim();
+      return lineKey ? { action, lineKey } : null;
+    }
+    return { action };
+  }
+
+  function adminKitchenActionApplied(ticket, payload) {
+    if (!ticket || !payload) return false;
+    const column = String(ticket.column || '').trim().toLowerCase();
+    if (payload.action === 'start_ticket') return ['preparing', 'ready'].includes(column);
+    if (payload.action === 'complete_ticket') return column === 'ready';
+    if (!['complete_item', 'undo_item'].includes(payload.action)) return false;
+    const line = [...(Array.isArray(ticket.items) ? ticket.items : []), ...(Array.isArray(ticket.heldCourseItems) ? ticket.heldCourseItems : [])]
+      .find((item) => String(item?.key || '') === String(payload.lineKey || ''));
+    if (!line || adminKdsIsHeldLine(line)) return false;
+    return payload.action === 'complete_item'
+      ? Boolean(line.completedAt)
+      : column === 'preparing' && !line.completedAt;
+  }
+
+  function adminKitchenActionErrorMessage(error) {
+    const code = String(error?.message || '').trim();
+    const messages = {
+      delivery_acceptance_required: 'پذیرش رستوران برای این سفارش ارسال ثبت نشده است؛ آشپزخانه نمی‌تواند آن را شروع کند.',
+      payment_reconciliation_required: 'وضعیت پرداخت سفارش روشن نیست؛ پیش از تغییر صف، آن را با مسئول صندوق یا مدیر بررسی کنید.',
+      kitchen_transition_invalid: 'وضعیت سفارش تغییر کرده یا این اقدام دیگر مجاز نیست؛ صف تازه شد، وضعیت فعلی را بررسی کنید.',
+      kds_ticket_incomplete: 'برای آماده‌بودن سفارش، همهٔ اقلام فعال را تکمیل کنید و دوره‌های نگه‌داشته‌شده را از سالن پیگیری کنید.',
+      kds_item_invalid: 'این قلم دیگر با وضعیت سفارش هم‌خوان نیست؛ جزئیات تازهٔ سفارش را بررسی کنید.',
+      kitchen_recall_invalid: 'این سفارش دیگر در وضعیت قابل‌بازگردانی نیست؛ وضعیت تازه را بررسی کنید.',
+      kds_persistence_failed: 'ثبت پایدار تغییر تأیید نشد؛ وضعیت صف را تازه کنید و تا روشن‌شدن نتیجه دوباره اقدام نکنید.',
+    };
+    return messages[code] || code || 'ثبت تغییر تأیید نشد.';
+  }
+
+  async function sendAdminKitchenAction(orderId, payload) {
+    try {
+      const result = await api(`/api/kitchen/orders/${encodeURIComponent(orderId)}${branchQs()}`, {
+        method: 'PATCH',
+        body: JSON.stringify(payload),
+      });
+      if (result?.ok !== true) throw new Error('پاسخ سرور ثبت تغییر را تأیید نکرد.');
+      return result;
+    } catch (error) {
+      throw new Error(adminKitchenActionErrorMessage(error));
+    }
+  }
+
+  async function settleKitchenWorkspaceRequests(queueRequest, callsRequest, callsTimeoutMs = 8000) {
+    let callsTimer = null;
+    const callsOutcome = Promise.resolve(callsRequest).then(
+      (value) => ({ status: 'fulfilled', value }),
+      (reason) => ({ status: 'rejected', reason })
+    );
+    const boundedCallsOutcome = Promise.race([
+      callsOutcome,
+      new Promise((resolve) => {
+        callsTimer = setTimeout(() => {
+          const error = new Error('دریافت فراخوان‌های سالن بیش از حد طول کشید.');
+          error.code = 'KITCHEN_CALLS_TIMEOUT';
+          resolve({ status: 'rejected', reason: error });
+        }, Math.max(1, Number(callsTimeoutMs) || 8000));
+      }),
+    ]);
+    try {
+      const queue = await queueRequest;
+      const callsResult = await boundedCallsOutcome;
+      return {
+        queue,
+        calls: callsResult.status === 'fulfilled' ? callsResult.value : { calls: [] },
+        callsError: callsResult.status === 'rejected' ? callsResult.reason : null,
+      };
+    } finally {
+      if (callsTimer) clearTimeout(callsTimer);
+    }
+  }
+
+  function shouldRenderKitchenSnapshot(requestVersion, latestVersion, requestedBranchId, currentBranchId, selectedTab) {
+    return Number(requestVersion) === Number(latestVersion)
+      && String(requestedBranchId ?? '') === String(currentBranchId ?? '')
+      && selectedTab === 'kitchen';
+  }
+
+  function orderKitchenAdminTickets(tickets = []) {
+    return (Array.isArray(tickets) ? tickets : []).slice().sort((a, b) =>
+      Number(b?.kds?.priority === true) - Number(a?.kds?.priority === true)
+      || Number(b?.ageSec || 0) - Number(a?.ageSec || 0)
+    );
+  }
+
+  function adminKitchenAmendmentLabel(ticket) {
+    const revision = Number(ticket?.editRevision);
+    const hasRevision = Number.isSafeInteger(revision) && revision > 0;
+    const editedAtRaw = String(ticket?.editedAt || '').trim();
+    const editedAt = editedAtRaw ? Date.parse(editedAtRaw) : NaN;
+    const hasEditedAt = Number.isFinite(editedAt);
+    if (!hasRevision && !hasEditedAt) return '';
+
+    const parts = ['اصلاح سفارش پس از ارسال'];
+    if (hasRevision) parts.push(`نسخه ${new Intl.NumberFormat('fa-IR').format(revision)}`);
+    if (hasEditedAt) {
+      parts.push(`ساعت ${new Intl.DateTimeFormat('fa-IR', { hour: '2-digit', minute: '2-digit' }).format(new Date(editedAt))}`);
+    }
+    return parts.join(' · ');
   }
 
   function currentBranch() {
@@ -243,7 +656,14 @@
       .join('');
     sel.onchange = () => {
       currentBranchId = Number(sel.value) || null;
-      if (currentBranchId) localStorage.setItem('westo_admin_branch', String(currentBranchId));
+      crmAllBranchesScope = false;
+      if (currentBranchId) {
+        branchSelectionError = null;
+        localStorage.setItem('westo_admin_branch', String(currentBranchId));
+        const nextUrl = new URL(location.href);
+        nextUrl.searchParams.set('branchId', String(currentBranchId));
+        history.replaceState(history.state, '', nextUrl);
+      }
       startCommandCenterStream();
       const active = document.querySelector('.admin-nav-item.active');
       const tab = active?.dataset?.tab;
@@ -434,6 +854,20 @@
     return tab === 'kitchen' || ['dashboard', 'orders', 'reservations'].includes(tab);
   }
 
+  function setAdminKitchenStreamStatus(connected) {
+    if (activeTab !== 'kitchen') return;
+    const existing = main.querySelector('[data-kds-stream-status]');
+    if (connected) {
+      existing?.remove();
+      return;
+    }
+    if (existing) return;
+    const status = '<section class="section-box kds-stream-warning" role="status" data-kds-stream-status><p class="eyebrow">اتصال زنده قطع است</p><p class="lead">تغییر سفارش‌ها ممکن است فوری نمایش داده نشوند؛ صف را دستی تازه‌سازی کنید.</p></section>';
+    const pageHead = main.querySelector('.ops-page-head');
+    if (pageHead) pageHead.insertAdjacentHTML('afterend', status);
+    else main.insertAdjacentHTML('afterbegin', status);
+  }
+
   function refreshLiveWorkspace({ immediate = false } = {}) {
     if (!isLiveWorkspace()) {
       liveRefreshPending = false;
@@ -457,6 +891,9 @@
       if (activeTab === 'kitchen' && kitchenPaint) {
         kitchenPaint().catch(() => {});
       } else if (['dashboard', 'orders', 'reservations'].includes(activeTab) && tabs[activeTab]) {
+        if (activeTab === 'dashboard' && window.westoDashboardPauseAutoRefresh) {
+          return;
+        }
         tabs[activeTab]().catch(() => {});
       }
     }, immediate ? 0 : 180);
@@ -495,11 +932,16 @@
     ['order.created', 'order.updated', 'payment.updated', 'reservation.created', 'reservation.updated', 'delivery_zone.updated'].forEach((type) => {
       stream.addEventListener(type, onOperationalUpdate);
     });
+    let streamHasOpened = false;
     stream.onopen = () => {
       if (commandCenterStream !== stream) return;
+      setAdminKitchenStreamStatus(true);
+      if (streamHasOpened) refreshLiveWorkspace({ immediate: true });
+      streamHasOpened = true;
     };
     stream.onerror = () => {
       if (commandCenterStream !== stream) return;
+      setAdminKitchenStreamStatus(false);
     };
   }
 
@@ -743,7 +1185,13 @@
     activeTab = name;
     const activeModule = window.WestoAdminModules?.forTab(name);
     document.documentElement.dataset.adminActiveModule = activeModule?.id || 'legacy';
-    if (location.hash !== `#${name}`) history.replaceState(null, '', `${location.pathname}${location.search}#${name}`);
+    const tabParams = new URLSearchParams(location.search);
+    if (name !== 'accounting') {
+      ['financeWorkspace', 'financeOperation', 'financeFrom', 'financeTo'].forEach((key) => tabParams.delete(key));
+    }
+    const tabQuery = tabParams.toString();
+    const tabUrl = `${location.pathname}${tabQuery ? `?${tabQuery}` : ''}#${name}`;
+    if (`${location.pathname}${location.search}${location.hash}` !== tabUrl) history.replaceState(null, '', tabUrl);
     if (name !== 'kitchen') stopKitchenPoll();
     document.querySelectorAll('.admin-nav-item[data-tab]').forEach((b) => {
       const on = b.dataset.tab === name;
@@ -1337,6 +1785,7 @@
       const openCalls = Number(live.metrics?.openWaiterCalls || 0);
       const delayed = Number(d.summary?.delayed || 0);
       const queue = Number(d.summary?.queue || 0);
+      const kitchenQueue = Number(d.summary?.kitchenQueue ?? (d.queue || []).filter((order) => ['sent_to_kitchen', 'paid', 'preparing'].includes(order.status)).length);
       const financeData = financeResult?.data || null;
       const breakEvenDashboard = beResult?.data || beResult || null;
       const financeCriticalIssues = Array.isArray(financeData?.issues)
@@ -1349,7 +1798,7 @@
       const salesHealth = salesToday > 0
         ? Math.max(1, Math.min(100, Math.round((salesToday / Math.max(1, weeklyDailyAverage || salesToday)) * 100)))
         : 0;
-      const kitchenHealth = Math.max(0, Math.min(100, 100 - delayed * 14 - Math.max(0, queue - 3) * 4));
+      const kitchenHealth = Math.max(0, Math.min(100, 100 - delayed * 14 - Math.max(0, kitchenQueue - 3) * 4));
       const overviewSegments = [
         { label: 'سفارش فعال', value: activeOrders, color: '#66c346' },
         { label: 'میز درگیر', value: busyTables, color: '#4d97ed' },
@@ -1364,6 +1813,29 @@
         return `${item.color} ${start.toFixed(2)}% ${overviewCursor.toFixed(2)}%`;
       }).join(', ');
       const displayName = currentUser?.name || currentUser?.phone || 'مدیر وستو';
+      if (window.WestoDashboardView && typeof window.WestoDashboardView.render === 'function') {
+        const payload = {
+          d,
+          live,
+          stats,
+          financeResult,
+          beResult,
+          currentBranch: br,
+          currentUser,
+          hasCapability,
+          esc,
+          fmtMoney,
+          fmtNum,
+          sparkBars,
+          fulfillmentLabel,
+          statusLabel,
+          renderDashboardBreakEvenShell,
+        };
+        main.innerHTML = window.WestoDashboardView.render(payload, { tabs, showToast, legacyTabs: tabs });
+        mountDashboardBreakEven(breakEvenDashboard);
+        window.WestoDashboardView.bindEvents(main, payload, { tabs, showToast });
+        return;
+      }
       main.innerHTML = `
         <div class="vital-dashboard">
           <header class="vital-welcome">
@@ -1452,7 +1924,11 @@
               <section class="section-box vital-alert-panel">
                 <div class="ops-panel__head"><h2>هشدارها</h2><button class="text-btn" data-quick-tab="inventory">همه</button></div>
                 <div class="vital-alert-list">
-                  ${(d.delayed || []).slice(0, 3).map((order) => `<div><i class="is-red">!</i><span><b>تأخیر سفارش #${order.id}</b><small>${fmtNum(order.ageMinutes)} دقیقه در ${esc(statusLabel(order.status))}</small></span></div>`).join('')}
+          ${[
+            ...(d.delayed || []).map((order) => ({ ...order, title: `تأخیر آشپزخانه سفارش #${order.id}` })),
+            ...(d.paymentAttention || []).map((order) => ({ ...order, title: `پیگیری پرداخت سفارش #${order.id}` })),
+            ...(d.handoffAttention || []).map((order) => ({ ...order, title: `انتظار تحویل سفارش #${order.id}` })),
+          ].slice(0, 3).map((order) => `<div><i class="is-red">!</i><span><b>${esc(order.title)}</b><small>${fmtNum(order.stageAgeMinutes ?? order.ageMinutes)} دقیقه در ${esc(statusLabel(order.status))}</small></span></div>`).join('')}
                   ${(d.lowStock || []).slice(0, 3).map((item) => `<div><i class="is-orange">▣</i><span><b>موجودی کم: ${esc(item.name)}</b><small>${fmtNum(item.stock)} عدد باقی مانده</small></span></div>`).join('')}
                   ${!(d.delayed || []).length && !(d.lowStock || []).length ? '<p class="ops-empty">هشدار فوری وجود ندارد.</p>' : ''}
                 </div>
@@ -7296,12 +7772,35 @@
       if (!catId) catId = cats.length ? cats[0].id : 0;
       catId = Number(catId);
       const searchQ = (opts.q != null ? opts.q : state._menuSearch || '').trim();
+      const dietaryFilter = (opts.dietary != null ? opts.dietary : state._menuDietary || 'all');
       state._menuSearch = searchQ;
+      state._menuDietary = dietaryFilter;
       state._menuCats = cats;
       state._menuAllergens = allergens;
       state._menuDayparts = dayparts;
       state._menuAllItems = allItems;
       state.menuItems = allItems.filter((m) => m.categoryId === catId);
+
+      // Fetch BCG Matrix & Recipe Costing data
+      let engineeringMap = new Map();
+      try {
+        const engData = await api('/api/admin/finance/menu-engineering');
+        if (Array.isArray(engData?.items)) {
+          engData.items.forEach((it) => {
+            engineeringMap.set(String(it.menuItemId || ''), it);
+            if (it.name) engineeringMap.set(String(it.name), it);
+          });
+        }
+      } catch (_) {}
+
+      const DIETARY_TAGS = [
+        { id: 'vegan', label: 'گیاه‌خواری', icon: '🌿', badgeClass: 'is-vegan' },
+        { id: 'keto', label: 'کتوژنیک', icon: '🥑', badgeClass: 'is-keto' },
+        { id: 'gluten_free', label: 'بدون گلوتن', icon: '🌾', badgeClass: 'is-gf' },
+        { id: 'spicy', label: 'تند', icon: '🌶️', badgeClass: 'is-spicy' },
+        { id: 'low_cal', label: 'کم‌کالری', icon: '🥗', badgeClass: 'is-lowcal' },
+        { id: 'dairy_free', label: 'بدون لبنیات', icon: '🥛', badgeClass: 'is-dairyfree' },
+      ];
 
       const imgSrc = (img) => {
         if (!img) return '';
@@ -7309,13 +7808,19 @@
         return `/${String(img).replace(/^\//, '')}`;
       };
 
-      const filtered = state.menuItems.filter(
-        (m) =>
-          !searchQ ||
+      const filtered = state.menuItems.filter((m) => {
+        const matchSearch = !searchQ ||
           String(m.name || '').includes(searchQ) ||
           String(m.en || '').toLowerCase().includes(searchQ.toLowerCase()) ||
-          String(m.desc || '').includes(searchQ)
-      );
+          String(m.desc || '').includes(searchQ);
+        if (!matchSearch) return false;
+        if (dietaryFilter === 'all') return true;
+        if (dietaryFilter === 'cost_warn') {
+          const eng = engineeringMap.get(String(m.id)) || engineeringMap.get(String(m.name));
+          return eng && eng.foodCostPct > 38;
+        }
+        return Array.isArray(m.dietary) && m.dietary.includes(dietaryFilter);
+      });
 
       const allergenBoxes = (m, key = m.id) =>
         `<div class="chip-grid" data-allergens-for="${key}">
@@ -7323,6 +7828,15 @@
             .map(
               (a) =>
                 `<label class="chip"><input type="checkbox" value="${esc(a.id)}" ${(m.allergens || []).includes(a.id) ? 'checked' : ''} /> ${esc(a.label)}</label>`
+            )
+            .join('')}
+        </div>`;
+      const dietaryBoxes = (m, key = m.id) =>
+        `<div class="chip-grid" data-dietary-for="${key}">
+          ${DIETARY_TAGS
+            .map(
+              (t) =>
+                `<label class="chip"><input type="checkbox" value="${esc(t.id)}" ${(m.dietary || []).includes(t.id) ? 'checked' : ''} /> ${t.icon} ${esc(t.label)}</label>`
             )
             .join('')}
         </div>`;
@@ -7338,17 +7852,75 @@
 
       const rowHtml = (m) => {
         const avail = m.available !== false;
+        const eng = engineeringMap.get(String(m.id)) || engineeringMap.get(String(m.name)) || null;
         const thumb = m.img
           ? `<img src="${esc(imgSrc(m.img))}" alt="" loading="lazy" />`
           : `<span class="menu-studio__thumb-ph">بدون تصویر</span>`;
+
+        const itemDietary = Array.isArray(m.dietary) ? m.dietary : [];
+        const dietaryHtml = itemDietary.map((tagId) => {
+          const tag = DIETARY_TAGS.find((t) => t.id === tagId);
+          return tag ? `<span class="menu-dietary-pill ${tag.badgeClass}">${tag.icon} ${esc(tag.label)}</span>` : '';
+        }).join('');
+
+        let costHtml = '';
+        if (eng && eng.foodCostPct != null) {
+          const pct = Math.round(eng.foodCostPct);
+          const costStatus = pct <= 30 ? 'is-good' : pct <= 38 ? 'is-warn' : 'is-danger';
+          const bcgIcon = eng.category === 'star' ? '⭐ پدیده' : eng.category === 'plowhorse' ? '🐎 اسب کار' : eng.category === 'puzzle' ? '🧩 معما' : '🐶 بازنگری';
+          costHtml = `<span class="menu-cost-pill ${costStatus}" title="${esc(eng.recommendation || '')}">
+            <span>بهای خوراک: ٪${fa(pct)}</span>
+            <span class="bcg-tag">${bcgIcon}</span>
+          </span>`;
+        } else {
+          costHtml = `<span class="menu-cost-pill is-missing" data-quick-create-recipe="${m.id}" title="بدون آنالیز بهای خوراک — کلیک برای تعریف دستور تهیه">⚠️ بدون دستور تهیه</span>`;
+        }
+
+        const prepMin = m.prepTime || 15;
+        const prepHtml = `<span class="menu-prep-pill">⏱️ ${fa(prepMin)} دقیقه</span>`;
+
+        let stockHtml = '';
+        if (m.stock !== null && m.stock !== undefined) {
+          if (m.stock <= 0) {
+            stockHtml = `<span class="menu-stock-pill is-out">اتمام موجودی</span>`;
+          } else if (m.stock <= (m.lowStockAt ?? 5)) {
+            stockHtml = `<span class="menu-stock-pill is-low">موجودی کم: ${fa(m.stock)}</span>`;
+          } else {
+            stockHtml = `<span class="menu-stock-pill is-ok">موجودی: ${fa(m.stock)}</span>`;
+          }
+        }
+
         return `
-          <div class="menu-studio__row" data-mid="${m.id}" role="button" tabindex="0">
+          <div class="menu-studio__row${!avail ? ' is-unavailable' : ''}" data-mid="${m.id}" role="button" tabindex="0">
             <div class="menu-studio__thumb">${thumb}</div>
             <div class="menu-studio__meta">
-              <strong>${esc(m.name)}</strong>
-              <span>${fmtMoney(m.price)}</span>
+              <div class="menu-studio__name-line">
+                <strong>${esc(m.name)}</strong>
+                ${stockHtml}
+                ${prepHtml}
+              </div>
+              <div class="menu-studio__chips-line">
+                ${dietaryHtml}
+                ${costHtml}
+              </div>
+              <div class="menu-studio__price-wrap" onclick="event.stopPropagation()">
+                <span class="menu-price-display" data-quick-price-trigger="${m.id}" title="کلیک برای ویرایش سریع قیمت">${fmtMoney(m.price)}</span>
+                <div class="inline-price-editor" data-inline-editor="${m.id}" style="display:none;">
+                  <input type="number" class="inline-price-input" value="${m.price}" step="1000" />
+                  <div class="inline-price-nudges">
+                    <button type="button" class="btn-nudge" data-nudge="5000">+۵k</button>
+                    <button type="button" class="btn-nudge" data-nudge="10000">+۱۰k</button>
+                    <button type="button" class="btn-nudge" data-nudge="20000">+۲۰k</button>
+                    <button type="button" class="btn-nudge" data-nudge="50000">+۵۰k</button>
+                    <button type="button" class="btn-nudge" data-nudge="-10000">-۱۰k</button>
+                  </div>
+                  <button type="button" class="btn btn-sm btn-primary inline-price-save" data-inline-save="${m.id}">ذخیره</button>
+                  <button type="button" class="btn btn-sm btn-ghost inline-price-cancel" data-inline-cancel="${m.id}">✕</button>
+                </div>
+              </div>
             </div>
             <div class="menu-studio__row-actions" onclick="event.stopPropagation()">
+              <button type="button" class="btn btn-sm btn-ghost" data-quick-edit-price="${m.id}" title="تغییر سریع قیمت">✎ قیمت</button>
               <button type="button" class="btn btn-sm btn-ghost" data-mavail="${m.id}" data-val="${avail ? 'false' : 'true'}">${avail ? 'ناموجود' : 'موجود'}</button>
               <button type="button" class="btn btn-sm" data-medit="${m.id}">ویرایش</button>
             </div>
@@ -7368,6 +7940,8 @@
         img: '',
         available: true,
         allergens: [],
+        dietary: [],
+        prepTime: 15,
         dayparts: ['all'],
         stock: null,
         lowStockAt: 5,
@@ -7375,30 +7949,40 @@
 
       main.innerHTML = `
         <div class="menu-studio">
-          <h1>منوی غذا</h1>
-          <p class="lead">افزودن و ویرایش غذا، تصویر، آلرژن و وعده — بدون فرم‌های طولانی پشت‌سرهم.</p>
+          <h1>منوی غذا و مهندسی منو</h1>
+          <p class="lead">افزودن و ویرایش غذا، قیمت‌گذاری هوشمند، بهای تمام‌شده خوراک و رژیم‌های غذایی در یک صفحه یکپارچه.</p>
           <div class="section-box">
             <div class="menu-studio__toolbar">
               <div class="field"><label for="menu-search">جستجو</label>
                 <input id="menu-search" type="search" placeholder="نام یا توضیح…" value="${esc(searchQ)}" />
               </div>
               <div class="menu-studio__toolbar-actions">
+                <button type="button" class="btn btn-sm btn-ghost" id="menu-bulk-price">تنظیم گروهی قیمت‌ها</button>
                 <button type="button" class="btn btn-sm btn-ghost" id="go-carousel-cats">دسته‌ها و ترتیب نمایش</button>
                 <button type="button" class="btn btn-sm" id="menu-add">افزودن غذا</button>
               </div>
+            </div>
+            <div class="menu-filters-strip" role="group" aria-label="فیلترهای رژیمی و مالی">
+              <button type="button" class="menu-filter-chip${dietaryFilter === 'all' ? ' is-active' : ''}" data-dfilter="all">همه (${fa(state.menuItems.length)})</button>
+              <button type="button" class="menu-filter-chip${dietaryFilter === 'vegan' ? ' is-active' : ''}" data-dfilter="vegan">🌿 گیاه‌خواری</button>
+              <button type="button" class="menu-filter-chip${dietaryFilter === 'spicy' ? ' is-active' : ''}" data-dfilter="spicy">🌶️ تند</button>
+              <button type="button" class="menu-filter-chip${dietaryFilter === 'keto' ? ' is-active' : ''}" data-dfilter="keto">🥑 کتو</button>
+              <button type="button" class="menu-filter-chip${dietaryFilter === 'gluten_free' ? ' is-active' : ''}" data-dfilter="gluten_free">🌾 بدون گلوتن</button>
+              <button type="button" class="menu-filter-chip${dietaryFilter === 'dairy_free' ? ' is-active' : ''}" data-dfilter="dairy_free">🥛 بدون لبنیات</button>
+              <button type="button" class="menu-filter-chip${dietaryFilter === 'cost_warn' ? ' is-active' : ''}" data-dfilter="cost_warn">⚠️ بهای بالا (>۳۸٪)</button>
             </div>
             <div class="menu-studio__cats" id="menu-cats" role="tablist" aria-label="دسته‌ها">
               ${cats
                 .map(
                   (c) =>
-                    `<button type="button" class="menu-studio__cat${Number(catId) === c.id ? ' is-on' : ''}" data-cat="${c.id}" role="tab" aria-selected="${Number(catId) === c.id}">${esc(c.title)}</button>`
+                    `<button type="button" class="menu-studio__cat${Number(catId) === c.id ? ' is-on' : ''}" data-cat="${c.id}" role="tab" aria-selected="${Number(catId) === c.id}">${esc(c.title)} (${fa(allItems.filter((m) => m.categoryId === c.id).length)})</button>`
                 )
                 .join('') || '<span class="hint">دسته‌ای نیست</span>'}
             </div>
           </div>
           <div class="section-box">
             <div class="menu-studio__list" id="menu-list">
-              ${filtered.map(rowHtml).join('') || '<div class="menu-studio__empty">محصولی در این دسته نیست — «افزودن غذا» را بزنید.</div>'}
+              ${filtered.map(rowHtml).join('') || '<div class="menu-studio__empty">محصولی با این شرایط در این دسته نیست — «افزودن غذا» را بزنید.</div>'}
             </div>
           </div>
         </div>
@@ -7521,10 +8105,12 @@
           descEn: document.getElementById('md_descEn')?.value || '',
           descAr: document.getElementById('md_descAr')?.value || '',
           price: parseInputNumber(document.getElementById('md_price')?.value) || 0,
+          prepTime: parseInputNumber(document.getElementById('md_prep')?.value) || 15,
           img: draftImg || '',
           stock: stockVal === '' || stockVal == null ? null : (parsedStock ?? 0),
           lowStockAt: parseInputNumber(document.getElementById('md_low')?.value) || 0,
           allergens: readChips('[data-allergens-for="draft"]'),
+          dietary: readChips('[data-dietary-for="draft"]'),
           dayparts: readChips('[data-dayparts-for="draft"]'),
           modifierGroups: cloneModifierGroups(draftModifierGroups),
         };
@@ -7542,19 +8128,23 @@
           if (row) row.classList.add('is-active');
         }
         const hasImg = !!draftImg;
+        const eng = engineeringMap.get(String(item.id)) || engineeringMap.get(String(item.name)) || null;
+        const currentItemCost = eng?.unitFoodCost || Math.round((Number(item.price) || 0) * 0.3) || 0;
+
         drawerEl.innerHTML = `
           <div class="menu-studio__drawer-head">
-            <div class="menu-editor-title"><span class="menu-editor-kicker">استودیو مدیریت غذا</span><h2>${isNew ? 'غذای تازه' : `ویرایش · ${esc(item.name)}`}</h2><p>هویت، تصویر، قیمت و ترجیحات سفارش را در یک صفحه آماده کنید.</p></div>
+            <div class="menu-editor-title"><span class="menu-editor-kicker">استودیو مدیریت غذا</span><h2>${isNew ? 'غذای تازه' : `ویرایش · ${esc(item.name)}`}</h2><p>هویت، تصویر، قیمت، سودآوری و ترجیحات سفارش در یک نما.</p></div>
             <div class="menu-editor-head-actions"><span class="menu-editor-status">${isNew ? 'پیش‌نویس جدید' : (item.available === false ? 'غیرفعال' : 'فعال')}</span><button type="button" class="menu-studio__drawer-close" id="md-close" aria-label="بستن">×</button></div>
           </div>
           <div class="menu-editor-scroll">
             <div class="menu-editor-commandbar">
-              <div class="menu-editor-commandbar__copy"><strong>ویرایش مرحله‌ای</strong><span>هر چیزی که مهم است همین‌جاست؛ از بالا شروع کنید یا مستقیم به بخش موردنظر بروید.</span></div>
+              <div class="menu-editor-commandbar__copy"><strong>کنترل همه‌جانبه غذا</strong><span>از اطلاعات پایه تا حاشیه سود، زمان پخت و رژیم‌های غذایی.</span></div>
               <nav class="menu-editor-map" aria-label="بخش‌های ویرایش">
                 <button type="button" class="is-active" data-editor-nav="identity"><span>۱</span>اطلاعات</button>
-                <button type="button" data-editor-nav="preferences"><span>۲</span>ترجیحات سفارش</button>
-                <button type="button" data-editor-nav="display"><span>۳</span>نمایش</button>
-                <button type="button" data-editor-nav="advanced"><span>۴</span>حرفه‌ای</button>
+                <button type="button" data-editor-nav="simulator"><span>۲</span>شبیه‌ساز سود</button>
+                <button type="button" data-editor-nav="preferences"><span>۳</span>ترجیحات سفارش</button>
+                <button type="button" data-editor-nav="display"><span>۴</span>نمایش و رژیم</button>
+                <button type="button" data-editor-nav="advanced"><span>۵</span>حرفه‌ای</button>
               </nav>
               <div class="menu-editor-health" id="md-health" aria-live="polite">
                 <span data-health="name"><i>✓</i> نام</span><span data-health="price"><i>✓</i> قیمت</span><span data-health="preferences"><i>✓</i> ترجیحات</span>
@@ -7570,6 +8160,30 @@
                   <div class="field"><label for="md_cat">دسته منو</label><select id="md_cat">${cats.map((c) => `<option value="${c.id}" ${Number(item.categoryId) === c.id ? 'selected' : ''}>${esc(c.title)}</option>`).join('')}</select></div>
                 </div>
               </section>
+              <section class="menu-editor-card menu-editor-card--simulator" id="md-section-simulator" data-editor-section="simulator">
+                <div class="menu-editor-card__head"><div><span class="menu-editor-eyebrow">۲ · شبیه‌ساز سودآوری</span><h3>تحلیل بهای تمام‌شده و حاشیه سود</h3><p>بر اساس بهای تخمینی خوراک (${fmtMoney(currentItemCost)})، سود خالص و ضریب مارک‌آپ را محاسبه کنید.</p></div><span class="menu-editor-card__icon">📊</span></div>
+                <div class="menu-simulator-grid">
+                  <div class="menu-simulator-box">
+                    <div class="sim-metric"><span class="sim-label">بهای خوراک (Food Cost)</span><strong class="sim-value" id="sim-cost-val">${fmtMoney(currentItemCost)}</strong></div>
+                    <div class="sim-metric"><span class="sim-label">سود ناخالص هر پرس</span><strong class="sim-value is-profit" id="sim-profit-val">—</strong></div>
+                    <div class="sim-metric"><span class="sim-label">درصد حاشیه سود</span><strong class="sim-value is-margin" id="sim-margin-val">—</strong></div>
+                    <div class="sim-metric"><span class="sim-label">ضریب قیمت‌گذاری (Markup)</span><strong class="sim-value" id="sim-markup-val">—</strong></div>
+                  </div>
+                  <div class="menu-simulator-target">
+                    <label class="sim-target-label"><span>درصد بهای خوراک مطلوب: <b id="sim-target-text">۲۸٪</b></span><input type="range" id="sim-target-slider" min="15" max="50" step="1" value="28" /></label>
+                    <div class="sim-target-chips">
+                      <button type="button" class="sim-target-chip" data-starget="25">۲۵٪ (پریمیوم)</button>
+                      <button type="button" class="sim-target-chip is-active" data-starget="28">۲۸٪ (بهینه)</button>
+                      <button type="button" class="sim-target-chip" data-starget="33">۳۳٪ (استاندارد)</button>
+                      <button type="button" class="sim-target-chip" data-starget="38">۳۸٪ (اقتصادی)</button>
+                    </div>
+                    <div class="sim-suggested-card">
+                      <div><small>قیمت فروش پیشنهادی برای هدف:</small><strong id="sim-suggested-val">—</strong></div>
+                      <button type="button" class="btn btn-sm btn-primary" id="sim-apply-btn">اعمال این قیمت</button>
+                    </div>
+                  </div>
+                </div>
+              </section>
               <section class="menu-editor-card menu-editor-card--media">
                 <div class="menu-editor-card__head"><div><span class="menu-editor-eyebrow">پیش‌نمایش</span><h3>غذا در منو این‌طور دیده می‌شود</h3><p>تصویر و متن نهایی را قبل از انتشار همین‌جا ببینید.</p></div><span class="menu-editor-card__icon">▧</span></div>
                 <div class="menu-studio__drop${hasImg ? ' has-img' : ''}" id="md-drop">
@@ -7579,18 +8193,30 @@
                 <div class="menu-editor-live-card" aria-label="پیش‌نمایش کارت غذا"><div class="menu-editor-live-card__tag" id="md-live-category">${esc(categoryTitle || 'دسته منو')}</div><strong id="md-live-name">${esc(item.name || 'نام غذا')}</strong><p id="md-live-desc">${esc(item.desc || 'توضیح کوتاه غذا برای مهمان')}</p><div class="menu-editor-live-card__price"><b id="md-live-price">${fmtNum(item.price || 0)}</b><span>تومان</span></div></div>
               </section>
               <section class="menu-editor-card menu-editor-card--preferences" id="md-section-preferences" data-editor-section="preferences">
-                <div class="menu-editor-card__head"><div><span class="menu-editor-eyebrow">۲ · تجربه سفارش</span><h3>ترجیحات مخصوص همین غذا</h3><p>مهمان فقط گزینه‌های مرتبط با این غذا را می‌بیند؛ چای و پیتزا دیگر تنظیمات مشترک ندارند.</p></div><span class="menu-editor-card__icon">◈</span></div>
+                <div class="menu-editor-card__head"><div><span class="menu-editor-eyebrow">۳ · تجربه سفارش</span><h3>ترجیحات مخصوص همین غذا</h3><p>مهمان فقط گزینه‌های مرتبط با این غذا را می‌بیند؛ چای و پیتزا دیگر تنظیمات مشترک ندارند.</p></div><span class="menu-editor-card__icon">◈</span></div>
                 <div class="menu-preferences-toolbar"><span><b id="md-pref-count">${fmtNum(draftModifierGroups.length)}</b> گروه فعال · گزینه‌ها هنگام ثبت سفارش نمایش داده می‌شوند و هزینهٔ افزوده‌شان شفاف محاسبه می‌شود.</span><div><button type="button" class="btn btn-sm btn-ghost" id="md-pref-suggest">پیشنهادهای این دسته</button><button type="button" class="btn btn-sm" id="md-pref-add-group">+ افزودن گروه</button></div></div>
                 <div id="md-modifier-groups" class="menu-preferences-groups">${preferenceEditorHtml()}</div>
                 <div id="md-pref-empty" class="menu-preference-empty-state" ${draftModifierGroups.length ? 'hidden' : ''}><strong>برای این غذا ترجیحی ثبت نشده</strong><span>اگر لازم است، یک گروه مثل «نوع شیر» یا «سس» اضافه کنید.</span></div>
               </section>
               <section class="menu-editor-card menu-editor-card--display" id="md-section-display" data-editor-section="display">
-                <div class="menu-editor-card__head"><div><span class="menu-editor-eyebrow">۳ · نمایش و سرو</span><h3>غذا کجا و برای چه کسی دیده شود؟</h3></div><span class="menu-editor-card__icon">◌</span></div>
-                <div class="field"><label>آلرژن‌ها</label>${allergenBoxes(item, 'draft')}</div>
+                <div class="menu-editor-card__head"><div><span class="menu-editor-eyebrow">۴ · نمایش، رژیم و زمان پخت</span><h3>غذا کجا، برای چه کسی و با چه سرعتی آماده شود؟</h3></div><span class="menu-editor-card__icon">◌</span></div>
+                <div class="field"><label for="md_prep">زمان تخمینی پخت و آماده‌سازی (دقیقه)</label>
+                  <div style="display:flex; gap:0.5rem; align-items:center; flex-wrap:wrap;">
+                    <input id="md_prep" type="number" min="1" max="180" value="${item.prepTime || 15}" style="width:7rem;" />
+                    <div style="display:flex; gap:0.3rem;" id="md-prep-presets">
+                      <button type="button" class="btn btn-sm btn-ghost" data-pset="10">۱۰ دقیقه</button>
+                      <button type="button" class="btn btn-sm btn-ghost" data-pset="15">۱۵ دقیقه</button>
+                      <button type="button" class="btn btn-sm btn-ghost" data-pset="20">۲۰ دقیقه</button>
+                      <button type="button" class="btn btn-sm btn-ghost" data-pset="30">۳۰ دقیقه</button>
+                    </div>
+                  </div>
+                </div>
+                <div class="field"><label>رژیم‌ها و ترجیحات غذایی</label>${dietaryBoxes(item, 'draft')}</div>
+                <div class="field"><label>آلرژن‌ها و مواد حساسیت‌زا</label>${allergenBoxes(item, 'draft')}</div>
                 <div class="field"><label>وعده‌های نمایش</label>${daypartBoxes(item, 'draft')}</div>
               </section>
               <section class="menu-editor-card menu-editor-card--advanced" id="md-section-advanced" data-editor-section="advanced">
-                <details class="menu-studio__advanced"><summary><span><span class="menu-editor-eyebrow">۴ · تنظیمات حرفه‌ای</span><b>ترجمه و موجودی</b></span><small>برای کنترل دقیق‌تر</small></summary>
+                <details class="menu-studio__advanced"><summary><span><span class="menu-editor-eyebrow">۵ · تنظیمات حرفه‌ای</span><b>ترجمه و موجودی</b></span><small>برای کنترل دقیق‌تر</small></summary>
                   <div class="menu-studio__links"><button type="button" data-goto="translate">ترجمه منو</button><button type="button" data-goto="inventory">موجودی انبار</button></div>
                   <div class="grid-2">${field('نام انگلیسی', 'md_en', item.en || '', { ltr: true })}${field('نام عربی', 'md_ar', item.ar || '', { ltr: true })}</div>
                   <div class="grid-2">${field('توضیح انگلیسی', 'md_descEn', item.descEn || '', { textarea: true, ltr: true })}${field('توضیح عربی', 'md_descAr', item.descAr || '', { textarea: true, ltr: true })}</div>
@@ -7609,6 +8235,8 @@
 
         document.getElementById('md-close').onclick = closeDrawer;
         scrimEl.onclick = closeDrawer;
+
+        let simTargetPct = 28;
 
         const paintEditorOverview = () => {
           const name = document.getElementById('md_name')?.value.trim() || '';
@@ -7633,7 +8261,61 @@
           if (liveDesc) liveDesc.textContent = document.getElementById('md_desc')?.value.trim() || 'توضیح کوتاه غذا برای مهمان';
           if (livePrice) livePrice.textContent = fmtNum(price);
           if (liveCategory) liveCategory.textContent = category?.title || 'دسته منو';
+
+          // Simulator live calculation
+          const profit = Math.max(0, price - currentItemCost);
+          const marginPct = price > 0 ? Math.round((profit / price) * 100) : 0;
+          const markup = currentItemCost > 0 ? (price / currentItemCost).toFixed(1) : '1.0';
+          const suggestedPrice = currentItemCost > 0 ? Math.round((currentItemCost / (simTargetPct / 100)) / 1000) * 1000 : price;
+
+          const profitEl = drawerEl.querySelector('#sim-profit-val');
+          const marginEl = drawerEl.querySelector('#sim-margin-val');
+          const markupEl = drawerEl.querySelector('#sim-markup-val');
+          const suggestedEl = drawerEl.querySelector('#sim-suggested-val');
+          const targetTextEl = drawerEl.querySelector('#sim-target-text');
+
+          if (profitEl) profitEl.textContent = fmtMoney(profit);
+          if (marginEl) marginEl.textContent = `٪${fa(marginPct)}`;
+          if (markupEl) markupEl.textContent = `${fa(markup)}x`;
+          if (suggestedEl) suggestedEl.textContent = fmtMoney(suggestedPrice);
+          if (targetTextEl) targetTextEl.textContent = `٪${fa(simTargetPct)}`;
         };
+
+        drawerEl.querySelector('#sim-target-slider')?.addEventListener('input', (e) => {
+          simTargetPct = Number(e.target.value) || 28;
+          drawerEl.querySelectorAll('.sim-target-chip').forEach((c) => c.classList.toggle('is-active', Number(c.dataset.starget) === simTargetPct));
+          paintEditorOverview();
+        });
+        drawerEl.querySelectorAll('.sim-target-chip').forEach((c) => {
+          c.addEventListener('click', () => {
+            simTargetPct = Number(c.dataset.starget);
+            const slider = drawerEl.querySelector('#sim-target-slider');
+            if (slider) slider.value = simTargetPct;
+            drawerEl.querySelectorAll('.sim-target-chip').forEach((chip) => chip.classList.toggle('is-active', chip === c));
+            paintEditorOverview();
+          });
+        });
+        drawerEl.querySelector('#sim-apply-btn')?.addEventListener('click', () => {
+          const suggestedPrice = currentItemCost > 0 ? Math.round((currentItemCost / (simTargetPct / 100)) / 1000) * 1000 : 0;
+          if (suggestedPrice > 0) {
+            const priceInput = drawerEl.querySelector('#md_price');
+            if (priceInput) {
+              priceInput.value = suggestedPrice;
+              paintEditorOverview();
+              if (editingId != null) saveDebounced();
+              showToast(`قیمت پیشنهادی (${fmtMoney(suggestedPrice)}) اعمال شد`);
+            }
+          }
+        });
+        drawerEl.querySelectorAll('#md-prep-presets button').forEach((btn) => {
+          btn.addEventListener('click', () => {
+            const prepInput = drawerEl.querySelector('#md_prep');
+            if (prepInput) {
+              prepInput.value = btn.dataset.pset;
+              if (editingId != null) saveDebounced();
+            }
+          });
+        });
 
         drawerEl.querySelectorAll('[data-editor-nav]').forEach((button) => {
           button.addEventListener('click', () => {
@@ -7644,10 +8326,10 @@
           });
         });
         drawerEl.addEventListener('input', (event) => {
-          if (event.target.matches('#md_name, #md_desc, #md_price, #md_cat')) paintEditorOverview();
+          if (event.target.matches('#md_name, #md_desc, #md_price, #md_cat, #md_prep')) paintEditorOverview();
         });
         drawerEl.addEventListener('change', (event) => {
-          if (event.target.matches('#md_cat')) paintEditorOverview();
+          if (event.target.matches('#md_cat, #md_prep')) paintEditorOverview();
         });
         paintEditorOverview();
 
@@ -7808,7 +8490,7 @@
           };
         } else {
           bindAutosave(drawerEl, () => persistDrawer(), { debounceMs: 400, silent: true });
-          drawerEl.querySelectorAll('[data-allergens-for] input, [data-dayparts-for] input').forEach((inp) => {
+          drawerEl.querySelectorAll('[data-allergens-for] input, [data-dietary-for] input, [data-dayparts-for] input').forEach((inp) => {
             inp.addEventListener('change', () => saveNow());
           });
         }
@@ -7817,7 +8499,7 @@
           const nextAvail = document.getElementById('md-avail').dataset.val === 'true';
           try {
             const r = await api(`/api/menu/${editingId}`, {
-              method: 'PUT',
+              method: 'PATCH',
               body: JSON.stringify({ available: nextAvail }),
             });
             showToast(nextAvail ? 'موجود شد' : 'ناموجود شد');
@@ -7854,23 +8536,137 @@
           const item = (state._menuAllItems || state.menuItems).find((m) => m.id === id);
           if (item) openDrawer(item);
         };
-        row.addEventListener('click', open);
+        row.addEventListener('click', (e) => {
+          if (e.target.closest('.inline-price-editor, [data-quick-edit-price], [data-quick-price-trigger], [data-mavail], [data-quick-create-recipe]')) return;
+          open();
+        });
         row.addEventListener('keydown', (e) => {
+          if (e.target.matches('input, select, textarea, button')) return;
           if (e.key === 'Enter' || e.key === ' ') {
             e.preventDefault();
             open();
+          } else if (e.key.toLowerCase() === 'e') {
+            e.preventDefault();
+            open();
+          } else if (e.key.toLowerCase() === 'p') {
+            e.preventDefault();
+            triggerQuickPrice();
           }
         });
         row.querySelector('[data-medit]')?.addEventListener('click', (e) => {
           e.stopPropagation();
           open();
         });
+
+        // Quick create recipe jump to inventory tab
+        row.querySelector('[data-quick-create-recipe]')?.addEventListener('click', (e) => {
+          e.stopPropagation();
+          tabs.inventory().then(() => {
+            const item = (state._menuAllItems || state.menuItems).find((m) => m.id === id);
+            if (item) {
+              const modalBtn = document.querySelector('[data-inv-open-form="recipe"]');
+              if (modalBtn) modalBtn.click();
+              setTimeout(() => {
+                const select = document.querySelector('#select-menu-item');
+                if (select) {
+                  select.value = item.id;
+                  select.dispatchEvent(new Event('change', { bubbles: true }));
+                }
+              }, 150);
+            }
+          }).catch((err) => showToast(err.message));
+        });
+
+        // Inline Price Quick-Editor
+        const priceDisplay = row.querySelector(`[data-quick-price-trigger="${id}"]`);
+        const inlineEditor = row.querySelector(`[data-inline-editor="${id}"]`);
+        const inlineInput = inlineEditor?.querySelector('.inline-price-input');
+
+        const triggerQuickPrice = () => {
+          if (!inlineEditor || !priceDisplay) return;
+          priceDisplay.style.display = 'none';
+          inlineEditor.style.display = 'inline-flex';
+          if (inlineInput) {
+            inlineInput.focus();
+            inlineInput.select();
+          }
+        };
+
+        const closeQuickPrice = () => {
+          if (!inlineEditor || !priceDisplay) return;
+          inlineEditor.style.display = 'none';
+          priceDisplay.style.display = 'inline-block';
+        };
+
+        priceDisplay?.addEventListener('click', (e) => {
+          e.stopPropagation();
+          triggerQuickPrice();
+        });
+        row.querySelector(`[data-quick-edit-price="${id}"]`)?.addEventListener('click', (e) => {
+          e.stopPropagation();
+          triggerQuickPrice();
+        });
+
+        inlineEditor?.querySelectorAll('.btn-nudge').forEach((btn) => {
+          btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const delta = Number(btn.dataset.nudge) || 0;
+            const current = Number(inlineInput.value) || 0;
+            inlineInput.value = Math.max(0, current + delta);
+          });
+        });
+
+        const saveQuickPrice = async () => {
+          const newPrice = Math.max(0, Math.round(Number(inlineInput.value) || 0));
+          try {
+            const r = await api(`/api/menu/${id}`, {
+              method: 'PATCH',
+              body: JSON.stringify({ price: newPrice }),
+            });
+            const updated = r.item;
+            state._menuAllItems = (state._menuAllItems || []).map((x) => (x.id === updated.id ? updated : x));
+            state.menuItems = state.menuItems.map((x) => (x.id === updated.id ? updated : x));
+            patchRow(updated);
+            const freshRow = listEl.querySelector(`[data-mid="${id}"]`);
+            if (freshRow) {
+              freshRow.classList.add('is-price-updated');
+              setTimeout(() => freshRow.classList.remove('is-price-updated'), 1200);
+            }
+            showToast(`قیمت «${updated.name}» به ${fmtMoney(updated.price)} تغییر کرد`);
+          } catch (err) {
+            showToast(err.message || 'خطا در ذخیره قیمت');
+            closeQuickPrice();
+          }
+        };
+
+        inlineEditor?.querySelector('.inline-price-save')?.addEventListener('click', (e) => {
+          e.stopPropagation();
+          saveQuickPrice();
+        });
+
+        inlineEditor?.querySelector('.inline-price-cancel')?.addEventListener('click', (e) => {
+          e.stopPropagation();
+          closeQuickPrice();
+        });
+
+        inlineInput?.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            e.stopPropagation();
+            saveQuickPrice();
+          } else if (e.key === 'Escape') {
+            e.preventDefault();
+            e.stopPropagation();
+            closeQuickPrice();
+          }
+        });
+
         row.querySelector('[data-mavail]')?.addEventListener('click', async (e) => {
           e.stopPropagation();
           const btn = e.currentTarget;
           try {
             const r = await api(`/api/menu/${btn.dataset.mavail}`, {
-              method: 'PUT',
+              method: 'PATCH',
               body: JSON.stringify({ available: btn.dataset.val === 'true' }),
             });
             const updated = r.item;
@@ -7884,12 +8680,120 @@
         });
       }
 
+      function openBulkPriceModal(activeCat) {
+        let modalEl = document.getElementById('menu-bulk-modal');
+        if (!modalEl) {
+          modalEl = document.createElement('div');
+          modalEl.id = 'menu-bulk-modal';
+          modalEl.className = 'inv-modal-backdrop';
+          document.body.appendChild(modalEl);
+        }
+        const items = state.menuItems || [];
+        let selectedPct = 10;
+
+        const renderModal = () => {
+          const factor = 1 + (selectedPct / 100);
+          const previewRows = items.map((m) => {
+            const oldP = m.price || 0;
+            const newP = Math.max(0, Math.round((oldP * factor) / 1000) * 1000);
+            const diff = newP - oldP;
+            const diffClass = diff >= 0 ? 'bulk-diff-up' : 'bulk-diff-down';
+            const diffSign = diff > 0 ? '+' : '';
+            return `<tr>
+              <td><strong>${esc(m.name)}</strong></td>
+              <td>${fmtMoney(oldP)}</td>
+              <td><strong>${fmtMoney(newP)}</strong></td>
+              <td class="${diffClass}">${diffSign}${fmtMoney(diff)}</td>
+            </tr>`;
+          }).join('');
+
+          modalEl.innerHTML = `
+            <div class="inv-modal bulk-price-modal" role="dialog" aria-modal="true" aria-labelledby="bulk-title">
+              <div class="inv-modal__header">
+                <div>
+                  <span class="inv-eyebrow">تنظیم گروهی قیمت‌ها · ${esc(activeCat?.title || 'کل دسته')}</span>
+                  <h2 id="bulk-title">تغییر درصدی قیمت‌های این دسته</h2>
+                  <p>قیمت غذاها به ضریب انتخابی تغییر کرده و به نزدیک‌ترین ۱,۰۰۰ تومان رند می‌شود.</p>
+                </div>
+                <button type="button" class="inv-modal__close" id="bulk-close" aria-label="بستن">×</button>
+              </div>
+              <div class="inv-modal__body">
+                <div class="bulk-price-options">
+                  <button type="button" class="bulk-pct-chip${selectedPct === 5 ? ' is-active' : ''}" data-bpct="5">+۵٪</button>
+                  <button type="button" class="bulk-pct-chip${selectedPct === 10 ? ' is-active' : ''}" data-bpct="10">+۱۰٪</button>
+                  <button type="button" class="bulk-pct-chip${selectedPct === 15 ? ' is-active' : ''}" data-bpct="15">+۱۵٪</button>
+                  <button type="button" class="bulk-pct-chip${selectedPct === 20 ? ' is-active' : ''}" data-bpct="20">+۲۰٪</button>
+                  <button type="button" class="bulk-pct-chip${selectedPct === -5 ? ' is-active' : ''}" data-bpct="-5">-۵٪</button>
+                  <button type="button" class="bulk-pct-chip${selectedPct === -10 ? ' is-active' : ''}" data-bpct="-10">-۱۰٪</button>
+                </div>
+                <div class="bulk-preview-table-wrap">
+                  <table class="bulk-preview-table">
+                    <thead>
+                      <tr><th>غذا</th><th>قیمت فعلی</th><th>قیمت جدید</th><th>اختلاف</th></tr>
+                    </thead>
+                    <tbody>${previewRows || '<tr><td colspan="4" style="text-align:center;">محصولی برای نمایش نیست</td></tr>'}</tbody>
+                  </table>
+                </div>
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-top:1rem;">
+                  <span style="font-size:0.75rem; color:var(--p-text-dim);">تعداد اقلام: ${fa(items.length)}</span>
+                  <div style="display:flex; gap:0.5rem;">
+                    <button type="button" class="btn btn-sm btn-ghost" id="bulk-cancel">انصراف</button>
+                    <button type="button" class="btn btn-sm btn-primary" id="bulk-confirm">تأیید و اعمال قیمت‌های جدید</button>
+                  </div>
+                </div>
+              </div>
+            </div>`;
+
+          modalEl.style.display = 'grid';
+          document.body.classList.add('inv-modal-open');
+
+          modalEl.querySelector('#bulk-close').onclick = closeBulkModal;
+          modalEl.querySelector('#bulk-cancel').onclick = closeBulkModal;
+          modalEl.querySelectorAll('[data-bpct]').forEach((btn) => {
+            btn.onclick = () => {
+              selectedPct = Number(btn.dataset.bpct);
+              renderModal();
+            };
+          });
+
+          modalEl.querySelector('#bulk-confirm').onclick = async () => {
+            const btn = modalEl.querySelector('#bulk-confirm');
+            btn.disabled = true;
+            btn.textContent = 'در حال ثبت…';
+            try {
+              const res = await api('/api/admin/menu/bulk-adjust-prices', {
+                method: 'POST',
+                body: JSON.stringify({
+                  categoryId: catId,
+                  percentChange: selectedPct,
+                  roundToNearest: 1000,
+                }),
+              });
+              closeBulkModal();
+              showToast(`قیمت ${fa(res.updatedCount)} غذا بروزرسانی شد`);
+              tabs.menu(catId, { q: searchQ });
+            } catch (err) {
+              showToast(err.message || 'خطا در تغییر گروهی قیمت');
+              btn.disabled = false;
+              btn.textContent = 'تأیید و اعمال قیمت‌های جدید';
+            }
+          };
+        };
+
+        const closeBulkModal = () => {
+          modalEl.style.display = 'none';
+          document.body.classList.remove('inv-modal-open');
+        };
+
+        renderModal();
+      }
+
       listEl.querySelectorAll('.menu-studio__row').forEach(wireListRow);
 
       document.getElementById('menu-cats').addEventListener('click', (e) => {
         const btn = e.target.closest('[data-cat]');
         if (!btn) return;
-        tabs.menu(Number(btn.dataset.cat), { q: searchQ }).catch((err) => showToast(err.message));
+        tabs.menu(Number(btn.dataset.cat), { q: searchQ, dietary: dietaryFilter }).catch((err) => showToast(err.message));
       });
 
       let searchTimer = null;
@@ -7897,8 +8801,20 @@
         clearTimeout(searchTimer);
         const q = e.target.value;
         searchTimer = setTimeout(() => {
-          tabs.menu(catId, { q }).catch((err) => showToast(err.message));
+          tabs.menu(catId, { q, dietary: dietaryFilter }).catch((err) => showToast(err.message));
         }, 220);
+      });
+
+      document.querySelector('.menu-filters-strip')?.addEventListener('click', (e) => {
+        const chip = e.target.closest('.menu-filter-chip');
+        if (!chip) return;
+        const dfilter = chip.dataset.dfilter;
+        tabs.menu(catId, { q: searchQ, dietary: dfilter }).catch((err) => showToast(err.message));
+      });
+
+      document.getElementById('menu-bulk-price')?.addEventListener('click', () => {
+        const activeCat = cats.find((c) => c.id === catId);
+        openBulkPriceModal(activeCat);
       });
 
       document.getElementById('menu-add').onclick = () => openDrawer(emptyDraft());
@@ -8054,28 +8970,147 @@
 
     async kitchen() {
       setActiveTab('kitchen');
+      let paintVersion = 0;
+      let lastSnapshotBranchId = null;
+      let lastSnapshotAt = null;
+      let kdsActionsNeedRefresh = true;
       const paint = async () => {
-        const [queue, callsRes] = await Promise.all([api(`/api/kitchen/orders${branchQs()}`), api(`/api/kitchen/calls${branchQs()}`)]);
-        const tickets = (queue.tickets || []).slice().sort((a, b) => Number(b.ageSec || 0) - Number(a.ageSec || 0));
+        const requestVersion = ++paintVersion;
+        const requestedBranchId = currentBranchId == null ? '' : String(currentBranchId);
+        if (lastSnapshotBranchId !== null && requestedBranchId !== lastSnapshotBranchId) {
+          lastSnapshotBranchId = requestedBranchId;
+          lastSnapshotAt = null;
+          kdsActionsNeedRefresh = true;
+          kitchenSeenIds = new Set();
+          main.innerHTML = '<section class="section-box" role="status"><p class="eyebrow">تغییر شعبه</p><h1>در حال دریافت صف آشپزخانه</h1><p class="lead">تا دریافت پاسخ تازه، سفارش‌های شعبهٔ قبلی پنهان می‌مانند.</p></section>';
+        }
+
+        let queueResult;
+        try {
+          queueResult = await settleKitchenWorkspaceRequests(
+            api(`/api/kitchen/orders${branchQs()}`, { timeoutMs: 12000 }),
+            api(`/api/kitchen/calls${branchQs()}`, { timeoutMs: 8000 }),
+            8000
+          );
+        } catch (error) {
+          kdsActionsNeedRefresh = true;
+          if (!shouldRenderKitchenSnapshot(requestVersion, paintVersion, requestedBranchId, currentBranchId, activeTab)) {
+            return { ok: false, stale: true, branchId: requestedBranchId };
+          }
+          const lastSuccessLabel = lastSnapshotAt
+            ? `آخرین دریافت موفق: ${new Date(lastSnapshotAt).toLocaleString('fa-IR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}`
+            : 'هنوز دریافت موفقی برای این شعبه ثبت نشده است.';
+          const errorMarkup = `<section class="section-box kds-queue-error" role="alert"><div class="ops-panel__head"><div><p class="eyebrow">صف آشپزخانه به‌روز نیست</p><h2>دریافت سفارش‌ها ناموفق بود</h2></div><button type="button" class="btn btn-sm" data-kds-queue-retry>تلاش دوباره</button></div><p class="lead">${esc(error?.message || 'ارتباط با صف سفارش‌ها برقرار نشد.')}</p><p class="hint">${esc(lastSuccessLabel)}${main.querySelector('.kds-board') ? ' · اطلاعات قبلی فقط برای مشاهده است و ممکن است تغییر کرده باشد.' : ''}</p></section>`;
+          if (main.querySelector('.kds-board')) {
+            main.querySelector('.kds-queue-error')?.remove();
+            main.querySelector('.ops-page-head')?.insertAdjacentHTML('afterend', errorMarkup);
+            main.querySelectorAll('.kds-card [data-kds-action]').forEach((button) => {
+              button.disabled = true;
+              button.setAttribute('aria-disabled', 'true');
+            });
+          } else {
+            main.innerHTML = errorMarkup;
+          }
+          main.querySelector('[data-kds-queue-retry]')?.addEventListener('click', (event) => runBusy(event.currentTarget, () => paint(), 'در حال دریافت…').catch((retryError) => showToast(retryError.message, 'error')));
+          return { ok: false, stale: true, branchId: requestedBranchId, error };
+        }
+        if (!shouldRenderKitchenSnapshot(requestVersion, paintVersion, requestedBranchId, currentBranchId, activeTab)) {
+          return { ok: false, stale: true, branchId: requestedBranchId };
+        }
+        kdsActionsNeedRefresh = false;
+        const { queue, calls: callsRes, callsError } = queueResult;
+        lastSnapshotBranchId = requestedBranchId;
+        lastSnapshotAt = queue.serverTime || new Date().toISOString();
+        const tickets = orderKitchenAdminTickets(queue.tickets || []);
+        const cancelledTickets = queue.cancelledTickets || [];
+        const blockedDeliveryCount = Math.max(0, Number(queue.counts?.blocked) || 0);
+        const blockedDeliveryReasons = [
+          [queue.counts?.blockedReasons?.acceptanceRequired, 'پذیرش رستوران هنوز ثبت نشده است.'],
+          [queue.counts?.blockedReasons?.acceptanceRejected, 'پذیرش رستوران رد شده است؛ پیگیری با مسئول پذیرش لازم است.'],
+          [queue.counts?.blockedReasons?.acceptanceProvenanceInvalid, 'مرجع پذیرش معتبر نیست یا ثبت نشده است؛ بررسی مدیر لازم است.'],
+        ].filter(([count]) => Number(count) > 0);
+        const blockedDeliveryMarkup = blockedDeliveryCount
+          ? `<section class="section-box kds-acceptance-block" role="status" aria-live="polite" aria-labelledby="kds-acceptance-block-title">
+              <div class="ops-panel__head"><div><p class="eyebrow">پذیرش پیش از آماده‌سازی</p><h2 id="kds-acceptance-block-title">سفارش‌های ارسال خارج از صف پخت</h2></div><strong class="kds-acceptance-block__count">${fmtNum(blockedDeliveryCount)} سفارش</strong></div>
+              <p>${fmtNum(blockedDeliveryCount)} سفارش ارسال به‌دلیل وضعیت پذیرش وارد صف پخت نشده‌اند؛ دریافت وجه به‌تنهایی مجوز شروع آماده‌سازی نیست.</p>
+              <ul>${blockedDeliveryReasons.map(([count, reason]) => `<li><b>${fmtNum(count)}</b> ${esc(reason)}</li>`).join('') || '<li>جزئیات دلیل از سرویس صف مشخص نیست؛ وضعیت پذیرش باید بررسی شود.</li>'}</ul>
+              <p class="hint">آشپزخانه امکان تأیید سفارش ارسال را ندارد؛ پذیرش را از مسیر رسمی ثبت سفارش پیگیری کنید.</p>
+            </section>`
+          : '';
         const ids = new Set(tickets.map((t) => t.id));
         for (const id of ids) if (!kitchenSeenIds.has(id) && kitchenSeenIds.size > 0) beepNewOrder();
         kitchenSeenIds = ids;
         const col = (name) => tickets.filter((t) => t.column === name);
+        const itemMarkup = (item, ticket, held = false) => {
+          const isHeld = held || adminKdsIsHeldLine(item);
+          const completed = Boolean(item.completedAt);
+          const itemAction = isHeld ? null : adminKitchenLineAction(item, ticket.column);
+          const paymentGuard = adminKitchenPaymentGuard(ticket);
+          const actionsBlocked = kdsActionsNeedRefresh || !paymentGuard.eligible;
+          const modifiers = (item.modifiers || []).map((modifier) => typeof modifier === 'string' ? modifier : modifier?.name).filter(Boolean);
+          const allergens = (item.allergens || []).filter(Boolean);
+          const stateLabel = isHeld
+            ? 'منتظر ارسال از سالن؛ فعلاً در صف پخت نیست'
+            : completed
+              ? 'این قلم تکمیل شده است'
+              : ticket.column === 'new'
+                ? 'پس از شروع آماده‌سازی فعال می‌شود'
+                : 'در انتظار تکمیل';
+          const actionLabel = itemAction?.action === 'undo_item'
+            ? ticket.column === 'ready' ? 'بازگردانی همین قلم به آماده‌سازی' : 'بازگردانی همین قلم'
+            : itemAction ? 'ثبت تکمیل این قلم' : '';
+          return `<li class="kds-order-line${isHeld ? ' is-held' : ''}${completed ? ' is-complete' : ''}">
+            <div class="kds-order-line__body"><span class="kds-order-line__qty">${fmtNum(item.qty)}×</span><span><strong>${esc(item.name || 'قلم بدون نام')}</strong>${item.seat ? `<small> · صندلی ${fmtNum(item.seat)}</small>` : ''}${modifiers.length ? `<small> · ${esc(modifiers.join('، '))}</small>` : ''}${item.note ? `<small> · یادداشت: ${esc(item.note)}</small>` : ''}${allergens.length ? `<small class="kds-order-line__allergen"> · ⚠ ${esc(allergens.join('، '))}</small>` : ''}</span></div>
+            <span class="kds-order-line__state">${esc(stateLabel)}</span>
+            ${itemAction ? `<button type="button" class="btn kds-order-line__action" data-kds-action="${itemAction.action}" data-kds-ticket-id="${esc(ticket.id)}" data-line-key="${esc(itemAction.lineKey)}" ${actionsBlocked ? `disabled aria-disabled="true" title="${esc(kdsActionsNeedRefresh ? 'صف تازه نیست؛ ابتدا آن را به‌روز کنید.' : paymentGuard.message)}"` : ''} aria-label="${esc(actionLabel)}: ${esc(item.name || 'قلم سفارش')}، سفارش ${esc(ticket.orderNo || ticket.id)}">${esc(actionLabel)}</button>` : ''}
+          </li>`;
+        };
         const card = (t) => {
           const hot = t.ageSec >= 1200 ? ' is-critical' : t.ageSec >= 600 ? ' is-late' : t.ageSec >= 300 ? ' is-warn' : '';
           const fulfillment = fulfillmentLabel(t.fulfillment || (t.tableNo ? 'dine_in' : 'pickup'));
           const unitCount = (t.items || []).reduce((sum, i) => sum + Math.max(1, Number(i.qty) || 1), 0);
+          const progress = adminKitchenTicketProgress(t);
+          const paymentGuard = adminKitchenPaymentGuard(t);
+          const actionsBlocked = kdsActionsNeedRefresh || !paymentGuard.eligible;
+          const amendmentLabel = adminKitchenAmendmentLabel(t);
+          const completionAction = adminKitchenCompletionAction(t, progress);
+          const startAction = t.column === 'new' && progress.activeCount > 0 && !actionsBlocked;
+          const progressLabel = progress.activeCount
+            ? `پیشرفت پخت: ${fmtNum(progress.completedCount)} از ${fmtNum(progress.activeCount)} قلم تکمیل شده${progress.heldCount ? ` · ${fmtNum(progress.heldCount)} قلم منتظر ارسال از سالن` : ''}`
+            : `هنوز قلمی برای پخت ارسال نشده${progress.heldCount ? ` · ${fmtNum(progress.heldCount)} قلم منتظر ارسال از سالن` : ''}`;
+          const completionMarkup = completionAction
+            ? completionAction.enabled
+              ? `<button type="button" class="btn admin-primary-action" data-kds-action="complete_ticket" data-kds-can-complete="true" data-kds-ticket-id="${esc(t.id)}" ${actionsBlocked ? 'disabled aria-disabled="true"' : ''} aria-label="ثبت آماده‌بودن سفارش ${esc(t.orderNo || t.id)}">${esc(kdsActionsNeedRefresh ? 'صف تازه نیست؛ ابتدا به‌روزرسانی کنید' : !paymentGuard.eligible ? 'وضعیت پرداخت نیازمند بررسی است' : 'ثبت آماده‌بودن سفارش')}</button>`
+              : `<button type="button" class="btn admin-primary-action" disabled aria-disabled="true">${esc(kdsActionsNeedRefresh ? 'صف تازه نیست؛ ابتدا به‌روزرسانی کنید' : !paymentGuard.eligible ? 'وضعیت پرداخت نیازمند بررسی است' : completionAction.label)}</button>`
+            : '';
+          const paymentBlock = paymentGuard.eligible ? '' : `<p class="kds-order-progress is-blocked" role="status">${esc(paymentGuard.message)}</p>`;
           return `<article class="kds-card${hot}" data-oid="${t.id}" aria-label="سفارش ${t.id}">
-            <header><div><strong>${t.tableNo ? `میز ${esc(t.tableNo)}` : esc(fulfillment)}</strong><small>${esc(fulfillment)} · ${fmtNum(unitCount)} قلم</small></div><span class="kds-age">${fmtAge(t.ageSec)}</span></header>
+            <header><div><strong>${t.tableNo ? `میز ${esc(t.tableNo)}` : esc(fulfillment)}</strong><small>${t.kds?.priority === true ? '★ اولویت · ' : ''}${esc(fulfillment)} · ${fmtNum(unitCount)} قلم</small></div><span class="kds-age">${fmtAge(t.ageSec)}</span></header>
             <div class="kds-id">#${t.id}${t.orderNo ? ` · ${esc(t.orderNo)}` : ''}</div>
-            ${t.note ? `<div class="kds-note"><strong>یادداشت</strong><span>${esc(t.note)}</span></div>` : ''}
-            <ul class="kds-items">${(t.items || []).map((i) => `<li><b>${fmtNum(i.qty)}×</b> <span>${esc(i.name)}</span></li>`).join('')}</ul>
+            ${amendmentLabel ? `<p class="kds-amendment">${esc(amendmentLabel)}</p>` : ''}
+            ${t.note ? `<div class="kds-note"><strong>یادداشت سفارش</strong><span>${esc(t.note)}</span></div>` : ''}
+            ${t.kitchenNote ? `<div class="kds-note"><strong>یادداشت آشپزخانه</strong><span>${esc(t.kitchenNote)}</span></div>` : ''}
+            ${paymentBlock}
+            <p class="kds-order-progress" role="status">${esc(progressLabel)}</p>
+            <ul class="kds-items">${(t.items || []).map((item) => itemMarkup(item, t)).join('')}${(t.heldCourseItems || []).map((item) => itemMarkup(item, t, true)).join('')}</ul>
             <div class="kds-actions">
-              ${t.column === 'new' ? `<button class="btn btn-sm admin-primary-action" data-kstatus="${t.id}" data-val="preparing">شروع آماده‌سازی</button>` : ''}
-              ${t.column === 'preparing' ? `<button class="btn btn-sm admin-primary-action" data-kstatus="${t.id}" data-val="ready">آماده شد</button>` : ''}
-              ${t.column === 'ready' ? `<span class="kds-ready-note">✓ آماده تحویل به مهمان / صندوق</span>` : ''}
+              ${t.column === 'new' ? startAction ? `<button type="button" class="btn admin-primary-action" data-kds-action="start_ticket" data-kds-ticket-id="${esc(t.id)}" aria-label="شروع آماده‌سازی سفارش ${esc(t.orderNo || t.id)}">شروع آماده‌سازی</button>` : `<button type="button" class="btn admin-primary-action" disabled aria-disabled="true">${esc(kdsActionsNeedRefresh ? 'صف تازه نیست؛ ابتدا به‌روزرسانی کنید' : !paymentGuard.eligible ? 'وضعیت پرداخت نیازمند بررسی است' : 'منتظر ارسال دوره از سالن')}</button>` : ''}
+              ${completionMarkup}
+              ${t.column === 'ready' ? '<span class="kds-ready-note" role="status">✓ سفارش آمادهٔ تحویل است؛ برای بازگشت، فقط همان قلم را انتخاب کنید.</span>' : ''}
             </div>
           </article>`;
+        };
+        const cancelledCard = (t) => {
+          const cancelledAt = t.cancelledAt ? new Date(t.cancelledAt) : null;
+          const cancelledLabel = cancelledAt && Number.isFinite(cancelledAt.getTime())
+            ? cancelledAt.toLocaleString('fa-IR', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' })
+            : 'زمان ثبت نامشخص';
+          const location = t.tableNo ? `میز ${esc(t.tableNo)}` : fulfillmentLabel(t.fulfillment || 'pickup');
+          const lines = [...(t.items || []), ...(t.heldCourseItems || [])];
+          return `<article class="kds-cancelled-card" aria-label="سفارش لغوشده ${esc(t.orderNo || `شماره ${t.id}`)}"><header><strong>${esc(location)}</strong><span>${esc(t.orderNo || `#${t.id}`)}</span></header><p class="kds-cancelled-card__time">لغو شد · ${esc(cancelledLabel)}</p><ul>${lines.map((item) => {
+            const modifiers = (item.modifiers || []).map((modifier) => typeof modifier === 'string' ? modifier : modifier?.name).filter(Boolean);
+            return `<li><b>${fmtNum(item.qty)}×</b> ${esc(item.name || 'قلم بدون نام')}${modifiers.length ? `<small> · ${esc(modifiers.join('، '))}</small>` : ''}${item.note ? `<small> · ${esc(item.note)}</small>` : ''}</li>`;
+          }).join('') || '<li>اقلام سفارش ثبت نشده است</li>'}</ul>${t.note ? `<p class="kds-cancelled-card__note"><b>یادداشت سفارش</b>${esc(t.note)}</p>` : ''}${t.kitchenNote ? `<p class="kds-cancelled-card__note"><b>یادداشت آشپزخانه</b>${esc(t.kitchenNote)}</p>` : ''}</article>`;
         };
         const calls = (callsRes.calls || []).slice().sort((a,b) => new Date(a.createdAt||0)-new Date(b.createdAt||0));
         const prepLoad = new Map();
@@ -8085,16 +9120,18 @@
         }));
         const topPrep = [...prepLoad.entries()].sort((a,b) => b[1]-a[1]).slice(0,6);
         main.innerHTML = `
-          <div class="ops-page-head"><div><p class="eyebrow">نمایش زنده آشپزخانه</p><h1>آشپزخانه</h1><p class="lead">قدیمی‌ترین سفارش در هر ستون بالاتر است. هدف شیفت: «جدید» را شروع کنید، «در حال آماده‌سازی» را فقط وقتی کامل شد آماده بزنید.</p></div><div class="row-actions"><a class="btn btn-sm btn-ghost" href="/admin/kitchen">نمایشگر مستقل آشپزخانه</a><span class="ops-provider-pill">قدیمی‌ترین: ${fmtAge(queue.summary?.oldestAgeSec || 0)}</span></div></div>
+          <div class="ops-page-head"><div><p class="eyebrow">نمایش زنده آشپزخانه</p><h1>آشپزخانه</h1><p class="lead">قدیمی‌ترین سفارش در هر ستون بالاتر است. هدف شیفت: «جدید» را شروع کنید، «در حال آماده‌سازی» را فقط وقتی کامل شد آماده بزنید.</p><p class="hint" data-kds-snapshot-time>آخرین دریافت: ${esc(new Date(lastSnapshotAt).toLocaleString('fa-IR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }))}</p></div><div class="row-actions"><button type="button" class="btn btn-sm btn-ghost" data-kds-refresh>تازه‌سازی صف</button><a class="btn btn-sm btn-ghost" href="/admin/kitchen">نمایشگر مستقل آشپزخانه</a><span class="ops-provider-pill">قدیمی‌ترین: ${fmtAge(queue.summary?.oldestAgeSec || 0)}</span></div></div>
           <div class="cards cards-dense">
             <div class="card"><div class="num">${fmtNum(queue.counts?.new || 0)}</div><div class="lbl">جدید</div></div>
             <div class="card warn"><div class="num">${fmtNum(queue.counts?.preparing || 0)}</div><div class="lbl">در حال آماده‌سازی</div></div>
             <div class="card accent"><div class="num">${fmtNum(queue.counts?.ready || 0)}</div><div class="lbl">آماده تحویل</div></div>
+            <div class="card ${cancelledTickets.length ? 'is-danger' : ''}"><div class="num">${fmtNum(cancelledTickets.length)}</div><div class="lbl">لغوهای اخیر</div></div>
             <div class="card ${queue.summary?.delayed ? 'is-danger' : ''}"><div class="num">${fmtNum(queue.summary?.delayed || 0)}</div><div class="lbl">بیش از ۲۰ دقیقه</div></div>
             <div class="card"><div class="num">${fmtNum(queue.summary?.itemUnits || 0)}</div><div class="lbl">واحد غذا در صف</div></div>
             <div class="card"><div class="num">${fmtNum(calls.length)}</div><div class="lbl">فراخوان گارسون</div></div>
           </div>
-          ${calls.length ? `<section class="section-box kds-calls"><div class="ops-panel__head"><div><p class="eyebrow">سالن</p><h2>فراخوان‌های باز</h2></div><span class="hint">قدیمی‌ترین ابتدا</span></div><div class="kds-call-list">${calls.map((c) => `<button class="btn btn-sm btn-ghost kds-call-btn" data-calldone="${c.id}"><b>میز ${esc(c.tableNo)}</b><span>${c.note ? esc(c.note) : 'بدون توضیح'}</span><small>${c.createdAt ? new Date(c.createdAt).toLocaleTimeString('fa-IR',{hour:'2-digit',minute:'2-digit'}) : ''}</small><em>انجام شد ✓</em></button>`).join('')}</div></section>` : ''}
+          ${blockedDeliveryMarkup}
+          ${callsError ? `<section class="section-box kds-calls-error" role="alert"><div class="ops-panel__head"><div><p class="eyebrow">سالن</p><h2>فراخوان‌های سالن موقتاً بارگذاری نشدند</h2></div><button type="button" class="btn btn-sm" data-kds-calls-retry>تلاش دوباره</button></div><p class="hint">صف سفارش‌های آشپزخانه در دسترس است؛ برای دیدن و پاسخ به فراخوان‌ها دوباره تلاش کنید.</p></section>` : calls.length ? `<section class="section-box kds-calls"><div class="ops-panel__head"><div><p class="eyebrow">سالن</p><h2>فراخوان‌های باز</h2></div><span class="hint">قدیمی‌ترین ابتدا</span></div><div class="kds-call-list">${calls.map((c) => `<button class="btn btn-sm btn-ghost kds-call-btn" data-calldone="${c.id}"><b>میز ${esc(c.tableNo)}</b><span>${c.note ? esc(c.note) : 'بدون توضیح'}</span><small>${c.createdAt ? new Date(c.createdAt).toLocaleTimeString('fa-IR',{hour:'2-digit',minute:'2-digit'}) : ''}</small><em>انجام شد ✓</em></button>`).join('')}</div></section>` : ''}
           ${topPrep.length ? `<section class="section-box kds-prep-load"><div class="ops-panel__head"><div><p class="eyebrow">فشار آماده‌سازی</p><h2>تعداد تجمیعی غذاهای در انتظار</h2></div><span class="hint">برای هماهنگی سریع تیم</span></div><div class="kds-prep-chips">${topPrep.map(([name,qty])=>`<span><b>${fmtNum(qty)}×</b>${esc(name)}</span>`).join('')}</div></section>` : ''}
           <section class="admin-help-strip section-box"><strong>راهنمای رنگ:</strong><span>۵ دقیقه = توجه · ۱۰ دقیقه = هشدار · ۲۰ دقیقه = بحرانی. رنگ فقط هشدار است و ترتیب اصلی بر اساس سن سفارش می‌ماند.</span></section>
           <div class="kds-board" role="region" aria-label="صف آشپزخانه">
@@ -8102,15 +9139,84 @@
             <section class="kds-col"><h2>در حال آماده‌سازی <small>${fmtNum(col('preparing').length)}</small></h2>${col('preparing').map(card).join('') || '<p class="hint">فعلاً خالی است</p>'}</section>
             <section class="kds-col"><h2>آماده <small>${fmtNum(col('ready').length)}</small></h2>${col('ready').map(card).join('') || '<p class="hint">فعلاً خالی است</p>'}</section>
           </div>
-          <p class="hint">اتصال زنده فعال است؛ تغییر سفارش‌ها بدون تازه‌سازی دوره‌ای همگام می‌شود.</p>`;
+          <section class="kds-cancelled-lane--admin" role="region" aria-labelledby="kds-cancelled-title"><header class="ops-panel__head"><div><p class="eyebrow">خارج از صف فعال · ۲۴ ساعت اخیر</p><h2 id="kds-cancelled-title">سفارش‌های لغوشده پس از ورود به آشپزخانه</h2></div><span class="hint">${fmtNum(cancelledTickets.length)} مورد</span></header><p class="hint">اقلام این سفارش‌ها دیگر در صف پخت نیستند؛ پیش از ادامهٔ آماده‌سازی، تحویل یا دورریختن آن‌ها را با مسئول شیفت بررسی کنید.</p><div class="kds-cancelled-lane--admin__list">${cancelledTickets.map(cancelledCard).join('') || '<p class="hint">موردی برای این بازه ثبت نشده است.</p>'}</div></section>
+            <p class="hint">صف با رویدادهای زنده به‌روز می‌شود؛ برای بررسی فوری از دکمهٔ «تازه‌سازی صف» استفاده کنید.</p>`;
 
-        main.querySelectorAll('[data-kstatus]').forEach((b) => b.addEventListener('click', () => runBusy(b, async () => {
-          await api(`/api/kitchen/orders/${b.dataset.kstatus}`, { method:'PATCH', body:JSON.stringify({ status:b.dataset.val }) });
-          showToast('وضعیت آشپزخانه به‌روز شد', 'success', 1400); await paint();
-        }).catch((e) => showToast(e.message, 'error'))));
+        main.querySelectorAll('[data-kds-action]').forEach((button) => button.addEventListener('click', () => {
+          if (kdsActionsNeedRefresh) {
+            showToast('صف به‌روز نیست؛ پیش از هر تغییر، صف را تازه کنید.', 'error');
+            return;
+          }
+          const card = button.closest('.kds-card');
+          if (!card || card.dataset.kdsActionBusy === '1') return;
+          card.dataset.kdsActionBusy = '1';
+          card.setAttribute('aria-busy', 'true');
+          card.querySelectorAll('[data-kds-action]').forEach((control) => { control.disabled = true; });
+          const releaseCard = () => {
+            if (!card.isConnected) return;
+            card.dataset.kdsActionBusy = '0';
+            card.removeAttribute('aria-busy');
+            card.querySelectorAll('[data-kds-action]').forEach((control) => { control.disabled = kdsActionsNeedRefresh; });
+          };
+          runBusy(button, async () => {
+            const payload = adminKitchenActionPayload(button.dataset);
+            if (!payload) throw new Error('این عملیات یا شناسهٔ قلم معتبر نیست؛ صف را تازه کنید.');
+            try {
+              await sendAdminKitchenAction(button.dataset.kdsTicketId, payload);
+            } catch (error) {
+              const refreshed = await paint().catch(() => null);
+              if (refreshed?.ok && String(refreshed.branchId) === String(requestedBranchId)) {
+                const currentTicket = refreshed.tickets.find((ticket) => String(ticket.id) === String(button.dataset.kdsTicketId));
+                if (adminKitchenActionApplied(currentTicket, payload)) {
+                  showToast('پاسخ درخواست کامل نرسید، اما نتیجهٔ این اقدام در صف تازه از سرور تأیید شد.', 'success', 3600);
+                } else if (refreshed.cancelledTickets.some((ticket) => String(ticket.id) === String(button.dataset.kdsTicketId))) {
+                  showToast('سفارش اکنون در فهرست لغوشده‌هاست؛ لغو از آشپزخانه انجام نمی‌شود. وضعیت اقلام را با مسئول شیفت بررسی کنید.', 'error', 5200);
+                } else {
+                  showToast(`${adminKitchenActionErrorMessage(error)} صف تازه شد؛ وضعیت فعلی را بررسی کنید و فقط در صورت نیاز دوباره اقدام کنید.`, 'error', 5200);
+                }
+              } else {
+                showToast('پاسخ اقدام و وضعیت تازهٔ سفارش مشخص نشد؛ دکمه‌های تغییر غیرفعال‌اند. ابتدا صف را با موفقیت تازه‌سازی کنید.', 'error', 5200);
+              }
+              return;
+            }
+            const success = ({
+              start_ticket: 'آماده‌سازی شروع شد.',
+              complete_item: 'تکمیل این قلم ثبت شد.',
+              undo_item: 'همین قلم به آماده‌سازی برگشت.',
+              complete_ticket: 'سفارش آمادهٔ تحویل شد.',
+            })[payload.action];
+            showToast(success, 'success', 1400);
+            await paint();
+          }).catch((error) => showToast(error.message, 'error')).finally(releaseCard);
+        }));
         main.querySelectorAll('[data-calldone]').forEach((b) => b.addEventListener('click', () => runBusy(b, async () => {
-          await api(`/api/kitchen/calls/${b.dataset.calldone}`, { method:'PATCH', body:JSON.stringify({ status:'done' }) }); await paint();
+          const callId = String(b.dataset.calldone || '');
+          try {
+            const result = await api(`/api/kitchen/calls/${encodeURIComponent(callId)}${branchQs()}`, { method:'PATCH', body:JSON.stringify({ status:'done' }) });
+            if (result?.ok !== true) throw new Error('پاسخ سرور انجام فراخوان را تأیید نکرد.');
+            showToast('فراخوان انجام‌شده ثبت شد.', 'success', 1800);
+            await paint();
+          } catch (error) {
+            const refreshed = await paint().catch(() => null);
+            if (refreshed?.ok && !refreshed.callsError && !refreshed.calls.some((call) => String(call.id) === callId)) {
+              showToast('پاسخ درخواست کامل نرسید، اما فراخوان از فهرست بازها حذف شده و انجام آن از سرور تأیید شد.', 'success', 3600);
+            } else if (refreshed?.ok && !refreshed.callsError) {
+              showToast(`${error.message || 'ثبت انجام فراخوان تأیید نشد.'} · فراخوان هنوز باز است؛ پس از بررسی دوباره تلاش کنید.`, 'error', 4800);
+            } else {
+              showToast('نتیجهٔ انجام فراخوان مشخص نشد؛ فهرست فراخوان‌ها به‌روز نیست. پیش از تلاش دوباره، آن را تازه کنید.', 'error', 4800);
+            }
+          }
         }, 'ثبت…').catch((e) => showToast(e.message, 'error'))));
+        main.querySelector('[data-kds-refresh]')?.addEventListener('click', (event) => runBusy(event.currentTarget, () => paint(), 'در حال دریافت…').catch((e) => showToast(e.message, 'error')));
+        main.querySelector('[data-kds-calls-retry]')?.addEventListener('click', (event) => runBusy(event.currentTarget, () => paint(), 'در حال تلاش…').catch((e) => showToast(e.message, 'error')));
+        return {
+          ok: true,
+          branchId: requestedBranchId,
+          tickets,
+          cancelledTickets,
+          calls: callsRes.calls || [],
+          callsError: Boolean(callsError),
+        };
       };
       kitchenPaint = paint;
       await paint();
@@ -8121,7 +9227,7 @@
       setActiveTab('reservations');
       const d = await api(`/api/admin/reservations${branchQs()}`);
       const settings = d.settings || {};
-      const labels = { pending:'در انتظار', confirmed:'تأیید شده', seated:'نشسته‌اند', cancelled:'لغو', no_show:'نیامدند' };
+      const labels = { pending:'در انتظار', confirmed:'تأیید شده', seated:'نشسته‌اند', completed:'پایان‌یافته', cancelled:'لغو', no_show:'نیامدند' };
       const branchName = (id) => branchesCache.find((b) => b.id === id)?.name || `#${id}`;
       const canConfigure = hasCapability('admin.access');
       const today = new Date().toISOString().slice(0,10);
@@ -8140,21 +9246,40 @@
         ${slotsToday.length ? `<section class="section-box"><div class="ops-panel__head"><div><p class="eyebrow">بار شیفت امروز</p><h2>ظرفیت نوبت‌های رزرو</h2></div>${peak ? `<span class="hint">شلوغ‌ترین: ${esc(peak.time)} · ${fmtNum(peak.percent)}٪</span>` : ''}</div><div class="reservation-slot-load">${slotsToday.map((row)=>`<div class="reservation-slot"><header><b>${esc(row.time)}</b><span>${fmtNum(row.covers)}/${fmtNum(row.maxCovers)} نفر</span></header><div class="reservation-slot__bar"><i style="width:${Math.min(100,row.percent)}%"></i></div><small>${fmtNum(row.parties)} رزرو · ${fmtNum(row.percent)}٪ ظرفیت</small></div>`).join('')}</div></section>` : ''}
         ${canConfigure ? `<details class="section-box admin-config-panel"><summary><strong>تنظیمات ظرفیت رزرو</strong><span>برای مدیر سیستم</span></summary><div class="grid-2 admin-config-grid"><label class="chk"><input type="checkbox" id="rs_en" ${settings.enabled !== false ? 'checked' : ''} /> رزرو آنلاین فعال</label>${field('فاصله نوبت‌ها (دقیقه)','rs_slot',String(settings.slotMinutes ?? 30),{ltr:true,type:'number'})}${field('حداکثر نفرات هر رزرو','rs_party',String(settings.maxParty ?? 12),{ltr:true,type:'number'})}${field('ظرفیت هر نوبت (نفر)','rs_covers',String(settings.maxCoversPerSlot ?? 24),{ltr:true,type:'number'})}${field('روزهای پیشِ‌رو','rs_adv',String(settings.advanceDays ?? 21),{ltr:true,type:'number'})}${field('حداقل ساعت تا رزرو','rs_min',String(settings.minHoursAhead ?? 1),{ltr:true,type:'number'})}</div><p class="hint">تغییرات این بخش ذخیره خودکار دارند.</p></details>` : ''}
         <section class="section-box">
+          <div class="res-shift-filters" id="res-shift-bar">
+            <button class="res-shift-btn is-active" data-shift="all" type="button">همه نوبت‌ها</button>
+            <button class="res-shift-btn" data-shift="lunch" type="button">ناهار (۱۲:۰۰ تا ۱۶:۳۰)</button>
+            <button class="res-shift-btn" data-shift="afternoon" type="button">عصرانه (۱۶:۳۰ تا ۱۹:۳۰)</button>
+            <button class="res-shift-btn" data-shift="dinner" type="button">شام (۱۹:۳۰ به بعد)</button>
+          </div>
           <div class="ops-filters admin-filter-row">
-            <label><span>جست‌وجو</span><input id="res-search" type="search" placeholder="نام، تلفن یا یادداشت…" /></label>
+            <label><span>جست‌وجو</span><input id="res-search" type="search" placeholder="نام، تلفن، میز یا یادداشت…" /></label>
             <label><span>تاریخ</span><input id="res-date" type="text" class="shamsi-date-picker" data-shamsi-picker placeholder="فیلتر تاریخ شمسی..." /></label>
             <label><span>وضعیت</span><select id="res-status"><option value="">همه</option>${Object.entries(labels).map(([k,v])=>`<option value="${k}">${v}</option>`).join('')}</select></label>
             <span class="ops-filter-count" id="res-count"></span>
           </div>
-          <table class="tbl admin-dense-table"><thead><tr><th>زمان</th><th>مهمان</th><th>نفر</th><th>شعبه</th><th>وضعیت</th><th>یادداشت</th></tr></thead><tbody id="reservation-body">
-          ${(d.reservations || []).map((r)=>`<tr data-reservation-row="${r.id}" data-status="${esc(r.status)}" data-date="${esc(r.date)}" data-search="${esc(`${r.name} ${r.phone} ${r.note||''}`.toLowerCase())}">
-            <td><strong>${window.ShamsiCore ? window.ShamsiCore.formatShamsiDateLong(r.date) : esc(r.date)}</strong><small class="admin-cell-sub">${esc(r.time)}</small></td>
+          <table class="tbl admin-dense-table"><thead><tr><th>زمان</th><th>مهمان</th><th>نفر</th><th>میز</th><th>شعبه</th><th>وضعیت</th><th>اقدام سریع</th><th>یادداشت</th></tr></thead><tbody id="reservation-body">
+          ${(d.reservations || []).map((r)=>`<tr data-reservation-row="${r.id}" data-status="${esc(r.status)}" data-date="${esc(r.date)}" data-time="${esc(r.time || '')}" data-search="${esc(`${r.name} ${r.phone} ${r.note||''} ${r.tableNo||''}`.toLowerCase())}">
+            <td>
+              <strong>${window.ShamsiCore ? window.ShamsiCore.formatShamsiDateLong(r.date) : esc(r.date)}</strong>
+              <small class="admin-cell-sub">${esc(r.time)}</small>
+              ${r.occasion ? `<div style="margin-top:0.2rem;"><span class="res-occasion-badge">🎉 ${esc(r.occasion)}</span></div>` : ''}
+            </td>
             <td><strong>${esc(r.name)}</strong><small class="admin-cell-sub ltr">${esc(r.phone)}</small></td>
             <td><input class="admin-compact-number" type="number" min="1" max="${Number(settings.maxParty)||12}" value="${Number(r.partySize)||1}" data-rparty="${r.id}" aria-label="تعداد نفر ${esc(r.name)}" /></td>
+            <td><input class="res-table-select" type="text" data-rtable="${r.id}" value="${esc(r.tableNo || '')}" placeholder="میز…" style="width:55px; text-align:center;" aria-label="شماره میز ${esc(r.name)}" /></td>
             <td>${esc(branchName(r.branchId))}</td>
             <td><select data-rstatus="${r.id}">${Object.keys(labels).map((k)=>`<option value="${k}" ${r.status===k?'selected':''}>${labels[k]}</option>`).join('')}</select></td>
+            <td>
+              <div class="res-actions-wrap">
+                ${r.status === 'pending' ? `<button class="res-action-btn res-btn--confirm" data-quick-status="${r.id}" data-target-status="confirmed" type="button">تأیید</button>` : ''}
+                ${r.status === 'confirmed' ? `<button class="res-action-btn res-btn--seat" data-quick-status="${r.id}" data-target-status="seated" type="button">نشاندن مهمان</button>` : ''}
+                ${r.status === 'seated' ? `<button class="res-action-btn res-btn--complete" data-quick-status="${r.id}" data-target-status="completed" type="button">پایان رزرو</button>` : ''}
+                ${r.status !== 'no_show' && r.status !== 'cancelled' && r.status !== 'completed' ? `<button class="res-action-btn res-btn--noshow" data-quick-status="${r.id}" data-target-status="no_show" type="button" title="عدم مراجعه">نیامد</button>` : ''}
+              </div>
+            </td>
             <td><input class="admin-note-input" data-rnote="${r.id}" value="${esc(r.note||'')}" placeholder="یادداشت مهمان…" /></td>
-          </tr>`).join('') || '<tr><td colspan="6">رزروی ثبت نشده است.</td></tr>'}</tbody></table>
+          </tr>`).join('') || '<tr><td colspan="8">رزروی ثبت نشده است.</td></tr>'}</tbody></table>
         </section>`;
 
       const saveSettings = async () => {
@@ -8178,19 +9303,57 @@
       };
       if (canConfigure) bindAutosave(main.querySelector('.admin-config-panel'), saveSettings);
 
+      let currentShift = 'all';
+      const matchesShift = (time, shift) => {
+        if (!shift || shift === 'all') return true;
+        if (!time) return true;
+        if (shift === 'lunch') return time >= '11:30' && time < '16:30';
+        if (shift === 'afternoon') return time >= '16:30' && time < '19:30';
+        if (shift === 'dinner') return time >= '19:30' || time < '04:00';
+        return true;
+      };
+
       const applyResFilter = () => {
         const q=String(document.getElementById('res-search')?.value||'').trim().toLowerCase(), date=document.getElementById('res-date')?.dataset?.isoDate || document.getElementById('res-date')?.value||'', status=document.getElementById('res-status')?.value||'';
-        let n=0; main.querySelectorAll('[data-reservation-row]').forEach((row)=>{ const ok=(!q||row.dataset.search.includes(q))&&(!date||row.dataset.date===date)&&(!status||row.dataset.status===status); row.hidden=!ok; if(ok)n++; });
+        let n=0; main.querySelectorAll('[data-reservation-row]').forEach((row)=>{ const ok=(!q||row.dataset.search.includes(q))&&(!date||row.dataset.date===date)&&(!status||row.dataset.status===status)&&matchesShift(row.dataset.time, currentShift); row.hidden=!ok; if(ok)n++; });
         const el=document.getElementById('res-count'); if(el)el.textContent=`${fmtNum(n)} رزرو`;
       };
       ['res-search','res-date','res-status'].forEach((id)=>document.getElementById(id)?.addEventListener(id==='res-search'?'input':'change',applyResFilter)); applyResFilter();
       if (window.ShamsiDatePicker) window.ShamsiDatePicker.autoInit(main);
+
+      main.querySelectorAll('.res-shift-btn').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          main.querySelectorAll('.res-shift-btn').forEach((b) => b.classList.remove('is-active'));
+          btn.classList.add('is-active');
+          currentShift = btn.dataset.shift || 'all';
+          applyResFilter();
+        });
+      });
 
       main.querySelectorAll('[data-rstatus]').forEach((sel)=>sel.addEventListener('change', async()=>{
         const next=sel.value; if ((next==='cancelled'||next==='no_show') && !window.confirm(next==='cancelled'?'این رزرو لغو شود؟':'مهمان به‌عنوان «نیامد» ثبت شود؟')) { await tabs.reservations(); return; }
         try { await api(`/api/admin/reservations/${sel.dataset.rstatus}`,{method:'PATCH',body:JSON.stringify({status:next})}); showToast('وضعیت رزرو به‌روز شد','success',1400); }
         catch(e){ showToast(e.message,'error'); await tabs.reservations(); }
       }));
+      main.querySelectorAll('[data-quick-status]').forEach((btn) => {
+        btn.addEventListener('click', async () => {
+          const next = btn.dataset.targetStatus;
+          const id = btn.dataset.quickStatus;
+          if (next === 'no_show' && !window.confirm('مهمان به‌عنوان «نیامد» ثبت شود؟')) return;
+          try {
+            await api(`/api/admin/reservations/${id}`, { method: 'PATCH', body: JSON.stringify({ status: next }) });
+            showToast('وضعیت رزرو به‌روز شد', 'success', 1400);
+            await tabs.reservations();
+          } catch (e) {
+            showToast(e.message || 'خطا در تغییر وضعیت', 'error');
+          }
+        });
+      });
+      main.querySelectorAll('[data-rtable]').forEach((input) => {
+        const save = autosave(() => api(`/api/admin/reservations/${input.dataset.rtable}`, { method: 'PATCH', body: JSON.stringify({ tableNo: input.value.trim() }) }), { debounceMs: 400, silent: true });
+        input.addEventListener('change', save);
+        input.addEventListener('blur', save);
+      });
       main.querySelectorAll('[data-rparty]').forEach((input)=>input.addEventListener('change', async()=>{
         try {
           const partySize = parseInputNumber(input.value) || 1;
@@ -8205,51 +9368,521 @@
       setActiveTab('orders');
       const d = await api(`/api/admin/orders${branchQs()}`);
       const orders = (d.orders || []).slice();
+      const canManageDelivery = hasCapability('delivery.manage');
       const active = orders.filter((o)=>!TERMINAL_ORDER_STATUSES.has(String(o.status)));
-      const lateCount = active.filter((o)=>orderAgeMinutes(o)>=20 && !['ready','dispatched'].includes(o.status)).length;
+      const lateCount = active.filter((o)=>orderAgeMinutes(o)>=20).length;
       const readyCount = active.filter((o)=>o.status==='ready').length;
-      const paymentPending = active.filter((o)=>['pending','unpaid'].includes(String(o.paymentStatus||'')) || ['pending_online','pay_at_cashier'].includes(o.status)).length;
+      const paymentPending = orders.filter((o)=>['pending','unpaid','partial','failed','unknown'].includes(String(o.paymentStatus||'')) || ['pending_online','pay_at_cashier'].includes(o.status)).length;
+      const paymentReviewCount = orders.filter((o)=>String(o.paymentStatus||'')==='unknown').length;
       main.innerHTML = `
-        <div class="ops-page-head"><div><p class="eyebrow">کنترل سفارش</p><h1>سفارش‌ها</h1><p class="lead">سفارش‌های باز قبل از آرشیو و قدیمی‌ترین موارد باز زودتر نمایش داده می‌شوند. دکمه اصلی فقط مرحله مجاز بعدی را اجرا می‌کند.</p></div><div class="row-actions"><a class="btn btn-sm btn-ghost" href="${financeWorkspaceHref('sales_bank')}">کنترل مالی فروش</a><a class="btn btn-sm btn-ghost" href="/order" target="_blank" rel="noopener">باز کردن ثبت سفارش</a></div></div>
+        <div class="ops-page-head"><div><p class="eyebrow">کنترل سفارش</p><h1>سفارش‌ها</h1><p class="lead">سفارش‌های باز قبل از آرشیو و قدیمی‌ترین موارد باز زودتر نمایش داده می‌شوند. دکمه اصلی فقط مرحله مجاز بعدی را اجرا می‌کند.</p></div><div class="row-actions"><button class="btn btn-sm btn-ghost" id="order-history-toggle" type="button" aria-expanded="false" aria-controls="closed-order-history">سابقه سفارش‌های بسته</button><a class="btn btn-sm btn-ghost" href="${financeWorkspaceHref('sales_bank')}">کنترل مالی فروش</a><a class="btn btn-sm btn-ghost" href="/order" target="_blank" rel="noopener">باز کردن ثبت سفارش</a></div></div>
         <div class="cards cards-dense">
           <div class="card"><div class="num">${fmtNum(active.length)}</div><div class="lbl">باز / نیازمند پیگیری</div></div>
-          <div class="card ${lateCount?'is-danger':''}"><div class="num">${fmtNum(lateCount)}</div><div class="lbl">بیش از ۲۰ دقیقه</div></div>
+          <div class="card ${lateCount?'is-danger':''}"><div class="num">${fmtNum(lateCount)}</div><div class="lbl">در مرحله بیش از ۲۰ دقیقه</div></div>
           <div class="card accent"><div class="num">${fmtNum(readyCount)}</div><div class="lbl">آماده تحویل</div></div>
           <div class="card ${paymentPending?'warn':''}"><div class="num">${fmtNum(paymentPending)}</div><div class="lbl">پرداخت نیازمند توجه</div></div>
         </div>
+        ${paymentReviewCount?`<section class="section-box" role="alert"><strong>${fmtNum(paymentReviewCount)} سفارش با سابقهٔ پرداخت نامشخص</strong><p>برای جلوگیری از دریافت دوباره، پیش از تسویه این سفارش‌ها را با سوابق صندوق و بانک تطبیق دهید.</p></section>`:''}
         <section class="admin-help-strip section-box"><strong>برای کاربر تازه‌کار:</strong><span>روی دکمه پررنگ هر کارت بزنید تا سفارش فقط یک مرحله مجاز جلو برود. منوی کشویی برای حالت‌های خاص و لغو است.</span></section>
         <section class="section-box ops-filters admin-filter-row">
           <label><span>جست‌وجو</span><input id="order-search" type="search" autocomplete="off" placeholder="شماره، نام، تلفن یا غذا…" /></label>
           <label><span>وضعیت</span><select id="order-status-filter"><option value="">همه</option>${['pending_online','awaiting_confirmation','pay_at_cashier','paid','preparing','ready','dispatched','picked_up','delivered','done','cancelled'].map((status)=>`<option value="${status}">${statusLabel(status)}</option>`).join('')}</select></label>
           <label><span>نوع تحویل</span><select id="order-fulfillment-filter"><option value="">همه</option><option value="dine_in">داخل مجموعه</option><option value="pickup">تحویل حضوری</option><option value="delivery">پیک</option></select></label>
-          <label><span>پرداخت</span><select id="order-payment-filter"><option value="">همه</option><option value="paid">پرداخت‌شده</option><option value="pending">در انتظار</option><option value="unpaid">صندوق</option><option value="failed">ناموفق</option></select></label>
+          <label><span>پرداخت</span><select id="order-payment-filter"><option value="">همه</option><option value="paid">پرداخت‌شده</option><option value="partial">پرداخت ناقص</option><option value="pending">در انتظار</option><option value="unpaid">پرداخت‌نشده</option><option value="failed">ناموفق</option><option value="unknown">نامشخص · تطبیق لازم</option></select></label>
           <span class="ops-filter-count" id="order-filter-count">${fmtNum(orders.length)} سفارش</span>
         </section>
         <section class="ops-order-grid" id="ops-order-grid">
           ${orders.map((order)=>{
             const search=[order.id,order.orderNo,order.name,order.phone,order.tableNo,...(order.items||[]).map((i)=>i.name)].join(' ').toLowerCase();
             const history=(order.statusHistory||[]).slice().reverse();
-            const payment=String(order.paymentStatus||({paid:'paid',preparing:'paid',ready:'paid',dispatched:'paid',picked_up:'paid',delivered:'paid',done:'paid'}[order.status]||'unpaid'));
-            const paymentLabel={paid:'پرداخت‌شده',pending:'در انتظار پرداخت',unpaid:'پرداخت در صندوق',failed:'ناموفق',cancelled:'لغو شده',refunded:'بازپرداخت'}[payment]||'—';
+            const payment=String(order.paymentStatus||'unknown');
+            const paymentLabel={paid:'پرداخت‌شده',partial:'پرداخت ناقص',pending:'در انتظار پرداخت',unpaid:'پرداخت‌نشده',failed:'ناموفق',cancelled:'لغو شده',refunded:'بازپرداخت',unknown:'وضعیت پرداخت نامشخص · بررسی لازم'}[payment]||'وضعیت پرداخت نامشخص · بررسی لازم';
+            const needsCashierSettlement=['unpaid','partial'].includes(payment)&&order.status!=='pending_online';
+            const amountDue=Math.max(0,Number(order.balanceDue??(Number(order.total||0)-Number(order.amountPaid||0)))||0);
             const fulfillment=order.fulfillment||(order.tableNo?'dine_in':'pickup');
             const urgency=orderUrgency(order); const next=primaryNextStatus(order);
+            const acceptanceView=adminDeliveryAcceptanceView(order,canManageDelivery);
+            const deliveryStep=adminDeliveryNextStep(order);
+            const deliveryStepMarkup=deliveryStep?`<aside class="delivery-ops-step delivery-ops-step--${esc(deliveryStep.key)}" data-delivery-step="${esc(deliveryStep.key)}" aria-label="گام جاری ارسال"><strong>${esc(deliveryStep.label)}</strong><span>${esc(deliveryStep.detail)}</span></aside>`:'';
+            const orderBranchId=order.branchId??currentBranchId;
+            const orderBranch=branchesCache.find((branch)=>String(branch.id)===String(orderBranchId));
+            const deliveryBranchContext=orderBranch?.name|| (orderBranchId?`شعبه ${fmtNum(orderBranchId)}`:'شعبه نامشخص');
+            const deliveryOrderContext=`#${order.id}${order.orderNo?` · ${order.orderNo}`:''}`;
+            const acceptanceMarkup=acceptanceView?`<section class="delivery-acceptance delivery-acceptance--${esc(acceptanceView.status)}" aria-label="پذیرش رستوران" data-delivery-acceptance>
+              <div class="delivery-acceptance__head"><b>پذیرش رستوران</b><span class="delivery-acceptance__badge">${esc(acceptanceView.badge)}</span></div>
+              <div class="delivery-acceptance__context"><span>شعبه: ${esc(deliveryBranchContext)}</span><span>سفارش: ${esc(deliveryOrderContext)}</span></div>
+              <p>${esc(acceptanceView.detail)}</p>
+              <div class="delivery-acceptance__feedback" data-delivery-acceptance-feedback role="status" aria-live="polite" hidden></div>
+              ${acceptanceView.canAccept?`<div class="row-actions delivery-acceptance__actions"><button type="button" class="btn admin-primary-action delivery-acceptance__action" data-delivery-accept="${esc(order.id)}" aria-label="پذیرش سفارش ارسال ${esc(order.orderNo||order.id)} و ارسال به آشپزخانه">پذیرش و ارسال به آشپزخانه</button><button type="button" class="btn btn-danger delivery-acceptance__reject-open" data-delivery-reject-open="${esc(order.id)}" aria-expanded="false" aria-controls="delivery-reject-form-${esc(order.id)}">رد سفارش</button></div>
+                <form class="delivery-acceptance__reject-form" id="delivery-reject-form-${esc(order.id)}" data-delivery-reject-form="${esc(order.id)}" hidden novalidate>
+                  <div class="field"><label for="delivery-reject-reason-${esc(order.id)}">علت رد پذیرش ارسال <span aria-hidden="true">(الزامی)</span></label><textarea id="delivery-reject-reason-${esc(order.id)}" data-delivery-reject-reason rows="3" maxlength="500" required aria-required="true" aria-describedby="delivery-reject-help-${esc(order.id)}" placeholder="مثلاً محدودهٔ ارسال پوشش داده نمی‌شود"></textarea></div>
+                  <p class="hint" id="delivery-reject-help-${esc(order.id)}">این تصمیم فقط پذیرش ارسال را ثبت می‌کند؛ وضعیت پرداخت بدون تغییر می‌ماند.</p>
+                  <div class="row-actions"><button type="submit" class="btn btn-danger" data-delivery-reject-submit="${esc(order.id)}">ثبت رد سفارش</button><button type="button" class="btn btn-ghost" data-delivery-reject-cancel="${esc(order.id)}">انصراف</button></div>
+                </form>`:''}
+            </section>`:'';
             return `<article class="ops-order-card${urgency.className}" data-order-card="${order.id}" data-search="${esc(search)}" data-status="${esc(order.status)}" data-fulfillment="${esc(fulfillment)}" data-payment="${esc(payment)}">
-              <header class="ops-order-card__head"><div><p>#${order.id}${order.orderNo?` · ${esc(order.orderNo)}`:''}</p><h2>${esc(order.name||'مهمان')}</h2><span>${esc(fulfillmentLabel(fulfillment))}${order.tableNo?` · میز ${esc(order.tableNo)}`:''}</span></div><div class="admin-order-state"><span class="ops-status ops-status--${esc(order.status)}">${esc(statusLabel(order.status))}</span><small class="admin-age-badge">${esc(urgency.label)}</small></div></header>
+              <header class="ops-order-card__head"><div><p>#${order.id}${order.orderNo?` · ${esc(order.orderNo)}`:''}</p><h2>${esc(order.name||'مهمان')}</h2><span>${esc(fulfillmentLabel(fulfillment))}${order.tableNo?` · میز ${esc(order.tableNo)}`:''}</span></div><div class="admin-order-state"><span class="ops-status ops-status--${esc(order.status)}">${esc(adminOrderStatusLabel(order))}</span><small class="admin-age-badge">${esc(urgency.label)}</small></div></header>
               <div class="ops-order-card__meta"><span>${fmtMoney(order.total)}</span><span>${esc(paymentLabel)}</span><span>${window.ShamsiCore ? window.ShamsiCore.formatShamsiDateTime(order.createdAt) : new Date(order.createdAt).toLocaleString('fa-IR')}</span></div>
+              ${deliveryStepMarkup}
               ${order.note?`<div class="admin-order-note"><b>یادداشت:</b> ${esc(order.note)}</div>`:''}
               <ul class="ops-order-items">${(order.items||[]).map((item)=>`<li><b>${fmtNum(item.qty)}×</b><span>${esc(item.name)}</span><em>${fmtMoney(item.lineTotal)}</em></li>`).join('')}</ul>
+              ${acceptanceMarkup}
               <details class="ops-order-detail"><summary>جزئیات و تاریخچه</summary><div class="ops-order-detail__content"><p><b>تماس:</b> <span dir="ltr">${esc(order.phone||'—')}</span></p>${order.delivery?`<p><b>ارسال:</b> ${esc(order.delivery.zoneName||'')} · ${esc(order.delivery.address||'')}</p>`:''}<ol>${history.map((e)=>`<li>${esc(statusLabel(e.status))}<time>${e.at?(window.ShamsiCore ? window.ShamsiCore.formatShamsiDateTime(e.at) : new Date(e.at).toLocaleString('fa-IR')):''}</time></li>`).join('')||'<li>تاریخچه‌ای ثبت نشده است</li>'}</ol></div></details>
-              <footer class="ops-order-card__actions">${next?`<button class="btn admin-primary-action" data-onext="${order.id}" data-next-status="${next}">${esc(primaryActionLabel(next))}</button>`:''}<label class="admin-secondary-select"><span>تغییر دستی وضعیت</span><select data-ostatus="${order.id}" ${nextStatusesForOrder(order).length<=1?'disabled':''}>${nextStatusesForOrder(order).map((status)=>`<option value="${status}" ${order.status===status?'selected':''}>${statusLabel(status)}</option>`).join('')}</select></label></footer>
+              <footer class="ops-order-card__actions">${next?`<button class="btn admin-primary-action" data-onext="${order.id}" data-next-status="${next}">${esc(primaryActionLabel(next))}</button>`:''}${needsCashierSettlement?`<a class="btn" href="/admin/cashier?view=orders&amp;focusOrder=${encodeURIComponent(order.id)}">تسویه در صندوق · ${fmtMoney(amountDue)}</a>`:''}<label class="admin-secondary-select"><span>تغییر دستی وضعیت</span><select data-ostatus="${order.id}" ${nextStatusesForOrder(order).length<=1?'disabled':''}>${nextStatusesForOrder(order).map((status)=>`<option value="${status}" ${order.status===status?'selected':''}>${statusLabel(status)}</option>`).join('')}</select></label>${order.cancellationBlocked?.message?`<small class="admin-cancel-blocked" role="note">${esc(order.cancellationBlocked.message)}</small>`:''}</footer>
             </article>`;
           }).join('')||'<p class="ops-empty">سفارشی ثبت نشده است.</p>'}
         </section>`;
 
+      main.insertAdjacentHTML('beforeend', `
+        <section class="section-box order-history-panel" id="closed-order-history" aria-labelledby="order-history-title" hidden>
+          <header class="order-history-panel__head"><div><p class="eyebrow">فقط‌خواندنی</p><h2 id="order-history-title">سابقه سفارش‌های بسته</h2></div><span id="order-history-coverage" class="order-history-coverage"></span></header>
+          <p id="order-history-warning" class="order-history-warning" role="note" hidden></p>
+          <p id="order-history-status" class="order-history-status" role="status" aria-live="polite">برای دیدن سفارش‌های بسته، سابقه را باز کنید.</p>
+          <button class="btn btn-sm" id="order-history-retry" type="button" hidden>تلاش دوباره</button>
+          <div class="order-history-list" id="order-history-list"></div>
+          <button class="btn order-history-more" id="order-history-more" type="button" hidden>سفارش‌های قدیمی‌تر</button>
+        </section>`);
+
+      let historyCursor = null;
+      let historyLoaded = false;
+      let historyLoading = false;
+      const historyToggle = document.getElementById('order-history-toggle');
+      const historyPanel = document.getElementById('closed-order-history');
+      const historyStatus = document.getElementById('order-history-status');
+      const historyList = document.getElementById('order-history-list');
+      const historyWarning = document.getElementById('order-history-warning');
+      const historyCoverage = document.getElementById('order-history-coverage');
+      const historyRetry = document.getElementById('order-history-retry');
+      const historyMore = document.getElementById('order-history-more');
+      const loadOrderHistory = async ({ append = false } = {}) => {
+        if (historyLoading) return;
+        historyLoading = true;
+        historyRetry.hidden = true;
+        historyMore.disabled = true;
+        historyStatus.textContent = append ? 'در حال دریافت سفارش‌های قدیمی‌تر…' : 'در حال دریافت سابقه…';
+        try {
+          const query = { history: 'closed', limit: '30' };
+          if (append && historyCursor) query.cursor = historyCursor;
+          const data = await api(`/api/admin/orders${branchQs(query)}`);
+          const page = Array.isArray(data.orders) ? data.orders : [];
+          const cards = page.map((order) => {
+            const status = String(order.status || '');
+            const payment = String(order.paymentStatus || 'unknown');
+            const paymentLabel = ({ paid: 'پرداخت‌شده', partial: 'پرداخت ناقص', pending: 'در انتظار پرداخت', unpaid: 'پرداخت‌نشده', failed: 'ناموفق', refunded: 'بازپرداخت', unknown: 'وضعیت پرداخت نامشخص' })[payment] || 'وضعیت پرداخت نامشخص';
+            const createdAt = order.createdAt && Number.isFinite(new Date(order.createdAt).getTime())
+              ? (window.ShamsiCore ? window.ShamsiCore.formatShamsiDateTime(order.createdAt) : new Date(order.createdAt).toLocaleString('fa-IR'))
+              : 'زمان نامشخص';
+            const amount = Number.isFinite(Number(order.total)) ? fmtMoney(order.total) : 'مبلغ نامشخص';
+            const fulfillment = order.fulfillment || (order.tableNo ? 'dine_in' : 'pickup');
+            const itemRows = (Array.isArray(order.items) ? order.items : []).map((item) => `<li><span>${fmtNum(item.qty || 1)}× ${esc(item.name || 'قلم سفارش')}</span><b>${Number.isFinite(Number(item.lineTotal)) ? fmtMoney(item.lineTotal) : ''}</b></li>`).join('');
+            const orderRef = order.orderNo ? ` · ${esc(order.orderNo)}` : '';
+            return `<article class="order-history-card"><header><div><strong>#${esc(order.id)}${orderRef}</strong><span class="ops-status ops-status--${esc(status)}">${esc(statusLabel(status))}</span></div><time>${esc(createdAt)}</time></header><div class="order-history-card__meta"><strong>${esc(amount)}</strong><span>${esc(paymentLabel)}</span><span>${esc(fulfillmentLabel(fulfillment))}${order.tableNo ? ` · میز ${esc(order.tableNo)}` : ''}</span></div><details><summary>اقلام سفارش ${fmtNum(Array.isArray(order.items) ? order.items.length : 0)}</summary>${itemRows ? `<ul>${itemRows}</ul>` : '<p>جزئیات اقلام در سابقهٔ ذخیره‌شده موجود نیست.</p>'}</details></article>`;
+          }).join('');
+          if (!append) historyList.innerHTML = '';
+          if (cards) historyList.insertAdjacentHTML('beforeend', cards);
+          if (!historyList.children.length) historyList.innerHTML = '<p class="ops-empty">سفارش بسته‌ای در سابقهٔ قابل‌دسترسی پیدا نشد.</p>';
+          historyCursor = data.nextCursor || null;
+          historyMore.hidden = data.hasMore !== true || !historyCursor;
+          historyMore.disabled = false;
+          historyLoaded = true;
+          historyCoverage.textContent = data.source === 'postgres' ? 'آرشیو پایدار · پوشش تاریخی تأییدنشده' : 'حافظهٔ اخیر · سابقه ناقص';
+          historyWarning.textContent = data.warning || 'کامل بودن سابقهٔ قدیمی‌تر هنوز تأیید نشده است.';
+          historyWarning.hidden = data.complete === true;
+          historyStatus.textContent = data.hasMore ? `${fmtNum(page.length)} سفارش دریافت شد؛ برای موارد قدیمی‌تر ادامه دهید.` : `${fmtNum(page.length)} سفارش در این صفحه دریافت شد.`;
+        } catch (error) {
+          historyStatus.textContent = error.message || 'دریافت سابقه ناموفق بود.';
+          historyRetry.hidden = false;
+          historyMore.disabled = false;
+        } finally {
+          historyLoading = false;
+        }
+      };
+      historyToggle.addEventListener('click', async () => {
+        const opening = historyPanel.hidden;
+        historyPanel.hidden = !opening;
+        historyToggle.setAttribute('aria-expanded', String(opening));
+        historyToggle.textContent = opening ? 'بستن سابقه سفارش‌ها' : 'سابقه سفارش‌های بسته';
+        if (opening && !historyLoaded) await loadOrderHistory();
+      });
+      historyRetry.addEventListener('click', () => loadOrderHistory());
+      historyMore.addEventListener('click', () => loadOrderHistory({ append: true }));
+
       const filterOrders=()=>{ const q=String(document.getElementById('order-search')?.value||'').trim().toLowerCase(), status=document.getElementById('order-status-filter')?.value||'', fulfillment=document.getElementById('order-fulfillment-filter')?.value||'', payment=document.getElementById('order-payment-filter')?.value||''; let count=0; main.querySelectorAll('[data-order-card]').forEach((card)=>{const ok=(!q||card.dataset.search.includes(q))&&(!status||card.dataset.status===status)&&(!fulfillment||card.dataset.fulfillment===fulfillment)&&(!payment||card.dataset.payment===payment);card.hidden=!ok;if(ok)count++;}); const el=document.getElementById('order-filter-count');if(el)el.textContent=`${fmtNum(count)} سفارش`; };
       ['order-search','order-status-filter','order-fulfillment-filter','order-payment-filter'].forEach((id)=>document.getElementById(id)?.addEventListener(id==='order-search'?'input':'change',filterOrders));
       const changeStatus=async(id,status)=>api(`/api/v2/orders/${id}/status`,{method:'PATCH',body:JSON.stringify({status})});
-      main.querySelectorAll('[data-onext]').forEach((b)=>b.addEventListener('click',()=>runBusy(b,async()=>{await changeStatus(b.dataset.onext,b.dataset.nextStatus);showToast('سفارش به مرحله بعد رفت','success',1400);await tabs.orders();}).catch((e)=>showToast(e.message,'error'))));
-      main.querySelectorAll('[data-ostatus]').forEach((sel)=>sel.addEventListener('change',async()=>{ const status=sel.value;if(status==='cancelled'&&!window.confirm('این سفارش لغو شود؟ این اقدام در تاریخچه ثبت می‌شود.')){await tabs.orders();return;} sel.disabled=true;try{await changeStatus(sel.dataset.ostatus,status);showToast('وضعیت سفارش به‌روز شد','success',1400);await tabs.orders();}catch(e){showToast(e.message,'error');sel.disabled=false;} }));
+      const setAcceptanceFeedback=(orderId,message,{error=false,disableAction=false}={})=>{
+        const card=main.querySelector(`[data-order-card="${CSS.escape(String(orderId))}"]`);
+        const feedback=card?.querySelector('[data-delivery-acceptance-feedback]');
+        if(feedback){
+          feedback.hidden=false;
+          feedback.setAttribute('role',error?'alert':'status');
+          feedback.replaceChildren(document.createTextNode(message));
+          if(disableAction){
+            const check=document.createElement('button');
+            check.type='button';
+            check.className='btn btn-sm delivery-acceptance__check';
+            check.dataset.deliveryAcceptCheck=String(orderId);
+            check.textContent='بررسی وضعیت از سرور';
+            check.addEventListener('click',()=>runBusy(check,()=>checkDeliveryAcceptanceStatus(check),'در حال بررسی…').catch((checkError)=>showToast(checkError.message,'error')));
+            feedback.appendChild(check);
+          }
+        }
+        if(disableAction){card?.querySelectorAll('[data-delivery-accept],[data-delivery-reject-open],[data-delivery-reject-submit],[data-delivery-reject-cancel],[data-delivery-reject-reason]').forEach((action)=>{action.disabled=true;});}
+      };
+      const checkDeliveryAcceptanceStatus=async(button)=>{
+        const orderId=button.dataset.deliveryAcceptCheck;
+        const freshOrders=await tabs.orders();
+        const freshOrder=freshOrders.find((entry)=>String(entry.id)===String(orderId));
+        const status=String(freshOrder?.deliveryAcceptance?.status||'').trim().toLowerCase();
+        if(status==='accepted'){
+          clearAdminDeliveryAcceptanceIdempotencyKey(`westo:delivery-accept:${currentBranchId||'branch'}:${String(orderId)}`);
+          clearAdminDeliveryRejectionIntent(`westo:delivery-reject:${currentBranchId||'branch'}:${String(orderId)}`);
+          showToast('پذیرش رستوران از سرور تأیید شد.','success',1800);
+          return;
+        }
+        if(status==='rejected'){
+          clearAdminDeliveryAcceptanceIdempotencyKey(`westo:delivery-accept:${currentBranchId||'branch'}:${String(orderId)}`);
+          clearAdminDeliveryRejectionIntent(`westo:delivery-reject:${currentBranchId||'branch'}:${String(orderId)}`);
+          showToast('رد سفارش ارسال از سرور تأیید شد.','success',1800);
+          return;
+        }
+        if(['pending','unrecorded'].includes(status)){
+          clearAdminDeliveryRejectionIntent(`westo:delivery-reject:${currentBranchId||'branch'}:${String(orderId)}`);
+          setAcceptanceFeedback(orderId,'سرور هنوز تصمیمی برای این سفارش ثبت نکرده است؛ پس از بررسی می‌توانید دوباره اقدام کنید.',{error:true});
+          return;
+        }
+        setAcceptanceFeedback(orderId,'وضعیت پذیرش هنوز از پاسخ سفارش قابل تأیید نیست؛ اقدام تکراری متوقف می‌ماند.',{error:true,disableAction:true});
+      };
+      main.querySelectorAll('[data-delivery-accept]').forEach((button)=>button.addEventListener('click',()=>{
+        let keepDisabled=false;
+        const decisionPanel=button.closest('[data-delivery-acceptance]');
+        decisionPanel?.setAttribute('aria-busy','true');
+        const rejectionControls=decisionPanel?.querySelectorAll('[data-delivery-reject-open],[data-delivery-reject-submit],[data-delivery-reject-cancel]')||[];
+        rejectionControls.forEach((control)=>{control.disabled=true;});
+        runBusy(button,async()=>{
+        const orderId=button.dataset.deliveryAccept;
+        const acceptanceKey=adminDeliveryAcceptanceIdempotencyKey(orderId);
+        const feedback=button.closest('[data-order-card]')?.querySelector('[data-delivery-acceptance-feedback]');
+        if(feedback){feedback.hidden=false;feedback.textContent='در حال ثبت پذیرش رستوران و دریافت نتیجه از سرور…';}
+        let response;
+        try{
+          response=await api(`/api/delivery/orders/${encodeURIComponent(orderId)}/accept${branchQs()}`,{
+            method:'POST',
+            headers:{'Idempotency-Key':acceptanceKey.key},
+            body:JSON.stringify({}),
+          });
+        }catch(error){
+          try{
+            const freshOrders=await tabs.orders();
+            const freshOrder=freshOrders.find((entry)=>String(entry.id)===String(orderId));
+            const status=String(freshOrder?.deliveryAcceptance?.status||'').trim().toLowerCase();
+            if(status==='accepted'){
+              clearAdminDeliveryAcceptanceIdempotencyKey(acceptanceKey.storageKey);
+              showToast('پذیرش از وضعیت تازهٔ سرور تأیید شد.','success',1800);
+              return;
+            }
+            if(!['pending','unrecorded'].includes(status)){
+              keepDisabled=true;
+              setAcceptanceFeedback(orderId,'نتیجهٔ درخواست نامشخص است و وضعیت تازهٔ پذیرش هم از سرور دریافت نشد؛ برای جلوگیری از درخواست تکراری، دوباره ارسال نکنید و ابتدا وضعیت را بررسی کنید.',{error:true,disableAction:true});
+              return;
+            }
+            setAcceptanceFeedback(orderId,`${error.message||'ثبت پذیرش ناموفق بود.'} وضعیت تازه هنوز پذیرش‌نشده است؛ می‌توانید پس از بررسی دوباره تلاش کنید.`,{error:true});
+          }catch(refreshError){
+            keepDisabled=true;
+            setAcceptanceFeedback(orderId,'پاسخ پذیرش نامشخص است و تازه‌سازی سفارش هم ناموفق بود؛ برای جلوگیری از تکرار، دکمه موقتاً غیرفعال شد. ابتدا اتصال را برقرار و وضعیت سفارش را بررسی کنید.',{error:true,disableAction:true});
+          }
+          showToast(error.message||'ثبت پذیرش ناموفق بود.','error');
+          return;
+        }
+
+        const responseOrder=response?.order;
+        const responseAccepted=String(responseOrder?.deliveryAcceptance?.status||'').trim().toLowerCase()==='accepted'
+          && String(responseOrder?.id)===String(orderId);
+        if(!responseAccepted){
+          try{
+            const freshOrders=await tabs.orders();
+            const freshOrder=freshOrders.find((entry)=>String(entry.id)===String(orderId));
+            if(String(freshOrder?.deliveryAcceptance?.status||'').trim().toLowerCase()==='accepted'){
+              clearAdminDeliveryAcceptanceIdempotencyKey(acceptanceKey.storageKey);
+              showToast('پذیرش از وضعیت تازهٔ سرور تأیید شد.','success',1800);
+              return;
+            }
+            const status=String(freshOrder?.deliveryAcceptance?.status||'').trim().toLowerCase();
+            if(!['pending','unrecorded'].includes(status)){
+              keepDisabled=true;
+              setAcceptanceFeedback(orderId,'پاسخ پذیرش نامعتبر بود و وضعیت تازه هنوز روشن نیست؛ برای جلوگیری از تکرار، اقدام متوقف شد.',{error:true,disableAction:true});
+              return;
+            }
+          }catch(refreshError){
+            keepDisabled=true;
+            setAcceptanceFeedback(orderId,'سرور پذیرش را تأیید نکرد و تازه‌سازی سفارش هم ناموفق بود؛ وضعیت را پیش از هر تلاش دوباره بررسی کنید.',{error:true,disableAction:true});
+            return;
+          }
+          setAcceptanceFeedback(orderId,'پاسخ سرور پذیرش را تأیید نکرد؛ وضعیت سفارش تازه شد. اگر هنوز پذیرش‌نشده است، پس از بررسی دوباره تلاش کنید.',{error:true});
+          return;
+        }
+
+        try{
+          const freshOrders=await tabs.orders();
+          const freshOrder=freshOrders.find((entry)=>String(entry.id)===String(orderId));
+          if(String(freshOrder?.deliveryAcceptance?.status||'').trim().toLowerCase()==='accepted'){
+            clearAdminDeliveryAcceptanceIdempotencyKey(acceptanceKey.storageKey);
+            showToast('پذیرش رستوران ثبت و سفارش از سرور تازه‌سازی شد.','success',1800);
+            return;
+          }
+          keepDisabled=true;
+          setAcceptanceFeedback(orderId,'پاسخ ثبت پذیرش موفق بود، اما فهرست تازه هنوز آن را تأیید نمی‌کند؛ اقدام دوباره متوقف شد تا وضعیت با سرور تطبیق داده شود.',{error:true,disableAction:true});
+        }catch(refreshError){
+          keepDisabled=true;
+          setAcceptanceFeedback(orderId,'پذیرش در پاسخ سرور تأیید شد، اما تازه‌سازی فهرست ناموفق بود؛ برای جلوگیری از ارسال دوباره، دکمه غیرفعال شد. صفحه را پس از اتصال تازه‌سازی کنید.',{error:true,disableAction:true});
+        }
+        },'در حال پذیرش…').catch((error)=>showToast(error.message,'error')).finally(()=>{
+          decisionPanel?.removeAttribute('aria-busy');
+          if(!keepDisabled)rejectionControls.forEach((control)=>{control.disabled=false;});
+          if(keepDisabled){
+            const currentCard=main.querySelector(`[data-order-card="${CSS.escape(String(button.dataset.deliveryAccept))}"]`);
+            currentCard?.querySelectorAll('[data-delivery-accept],[data-delivery-reject-open],[data-delivery-reject-submit]').forEach((action)=>{action.disabled=true;});
+          }
+        });
+      }));
+      main.querySelectorAll('[data-delivery-reject-open]').forEach((button)=>button.addEventListener('click',()=>{
+        const panel=button.closest('[data-delivery-acceptance]');
+        const form=panel?.querySelector('[data-delivery-reject-form]');
+        const reason=form?.querySelector('[data-delivery-reject-reason]');
+        if(!form||button.disabled)return;
+        form.hidden=false;
+        button.setAttribute('aria-expanded','true');
+        reason?.focus();
+      }));
+      main.querySelectorAll('[data-delivery-reject-cancel]').forEach((button)=>button.addEventListener('click',()=>{
+        const panel=button.closest('[data-delivery-acceptance]');
+        const form=button.closest('[data-delivery-reject-form]');
+        const opener=panel?.querySelector('[data-delivery-reject-open]');
+        if(form){form.reset();form.hidden=true;}
+        opener?.setAttribute('aria-expanded','false');
+        opener?.focus();
+      }));
+      main.querySelectorAll('[data-delivery-reject-form]').forEach((form)=>form.addEventListener('submit',async(event)=>{
+        event.preventDefault();
+        const submit=form.querySelector('[data-delivery-reject-submit]');
+        if(!submit||submit.dataset.busy==='1')return;
+        const orderId=form.dataset.deliveryRejectForm;
+        const panel=form.closest('[data-delivery-acceptance]');
+        const card=form.closest('[data-order-card]');
+        const reasonField=form.querySelector('[data-delivery-reject-reason]');
+        const feedback=panel?.querySelector('[data-delivery-acceptance-feedback]');
+        const payload=adminDeliveryRejectionPayload(reasonField?.value);
+        if(!payload){
+          reasonField?.setCustomValidity(adminDeliveryRejectionValidationMessage(reasonField?.value));
+          reasonField?.reportValidity();
+          return;
+        }
+        const rejectionIntent=adminDeliveryRejectionIntent(orderId,payload.reason);
+        if(!rejectionIntent.ok){
+          const message=rejectionIntent.needsStatusCheck
+            ? 'از تلاش قبلی نتیجهٔ قطعی نداریم. ابتدا وضعیت سفارش را از سرور بررسی کنید؛ هنوز درخواست تازه‌ای ارسال نشده است.'
+            : rejectionIntent.reasonConflict
+              ? 'متن علت با تلاش قبلی یکسان نیست. ابتدا وضعیت سرور را بررسی کنید تا تصمیم تکراری یا متناقض ثبت نشود.'
+              : 'ذخیرهٔ امن شناسهٔ درخواست در این مرورگر ممکن نیست؛ برای جلوگیری از رد تکراری، درخواست ارسال نشد.';
+          setAcceptanceFeedback(orderId,message,{error:true,disableAction:true});
+          return;
+        }
+        reasonField?.setCustomValidity('');
+        const submitLabel=submit.textContent;
+        submit.dataset.busy='1';
+        submit.disabled=true;
+        submit.setAttribute('aria-busy','true');
+        submit.textContent='در حال ثبت رد…';
+        if(reasonField)reasonField.disabled=true;
+        let keepLocked=false;
+        let confirmed=false;
+        const setFeedback=(message,{error=false,lock=false}={})=>{
+          if(feedback){feedback.hidden=false;feedback.setAttribute('role',error?'alert':'status');feedback.replaceChildren(document.createTextNode(message));}
+          if(lock){
+            keepLocked=true;
+            const check=document.createElement('button');
+            check.type='button';
+            check.className='btn btn-sm delivery-acceptance__check';
+            check.dataset.deliveryAcceptCheck=String(orderId);
+            check.textContent='بررسی وضعیت از سرور';
+            check.addEventListener('click',()=>runBusy(check,()=>checkDeliveryAcceptanceStatus(check),'در حال بررسی…').catch((checkError)=>showToast(checkError.message,'error')));
+            feedback?.appendChild(check);
+            card?.querySelectorAll('[data-delivery-accept],[data-delivery-reject-open],[data-delivery-reject-submit],[data-delivery-reject-cancel],[data-delivery-reject-reason]').forEach((action)=>{action.disabled=true;});
+          }
+        };
+        const acceptButton=panel?.querySelector('[data-delivery-accept]');
+        const rejectOpen=panel?.querySelector('[data-delivery-reject-open]');
+        const cancelButton=panel?.querySelector('[data-delivery-reject-cancel]');
+        if(acceptButton)acceptButton.disabled=true;
+        if(rejectOpen)rejectOpen.disabled=true;
+        if(cancelButton)cancelButton.disabled=true;
+        panel?.setAttribute('aria-busy','true');
+        if(feedback){feedback.hidden=false;feedback.setAttribute('role','status');feedback.textContent='در حال ثبت رد سفارش و دریافت تأیید از سرور…';}
+        try{
+          const response=await api(`/api/delivery/orders/${encodeURIComponent(orderId)}/reject${branchQs()}`,{
+            method:'POST',
+            headers:{'Idempotency-Key':rejectionIntent.key},
+            body:JSON.stringify(payload),
+          });
+          if(!adminDeliveryRejectionConfirmed(response,orderId)){
+            setFeedback('پاسخ سرور رد این سفارش را تأیید نکرد؛ برای جلوگیری از ثبت تکراری، وضعیت را از سرور بررسی کنید.',{error:true,lock:true});
+            return;
+          }
+          confirmed=true;
+          let freshOrders;
+          try{
+            freshOrders=await tabs.orders();
+          }catch(refreshError){
+            setFeedback('رد سفارش از سوی سرور تأیید شد، اما تازه‌سازی فهرست ناموفق بود؛ پیش از هر اقدام دوباره وضعیت را بررسی کنید.',{error:true,lock:true});
+            showToast('رد سفارش ثبت شد؛ تازه‌سازی فهرست ناموفق بود.','error');
+            return;
+          }
+          const freshOrder=freshOrders.find((entry)=>String(entry.id)===String(orderId));
+          if(String(freshOrder?.deliveryAcceptance?.status||'').trim().toLowerCase()==='rejected'){
+            clearAdminDeliveryRejectionIntent(rejectionIntent.storageKey);
+            showToast('رد سفارش ارسال ثبت و فهرست به‌روز شد.','success',1800);
+            return;
+          }
+          setAcceptanceFeedback(orderId,'رد سفارش در پاسخ سرور تأیید شد، اما فهرست تازه هنوز آن را نشان نمی‌دهد؛ برای جلوگیری از ثبت دوباره، ابتدا وضعیت را بررسی کنید.',{error:true,disableAction:true});
+          showToast('پاسخ ثبت رد دریافت شد؛ وضعیت فهرست نیازمند بررسی است.','error');
+        }catch(error){
+          try{
+            const freshOrders=await tabs.orders();
+            const freshOrder=freshOrders.find((entry)=>String(entry.id)===String(orderId));
+            const status=String(freshOrder?.deliveryAcceptance?.status||'').trim().toLowerCase();
+            if(status==='rejected'){
+              clearAdminDeliveryRejectionIntent(rejectionIntent.storageKey);
+              clearAdminDeliveryAcceptanceIdempotencyKey(`westo:delivery-accept:${currentBranchId||'branch'}:${String(orderId)}`);
+              showToast('رد سفارش از وضعیت تازهٔ سرور تأیید شد.','success',1800);
+              return;
+            }
+            if(status==='accepted'){
+              clearAdminDeliveryRejectionIntent(rejectionIntent.storageKey);
+              showToast('پذیرش قبلاً در سرور ثبت شده است؛ این سفارش دوباره رد نشد.','error');
+              setAcceptanceFeedback(orderId,'این سفارش از قبل پذیرفته شده است؛ برای جلوگیری از تصمیم متناقض، رد سفارش متوقف شد.',{error:true,disableAction:true});
+              keepLocked=true;
+              return;
+            }
+            if(['pending','unrecorded'].includes(status)){
+              clearAdminDeliveryRejectionIntent(rejectionIntent.storageKey);
+              setAcceptanceFeedback(orderId,`${error.message||'ثبت رد سفارش انجام نشد.'} وضعیت تازهٔ سرور هنوز بدون تصمیم است؛ پس از بررسی می‌توانید دوباره اقدام کنید.`,{error:true});
+              showToast(error.message||'ثبت رد سفارش ناموفق بود.','error');
+              return;
+            }
+            setFeedback('نتیجهٔ درخواست نامشخص است و وضعیت تازهٔ سفارش قابل تأیید نیست؛ برای جلوگیری از ثبت تکراری، اقدام متوقف شد.',{error:true,lock:true});
+          }catch(refreshError){
+            setFeedback('پاسخ رد سفارش نامشخص بود و دریافت وضعیت تازه هم ناموفق شد؛ برای جلوگیری از ثبت دوباره، ابتدا اتصال را برقرار و وضعیت سفارش را بررسی کنید.',{error:true,lock:true});
+          }
+          showToast(error.message||'نتیجهٔ رد سفارش نامشخص است؛ وضعیت را بررسی کنید.','error');
+        }finally{
+          panel?.removeAttribute('aria-busy');
+          if(!keepLocked&&!confirmed){
+            if(acceptButton)acceptButton.disabled=false;
+            if(rejectOpen)rejectOpen.disabled=false;
+            if(cancelButton)cancelButton.disabled=false;
+          }
+          submit.dataset.busy='0';
+          submit.disabled=keepLocked||confirmed;
+          submit.removeAttribute('aria-busy');
+          submit.textContent=submitLabel;
+        }
+      }));
+      const lockDeliveryStepForRefresh=(orderId,message)=>{
+        const card=main.querySelector(`[data-order-card="${CSS.escape(String(orderId))}"]`);
+        if(!card)return;
+        card.querySelectorAll('[data-onext],[data-ostatus],[data-delivery-accept],[data-delivery-reject-open],[data-delivery-reject-submit]').forEach((control)=>{control.disabled=true;});
+        let feedback=card.querySelector('[data-delivery-step-feedback]');
+        if(!feedback){
+          feedback=document.createElement('p');
+          feedback.dataset.deliveryStepFeedback='1';
+          feedback.className='delivery-ops-step__feedback';
+          feedback.setAttribute('role','alert');
+          card.querySelector('.ops-order-card__actions')?.appendChild(feedback);
+        }
+        feedback.replaceChildren(document.createTextNode(message));
+        const check=document.createElement('button');
+        check.type='button';
+        check.className='btn btn-sm';
+        check.textContent='بازخوانی وضعیت سفارش';
+        check.addEventListener('click',()=>runBusy(check,async()=>{
+          const refreshed=await tabs.orders();
+          const current=refreshed.find((entry)=>String(entry.id)===String(orderId));
+          showToast(current?`وضعیت تازهٔ سفارش: ${statusLabel(current.status)}`:'سفارش در فهرست این شعبه پیدا نشد.',current?'success':'error',2200);
+        },'در حال بررسی…').catch((error)=>showToast(error.message||'بررسی وضعیت ناموفق بود.','error')));
+        feedback.appendChild(document.createTextNode(' '));
+        feedback.appendChild(check);
+      };
+      const runDeliveryCourierStep=async(button,targetStatus)=>{
+        const orderId=button.dataset.onext||button.dataset.ostatus;
+        const card=button.closest('[data-order-card]');
+        const previousStatus=String(card?.dataset.status||'');
+        if(!card||button.dataset.busy==='1')return;
+        const confirmation=adminDeliveryStatusConfirmation(orderId,targetStatus);
+        if(confirmation&&!window.confirm(confirmation)){
+          if(button.matches('[data-ostatus]'))adminRestoreDeliveryStatusSelection(button,previousStatus);
+          return;
+        }
+        const controls=card.querySelectorAll('[data-onext],[data-ostatus],[data-delivery-accept],[data-delivery-reject-open],[data-delivery-reject-submit]');
+        controls.forEach((control)=>{control.disabled=true;});
+        button.dataset.busy='1';
+        button.setAttribute('aria-busy','true');
+        const originalLabel=button.textContent;
+        button.textContent=targetStatus==='dispatched'?'در حال ثبت تحویل به پیک…':'در حال ثبت تحویل نهایی…';
+        let mutationError=null;
+        try{
+          const response=await changeStatus(orderId,targetStatus);
+          const responseOrder=response?.order;
+          if(response?.ok!==true||String(responseOrder?.id)!==String(orderId)||String(responseOrder?.status)!==targetStatus){
+            mutationError=new Error('پاسخ سرور مرحلهٔ تحویل را تأیید نکرد.');
+          }
+        }catch(error){mutationError=error;}
+        let refreshed;
+        try{refreshed=await tabs.orders();}
+        catch(refreshError){
+          button.dataset.busy='0';
+          button.removeAttribute('aria-busy');
+          button.textContent=originalLabel;
+          lockDeliveryStepForRefresh(orderId,'نتیجهٔ ثبت مرحلهٔ تحویل نامشخص است؛ برای جلوگیری از ثبت دوباره، ابتدا وضعیت سرور را بازخوانی کنید.');
+          return;
+        }
+        const current=refreshed.find((entry)=>String(entry.id)===String(orderId));
+        if(String(current?.status||'')===targetStatus){
+          showToast(targetStatus==='dispatched'?'تحویل به پیک از وضعیت سرور تأیید شد.':'تحویل به مشتری از وضعیت سرور تأیید شد.','success',1800);
+          return;
+        }
+        if(current&&String(current.status)===previousStatus&&mutationError){
+          showToast(mutationError.message||'مرحلهٔ تحویل ثبت نشد؛ وضعیت فعلی از سرور تازه شد.','error');
+          return;
+        }
+        if(current){
+          showToast(`وضعیت از سرور تازه شد: ${statusLabel(current.status)}؛ پیش از اقدام بعدی دوباره بررسی کنید.`,mutationError?'error':'success',2400);
+          return;
+        }
+        showToast(mutationError?.message||'سفارش در فهرست تازه پیدا نشد؛ وضعیت را بررسی کنید.','error');
+      };
+      main.querySelectorAll('[data-onext]').forEach((button)=>button.addEventListener('click',()=>{
+        const card=button.closest('[data-order-card]');
+        const targetStatus=String(button.dataset.nextStatus||'');
+        if(card?.dataset.fulfillment==='delivery'&&['dispatched','delivered'].includes(targetStatus)){
+          runDeliveryCourierStep(button,targetStatus).catch((error)=>showToast(error.message,'error'));
+          return;
+        }
+        runBusy(button,async()=>{await changeStatus(button.dataset.onext,targetStatus);showToast('سفارش به مرحله بعد رفت','success',1400);await tabs.orders();}).catch((error)=>showToast(error.message,'error'));
+      }));
+      main.querySelectorAll('[data-ostatus]').forEach((select)=>select.addEventListener('change',async()=>{
+        const status=select.value;
+        const card=select.closest('[data-order-card]');
+        if(card?.dataset.fulfillment==='delivery'&&['dispatched','delivered'].includes(status)){
+          await runDeliveryCourierStep(select,status);
+          return;
+        }
+        if(status==='cancelled'&&!window.confirm('این سفارش لغو شود؟ این اقدام در تاریخچه ثبت می‌شود.')){await tabs.orders();return;}
+        select.disabled=true;
+        try{await changeStatus(select.dataset.ostatus,status);showToast('وضعیت سفارش به‌روز شد','success',1400);await tabs.orders();}
+        catch(error){showToast(error.message,'error');select.disabled=false;}
+      }));
       const focused=sessionStorage.getItem('westo_admin_focus_order');if(focused){sessionStorage.removeItem('westo_admin_focus_order');const card=main.querySelector(`[data-order-card="${CSS.escape(focused)}"]`);if(card){card.classList.add('is-focused');card.scrollIntoView({behavior:'smooth',block:'center'});card.querySelector('button,select')?.focus({preventScroll:true});}}
+      return orders;
     },
 
     async delivery() {
@@ -9320,19 +10953,12 @@
           <button class="club-nav-item ${subTab === 'campaigns' ? 'is-active' : ''}" data-club-subtab="campaigns" type="button">کمپین‌ها</button>
           <button class="club-nav-item ${subTab === 'sms' ? 'is-active' : ''}" data-club-subtab="sms" type="button">پیامک</button>
           <button class="club-nav-item ${subTab === 'loyalty' ? 'is-active' : ''}" data-club-subtab="loyalty" type="button">سطوح</button>
-          <button class="club-nav-item" data-club-subtab="staff" type="button" style="color:#0284c7;">👨‍🍳 پرسنل و دسترسی‌ها</button>
         </nav>
       `;
 
       const bindNav = () => {
         main.querySelectorAll('[data-club-subtab]').forEach((btn) => {
-          btn.addEventListener('click', () => {
-            if (btn.dataset.clubSubtab === 'staff') {
-              tabs.users('staff');
-            } else {
-              tabs.club(btn.dataset.clubSubtab);
-            }
-          });
+          btn.addEventListener('click', () => tabs.club(btn.dataset.clubSubtab));
         });
       };
 
@@ -9366,6 +10992,13 @@
                 <button class="btn btn-sm btn-ghost" id="dossier-close-btn" type="button">✕ بستن</button>
               </div>
 
+              <!-- Quick Communication Action Buttons -->
+              <div class="dossier-actions-strip">
+                <a class="dossier-comm-btn dossier-comm-btn--call" href="tel:${esc(phone)}" title="تماس مستقیم">📞 تماس تلفنی</a>
+                <a class="dossier-comm-btn dossier-comm-btn--sms" href="sms:${esc(phone)}" title="ارسال پیامک">💬 ارسال پیامک</a>
+                <a class="dossier-comm-btn dossier-comm-btn--whatsapp" href="https://wa.me/${esc(String(phone).replace(/^0/, '98'))}" target="_blank" rel="noopener" title="گفتگو در واتساپ">📱 پیام واتساپ</a>
+              </div>
+
               <div class="club-kpi-strip" style="margin-bottom:0.85rem;">
                 <div class="club-kpi accent"><div class="num">${fmtMoney(custData.walletBalanceToman || 0)}</div><div class="lbl">موجودی کیف پول</div></div>
                 <div class="club-kpi"><div class="num">${fmtNum(custData.points || 0)}</div><div class="lbl">امتیاز باشگاه</div></div>
@@ -9390,6 +11023,33 @@
                     <input type="text" id="dossier-wallet-reason" class="input" placeholder="شرح" value="شارژ دستی" style="font-size:0.8rem;" />
                     <button class="btn btn-sm btn-accent" id="dossier-wallet-btn" type="button">اعمال</button>
                   </div>
+                  <div class="dossier-wallet-presets">
+                    <span style="font-size:0.75rem; color:#94a3b8;">شارژ سریع:</span>
+                    <button type="button" class="dossier-preset-chip" data-topup-preset="50000">+۵۰٬۰۰۰</button>
+                    <button type="button" class="dossier-preset-chip" data-topup-preset="100000">+۱۰۰٬۰۰۰</button>
+                    <button type="button" class="dossier-preset-chip" data-topup-preset="200000">+۲۰۰٬۰۰۰</button>
+                    <button type="button" class="dossier-preset-chip" data-topup-preset="500000">+۵۰۰٬۰۰۰</button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Dietary & Allergy Tags -->
+              <div class="section-box club-section" style="margin:0 0 0.85rem 0; padding:0.75rem;">
+                <h3 style="font-size:0.85rem; margin-bottom:0.4rem;">🥗 ترجیحات غذایی و آلرژی‌های مهمان</h3>
+                <div class="dossier-tags-wrap" id="dossier-tags-container">
+                  ${['گیاه‌خوار', 'بدون گلوتن', 'حساسیت به آجیل', 'دیابتی', 'تندپسند', 'بدون پیاز'].map((tag) => {
+                    const isSelected = (custData.tags || []).includes(tag);
+                    return `<button type="button" class="dossier-tag ${isSelected ? 'dossier-tag--dietary' : ''}" data-dossier-tag="${esc(tag)}" style="cursor:pointer; opacity:${isSelected ? '1' : '0.55'};">${isSelected ? '✓ ' : '+ '}${esc(tag)}</button>`;
+                  }).join('')}
+                </div>
+              </div>
+
+              <!-- VIP Notes -->
+              <div class="section-box club-section" style="margin:0 0 0.85rem 0; padding:0.75rem;">
+                <h3 style="font-size:0.85rem; margin-bottom:0.4rem;">⭐ یادداشت اختصاصی تشریفات و پذیرایی (VIP Note)</h3>
+                <div class="club-form-row" style="grid-template-columns: 1fr auto; gap:0.4rem;">
+                  <input type="text" id="dossier-vip-note" class="input" placeholder="مثلاً: ترجیح میز کنار پنجره، آب بدون یخ، مهمان هیئت مدیره..." value="${esc(custData.vipNote || '')}" style="font-size:0.8rem;" />
+                  <button class="btn btn-sm btn-ghost" id="dossier-save-vip-btn" type="button">ذخیره یادداشت</button>
                 </div>
               </div>
 
@@ -9444,6 +11104,39 @@
               renderDossierModal(phone);
             } catch (error) {
               showToast(error.message || 'ثبت تعدیل کیف پول ناموفق بود', 'error');
+            }
+          });
+          modalEl.querySelectorAll('[data-topup-preset]').forEach((chip) => {
+            chip.addEventListener('click', () => {
+              const inp = modalEl.querySelector('#dossier-wallet-delta');
+              if (inp) {
+                inp.value = chip.dataset.topupPreset;
+                inp.focus();
+              }
+            });
+          });
+          modalEl.querySelectorAll('[data-dossier-tag]').forEach((tagBtn) => {
+            tagBtn.addEventListener('click', async () => {
+              const tag = tagBtn.dataset.dossierTag;
+              const currentTags = custData.tags || [];
+              const newTags = currentTags.includes(tag) ? currentTags.filter((t) => t !== tag) : [...currentTags, tag];
+              try {
+                await api(`/api/admin/customers/${encodeURIComponent(phone)}`, { method: 'PATCH', body: JSON.stringify({ tags: newTags }) });
+                showToast('ترجیحات مشتری ذخیره شد', 'success', 1000);
+                renderDossierModal(phone);
+              } catch (e) {
+                showToast(e.message || 'خطا در ذخیره ترجیحات', 'error');
+              }
+            });
+          });
+          modalEl.querySelector('#dossier-save-vip-btn')?.addEventListener('click', async () => {
+            const vipNote = modalEl.querySelector('#dossier-vip-note')?.value || '';
+            try {
+              await api(`/api/admin/customers/${encodeURIComponent(phone)}`, { method: 'PATCH', body: JSON.stringify({ vipNote }) });
+              showToast('یادداشت تشریفات ذخیره شد', 'success', 1200);
+              renderDossierModal(phone);
+            } catch (e) {
+              showToast(e.message || 'خطا در ذخیره یادداشت', 'error');
             }
           });
           modalEl.querySelector('#dossier-save-bday-btn')?.addEventListener('click', async () => {
@@ -9827,7 +11520,72 @@
       if (activeSubTab === 'loyalty') {
         const d = await api('/api/admin/loyalty');
         const L = d.loyalty || {};
-        const tiers = L.tiers || [];
+        const tiers = Array.isArray(L.tiers) && L.tiers.length ? L.tiers : [];
+        const achievements = Array.isArray(d.achievements) ? d.achievements : (Array.isArray(L.achievements) ? L.achievements : []);
+        const achievementCategories = Array.isArray(d.menuCategories) ? d.menuCategories : [];
+        const achievementMetrics = {
+          coffee_units: 'واحدهای قهوه',
+          early_orders: 'سفارش پیش از ساعت ۱۰',
+          completed_orders: 'سفارش تکمیل‌شده',
+          distinct_desserts: 'دسر متفاوت',
+          consecutive_months: 'ماه متوالی فعال',
+        };
+        let tierDraft = tiers.map((tier) => ({ ...tier, perks: Array.isArray(tier.perks) ? [...tier.perks] : [] }));
+        const tierColorFallback = (color) => /^#[0-9a-f]{6}$/i.test(String(color || '')) ? color : '#a855f7';
+        const renderTierCards = () => {
+          const list = main.querySelector('#loyalty-tier-list');
+          if (!list) return;
+          list.innerHTML = tierDraft.map((tier, index) => `
+            <article class="tier-config-card" data-tier-id="${esc(tier.id)}" style="--tier-color:${tierColorFallback(tier.color)}">
+              <header class="tier-config-card__head">
+                <span class="tier-config-card__badge" aria-hidden="true">${esc(tier.badgeIcon || '🥉')}</span>
+                <div><h3>${esc(tier.name || `سطح ${index + 1}`)}</h3><small>${index === 0 ? 'سطح پایه' : `سطح ${index + 1} از ${tierDraft.length}`}</small></div>
+              </header>
+              <div class="tier-config-fields">
+                <label class="field"><span>نام سطح</span><input class="input tier-name" type="text" maxlength="40" required value="${esc(tier.name || '')}" placeholder="مثلاً نقره‌ای" /></label>
+                <label class="field"><span>نشان / ایموجی</span><input class="input tier-icon" type="text" maxlength="12" required value="${esc(tier.badgeIcon || '🥉')}" aria-label="نشان سطح ${esc(tier.name || '')}" /></label>
+                <label class="field"><span>رنگ سطح</span><span class="tier-color-control"><input class="tier-color" type="color" value="${tierColorFallback(tier.color)}" /><input class="input ltr tier-color-hex" type="text" maxlength="7" required pattern="#[0-9a-fA-F]{6}" value="${tierColorFallback(tier.color)}" aria-label="کد رنگ سطح ${esc(tier.name || '')}" /></span></label>
+                <label class="field"><span>حداقل امتیاز</span><input class="input ltr tier-min-pts" type="number" min="0" max="1000000000" step="1" required value="${esc(String(tier.minPoints ?? 0))}" ${index === 0 ? 'disabled title="سطح پایه همیشه از صفر شروع می‌شود"' : ''} /></label>
+                <label class="field"><span>حداقل خرید (تومان)</span><input class="input ltr tier-min-spend" type="number" min="0" max="1000000000000" step="1" required value="${esc(String(tier.minSpendToman ?? 0))}" ${index === 0 ? 'disabled title="سطح پایه همیشه از صفر شروع می‌شود"' : ''} /></label>
+                <label class="field"><span>ضریب امتیاز</span><input class="input ltr tier-mult" type="number" min="1" max="10" step="any" required value="${esc(String(tier.multiplier ?? 1))}" /></label>
+                <label class="field"><span>تخفیف (%)</span><input class="input ltr tier-disc" type="number" min="0" max="50" step="any" required value="${esc(String(tier.discountPct ?? 0))}" /></label>
+              </div>
+              <label class="field tier-perks-field"><span>مزایای این سطح <small>هر مزیت را در یک خط بنویسید</small></span><textarea class="input tier-perks" rows="3" maxlength="800" placeholder="مثلاً ارسال رایگان در روز تولد">${esc((tier.perks || []).join('\n'))}</textarea></label>
+            </article>
+          `).join('');
+        };
+        const categoryChoices = (achievement, kind, selected) => `
+          <fieldset class="achievement-config-categories"><legend>${kind === 'coffeeCategoryIds' ? 'دسته‌های قهوه' : 'دسته‌های دسر'}</legend>
+            ${achievementCategories.map((category) => `
+              <label class="achievement-category-choice"><input type="checkbox" data-ach-category="${kind}" value="${esc(String(category.id))}" ${selected.includes(Number(category.id)) ? 'checked' : ''} /> <span>${esc(category.title)}</span></label>
+            `).join('') || '<span class="hint">دسته‌ای در منو تعریف نشده است.</span>'}
+          </fieldset>`;
+        const relevantCategoryChoices = (achievement) => {
+          if (achievement.metric === 'coffee_units') return categoryChoices(achievement, 'coffeeCategoryIds', achievement.coffeeCategoryIds || []);
+          if (achievement.metric === 'distinct_desserts') return categoryChoices(achievement, 'dessertCategoryIds', achievement.dessertCategoryIds || []);
+          return '<p class="hint">این معیار به دستهٔ محصول نیاز ندارد.</p>';
+        };
+        const renderAchievementCards = () => {
+          const list = main.querySelector('#loyalty-achievement-list');
+          if (!list) return;
+          list.innerHTML = achievements.map((achievement, index) => `
+            <article class="achievement-config-card" data-achievement-id="${esc(achievement.id)}">
+              <header class="achievement-config-card__head"><span class="achievement-config-icon">${esc(achievement.icon || '⭐')}</span><div><h3>${esc(achievement.name)}</h3><small>هدف رفتاری ${index + 1}</small></div><label class="chk"><input class="achievement-enabled" type="checkbox" ${achievement.enabled !== false ? 'checked' : ''} /> فعال</label></header>
+              <div class="achievement-config-fields">
+                <label class="field"><span>نام هدف</span><input class="input achievement-name" maxlength="48" required value="${esc(achievement.name)}" /></label>
+                <label class="field"><span>نشان</span><input class="input achievement-icon" maxlength="12" required value="${esc(achievement.icon || '⭐')}" /></label>
+                <label class="field"><span>معیار پیشرفت</span><select class="input achievement-metric">${Object.entries(achievementMetrics).map(([value, label]) => `<option value="${value}" ${achievement.metric === value ? 'selected' : ''}>${label}</option>`).join('')}</select></label>
+                <label class="field"><span>مقدار هدف</span><input class="input ltr achievement-target" type="number" min="1" max="1000000" step="1" required value="${esc(String(achievement.target))}" /></label>
+                <label class="field"><span>جایزهٔ یک‌باره (امتیاز)</span><input class="input ltr achievement-reward" type="number" min="0" max="1000000" step="1" required value="${esc(String(achievement.rewardPoints || 0))}" /></label>
+              </div>
+              <label class="field"><span>توضیح هدف</span><textarea class="input achievement-description" rows="2" maxlength="240" required>${esc(achievement.description || '')}</textarea></label>
+              <div class="achievement-category-groups">${relevantCategoryChoices(achievement)}</div>
+              <p class="hint">${achievement.rewardStartsAt ? `صدور پاداش از ${new Date(achievement.rewardStartsAt).toLocaleDateString('fa-IR')} فعال شده؛ تکمیل‌های قدیمی پاداش نمی‌گیرند.` : 'با تعیین امتیاز مثبت و ذخیره، مبنای پاداش از همین زمان شروع می‌شود.'}</p>
+            </article>`).join('');
+        };
+        const diagnostics = d.diagnostics || {};
+        const unlinkedSamples = Array.isArray(diagnostics.unlinkedOrdersSample) ? diagnostics.unlinkedOrdersSample : [];
+        const pointsSamples = Array.isArray(diagnostics.membersWithoutOrdersSample) ? diagnostics.membersWithoutOrdersSample : [];
         main.innerHTML = `
           ${renderNav('loyalty')}
 
@@ -9843,55 +11601,203 @@
           </div>
 
           <div class="section-box club-section">
-            <h2 class="club-section-title">سطوح وفاداری</h2>
-            <div class="club-form-row" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));">
-              ${tiers.map((t) => `
-                <div class="section-box tier-config-card" data-tier-id="${esc(t.id)}" style="margin:0; padding:0.85rem; border-top:3px solid ${t.id === 'gold' ? '#f59e0b' : t.id === 'vip' ? '#a855f7' : t.id === 'silver' ? '#94a3b8' : '#cd7f32'};">
-                  <b style="display:block; margin-bottom:0.4rem;">${esc(t.badgeIcon || '🥉')} ${esc(t.name)}</b>
-                  <div class="club-form-row" style="grid-template-columns:1fr 1fr; gap:0.4rem;">
-                    <div class="field"><label style="font-size:0.72rem;">حداقل امتیاز</label><input type="number" class="input ltr tier-min-pts" value="${t.minPoints || 0}" /></div>
-                    <div class="field"><label style="font-size:0.72rem;">حداقل خرید (ت)</label><input type="number" class="input ltr tier-min-spend" value="${t.minSpendToman || 0}" /></div>
-                    <div class="field"><label style="font-size:0.72rem;">ضریب پاداش</label><input type="number" step="0.1" class="input ltr tier-mult" value="${t.multiplier || 1}" /></div>
-                    <div class="field"><label style="font-size:0.72rem;">تخفیف (٪)</label><input type="number" class="input ltr tier-disc" value="${t.discountPct || 0}" /></div>
-                  </div>
-                </div>
-              `).join('')}
+            <div class="tier-config-toolbar">
+              <div><h2 class="club-section-title">سطوح وفاداری</h2><p class="tier-config-hint">نام، نشان، رنگ، شرط ورود، ضریب امتیاز، تخفیف و مزایا را تنظیم کنید. ترتیب از پایه به بالاتر است؛ شرط سطح پایه همیشه صفر می‌ماند.</p></div>
+              <button class="btn btn-sm" id="add-loyalty-tier-btn" type="button" ${tiers.length >= 20 ? 'disabled' : ''}>＋ افزودن سطح</button>
             </div>
-            <button class="btn btn-sm" id="save-tiers-btn" style="margin-top:0.75rem;" type="button">ذخیره سطوح</button>
+            <div class="tier-config-list" id="loyalty-tier-list"></div>
+            <div class="tier-config-footer"><span class="hint">تغییرات در سیستم وفاداری و محاسبهٔ سطح اعضا اعمال می‌شود.</span><button class="btn btn-sm btn-accent" id="save-tiers-btn" type="button">ذخیره همهٔ سطوح</button></div>
           </div>
+
+          <div class="section-box club-section">
+            <div class="tier-config-toolbar"><div><h2 class="club-section-title">مسیر وفاداری و هدف‌های رفتاری</h2><p class="tier-config-hint">پیشرفت از سفارش‌های تکمیل‌شده و محصولات منو محاسبه می‌شود؛ ساعت شعبه استفاده می‌شود و در نبود آن تهران. امتیاز هدف‌ها یک‌بار به دفتر امتیاز افزوده می‌شود و در آستانهٔ سطح‌ها حساب می‌شود، اما تخفیف هر سطح فقط از همان قواعد فعلی می‌آید.</p></div></div>
+            <div class="achievement-config-notice">جایزهٔ امتیازی تا وقتی مقدار مثبتی تعیین و ذخیره نشده صادر نمی‌شود. سابقهٔ پیش از فعال‌سازی فقط برای نمایش پیشرفت است و پاداش گذشته نمی‌گیرد.</div>
+            <div class="achievement-config-list" id="loyalty-achievement-list"></div>
+            <div class="tier-config-footer"><span class="hint">ذخیرهٔ پایدار الزامی است؛ در صورت در دسترس نبودن فضای ذخیره‌سازی، تغییرات اعمال نمی‌شوند.</span><button class="btn btn-sm btn-accent" id="save-achievements-btn" type="button">ذخیرهٔ هدف‌ها</button></div>
+          </div>
+
+          <section class="section-box club-section loyalty-reconciliation" aria-label="گزارش پیوند سفارش‌ها">
+            <h2 class="club-section-title">بررسی پیوند سفارش‌ها به حساب‌ها</h2>
+            <p class="tier-config-hint">این گزارش مغایرت‌ها را فقط نشان می‌دهد؛ هیچ سفارش یا حسابی خودکار به هم متصل نمی‌شود.</p>
+            <div class="loyalty-reconciliation__counts"><div><b>${Number(diagnostics.completedOrders || 0).toLocaleString('fa-IR')}</b><span>سفارش تکمیل‌شده</span></div><div><b>${Number(diagnostics.unlinkedCompletedOrders || 0).toLocaleString('fa-IR')}</b><span>سفارش بدون حساب منطبق</span></div><div><b>${Number(diagnostics.membersWithPointsWithoutLinkedCompletedOrders || 0).toLocaleString('fa-IR')}</b><span>عضو امتیازدار بدون سفارش پیوندخورده</span></div></div>
+            ${unlinkedSamples.length ? `<h3>نمونهٔ سفارش‌های بدون حساب (۴ رقم پایانی)</h3><ul>${unlinkedSamples.map((row) => `<li>${esc(row.orderNo)} · ${esc(row.status || '—')} · •••• ${esc(row.phoneLast4 || 'نامشخص')}</li>`).join('')}</ul>` : '<p class="hint">سفارش تکمیل‌شدهٔ بدون حساب در این بررسی پیدا نشد.</p>'}
+            ${pointsSamples.length ? `<h3>نمونهٔ اعضای امتیازدار بدون سابقهٔ پیوندخورده</h3><ul>${pointsSamples.map((row) => `<li>${esc(row.name)} · •••• ${esc(row.phoneLast4 || 'نامشخص')} · ${Number(row.points || 0).toLocaleString('fa-IR')} امتیاز</li>`).join('')}</ul>` : ''}
+          </section>
         `;
         bindNav();
+        renderTierCards();
+        renderAchievementCards();
+        main.querySelector('#loyalty-achievement-list')?.addEventListener('change', (event) => {
+          const card = event.target.closest('.achievement-config-card');
+          if (!card) return;
+          const achievement = achievements.find((item) => item.id === card.dataset.achievementId);
+          if (!achievement) return;
+          const selectedKind = card.querySelector('[data-ach-category]')?.dataset.achCategory;
+          if (selectedKind) {
+            achievement[selectedKind] = Array.from(card.querySelectorAll(`[data-ach-category="${selectedKind}"]:checked`)).map((input) => Number(input.value));
+          }
+          if (event.target.matches('.achievement-metric')) {
+            card.querySelector('.achievement-category-groups').innerHTML = relevantCategoryChoices(achievement);
+          } else if (event.target.matches('[data-ach-category]')) {
+            const kind = event.target.dataset.achCategory;
+            achievement[kind] = Array.from(card.querySelectorAll(`[data-ach-category="${kind}"]:checked`)).map((input) => Number(input.value));
+          }
+        });
+
+        main.querySelector('#add-loyalty-tier-btn')?.addEventListener('click', () => {
+          const invalidInput = Array.from(main.querySelectorAll('.tier-config-card input')).find((input) => !input.checkValidity());
+          if (invalidInput) {
+            invalidInput.focus();
+            return showToast('ابتدا مقدارهای نامعتبر را اصلاح کنید، سپس سطح جدید بسازید.', 'warn');
+          }
+          tierDraft = Array.from(main.querySelectorAll('.tier-config-card')).map((card) => {
+            const existing = tierDraft.find((item) => item.id === card.dataset.tierId) || {};
+            return {
+              ...existing,
+              name: card.querySelector('.tier-name').value.trim(),
+              badgeIcon: card.querySelector('.tier-icon').value.trim(),
+              color: card.querySelector('.tier-color-hex').value.trim(),
+              minPoints: parseInputNumber(card.querySelector('.tier-min-pts').value) ?? 0,
+              minSpendToman: parseInputNumber(card.querySelector('.tier-min-spend').value) ?? 0,
+              multiplier: parseInputNumber(card.querySelector('.tier-mult').value) ?? 1,
+              discountPct: parseInputNumber(card.querySelector('.tier-disc').value) ?? 0,
+              perks: card.querySelector('.tier-perks').value.split('\n').map((perk) => perk.trim()).filter(Boolean),
+            };
+          });
+          if (tierDraft.length >= 20) return showToast('حداکثر ۲۰ سطح قابل تعریف است.', 'warn');
+          const last = tierDraft[tierDraft.length - 1] || {};
+          if (Number(last.minPoints || 0) > 1_000_000_000 - 500 || Number(last.minSpendToman || 0) > 1_000_000_000_000 - 2_000_000) {
+            return showToast('برای افزودن سطح جدید، آستانهٔ سطح آخر به بیشینه رسیده است.', 'warn');
+          }
+          const names = new Set(tierDraft.map((tier) => String(tier.name || '').trim().toLowerCase()));
+          let nameIndex = tierDraft.length + 1;
+          while (names.has(`سطح ${nameIndex}`)) nameIndex += 1;
+          let id = `custom-${Date.now().toString(36)}`;
+          while (tierDraft.some((tier) => tier.id === id)) id = `custom-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+          tierDraft.push({
+            id,
+            name: `سطح ${nameIndex}`,
+            minPoints: (parseInputNumber(last.minPoints) ?? 0) + 500,
+            minSpendToman: (parseInputNumber(last.minSpendToman) ?? 0) + 2_000_000,
+            multiplier: Math.min(10, Math.round(((parseInputNumber(last.multiplier) ?? 1) + 0.25) * 100) / 100),
+            discountPct: Math.min(50, (parseInputNumber(last.discountPct) ?? 0) + 1),
+            color: '#38bdf8',
+            badgeIcon: '🌟',
+            perks: [],
+          });
+          renderTierCards();
+          main.querySelector(`.tier-config-card[data-tier-id="${id}"] .tier-name`)?.focus();
+        });
+
+        main.querySelector('#loyalty-tier-list')?.addEventListener('input', (event) => {
+          const card = event.target.closest('.tier-config-card');
+          if (!card) return;
+          const heading = card.querySelector('.tier-config-card__head h3');
+          if (event.target.matches('.tier-name') && heading) heading.textContent = event.target.value.trim() || 'سطح بدون نام';
+          if (event.target.matches('.tier-icon')) card.querySelector('.tier-config-card__badge').textContent = event.target.value || '🥉';
+          if (event.target.matches('.tier-color')) {
+            card.querySelector('.tier-color-hex').value = event.target.value;
+            card.style.setProperty('--tier-color', event.target.value);
+          }
+          if (event.target.matches('.tier-color-hex') && /^#[0-9a-f]{6}$/i.test(event.target.value)) {
+            card.querySelector('.tier-color').value = event.target.value;
+            card.style.setProperty('--tier-color', event.target.value);
+          }
+        });
 
         main.querySelector('#save-loyalty-rules-btn')?.addEventListener('click', async () => {
-          await api('/api/admin/settings', {
-            method: 'PUT',
-            body: JSON.stringify({
-              loyalty: {
-                enabled: document.getElementById('ly_en').checked,
-                pointsPerToman: Number(document.getElementById('ly_rate').value) || 0,
-                redeemValue: Number(document.getElementById('ly_val').value) || 0,
-                welcomePoints: Number(document.getElementById('ly_welcome').value) || 0,
-              },
-            }),
-          });
-          showToast('قوانین امتیاز ذخیره شد');
+          try {
+            await api('/api/admin/settings', {
+              method: 'PUT',
+              body: JSON.stringify({
+                loyalty: {
+                  enabled: document.getElementById('ly_en').checked,
+                  pointsPerToman: Number(document.getElementById('ly_rate').value) || 0,
+                  redeemValue: Number(document.getElementById('ly_val').value) || 0,
+                  welcomePoints: Number(document.getElementById('ly_welcome').value) || 0,
+                },
+              }),
+            });
+            showToast('قوانین امتیاز ذخیره شد');
+          } catch (error) {
+            showToast(error.message || 'قوانین امتیاز ذخیره نشد', 'error');
+          }
         });
 
         main.querySelector('#save-tiers-btn')?.addEventListener('click', async () => {
-          const updatedTiers = Array.from(main.querySelectorAll('.tier-config-card')).map((card) => {
-            const id = card.dataset.tierId;
-            const orig = tiers.find((t) => t.id === id) || {};
-            return {
-              ...orig,
-              id,
-              minPoints: Number(card.querySelector('.tier-min-pts').value) || 0,
-              minSpendToman: parseInputNumber(card.querySelector('.tier-min-spend').value) || 0,
-              multiplier: Number(card.querySelector('.tier-mult').value) || 1,
-              discountPct: Number(card.querySelector('.tier-disc').value) || 0,
-            };
-          });
-          await api('/api/admin/loyalty/tiers', { method: 'PUT', body: JSON.stringify({ tiers: updatedTiers }) });
-          showToast('تنظیمات سطوح وفاداری ذخیره شد');
+          const invalidInput = Array.from(main.querySelectorAll('.tier-config-card input')).find((input) => !input.checkValidity());
+          if (invalidInput) {
+            invalidInput.focus();
+            return showToast('مقادیر مشخص‌شده را بررسی کنید؛ خانه‌های ضروری و بازهٔ مجاز نباید خالی باشند.', 'warn');
+          }
+          const updatedTiers = Array.from(main.querySelectorAll('.tier-config-card')).map((card) => ({
+            id: card.dataset.tierId,
+            name: card.querySelector('.tier-name').value.trim(),
+            badgeIcon: card.querySelector('.tier-icon').value.trim(),
+            color: card.querySelector('.tier-color-hex').value.trim(),
+            minPoints: parseInputNumber(card.querySelector('.tier-min-pts').value) ?? 0,
+            minSpendToman: parseInputNumber(card.querySelector('.tier-min-spend').value) ?? 0,
+            multiplier: parseInputNumber(card.querySelector('.tier-mult').value) ?? 1,
+            discountPct: parseInputNumber(card.querySelector('.tier-disc').value) ?? 0,
+            perks: card.querySelector('.tier-perks').value.split('\n').map((perk) => perk.trim()).filter(Boolean),
+          }));
+          if (updatedTiers[0]?.minPoints !== 0 || updatedTiers[0]?.minSpendToman !== 0) {
+            return showToast('سطح پایه باید شرط صفر امتیاز و صفر تومان داشته باشد.', 'warn');
+          }
+          const names = updatedTiers.map((tier) => tier.name.normalize('NFKC').toLowerCase());
+          if (updatedTiers.some((tier) => !tier.name || Array.from(tier.name).length > 40)) {
+            main.querySelector('.tier-name')?.focus();
+            return showToast('برای هر سطح، نامی بین ۱ تا ۴۰ نویسه وارد کنید.', 'warn');
+          }
+          if (new Set(names).size !== names.length) return showToast('نام سطح‌ها نباید تکراری باشد.', 'warn');
+          for (let index = 1; index < updatedTiers.length; index += 1) {
+            const previous = updatedTiers[index - 1];
+            const current = updatedTiers[index];
+            if (current.minPoints < previous.minPoints || current.minSpendToman < previous.minSpendToman
+              || (current.minPoints === previous.minPoints && current.minSpendToman === previous.minSpendToman)) {
+              main.querySelectorAll('.tier-min-pts')[index]?.focus();
+              return showToast('شرط ورود سطح‌ها باید از پایه به بالاتر، بدون کاهش و تکرار مرتب باشد.', 'warn');
+            }
+          }
+          try {
+            const result = await api('/api/admin/loyalty/tiers', { method: 'PUT', body: JSON.stringify({ tiers: updatedTiers }) });
+            tierDraft = Array.isArray(result.tiers) ? result.tiers : updatedTiers;
+            showToast('سطوح وفاداری با موفقیت ذخیره شد');
+            await tabs.club('loyalty');
+          } catch (error) {
+            showToast(error.message || 'سطوح وفاداری ذخیره نشد', 'error');
+          }
+        });
+
+        main.querySelector('#save-achievements-btn')?.addEventListener('click', async () => {
+          const cards = Array.from(main.querySelectorAll('.achievement-config-card'));
+          const invalidInput = cards.flatMap((card) => Array.from(card.querySelectorAll('input:not([type="checkbox"]), select, textarea')))
+            .find((input) => !input.checkValidity());
+          if (invalidInput) {
+            invalidInput.focus();
+            return showToast('نام، توضیح، معیار و مقدار هدف‌ها را بررسی کنید.', 'warn');
+          }
+          const updated = cards.map((card) => ({
+            id: card.dataset.achievementId,
+            name: card.querySelector('.achievement-name').value.trim(),
+            description: card.querySelector('.achievement-description').value.trim(),
+            icon: card.querySelector('.achievement-icon').value.trim(),
+            metric: card.querySelector('.achievement-metric').value,
+            target: Number(card.querySelector('.achievement-target').value),
+            rewardPoints: Number(card.querySelector('.achievement-reward').value),
+            enabled: card.querySelector('.achievement-enabled').checked,
+            coffeeCategoryIds: Array.from(card.querySelectorAll('[data-ach-category="coffeeCategoryIds"]:checked')).map((input) => Number(input.value)),
+            dessertCategoryIds: Array.from(card.querySelectorAll('[data-ach-category="dessertCategoryIds"]:checked')).map((input) => Number(input.value)),
+          }));
+          if (updated.some((item) => item.metric === 'coffee_units' && !item.coffeeCategoryIds.length)) return showToast('برای معیار قهوه، دست‌کم یک دستهٔ منو انتخاب کنید.', 'warn');
+          if (updated.some((item) => item.metric === 'distinct_desserts' && !item.dessertCategoryIds.length)) return showToast('برای معیار دسر، دست‌کم یک دستهٔ منو انتخاب کنید.', 'warn');
+          try {
+            await api('/api/admin/loyalty/achievements', { method: 'PUT', body: JSON.stringify({ achievements: updated }) });
+            showToast('هدف‌های وفاداری به‌صورت پایدار ذخیره شد.');
+            await tabs.club('loyalty');
+          } catch (error) {
+            showToast(error.message || 'هدف‌ها ذخیره نشدند؛ ذخیرهٔ پایدار را بررسی کنید.', 'error');
+          }
         });
         return;
       }
@@ -9899,61 +11805,120 @@
       // Default: 'customers' sub-tab
       let d = {};
       try {
-        d = await api('/api/admin/club');
-      } catch {
-        d = await api('/api/admin/loyalty').catch(() => ({}));
+        d = await api(crmAllBranchesScope && hasCapability('owner')
+          ? '/api/admin/v2/crm?branchId=all'
+          : `/api/admin/v2/crm${branchQs()}`);
+      } catch (error) {
+        main.innerHTML = `
+          ${renderNav('customers')}
+          <section class="section-box club-section" role="alert">
+            <h2 class="club-section-title">اطلاعات مشتریان در دسترس نیست</h2>
+            <p>داده‌های مشتریان و پرداخت فقط با دسترسی مجاز و در محدودهٔ شعبه نمایش داده می‌شوند.</p>
+            <p class="hint">${esc(error?.message || 'دریافت اطلاعات با خطا روبه‌رو شد.')}</p>
+            <button class="btn btn-sm" id="crm-retry-btn" type="button">تلاش دوباره</button>
+          </section>`;
+        bindNav();
+        main.querySelector('#crm-retry-btn')?.addEventListener('click', () => tabs.club('customers'));
+        return;
       }
       const customers = d.customers || d.members || [];
+      const customerDetailsAvailable = d.customerDetailsAvailable !== false;
       const summary = d.summary || {
         customers: customers.length,
         points: d.totals?.pointsIssued || customers.reduce((s, m) => s + (m.points || 0), 0),
         walletTotalToman: 0,
+        activeWallets: 0,
+        avgLtvToman: 0,
+        avgOrderToman: 0,
+        atRiskCount: 0,
+        championsCount: 0,
         newFeedback: 0,
       };
 
       main.innerHTML = `
         ${renderNav('customers')}
 
-        <div class="club-kpi-strip">
-          <div class="club-kpi accent"><div class="num">${fmtNum(summary.customers || 0)}</div><div class="lbl">عضو</div></div>
-          <div class="club-kpi"><div class="num">${fmtNum(summary.points || 0)}</div><div class="lbl">امتیاز در گردش</div></div>
+        ${hasCapability('owner') ? `<div class="row-actions" style="justify-content:flex-start; margin-bottom:0.75rem;"><button class="btn btn-sm btn-ghost" id="crm-all-branches-btn" type="button">${crmAllBranchesScope ? 'بازگشت به شعبهٔ انتخابی' : 'مشاهدهٔ همهٔ شعب'}</button></div>` : ''}
+
+        <div class="crm-kpi-deck">
+          <div class="crm-kpi-card is-gold">
+            <span class="lbl">اعضای فعال</span>
+            <span class="num">${fmtNum(summary.customers || 0)}</span>
+            <span class="sub">باشگاه مشتریان وستو</span>
+          </div>
+          <div class="crm-kpi-card is-emerald">
+            <span class="lbl">ارزش چرخه مشتری (LTV)</span>
+            <span class="num">${fmtMoney(summary.avgLtvToman || 0)}</span>
+            <span class="sub">میانگین سفارش: ${fmtMoney(summary.avgOrderToman || 0)}</span>
+          </div>
+          <div class="crm-kpi-card is-amber">
+            <span class="lbl">در معرض ریزش</span>
+            <span class="num">${fmtNum(summary.atRiskCount || 0)}</span>
+            <span class="sub">بدون سفارش > ۶۰ روز</span>
+          </div>
+          <div class="crm-kpi-card is-purple">
+            <span class="lbl">قهرمانان وفادار</span>
+            <span class="num">${fmtNum(summary.championsCount || 0)}</span>
+            <span class="sub">مشتریان وفادار ویژه</span>
+          </div>
+          <div class="crm-kpi-card">
+            <span class="lbl">موجودی کل کیف پول</span>
+            <span class="num" style="color:#10b981;">${summary.walletTotalToman == null ? '—' : fmtMoney(summary.walletTotalToman)}</span>
+            <span class="sub">${summary.activeWallets == null ? 'در این محدوده نمایش داده نمی‌شود' : `${fmtNum(summary.activeWallets)} کیف پول دارای مانده`}</span>
+          </div>
         </div>
 
         <section class="section-box club-section">
-          <div style="display:flex; justify-content:space-between; align-items:center; gap:0.5rem; margin-bottom:0.65rem;">
-            <h2 class="club-section-title" style="margin:0;">مشتریان</h2>
-            <input type="text" id="cust-search" class="input ltr" placeholder="جستجو…" style="max-width:200px; font-size:0.82rem;" />
+          <div style="display:flex; justify-content:space-between; align-items:center; gap:0.75rem; flex-wrap:wrap; margin-bottom:0.85rem;">
+            <div class="crm-rfm-filters" id="crm-rfm-bar">
+              <button class="crm-rfm-btn is-active" data-rfm-filter="all" type="button">همه (${fmtNum(customers.length)})</button>
+              <button class="crm-rfm-btn" data-rfm-filter="champion" type="button">قهرمانان 🏆</button>
+              <button class="crm-rfm-btn" data-rfm-filter="loyal" type="button">وفادار 💎</button>
+              <button class="crm-rfm-btn" data-rfm-filter="potential" type="button">مستعد رشد 🚀</button>
+              <button class="crm-rfm-btn" data-rfm-filter="at_risk" type="button">در معرض ریزش ⚠️</button>
+              <button class="crm-rfm-btn" data-rfm-filter="new" type="button">جدید 🌱</button>
+            </div>
+            <input type="text" id="cust-search" class="input ltr" placeholder="جستجوی نام یا تلفن…" style="max-width:220px; font-size:0.82rem;" />
           </div>
           <div style="overflow-x:auto;">
             <table class="tbl" id="customers-tbl">
               <thead>
                 <tr>
                   <th>مشتری</th>
+                  <th>بخش‌بندی RFM</th>
                   <th>سطح</th>
                   <th>سفارش</th>
                   <th>خرید</th>
                   <th>کیف پول</th>
                   <th>امتیاز</th>
-                  <th></th>
+                  ${customerDetailsAvailable ? '<th></th>' : ''}
                 </tr>
               </thead>
               <tbody>
-                ${customers.slice(0, 60).map((c) => `
-                  <tr data-phone="${esc(c.phone)}" data-name="${esc(c.name || '')}">
+                ${customers.slice(0, 100).map((c) => {
+                  const rfmSeg = c.rfmSegment || 'new';
+                  const rfmBadge = `<span class="rfm-badge rfm-badge--${rfmSeg}">${esc(c.rfmLabel || 'مشتری جدید 🌱')}</span>`;
+                  const tagsHtml = (c.tags && c.tags.length) ? `<div class="dossier-tags-wrap" style="margin-top:0.25rem;">${c.tags.map((t) => `<span class="dossier-tag dossier-tag--dietary">${esc(t)}</span>`).join('')}</div>` : '';
+                  const recencyHtml = c.recencyDays != null ? `<div class="hint">${fmtNum(c.recencyDays)} روز پیش</div>` : '';
+                  return `
+                  <tr data-phone="${esc(c.phone)}" data-name="${esc(c.name || '')}" data-rfm="${rfmSeg}">
                     <td>
                       <b>${esc(c.name || 'مهمان')}</b>
                       <div class="hint ltr">${esc(c.phone)}</div>
+                      ${tagsHtml}
                     </td>
-                    <td>${tierBadge(c)}</td>
-                    <td>${fmtNum(c.orders || 0)}</td>
-                    <td>${fmtMoney(c.total || 0)}</td>
-                    <td style="color:#10b981; font-weight:700;">${fmtMoney(c.walletBalanceToman || 0)}</td>
-                    <td><b>${fmtNum(c.points || 0)}</b></td>
+                    <td>${rfmBadge}</td>
+                    <td>${c.tier == null ? '—' : tierBadge(c)}</td>
                     <td>
-                      <button class="btn btn-sm btn-ghost open-dossier-btn" data-phone="${esc(c.phone)}" type="button">پرونده</button>
+                      <b>${fmtNum(c.orders || 0)}</b>
+                      ${recencyHtml}
                     </td>
+                    <td>${fmtMoney(c.total || 0)}</td>
+                    <td style="color:#10b981; font-weight:700;">${c.walletBalanceToman == null ? '—' : fmtMoney(c.walletBalanceToman)}</td>
+                    <td><b>${c.points == null ? '—' : fmtNum(c.points)}</b></td>
+                    ${customerDetailsAvailable ? `<td><button class="btn btn-sm btn-ghost open-dossier-btn" data-phone="${esc(c.phone)}" type="button">پرونده</button></td>` : ''}
                   </tr>
-                `).join('') || '<tr><td colspan="7">مشتری ثبت نشده.</td></tr>'}
+                `;}).join('') || `<tr><td colspan="${customerDetailsAvailable ? 8 : 7}">مشتری ثبت نشده.</td></tr>`}
               </tbody>
             </table>
           </div>
@@ -9961,21 +11926,38 @@
       `;
       bindNav();
 
+      main.querySelector('#crm-all-branches-btn')?.addEventListener('click', () => {
+        crmAllBranchesScope = !crmAllBranchesScope;
+        tabs.club('customers');
+      });
+
       main.querySelectorAll('.open-dossier-btn').forEach((btn) => {
         btn.addEventListener('click', () => renderDossierModal(btn.dataset.phone));
       });
 
-      const searchInput = main.querySelector('#cust-search');
-      if (searchInput) {
-        searchInput.addEventListener('input', () => {
-          const q = searchInput.value.trim().toLowerCase();
-          main.querySelectorAll('#customers-tbl tbody tr').forEach((row) => {
-            const phone = (row.dataset.phone || '').toLowerCase();
-            const name = (row.dataset.name || '').toLowerCase();
-            row.style.display = phone.includes(q) || name.includes(q) ? '' : 'none';
-          });
+      let currentRfm = 'all';
+      const applyCrmFilters = () => {
+        const q = (main.querySelector('#cust-search')?.value || '').trim().toLowerCase();
+        main.querySelectorAll('#customers-tbl tbody tr').forEach((row) => {
+          const phone = (row.dataset.phone || '').toLowerCase();
+          const name = (row.dataset.name || '').toLowerCase();
+          const rfm = row.dataset.rfm || 'new';
+          const matchSearch = !q || phone.includes(q) || name.includes(q);
+          const matchRfm = currentRfm === 'all' || rfm === currentRfm;
+          row.style.display = matchSearch && matchRfm ? '' : 'none';
         });
-      }
+      };
+
+      main.querySelectorAll('.crm-rfm-btn').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          main.querySelectorAll('.crm-rfm-btn').forEach((b) => b.classList.remove('is-active'));
+          btn.classList.add('is-active');
+          currentRfm = btn.dataset.rfmFilter || 'all';
+          applyCrmFilters();
+        });
+      });
+
+      main.querySelector('#cust-search')?.addEventListener('input', applyCrmFilters);
     },
 
     async wallet() {
@@ -10002,6 +11984,7 @@
       setActiveTab('accounting');
       if (typeof window.renderAccountingWorkspace === 'function') {
         await window.renderAccountingWorkspace(main, branchQs(), {
+          experience: 'accounting',
           hasCapability,
           currentUser: () => currentUser,
           // Finance renders its active scope in the header; pass the same
@@ -10058,6 +12041,9 @@
         tabs.neem();
       });
     },
+    async salsa() {
+      return this.neem();
+    },
 
     async feedback() {
       setActiveTab('feedback');
@@ -10065,18 +12051,58 @@
       const st = d.stats || {};
       const s = d.settings || {};
       const bucketLabel = { promoter: 'مروج', passive: 'خنثی', detractor: 'منتقد' };
-      const statusLabel = { new: 'جدید', reviewed: 'بررسی‌شده', archived: 'بایگانی' };
+      const statusLabel = { new: 'جدید', in_progress: 'در دست پیگیری', reviewed: 'بررسی‌شده', resolved: 'حل‌شده', archived: 'بایگانی' };
       const branchName = (id) => branchesCache.find((b) => b.id === id)?.name || (id ? `#${id}` : '—');
+
+      const totalCount = st.count || 0;
+      const promoterPct = totalCount ? Math.round(((st.promoters || 0) / totalCount) * 100) : 0;
+      const passivePct = totalCount ? Math.round(((st.passives || 0) / totalCount) * 100) : 0;
+      const detractorPct = totalCount ? Math.max(0, 100 - promoterPct - passivePct) : 0;
+      const npsVal = st.nps;
+      const npsScoreClass = npsVal == null ? '' : (npsVal >= 50 ? 'is-excellent' : npsVal >= 20 ? 'is-good' : npsVal >= 0 ? 'is-warning' : 'is-danger');
+
       main.innerHTML = `
         <h1>بازخورد و رضایت مهمان</h1>
         <p class="lead">امتیاز احتمال پیشنهاد به دوستان از صفر تا ده — <a href="/feedback" target="_blank" rel="noopener">مشاهده صفحه عمومی بازخورد</a></p>
-        <div class="cards">
-          <div class="card accent"><div class="num">${st.nps == null ? '—' : fmtNum(st.nps)}</div><div class="lbl">شاخص رضایت ${fmtNum(d.days || 30)} روز</div></div>
-          <div class="card"><div class="num">${fmtNum(st.count || 0)}</div><div class="lbl">پاسخ</div></div>
-          <div class="card"><div class="num">${fmtNum(st.promoters || 0)}</div><div class="lbl">مروج (۹–۱۰)</div></div>
-          <div class="card warn"><div class="num">${fmtNum(st.detractors || 0)}</div><div class="lbl">منتقد (۰–۶)</div></div>
-          <div class="card"><div class="num">${st.avg == null ? '—' : st.avg.toFixed(1)}</div><div class="lbl">میانگین امتیاز</div></div>
+
+        <div class="nps-dashboard-grid">
+          <div class="nps-meter-card">
+            <div style="font-size:0.85rem; font-weight:700; color:var(--v-muted,#94a3b8);">شاخص خالص رضایت مهمانان (NPS)</div>
+            <div class="nps-score-big ${npsScoreClass}">${npsVal == null ? '—' : (npsVal > 0 ? '+' : '') + fmtNum(npsVal)}</div>
+            <div class="nps-segments-bar">
+              <div class="nps-seg--promoter" style="width:${promoterPct}%" title="مروج: ${promoterPct}٪"></div>
+              <div class="nps-seg--passive" style="width:${passivePct}%" title="خنثی: ${passivePct}٪"></div>
+              <div class="nps-seg--detractor" style="width:${detractorPct}%" title="منتقد: ${detractorPct}٪"></div>
+            </div>
+            <div style="display:flex; justify-content:space-between; width:100%; font-size:0.75rem; color:var(--v-muted,#94a3b8); margin-top:0.35rem;">
+              <span>🟢 مروج: ${fmtNum(promoterPct)}٪ (${fmtNum(st.promoters || 0)})</span>
+              <span>🟡 خنثی: ${fmtNum(passivePct)}٪ (${fmtNum(st.passives || 0)})</span>
+              <span>🔴 منتقد: ${fmtNum(detractorPct)}٪ (${fmtNum(st.detractors || 0)})</span>
+            </div>
+          </div>
+          <div class="nps-meter-card" style="align-items:flex-start; text-align:right;">
+            <div style="font-size:0.85rem; font-weight:700; color:var(--v-muted,#94a3b8); margin-bottom:0.6rem;">وضعیت رسیدگی به نظرات</div>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.75rem; width:100%;">
+              <div>
+                <div class="hint">کل نظرات ثبت‌شده</div>
+                <b style="font-size:1.3rem;">${fmtNum(st.count || 0)}</b>
+              </div>
+              <div>
+                <div class="hint">میانگین امتیاز</div>
+                <b style="font-size:1.3rem; color:#38bdf8;">${st.avg == null ? '—' : fmtNum(st.avg.toFixed(1))} / ۱۰</b>
+              </div>
+              <div>
+                <div class="hint">نیازمند پیگیری و جبران</div>
+                <b style="font-size:1.3rem; color:#ef4444;">${fmtNum(st.detractors || 0)}</b>
+              </div>
+              <div>
+                <div class="hint">دوره آماری</div>
+                <b style="font-size:1.1rem;">${fmtNum(d.days || 30)} روز اخیر</b>
+              </div>
+            </div>
+          </div>
         </div>
+
         <div class="section-box">
           <h2>تنظیمات</h2>
           <div class="grid-2">
@@ -10088,31 +12114,47 @@
           </div>
           <p class="hint" style="margin-top:0.75rem">ذخیره خودکار</p>
         </div>
-        <div class="section-box">
+
+        <section class="section-box">
           <h2>آخرین بازخوردها</h2>
-          <table class="tbl"><thead><tr><th>#</th><th>امتیاز</th><th>دسته</th><th>نظر</th><th>شعبه</th><th>زمان</th><th>وضعیت</th></tr></thead>
-          <tbody>
-            ${(d.feedback || [])
-              .map(
-                (f) => `<tr>
-                  <td>${f.id}</td>
-                  <td class="ltr"><strong>${f.score}</strong></td>
-                  <td>${bucketLabel[f.bucket] || f.bucket}</td>
-                  <td>${esc(f.comment) || '—'} ${f.name ? `<div class="hint">${esc(f.name)} · <span class="ltr">${esc(f.phone || '')}</span></div>` : ''}</td>
-                  <td>${esc(branchName(f.branchId))}</td>
-                  <td>${fmtDateTime(f.createdAt)}</td>
-                  <td>
-                    <select data-fbstatus="${f.id}">
-                      ${Object.keys(statusLabel)
-                        .map((k) => `<option value="${k}" ${f.status === k ? 'selected' : ''}>${statusLabel[k]}</option>`)
-                        .join('')}
-                    </select>
-                  </td>
-                </tr>`
-              )
-              .join('') || '<tr><td colspan="7">هنوز بازخوردی ثبت نشده</td></tr>'}
-          </tbody></table>
-        </div>`;
+          <div style="overflow-x:auto;">
+            <table class="tbl"><thead><tr><th>#</th><th>امتیاز</th><th>دسته</th><th>نظر و مهمان</th><th>شعبه</th><th>زمان</th><th>وضعیت</th><th>یادداشت پیگیری</th></tr></thead>
+            <tbody>
+              ${(d.feedback || [])
+                .map((f) => {
+                  const isDetractor = Number(f.score) <= 6 || f.bucket === 'detractor';
+                  const rowClass = isDetractor ? 'fb-recovery-card' : '';
+                  const detractorBadge = isDetractor ? '<div style="margin-top:0.2rem;"><span class="fb-alert-pill">⚠️ پیگیری فوری</span></div>' : '';
+                  return `
+                  <tr class="${rowClass}" data-fbid="${f.id}">
+                    <td>${f.id}</td>
+                    <td class="ltr"><strong>${f.score}</strong></td>
+                    <td>
+                      ${bucketLabel[f.bucket] || f.bucket}
+                      ${detractorBadge}
+                    </td>
+                    <td>
+                      ${esc(f.comment) || '—'}
+                      ${f.name ? `<div class="hint">${esc(f.name)} · <span class="ltr">${esc(f.phone || '')}</span></div>` : ''}
+                    </td>
+                    <td>${esc(branchName(f.branchId))}</td>
+                    <td>${fmtDateTime(f.createdAt)}</td>
+                    <td>
+                      <select data-fbstatus="${f.id}">
+                        ${Object.keys(statusLabel)
+                          .map((k) => `<option value="${k}" ${f.status === k ? 'selected' : ''}>${statusLabel[k]}</option>`)
+                          .join('')}
+                      </select>
+                    </td>
+                    <td>
+                      <input class="admin-note-input" data-fbnote="${f.id}" value="${esc(f.resolutionNote || '')}" placeholder="یادداشت رفع نارضایتی…" style="font-size:0.78rem;" />
+                    </td>
+                  </tr>`;
+                })
+                .join('') || '<tr><td colspan="8">هنوز بازخوردی ثبت نشده</td></tr>'}
+            </tbody></table>
+          </div>
+        </section>`;
 
       const saveFb = async () => {
         try {
@@ -10146,6 +12188,11 @@
             await tabs.feedback();
           }
         });
+      });
+      main.querySelectorAll('[data-fbnote]').forEach((input) => {
+        const save = autosave(() => api(`/api/admin/feedback/${input.dataset.fbnote}`, { method: 'PATCH', body: JSON.stringify({ resolutionNote: input.value.trim() }) }), { debounceMs: 500, silent: true });
+        input.addEventListener('change', save);
+        input.addEventListener('blur', save);
       });
     },
 
@@ -10194,7 +12241,7 @@
         { icon: '◈', title: 'ظاهر و برند', detail: theme.accent ? `رنگ اصلی ${theme.accent}` : 'ظاهر هنوز تنظیم نشده', meta: theme.fontDisplay || 'قلم پیش‌فرض پنل', tab: 'theme', tone: 'violet' },
         { icon: '✦', title: 'محتوا و رسانه', detail: `${fmtNum(configuredContent)} مورد محتوای تنظیم‌شده`, meta: `${fmtNum(contentKeys.length)} کلید محتوایی · لوگو و الگو`, tab: 'content', secondaryTab: 'media', tone: 'orange' },
         { icon: '⌘', title: 'شعبه و ساعت کاری', detail: `${fmtNum(activeBranches.length)} شعبه فعال در سامانه`, meta: `${fmtNum(branches.length)} شعبه ثبت‌شده · بررسی ساعت کاری`, tab: 'branches', secondaryTab: 'hours', tone: 'green' },
-        { icon: '◎', title: 'کاربران و دسترسی', detail: `${fmtNum(users.length)} حساب کاربری`, meta: 'نقش‌ها، مجوزها و وضعیت ورود', tab: 'users', tone: 'blue' },
+        { icon: '◎', title: 'کارکنان و دسترسی‌ها', detail: `${fmtNum(users.length)} حساب کاربری`, meta: 'مدیریت پرسنل، نقش‌ها و مجوزهای سامانه', tab: 'users', tone: 'blue' },
         { icon: '?', title: 'سؤالات متداول', detail: 'مدیریت پاسخ‌های آمادهٔ سایت', meta: 'ویرایش و مرتب‌سازی پرسش‌ها', tab: 'faq', tone: 'slate' },
       ];
       main.innerHTML = `
@@ -10278,7 +12325,132 @@
       button.setAttribute('title', minimized ? 'باز کردن منو' : 'جمع کردن منو');
       button.textContent = minimized ? '›' : '‹';
     });
-    document.addEventListener('keydown', (event) => { if (event.key === 'Escape' && document.body.classList.contains('sidebar-open')) closeSidebar(); });
+    const shortcutsModal = document.getElementById('admin-shortcuts-modal');
+    const openShortcutsModal = () => {
+      if (!shortcutsModal) return;
+      if (typeof shortcutsModal.showModal === 'function') {
+        try { shortcutsModal.showModal(); } catch (_) { shortcutsModal.setAttribute('open', ''); }
+      } else {
+        shortcutsModal.setAttribute('open', '');
+      }
+      shortcutsModal.querySelector('#admin-shortcuts-close')?.focus();
+    };
+    const closeShortcutsModal = () => {
+      if (!shortcutsModal) return;
+      if (typeof shortcutsModal.close === 'function') {
+        try { shortcutsModal.close(); } catch (_) { shortcutsModal.removeAttribute('open'); }
+      } else {
+        shortcutsModal.removeAttribute('open');
+      }
+    };
+    document.getElementById('admin-shortcuts-btn')?.addEventListener('click', openShortcutsModal);
+    document.getElementById('admin-shortcuts-close')?.addEventListener('click', closeShortcutsModal);
+    shortcutsModal?.addEventListener('click', (e) => {
+      if (e.target === shortcutsModal) closeShortcutsModal();
+    });
+
+    let lastAdminGTime = 0;
+    const switchToAdminTab = (tabName) => {
+      const workspace = FINANCE_SHORTCUTS[tabName];
+      if (workspace) {
+        location.href = financeWorkspaceHref(workspace);
+        return;
+      }
+      const navItem = document.querySelector(`.admin-nav-item[data-tab="${tabName}"]`);
+      if (navItem && !navItem.hidden) {
+        navItem.click();
+      } else if (tabs[tabName]) {
+        tabs[tabName]().catch((error) => showToast(error.message));
+      }
+    };
+
+    document.addEventListener('keydown', (event) => {
+      const target = event.target;
+      const isInput = target && (['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) || target.isContentEditable);
+
+      if (event.key === 'Escape') {
+        if (document.body.classList.contains('sidebar-open')) closeSidebar();
+        if (shortcutsModal?.open || shortcutsModal?.hasAttribute('open')) closeShortcutsModal();
+        document.querySelectorAll('dialog[open]').forEach((d) => {
+          if (d !== shortcutsModal && typeof d.close === 'function') d.close();
+        });
+        return;
+      }
+
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault();
+        if (window.WestoDashboardView && typeof window.WestoDashboardView.openCommandPalette === 'function') {
+          window.WestoDashboardView.openCommandPalette({ tabs, showToast });
+        } else {
+          switchToAdminTab('dashboard');
+        }
+        return;
+      }
+
+      if (isInput) return;
+
+      if (event.key === '?' || (event.shiftKey && event.key === '/')) {
+        event.preventDefault();
+        openShortcutsModal();
+        return;
+      }
+
+      if (event.altKey && !event.ctrlKey && !event.metaKey) {
+        const key = event.key.toLowerCase();
+        const altMap = {
+          '1': 'dashboard', 'd': 'dashboard',
+          '2': 'orders',    'o': 'orders',
+          '3': 'menu',      'm': 'menu',
+          '4': 'tables',    't': 'tables',
+          '5': 'inventory', 'i': 'inventory',
+          '6': 'accounting','f': 'accounting',
+          '7': 'club',      'c': 'club',
+          '8': 'reservations', 'r': 'reservations',
+          '9': 'kitchen',   'k': 'kitchen',
+          '0': 'settings',  's': 'settings'
+        };
+        if (altMap[key]) {
+          event.preventDefault();
+          switchToAdminTab(altMap[key]);
+          return;
+        }
+      }
+
+      if (!event.altKey && !event.ctrlKey && !event.metaKey) {
+        const now = Date.now();
+        const key = event.key.toLowerCase();
+        if (key === 'g') {
+          lastAdminGTime = now;
+          return;
+        }
+        if (lastAdminGTime && (now - lastAdminGTime < 1200)) {
+          lastAdminGTime = 0;
+          const gMap = {
+            'd': 'dashboard',
+            'o': 'orders',
+            'm': 'menu',
+            't': 'tables',
+            'i': 'inventory',
+            'f': 'accounting',
+            'c': 'club',
+            'r': 'reservations',
+            'k': 'kitchen',
+            's': 'settings'
+          };
+          if (gMap[key]) {
+            event.preventDefault();
+            switchToAdminTab(gMap[key]);
+            return;
+          }
+        }
+      }
+    });
+
+    window.WestoAdminShortcuts = {
+      open: openShortcutsModal,
+      close: closeShortcutsModal,
+      switchToTab: switchToAdminTab
+    };
     const workspaceObserver = new MutationObserver(scheduleWorkspaceEnhance);
     workspaceObserver.observe(main, { childList: true, subtree: true });
     scheduleWorkspaceEnhance();
@@ -10685,11 +12857,11 @@
       searchParams.set('financeWorkspace', legacyFinanceWorkspace);
       searchParams.set('branchId', String(currentBranchId || 1));
       history.replaceState(null, '', `${location.pathname}?${searchParams.toString()}#accounting`);
-    } else if (hasFinanceWorkspace && requestedHash !== 'accounting' && !requestedHash.startsWith('fin-')) {
+    } else if (hasFinanceWorkspace && !requestedHash) {
       history.replaceState(null, '', `${location.pathname}?${searchParams.toString()}#accounting`);
     }
 
-    const requestedTab = (isFinanceHash || hasFinanceWorkspace) ? 'accounting' : requestedHash;
+    const requestedTab = (isFinanceHash || (hasFinanceWorkspace && !requestedHash)) ? 'accounting' : requestedHash;
     const initialTab = (tabs[requestedTab] && hasCapability(TAB_CAPABILITIES[requestedTab])) ? requestedTab : 'dashboard';
     tabs[initialTab]().then(() => {
       if (requestedHash.startsWith('fin-')) {

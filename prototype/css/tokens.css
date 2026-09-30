@@ -1,7 +1,7 @@
 /**
  * prototype/css/tokens.css
  * 
- * NEEM GODMODE Design Tokens & Core Variables.
+ * SALSA GODMODE Design Tokens & Core Variables.
  * Persian RTL Native, Ultra-Crisp Dark Palette, Local Variable Typography.
  */
 
@@ -24,106 +24,163 @@
 
 :root {
   /* ==========================================================================
-     Google Cloud Platform / Material 3 Enterprise Palette (Google Cloud Console)
+     SALSA Official Brand Tokens (Brand Book v1.2 / 2026)
      ========================================================================== */
-  --bg-canvas: #f8f9fa;                 /* Google Cloud light canvas */
-  --bg-subtle: #f1f3f4;                 /* Google Cloud neutral gray 100 */
-  --bg-surface: #ffffff;                /* Pure crisp white surface */
+  --salsa-charcoal: #0B0B0D;          /* 70% Dark ground & canvas */
+  --salsa-graphite: #18191C;          /* Secondary dark, surfaces, cards, sidebar */
+  --salsa-graphite-elevated: #232529; /* Elevated modals, hover states */
+  --salsa-ivory: #F4F0E8;             /* 15% Text, high-contrast badges, light surfaces */
+  --salsa-red: #E6292A;               /* 10% Primary brand accent (Chili Red) */
+  --salsa-red-hover: #D32021;
+  --salsa-red-subtle: rgba(230, 41, 42, 0.12);
+  --salsa-red-glow: 0 0 16px rgba(230, 41, 42, 0.35);
+  --salsa-green: #4F8A34;             /* 5% Supporting accent (Leaf Green) */
+  --salsa-green-hover: #43772C;
+  --salsa-green-subtle: rgba(79, 138, 52, 0.14);
+  --salsa-warm-gray: #8D8F94;         /* Warm Gray: muted text, subtle borders */
+
+  /* Salsa System Palette */
+  --apple-blue: #E6292A;                /* Brand Accent (Salsa Chili Red) */
+  --apple-blue-hover: #D32021;
+  --apple-blue-subtle: rgba(230, 41, 42, 0.08);
+  --apple-green: #4F8A34;               /* Salsa Leaf Green */
+  --apple-green-subtle: rgba(79, 138, 52, 0.12);
+  --apple-orange: #f59e0b;              /* Status Orange */
+  --apple-orange-subtle: rgba(245, 158, 11, 0.12);
+  --apple-red: #E6292A;                 /* Salsa Chili Red */
+  --apple-red-subtle: rgba(230, 41, 42, 0.12);
+  --apple-purple: #af52de;              /* Purple */
+  --apple-teal: #4F8A34;                /* Leaf Green */
+  --apple-indigo: #8D8F94;              /* Warm Gray */
+
+  /* Neutral Scale */
+  --apple-gray-1: #8D8F94;
+  --apple-gray-2: #aeaeb2;
+  --apple-gray-3: #c7c7cc;
+  --apple-gray-4: #d1d1d6;
+  --apple-gray-5: #e5e5ea;
+  --apple-gray-6: #f4f0e8;
+
+  /* Dynamic Materials & Translucent Glass (Light Mode) */
+  --apple-canvas: #f8f6f0;              /* Warm Ivory-tinted canvas */
+  --apple-surface: rgba(255, 255, 255, 0.88);
+  --apple-surface-elevated: #ffffff;
+  --apple-surface-hover: rgba(0, 0, 0, 0.04);
+  --apple-glass-ultra-thin: rgba(255, 255, 255, 0.5);
+  --apple-glass-thin: rgba(255, 255, 255, 0.7);
+  --apple-glass-regular: rgba(255, 255, 255, 0.84);
+  --apple-glass-thick: rgba(255, 255, 255, 0.94);
+  --apple-blur-regular: blur(24px) saturate(190%);
+  --apple-blur-modal: blur(32px) saturate(200%);
+  --apple-bevel-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.7);
+
+  /* Spring & Motion Curves */
+  --apple-spring-response: 0.36s;
+  --apple-spring-damping: 1.0;
+  --apple-ease: cubic-bezier(0.16, 1, 0.3, 1);
+  --apple-ease-spring: cubic-bezier(0.25, 1, 0.35, 1);
+  --apple-ease-bounce: cubic-bezier(0.34, 1.45, 0.64, 1);
+  --apple-press-feedback: scale(0.97);
+
+  /* Surface Hierarchy Aliases */
+  --bg-canvas: var(--apple-canvas);
+  --bg-subtle: #f4f0e8;
+  --bg-surface: #ffffff;
   --bg-surface-elevated: #ffffff;
-  --bg-surface-hover: #f1f3f4;
-  --bg-surface-subtle: #f8f9fa;
-  --bg-surface-subtle-hover: #f1f3f4;
-  --bg-glass: rgba(255, 255, 255, 0.96);
-  --bg-glass-card: rgba(255, 255, 255, 0.98);
+  --bg-surface-hover: rgba(0, 0, 0, 0.035);
+  --bg-surface-subtle: #fbf9f5;
+  --bg-surface-subtle-hover: #f0ece3;
+  --bg-glass: var(--apple-glass-regular);
+  --bg-glass-card: var(--apple-glass-thin);
 
   /* Typography & Content Colors */
-  --text-primary: #202124;              /* Google Gray 900 for high legibility */
-  --text-secondary: #5f6368;            /* Google Gray 700 */
-  --text-tertiary: #80868b;             /* Google Gray 600 */
-  --text-inverse: #ffffff;
+  --text-primary: #0B0B0D;              /* Salsa Charcoal */
+  --text-secondary: #5F6166;            /* Neutral dark-medium */
+  --text-tertiary: #8D8F94;             /* Salsa Warm Gray */
+  --text-inverse: #F4F0E8;
 
-  /* Accent & Action Colors (Google Cloud Blue Primary) */
-  --accent-cyan: #1a73e8;               /* Google Blue 600 */
-  --accent-cyan-hover: #1557d0;         /* Google Blue 700 */
-  --accent-cyan-subtle: #e8f0fe;        /* Google Blue 50 */
-  --accent-blue: #1a73e8;
-  --accent-blue-hover: #1557d0;
+  /* Accent & Action Colors */
+  --accent-cyan: #E6292A;               /* Salsa Chili Red */
+  --accent-cyan-hover: #D32021;
+  --accent-cyan-subtle: rgba(230, 41, 42, 0.1);
+  --accent-blue: #E6292A;
+  --accent-blue-hover: #D32021;
 
   /* State Colors */
-  --state-success: #1e8e3e;             /* Google Green */
-  --state-success-subtle: #e6f4ea;      /* Google Green 50 */
-  --state-warning: #f9ab00;             /* Google Amber */
-  --state-warning-subtle: #fef7e0;      /* Google Amber 50 */
-  --state-danger: #d93025;              /* Google Red */
-  --state-danger-subtle: #fce8e6;       /* Google Red 50 */
-  --state-info: #1a73e8;                /* Google Blue */
-  --state-info-subtle: #e8f0fe;         /* Google Blue 50 */
-  --state-neutral: #5f6368;
-  --state-neutral-subtle: #f1f3f4;
+  --state-success: #4F8A34;             /* Salsa Leaf Green */
+  --state-success-subtle: rgba(79, 138, 52, 0.12);
+  --state-warning: #f59e0b;
+  --state-warning-subtle: rgba(245, 158, 11, 0.12);
+  --state-danger: #E6292A;              /* Salsa Chili Red */
+  --state-danger-subtle: rgba(230, 41, 42, 0.12);
+  --state-info: #E6292A;
+  --state-info-subtle: rgba(230, 41, 42, 0.08);
+  --state-neutral: #8D8F94;
+  --state-neutral-subtle: #f4f0e8;
 
   /* Telemetry Lifecycle Variables */
-  --status-live: #1e8e3e;
-  --status-live-subtle: #ecfdf5;
-  --status-live-border: #a7f3d0;
-  --status-stale: #d97706;
-  --status-stale-subtle: #fffbeb;
-  --status-stale-border: #fde68a;
-  --status-loading: #0284c7;
-  --status-loading-subtle: #f0f9ff;
-  --status-loading-border: #bae6fd;
-  --status-empty: #64748b;
-  --status-empty-subtle: #f1f5f9;
-  --status-empty-border: #e2e8f0;
-  --status-failed: #e11d48;
-  --status-failed-subtle: #fff1f2;
-  --status-failed-border: #fecdd3;
+  --status-live: #4F8A34;               /* Salsa Leaf Green */
+  --status-live-subtle: rgba(79, 138, 52, 0.12);
+  --status-live-border: rgba(79, 138, 52, 0.4);
+  --status-stale: #f59e0b;
+  --status-stale-subtle: rgba(245, 158, 11, 0.12);
+  --status-stale-border: rgba(245, 158, 11, 0.4);
+  --status-loading: #E6292A;
+  --status-loading-subtle: rgba(230, 41, 42, 0.12);
+  --status-loading-border: rgba(230, 41, 42, 0.4);
+  --status-empty: #8D8F94;
+  --status-empty-subtle: #f4f0e8;
+  --status-empty-border: #d1d1d6;
+  --status-failed: #E6292A;
+  --status-failed-subtle: rgba(230, 41, 42, 0.12);
+  --status-failed-border: rgba(230, 41, 42, 0.4);
 
   /* Telemetry Dimension Tokens (WCAG AA) */
-  --telemetry-completeness: #0284c7;
-  --telemetry-freshness: #059669;
-  --telemetry-validity: #2563eb;
-  --telemetry-consistency: #7c3aed;
+  --telemetry-completeness: #E6292A;
+  --telemetry-freshness: #4F8A34;
+  --telemetry-validity: #4F8A34;
+  --telemetry-consistency: #8D8F94;
 
-  /* Untitled UI Neutral Gray System */
+  /* Neutral Gray System */
   --gray-25: #fcfcfd;
-  --gray-50: #f8fafc;
-  --gray-100: #f1f5f9;
-  --gray-200: #eaecf0;
-  --gray-300: #d0d5dd;
-  --gray-400: #98a2b3;
-  --gray-500: #667085;
-  --gray-600: #475467;
-  --gray-700: #344054;
-  --gray-800: #1d2939;
-  --gray-900: #0f172a;
+  --gray-50: #fbfbfd;
+  --gray-100: #f4f0e8;
+  --gray-200: #e5e5ea;
+  --gray-300: #d1d1d6;
+  --gray-400: #aeaeb2;
+  --gray-500: #8D8F94;
+  --gray-600: #6e6e73;
+  --gray-700: #48484a;
+  --gray-800: #18191C;
+  --gray-900: #0B0B0D;
 
-  /* Focus Rings (Untitled UI 4px High-Trust Glow) */
-  --focus-ring: 0 0 0 4px rgba(2, 132, 199, 0.14);
-  --focus-ring-error: 0 0 0 4px rgba(225, 29, 72, 0.14);
+  /* Focus Rings (Salsa Chili Red Glow) */
+  --focus-ring: 0 0 0 3.5px rgba(230, 41, 42, 0.3);
+  --focus-ring-error: 0 0 0 3.5px rgba(230, 41, 42, 0.35);
 
   /* Borders & Dividers */
-  --border-subtle: #f1f5f9;
-  --border-default: #eaecf0;            /* 1px low-contrast Gray-200 / Slate-200 */
-  --border-focus: #0284c7;
+  --border-subtle: #f0ece3;
+  --border-default: #e2ddd4;
+  --border-focus: #E6292A;
   --border-success: #a7f3d0;
   --border-danger: #fecdd3;
   --border-warning: #fde68a;
 
   /* Compatibility Aliases */
-  --color-slate-200: #e2e8f0;
+  --color-slate-200: #e2ddd4;
   --color-slate-300: #cbd5e1;
-  --color-slate-400: #94a3b8;
+  --color-slate-400: #8D8F94;
   --color-slate-500: #64748b;
-  --color-primary-400: #38bdf8;
-  --color-primary-500: #0ea5e9;
-  --color-primary-600: #0284c7;
-  --color-success: #059669;
+  --color-primary-400: #F03A3B;
+  --color-primary-500: #E6292A;
+  --color-primary-600: #D32021;
+  --color-success: #4F8A34;
   --color-warning: #d97706;
-  --color-danger: #e11d48;
-  --color-info: #0284c7;
-  --color-border: #eaecf0;
+  --color-danger: #E6292A;
+  --color-info: #E6292A;
+  --color-border: #e2ddd4;
   --color-surface-card: #ffffff;
-  --color-surface-ground: #f8fafc;
+  --color-surface-ground: #f8f6f0;
 
   /* Typography Scale */
   --font-sans: 'Vazirmatn', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -197,85 +254,100 @@
    Preserved Dark Theme Variables (Zero Regression for dark mode)
    ========================================================================== */
 [data-theme="dark"] {
-  --bg-canvas: #202124;                 /* Google Cloud Dark Canvas */
-  --bg-subtle: #292a2d;                 /* Google Cloud Dark Surface Level 1 */
-  --bg-surface: #202124;                /* Google Cloud Dark Surface */
-  --bg-surface-elevated: #292a2d;
-  --bg-surface-hover: #35363a;          /* Google Cloud Dark Hover */
-  --bg-surface-subtle: rgba(255, 255, 255, 0.04);
-  --bg-surface-subtle-hover: rgba(255, 255, 255, 0.08);
-  --bg-glass: rgba(32, 33, 36, 0.92);
-  --bg-glass-card: rgba(41, 42, 45, 0.9);
+  /* Salsa Materials & Translucent Glass (Dark Mode: 70% Dark Surfaces) */
+  --apple-canvas: #0B0B0D;              /* Salsa Charcoal: 70% Dark Ground */
+  --apple-surface: rgba(24, 25, 28, 0.88); /* Salsa Graphite */
+  --apple-surface-elevated: #232529;
+  --apple-surface-hover: rgba(244, 240, 232, 0.08);
+  --apple-glass-ultra-thin: rgba(24, 25, 28, 0.5);
+  --apple-glass-thin: rgba(24, 25, 28, 0.7);
+  --apple-glass-regular: rgba(24, 25, 28, 0.88);
+  --apple-glass-thick: rgba(24, 25, 28, 0.95);
+  --apple-bevel-highlight: inset 0 1px 0 rgba(244, 240, 232, 0.1);
 
-  --text-primary: #e8eaed;              /* Google Dark Text Primary */
-  --text-secondary: #9aa0a6;            /* Google Dark Text Secondary */
-  --text-tertiary: #80868b;             /* Google Dark Text Muted */
-  --text-inverse: #202124;
+  --bg-canvas: #0B0B0D;                 /* Salsa Charcoal */
+  --bg-subtle: #18191C;                 /* Salsa Graphite */
+  --bg-surface: #18191C;
+  --bg-surface-elevated: #232529;
+  --bg-surface-hover: #282A2F;
+  --bg-surface-subtle: rgba(244, 240, 232, 0.05);
+  --bg-surface-subtle-hover: rgba(244, 240, 232, 0.09);
+  --bg-glass: var(--apple-glass-regular);
+  --bg-glass-card: var(--apple-glass-thin);
 
-  --accent-cyan: #8ab4f8;               /* Google Blue 300 */
-  --accent-cyan-hover: #aecbfa;
-  --accent-cyan-subtle: rgba(138, 180, 248, 0.15);
+  --text-primary: #F4F0E8;              /* Salsa Ivory: 15% Text & Contrast */
+  --text-secondary: #A8AAAF;            /* Neutral muted */
+  --text-tertiary: #8D8F94;             /* Salsa Warm Gray */
+  --text-inverse: #0B0B0D;
 
-  --state-success: #81c995;             /* Google Green Dark */
-  --state-success-subtle: rgba(129, 201, 149, 0.15);
-  --state-warning: #fdd663;             /* Google Amber Dark */
-  --state-warning-subtle: rgba(253, 214, 99, 0.15);
-  --state-danger: #f28b82;              /* Google Red Dark */
-  --state-danger-subtle: rgba(242, 139, 130, 0.15);
-  --state-info: #8ab4f8;                /* Google Blue Dark */
-  --state-info-subtle: rgba(138, 180, 248, 0.15);
+  --accent-cyan: #E6292A;               /* Salsa Chili Red (10% Accent) */
+  --accent-cyan-hover: #F03A3B;
+  --accent-cyan-subtle: rgba(230, 41, 42, 0.16);
+  --accent-blue: #E6292A;
+  --accent-blue-hover: #F03A3B;
+
+  --state-success: #4F8A34;             /* Salsa Leaf Green (5% Accent) */
+  --state-success-subtle: rgba(79, 138, 52, 0.16);
+  --state-warning: #f59e0b;
+  --state-warning-subtle: rgba(245, 158, 11, 0.16);
+  --state-danger: #E6292A;              /* Salsa Chili Red */
+  --state-danger-subtle: rgba(230, 41, 42, 0.16);
+  --state-info: #E6292A;
+  --state-info-subtle: rgba(230, 41, 42, 0.16);
+  --state-neutral: #8D8F94;
+  --state-neutral-subtle: #18191C;
 
   /* 5-State Telemetry Lifecycle Variables (Dark Mode) */
-  --status-live: #10b981;
-  --status-live-subtle: rgba(16, 185, 129, 0.14);
-  --status-live-border: rgba(16, 185, 129, 0.3);
+  --status-live: #4F8A34;               /* Salsa Leaf Green */
+  --status-live-subtle: rgba(79, 138, 52, 0.16);
+  --status-live-border: rgba(79, 138, 52, 0.35);
   --status-stale: #f59e0b;
-  --status-stale-subtle: rgba(245, 158, 11, 0.14);
-  --status-stale-border: rgba(245, 158, 11, 0.3);
-  --status-loading: #38bdf8;
-  --status-loading-subtle: rgba(56, 189, 248, 0.14);
-  --status-loading-border: rgba(56, 189, 248, 0.3);
-  --status-empty: #94a3b8;
-  --status-empty-subtle: rgba(148, 163, 184, 0.14);
-  --status-empty-border: rgba(148, 163, 184, 0.3);
-  --status-failed: #f43f5e;
-  --status-failed-subtle: rgba(244, 63, 94, 0.14);
-  --status-failed-border: rgba(244, 63, 94, 0.3);
+  --status-stale-subtle: rgba(245, 158, 11, 0.16);
+  --status-stale-border: rgba(245, 158, 11, 0.35);
+  --status-loading: #E6292A;
+  --status-loading-subtle: rgba(230, 41, 42, 0.16);
+  --status-loading-border: rgba(230, 41, 42, 0.35);
+  --status-empty: #8D8F94;
+  --status-empty-subtle: rgba(141, 143, 148, 0.16);
+  --status-empty-border: rgba(141, 143, 148, 0.35);
+  --status-failed: #E6292A;
+  --status-failed-subtle: rgba(230, 41, 42, 0.16);
+  --status-failed-border: rgba(230, 41, 42, 0.35);
 
   /* 4-Dimensional Telemetry Dimension Tokens (Dark Mode) */
-  --telemetry-completeness: #38bdf8;
-  --telemetry-freshness: #10b981;
-  --telemetry-validity: #60a5fa;
-  --telemetry-consistency: #c084fc;
+  --telemetry-completeness: #E6292A;
+  --telemetry-freshness: #4F8A34;
+  --telemetry-validity: #4F8A34;
+  --telemetry-consistency: #8D8F94;
 
-  /* Untitled UI Neutral Gray System (Dark Mode) */
-  --gray-25: #0b0f19;
-  --gray-50: #0d121f;
-  --gray-100: #121929;
-  --gray-200: #1a233a;
-  --gray-300: #222d4a;
+  /* Salsa Neutral Scale (Dark Mode) */
+  --gray-25: #0B0B0D;
+  --gray-50: #101114;
+  --gray-100: #18191C;
+  --gray-200: #232529;
+  --gray-300: #2c2e35;
   --gray-400: #64748b;
-  --gray-500: #94a3b8;
-  --gray-600: #cbd5e1;
-  --gray-700: #e2e8f0;
-  --gray-800: #f1f5f9;
-  --gray-900: #f8fafc;
+  --gray-500: #8D8F94;
+  --gray-600: #A8AAAF;
+  --gray-700: #cbd5e1;
+  --gray-800: #e2ddd4;
+  --gray-900: #F4F0E8;
 
-  /* Focus Rings (Dark Mode) */
-  --focus-ring: 0 0 0 4px rgba(56, 189, 248, 0.2);
-  --focus-ring-error: 0 0 0 4px rgba(244, 63, 94, 0.2);
+  /* Focus Rings (Dark Mode: Salsa Chili Red) */
+  --focus-ring: 0 0 0 4px rgba(230, 41, 42, 0.35);
+  --focus-ring-error: 0 0 0 4px rgba(230, 41, 42, 0.45);
 
-  --border-subtle: rgba(255, 255, 255, 0.08);
-  --border-default: rgba(255, 255, 255, 0.14);
-  --border-focus: #38bdf8;
+  --border-subtle: rgba(244, 240, 232, 0.08);
+  --border-default: rgba(141, 143, 148, 0.2);
+  --border-focus: #E6292A;
 
-  --color-slate-200: #e2e8f0;
+  --color-slate-200: #e2ddd4;
   --color-slate-300: #cbd5e1;
-  --color-slate-400: #94a3b8;
+  --color-slate-400: #8D8F94;
   --color-slate-500: #64748b;
-  --color-border: rgba(255, 255, 255, 0.12);
-  --color-surface-card: #161f33;
-  --color-surface-ground: #0b0f19;
+  --color-border: rgba(141, 143, 148, 0.2);
+  --color-surface-card: #18191C;
+  --color-surface-ground: #0B0B0D;
 
   --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.35);
   --shadow-md: 0 4px 12px -2px rgba(0, 0, 0, 0.5);

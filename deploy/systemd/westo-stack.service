@@ -1,0 +1,32 @@
+[Unit]
+Description=SALSA & WESTO Unified Full-Stack Production Service
+After=network.target postgresql.service
+Wants=postgresql.service
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/opt/westo
+EnvironmentFile=-/opt/westo/.env.production
+Environment=NODE_ENV=production
+Environment=PORT=4180
+Environment=GODMODE_PORT=3050
+Environment=GODMODE_HOST=127.0.0.1
+Environment=SALSA_CONTROL_PORT=3061
+Environment=SALSA_TENANT_ID=westo
+Environment=SALSA_BRIDGE_ENABLED=true
+
+ExecStart=/usr/bin/node /opt/westo/server/full-stack.js
+
+Restart=always
+RestartSec=5s
+
+# Security and Sandbox Isolation
+LimitNOFILE=65535
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=westo-stack
+
+[Install]
+WantedBy=multi-user.target

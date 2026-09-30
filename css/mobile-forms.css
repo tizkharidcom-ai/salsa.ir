@@ -19,6 +19,8 @@
   .qty-modal input {
     font-size: 16px !important;
   }
+}
+
 /* Apple Squircle Form Controls & Continuous Curvature */
 input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]),
 textarea,

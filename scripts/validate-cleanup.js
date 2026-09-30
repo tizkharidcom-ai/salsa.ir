@@ -9,7 +9,12 @@ function exists(rel){ return fs.existsSync(path.join(ROOT, rel)); }
 const forbiddenFiles = [
   'capture-errors.js','test.html','serve.json','css/performance.css','css/westo-progress.css',
   'js/menu-overlay.js','js/performance-profile.js','js/vendor/Flip.min.js','js/vendor/umami.js',
-  'assets/webgl','skills/westo-motion-qa'
+  'assets/webgl','skills/westo-motion-qa',
+  'docs/design-logic-v13', 'docs/design-logic-v13.1-recovery', 'docs/design-logic-v12.9',
+  'docs/production-v12', 'docs/root-recovery-v13.4',
+  'scripts/validate-design-logic-v13.js', 'scripts/validate-production-v12.js',
+  'scripts/validate-full-review-v13.9.js', 'scripts/validate-stability-final.js',
+  'scripts/run-design-logic-ten-pass.sh'
 ];
 for (const rel of forbiddenFiles) check(`removed ${rel}`, !exists(rel));
 const pkg = JSON.parse(fs.readFileSync(path.join(ROOT,'package.json'),'utf8'));

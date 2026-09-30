@@ -29,7 +29,7 @@
   <!-- Fonts & Styles -->
   <link rel="stylesheet" href="css/vazir-system.css?v=font1" />
   <link rel="stylesheet" href="css/shamsi-wheel-picker.css?v=applePicker2" />
-  <link rel="stylesheet" href="css/profile-dashboard.css?v=masterV1" />
+  <link rel="stylesheet" href="css/profile-dashboard.css?v=profile-loyalty-path-20260928-r2" />
   
   <!-- Logic & Helpers -->
   <script src="js/vendor/qrcode.min.js"></script>
@@ -164,7 +164,7 @@
           <!-- 09 — Block 3: Achievements -->
           <section class="v1-dashboard-section" aria-label="افتخارات">
             <div class="v1-section-header">
-              <h3 class="v1-section-title">افتخارات من</h3>
+              <h3 class="v1-section-title">مسیر وفاداری من</h3>
               <button type="button" class="v1-section-link" id="view-all-achievements-btn">همه</button>
             </div>
             <div class="v1-achievements-rail" id="achievements-rail-container">
@@ -176,10 +176,19 @@
           <section class="v1-dashboard-section" aria-label="سفارش‌های اخیر">
             <div class="v1-section-header">
               <h3 class="v1-section-title">سفارش‌های اخیر</h3>
-              <button type="button" class="v1-section-link" id="view-all-orders-btn">همه سفارش‌ها</button>
+              <button type="button" class="v1-section-link" id="view-all-orders-btn" aria-expanded="false" aria-controls="full-order-history">همه سفارش‌ها</button>
+            </div>
+            <div class="v1-order-history-freshness" id="order-history-freshness" role="status" aria-live="polite" hidden>
+              <span>این وضعیت از نسخهٔ ذخیره‌شده است و ممکن است به‌روز نباشد.</span>
+              <button type="button" id="retry-order-history-btn">بررسی دوباره</button>
             </div>
             <div class="v1-orders-list" id="recent-orders-container">
               <!-- Rendered dynamically -->
+            </div>
+            <div class="v1-order-history" id="full-order-history" hidden>
+              <h4 class="v1-order-history__title">تاریخچه سفارش‌ها</h4>
+              <p class="v1-order-history__note">وضعیت پرداخت یا پذیرش رستوران فقط وقتی نمایش داده می‌شود که در سابقهٔ همین سفارش ثبت شده باشد.</p>
+              <div class="v1-order-history-list" id="all-orders-history-list"></div>
             </div>
           </section>
 
@@ -389,6 +398,10 @@
       let loyaltyData = null;
       let walletData = null;
       let ordersData = [];
+      function setOrderHistoryStale(stale) {
+        const notice = $('#order-history-freshness');
+        if (notice) notice.hidden = !stale;
+      }
       // Preserve an explicit branch chosen by the menu/checkout flow when a
       // guest continues into the profile wallet.  With no explicit context
       // the server may still resolve the single configured default branch;
@@ -400,14 +413,9 @@
         return Number.isSafeInteger(value) && value > 0 ? value : null;
       })();
 
-      // 09 — Achievements Data Definition (Branded, Minimal, Non-gamey)
-      const ACHIEVEMENTS_DEF = [
-        { id: 'coffee_master', name: 'قهوه‌خور اعظم', desc: '۲۰ قهوه در WESTO سفارش داده‌ای', icon: '☕', target: 20 },
-        { id: 'early_bird', name: 'صبح‌نشین', desc: '۱۰ سفارش قبل از ساعت ۱۰ صبح ثبت کرده‌ای', icon: '🌅', target: 10 },
-        { id: 'loyal_friend', name: 'رفیق وستو', desc: '۱۰ بار به WESTO برگشته‌ای', icon: '🐈', target: 10 },
-        { id: 'sweet_tooth', name: 'شیرین‌پسند', desc: '۵ دسر متفاوت امتحان کرده‌ای', icon: '🍰', target: 5 },
-        { id: 'always_here', name: 'همیشگی', desc: '۳ ماه متوالی مهمان WESTO بوده‌ای', icon: '🔥', target: 3 },
-      ];
+      const escapeAchievementHtml = (value) => String(value ?? '').replace(/[&<>"']/g, (character) => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+      })[character]);
 
       function showToast(msg) {
         const box = $('#v1-toast-box');
@@ -479,21 +487,25 @@
           }
         }
 
-        // Human tier label mapping
-        const tierName = loyalty?.tier?.name || 'مهمان همیشگی';
-        tierLabelEl.textContent = `مهمان ${tierName}`;
-
-        const pts = Number(loyalty?.points) || 0;
-        pointsEl.textContent = pts.toLocaleString('fa-IR');
-
-        const next = loyalty?.nextTier;
-        if (next && loyalty?.pointsToNext) {
-          const pct = Math.min(100, Math.max(5, loyalty.progressPct || 20));
-          progressFillEl.style.width = `${pct}%`;
-          progressHintEl.innerHTML = `${(loyalty.pointsToNext).toLocaleString('fa-IR')} امتیاز تا سطح <b>«${next.name}»</b>`;
+        if (!loyalty) {
+          tierLabelEl.textContent = 'اطلاعات عضویت در دسترس نیست';
+          pointsEl.textContent = '—';
+          progressFillEl.style.width = '0%';
+          progressHintEl.textContent = 'برای نمایش سطح و امتیاز، اتصال باشگاه مشتریان لازم است.';
         } else {
-          progressFillEl.style.width = '100%';
-          progressHintEl.innerHTML = 'شما در بالاترین سطح عضویت وستو هستید 🎉';
+          const tierName = loyalty?.tier?.name || 'مهمان همیشگی';
+          tierLabelEl.textContent = `مهمان ${tierName}`;
+          const pts = Number(loyalty.points);
+          pointsEl.textContent = Number.isFinite(pts) ? Math.max(0, pts).toLocaleString('fa-IR') : '—';
+          const next = loyalty?.nextTier;
+          if (next && loyalty?.pointsToNext) {
+            const pct = Math.min(100, Math.max(5, loyalty.progressPct || 20));
+            progressFillEl.style.width = `${pct}%`;
+            progressHintEl.textContent = `${Number(loyalty.pointsToNext).toLocaleString('fa-IR')} امتیاز تا سطح «${next.name}»`;
+          } else {
+            progressFillEl.style.width = '100%';
+            progressHintEl.textContent = 'شما در بالاترین سطح عضویت وستو هستید 🎉';
+          }
         }
 
         // Set ID in QR Sheet (only when phone is available)
@@ -504,9 +516,11 @@
 
       // 07 — Render Wallet
       async function renderWallet(loyalty, wallet) {
-        const bal = Number(loyalty?.walletBalanceToman || wallet?.balanceToman || 0);
-        $('#wallet-balance-num').textContent = bal.toLocaleString('fa-IR');
-        $('#sheet-wallet-bal').textContent = `${bal.toLocaleString('fa-IR')} تومان`;
+        const rawBalance = loyalty?.walletBalanceToman ?? wallet?.balanceToman;
+        const bal = rawBalance == null || rawBalance === '' ? NaN : Number(rawBalance);
+        const balanceLabel = Number.isFinite(bal) ? Math.max(0, bal).toLocaleString('fa-IR') : '—';
+        $('#wallet-balance-num').textContent = balanceLabel;
+        $('#sheet-wallet-bal').textContent = Number.isFinite(bal) ? `${balanceLabel} تومان` : '—';
 
         try {
           const res = await fetch('/api/wallet/me', { credentials: 'same-origin', cache: 'no-store' });
@@ -583,50 +597,40 @@
       }
 
       // 09 — Render Achievements Rail
-      function renderAchievements(orders = []) {
+      function renderAchievements(achievements = [], available = true) {
         const container = $('#achievements-rail-container');
         if (!container) return;
+        if (!available) {
+          container.innerHTML = '<div class="v1-achievement-card is-unavailable" role="status"><b>پیشرفت وفاداری فعلاً در دسترس نیست</b><span class="v1-achievement-state">خطای دریافت اطلاعات نمایش داده می‌شود؛ مقدار صفر فرض نشده است.</span></div>';
+          return;
+        }
+        if (!Array.isArray(achievements) || achievements.length === 0) {
+          container.innerHTML = '<div class="v1-achievement-card is-unavailable" role="status"><b>هدف فعالی تعریف نشده است</b><span class="v1-achievement-state">هدف‌ها از پنل باشگاه مشتریان تنظیم می‌شوند.</span></div>';
+          return;
+        }
+        const statusLabel = (achievement) => ({
+          issued: `${Number(achievement.pointsAwarded || achievement.rewardPoints || 0).toLocaleString('fa-IR')} امتیاز جایزه ثبت شد`,
+          completed_before_rewards: 'تکمیل شده؛ پیش از شروع پاداش',
+          not_configured: 'تکمیل شده؛ جایزه هنوز تنظیم نشده',
+          program_paused: 'تکمیل شده؛ برنامهٔ امتیازدهی خاموش است',
+          award_review: 'تکمیل شده؛ ثبت جایزه نیاز به بررسی دارد',
+          in_progress: `${Number(achievement.current || 0).toLocaleString('fa-IR')} از ${Number(achievement.target || 0).toLocaleString('fa-IR')}`,
+        }[achievement.rewardStatus] || 'در حال پیشرفت');
 
-        let coffeeCount = 0;
-        let earlyCount = 0;
-        let dessertCount = 0;
-        const distinctMonths = new Set();
-
-        (orders || []).forEach(o => {
-          const dt = new Date(o.createdAt || Date.now());
-          distinctMonths.add(`${dt.getFullYear()}-${dt.getMonth()}`);
-          if (dt.getHours() < 10) earlyCount++;
-
-          (o.items || []).forEach(it => {
-            const name = String(it.name || '').toLowerCase();
-            if (name.includes('قهوه') || name.includes('لاته') || name.includes('اسپرسو') || name.includes('کاپوچینو') || name.includes('brew') || name.includes('موکا') || name.includes('امریکانو')) {
-              coffeeCount += Number(it.quantity || 1);
-            }
-            if (name.includes('کیک') || name.includes('چیزکیک') || name.includes('تیرامیسو') || name.includes('دسر') || name.includes('وافل') || name.includes('کروسان')) {
-              dessertCount += Number(it.quantity || 1);
-            }
-          });
-        });
-
-        const progressMap = {
-          coffee_master: { current: coffeeCount, target: 20 },
-          early_bird: { current: earlyCount, target: 10 },
-          loyal_friend: { current: (orders || []).length, target: 10 },
-          sweet_tooth: { current: dessertCount, target: 5 },
-          always_here: { current: distinctMonths.size, target: 3 },
-        };
-
-        container.innerHTML = ACHIEVEMENTS_DEF.map((ach) => {
-          const p = progressMap[ach.id] || { current: 0, target: ach.target };
-          const unlocked = p.current >= p.target;
+        container.innerHTML = achievements.map((ach) => {
+          const current = Number(ach.current) || 0;
+          const target = Math.max(1, Number(ach.target) || 1);
+          const unlocked = !!ach.unlocked;
           return `
-            <div class="v1-achievement-card ${unlocked ? 'is-unlocked' : 'is-locked'}" data-ach-id="${ach.id}" tabindex="0" role="button" aria-label="${ach.name}">
+            <div class="v1-achievement-card ${unlocked ? 'is-unlocked' : 'is-locked'}" data-ach-id="${escapeAchievementHtml(ach.id)}" tabindex="0" role="button" aria-label="${escapeAchievementHtml(ach.name)}">
               <div class="v1-achievement-icon">
-                ${ach.icon}
+                ${escapeAchievementHtml(ach.icon)}
                 ${!unlocked ? '<span class="v1-lock-badge">🔒</span>' : ''}
               </div>
-              <h4 class="v1-achievement-title">${ach.name}</h4>
-              <p class="v1-achievement-desc">${unlocked ? ach.desc : `${p.current.toLocaleString('fa-IR')} از ${p.target.toLocaleString('fa-IR')}`}</p>
+              <h4 class="v1-achievement-title">${escapeAchievementHtml(ach.name)}</h4>
+              <p class="v1-achievement-desc">${escapeAchievementHtml(ach.description)}</p>
+              <div class="v1-achievement-progress" aria-label="${current} از ${target}"><span style="width:${Math.min(100, Math.max(0, Number(ach.progressPct) || 0))}%"></span></div>
+              <span class="v1-achievement-state">${escapeAchievementHtml(statusLabel(ach))}</span>
             </div>
           `;
         }).join('');
@@ -634,34 +638,47 @@
         container.querySelectorAll('.v1-achievement-card').forEach(card => {
           card.addEventListener('click', () => {
             const achId = card.dataset.achId;
-            const ach = ACHIEVEMENTS_DEF.find(a => a.id === achId);
+            const ach = achievements.find(a => String(a.id) === String(achId));
             if (!ach) return;
-
-            const p = progressMap[ach.id] || { current: 0, target: ach.target };
-            const isUnlocked = p.current >= p.target;
+            const current = Number(ach.current) || 0;
+            const target = Math.max(1, Number(ach.target) || 1);
             $('#sheet-achieve-name').textContent = ach.name;
-            $('#sheet-achieve-desc').textContent = ach.desc;
+            $('#sheet-achieve-desc').textContent = ach.description || '';
             $('#sheet-achieve-icon-box').textContent = ach.icon;
             
             const statusEl = $('#sheet-achieve-status');
-            if (isUnlocked) {
-              statusEl.textContent = 'این افتخار رو گرفتی! 🎉';
+            if (ach.rewardStatus === 'issued') {
+              statusEl.textContent = `${Number(ach.pointsAwarded || ach.rewardPoints || 0).toLocaleString('fa-IR')} امتیاز جایزه به دفتر امتیاز اضافه شد. 🎉`;
               statusEl.style.color = 'var(--w-accent)';
+            } else if (ach.unlocked) {
+              statusEl.textContent = statusLabel(ach);
+              statusEl.style.color = 'var(--w-text-muted)';
             } else {
-              statusEl.textContent = `پیشرفت شما: ${p.current.toLocaleString('fa-IR')} از ${p.target.toLocaleString('fa-IR')}`;
+              statusEl.textContent = `پیشرفت شما: ${current.toLocaleString('fa-IR')} از ${target.toLocaleString('fa-IR')}`;
               statusEl.style.color = 'var(--w-text-muted)';
             }
 
             openSheet('achievement-detail');
           });
+          card.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); card.click(); }
+          });
         });
       }
 
       // 11 — Render Recent Orders (Compact List, Max 3)
-      function renderRecentOrders(orders) {
+      function renderRecentOrders(orders, available = true) {
         const container = $('#recent-orders-container');
         if (!container) return;
 
+        if (!available) {
+          container.innerHTML = `
+            <div style="background: var(--w-surface); border: 1px solid var(--w-border); border-radius: var(--w-radius-md); padding: 24px 16px; text-align: center;" role="status">
+              <b style="font-size: 0.95rem; display: block; margin-bottom: 4px;">تاریخچهٔ سفارش در دسترس نیست</b>
+              <p style="font-size: 0.78rem; color: var(--w-text-secondary); margin: 0;">این خطا به معنی نداشتن سفارش نیست. پس از اتصال دوباره تلاش کنید.</p>
+            </div>`;
+          return;
+        }
         if (!orders || orders.length === 0) {
           container.innerHTML = `
             <div style="background: var(--w-surface); border: 1px dashed var(--w-border); border-radius: var(--w-radius-md); padding: 24px 16px; text-align: center;">
@@ -696,6 +713,69 @@
         }).join('');
       }
 
+      function renderAllOrderHistory(orders) {
+        const container = $('#all-orders-history-list');
+        if (!container) return;
+        if (!orders || orders.length === 0) {
+          container.innerHTML = '<p class="v1-order-history__empty">هنوز سفارشی برای نمایش ثبت نشده است.</p>';
+          return;
+        }
+
+        const orderStatusLabels = {
+          pending_online: 'در انتظار پرداخت آنلاین',
+          awaiting_confirmation: 'در انتظار تأیید رستوران', pending_cashier: 'در انتظار پرداخت',
+          pay_at_cashier: 'در انتظار پرداخت', rejected: 'سفارش پذیرفته نشد',
+          sent_to_kitchen: 'ارسال‌شده به آشپزخانه',
+          paid: 'پرداخت‌شده', preparing: 'در حال آماده‌سازی', ready: 'آماده تحویل',
+          dispatched: 'در مسیر ارسال', picked_up: 'تحویل حضوری', delivered: 'تحویل‌شده',
+          done: 'تکمیل‌شده', cancelled: 'لغوشده',
+        };
+        const paymentStatusLabels = {
+          unpaid: 'پرداخت‌نشده', partial: 'پرداخت بخشی', pending: 'در انتظار تأیید پرداخت',
+          paid: 'پرداخت‌شده', failed: 'پرداخت ناموفق', cancelled: 'پرداخت لغوشده',
+          refunded: 'بازپرداخت‌شده', unknown: 'نیازمند بررسی پرداخت',
+        };
+        const fulfillmentLabels = { dine_in: 'صرف در سالن', pickup: 'دریافت حضوری', delivery: 'ارسال با پیک' };
+        const acceptanceLabels = {
+          accepted: 'پذیرش‌شده', rejected: 'پذیرفته‌نشده', pending: 'در انتظار پذیرش',
+          awaiting_acceptance: 'در انتظار پذیرش', unrecorded: 'در انتظار پذیرش',
+        };
+        const escapeHtml = (value) => String(value ?? '').replace(/[&<>"']/g, (character) => ({
+          '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+        })[character]);
+
+        container.innerHTML = orders.map((order) => {
+          const status = String(order?.status || '').trim().toLowerCase();
+          const paymentStatus = String(order?.paymentStatus || '').trim().toLowerCase();
+          const fulfillment = String(order?.fulfillment || '').trim().toLowerCase();
+          const acceptanceStatus = String(order?.deliveryAcceptance?.status || '').trim().toLowerCase();
+          const orderNo = escapeHtml(order?.orderNo || order?.id || '—');
+          const orderStatus = escapeHtml(order?.statusLabel || orderStatusLabels[status] || 'وضعیت نامشخص');
+          const paymentStatusLabel = escapeHtml(paymentStatusLabels[paymentStatus] || 'اطلاعات پرداخت در این پاسخ سفارش موجود نیست');
+          const fulfillmentLabel = escapeHtml(fulfillmentLabels[fulfillment] || 'نوع تحویل نامشخص');
+          const acceptanceLabel = fulfillment === 'delivery'
+            ? escapeHtml(acceptanceLabels[acceptanceStatus] || 'وضعیت پذیرش رستوران در دسترس نیست')
+            : 'نیازی به پذیرش رستوران ندارد';
+          const branch = escapeHtml(order?.branchName || 'شعبه');
+          const total = Number(order?.total);
+          const amount = Number.isFinite(total) && total >= 0 ? total.toLocaleString('fa-IR') : '—';
+          const items = Array.isArray(order?.items) ? order.items : [];
+          const itemSummary = items.slice(0, 3).map((item) => escapeHtml(item?.name || item?.title || 'محصول منو')).join('، ')
+            + (items.length > 3 ? ` و ${(items.length - 3).toLocaleString('fa-IR')} مورد دیگر` : '');
+          return `<article class="v1-order-history-card" data-order-id="${escapeHtml(order?.id || '')}">
+            <header class="v1-order-history-card__head"><strong>سفارش ${orderNo}</strong><span class="v1-order-history-card__status">${orderStatus}</span></header>
+            <p class="v1-order-history-card__meta">${escapeHtml(safeFormatShamsiDate(order?.createdAt))} · ${branch}</p>
+            <p class="v1-order-history-card__items">${itemSummary || 'جزئیات اقلام در دسترس نیست'}</p>
+            <dl class="v1-order-history-card__facts">
+              <div><dt>مبلغ</dt><dd>${amount} تومان</dd></div>
+              <div><dt>پرداخت</dt><dd>${paymentStatusLabel}</dd></div>
+              <div><dt>تحویل</dt><dd>${fulfillmentLabel}</dd></div>
+              ${fulfillment === 'delivery' ? `<div><dt>پذیرش رستوران</dt><dd>${acceptanceLabel}</dd></div>` : ''}
+            </dl>
+          </article>`;
+        }).join('');
+      }
+
       // 12 — Reorder Helper
       window.v1Reorder = function(items) {
         if (!items || !items.length) { location.href = '/menu'; return; }
@@ -711,6 +791,10 @@
       // 13 & 14 — Render Next Reward Card
       function renderNextReward(loyalty) {
         const rewardSection = $('#next-reward-section');
+        if (!loyalty) {
+          rewardSection.style.display = 'none';
+          return;
+        }
         const pts = Number(loyalty?.points) || 0;
         
         // Nearest reward target: 500 pts for Latte
@@ -904,7 +988,17 @@
       $('#view-all-achievements-btn')?.addEventListener('click', () => {
         $('#achievements-rail-container')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
       });
-      $('#view-all-orders-btn')?.addEventListener('click', () => { location.href = '/menu'; });
+      $('#view-all-orders-btn')?.addEventListener('click', (event) => {
+        const history = $('#full-order-history');
+        const button = event.currentTarget;
+        if (!history || !button) return;
+        const isOpening = history.hidden;
+        if (isOpening) renderAllOrderHistory(ordersData);
+        history.hidden = !isOpening;
+        button.setAttribute('aria-expanded', String(isOpening));
+        button.textContent = isOpening ? 'بستن تاریخچه' : 'همه سفارش‌ها';
+        if (isOpening) history.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
 
       // Settings Sheet Open
       $('#open-settings-btn')?.addEventListener('click', () => {
@@ -1121,18 +1215,32 @@
 
           loyaltyData = loyaltyRes.ok ? await loyaltyRes.json() : null;
           const ordJson = ordersRes.ok ? await ordersRes.json() : null;
-          ordersData = ordJson?.orders || [];
+          const orderHistoryFresh = Array.isArray(ordJson?.orders);
+          let cachedHistoryAvailable = false;
+          if (orderHistoryFresh) {
+            ordersData = ordJson.orders;
+            setOrderHistoryStale(false);
+          } else {
+            try {
+              const cached = JSON.parse(localStorage.getItem('westo_guest_profile_snapshot') || 'null');
+              cachedHistoryAvailable = Array.isArray(cached?.orders);
+              ordersData = Array.isArray(cached?.orders) ? cached.orders : [];
+            } catch (_) { ordersData = []; }
+            setOrderHistoryStale(true);
+          }
 
           // Render 5 Key Blocks
           renderMembership(userData, loyaltyData);
           renderWallet(loyaltyData, null);
-          renderAchievements(ordersData);
-          renderRecentOrders(ordersData);
+          renderAchievements(loyaltyData?.loyalty?.achievements, !!loyaltyRes.ok && Array.isArray(loyaltyData?.loyalty?.achievements));
+          renderRecentOrders(ordersData, orderHistoryFresh || cachedHistoryAvailable);
           renderNextReward(loyaltyData);
 
-          try {
-            localStorage.setItem('westo_guest_profile_snapshot', JSON.stringify({ user: userData, loyalty: loyaltyData, orders: ordersData }));
-          } catch (_) {}
+          if (orderHistoryFresh) {
+            try {
+              localStorage.setItem('westo_guest_profile_snapshot', JSON.stringify({ user: userData, loyalty: loyaltyData, orders: ordersData, ordersSavedAt: new Date().toISOString() }));
+            } catch (_) {}
+          }
 
           $('#v1-skeleton-loading')?.classList.add('v1-is-hidden');
           $('#v1-profile-loaded-content')?.classList.remove('v1-is-hidden');
@@ -1143,13 +1251,16 @@
               const cached = JSON.parse(cachedRaw);
               if (cached && cached.user) {
                 userData = cached.user;
-                loyaltyData = cached.loyalty;
+                // Cached loyalty state cannot establish current points or tier.
+                // Keep identity/history available, but show loyalty as unavailable.
+                loyaltyData = null;
                 ordersData = cached.orders || [];
-                renderMembership(userData, loyaltyData);
-                renderWallet(loyaltyData, null);
-                renderAchievements(ordersData);
-                renderRecentOrders(ordersData);
-                renderNextReward(loyaltyData);
+                setOrderHistoryStale(true);
+                renderMembership(userData, null);
+                renderWallet(null, null);
+                renderAchievements(null, false);
+                renderRecentOrders(ordersData, Array.isArray(cached.orders));
+                renderNextReward(null);
                 $('#v1-skeleton-loading')?.classList.add('v1-is-hidden');
                 $('#v1-profile-loaded-content')?.classList.remove('v1-is-hidden');
                 showToast('اطلاعات ذخیره‌شده حساب بارگذاری شد.');
@@ -1164,6 +1275,7 @@
       }
 
       $('#retry-load-btn')?.addEventListener('click', loadGuestProfile);
+      $('#retry-order-history-btn')?.addEventListener('click', loadGuestProfile);
       loadGuestProfile();
     })();
   </script>

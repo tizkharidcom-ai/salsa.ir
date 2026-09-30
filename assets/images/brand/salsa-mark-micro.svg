@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 500" role="img" aria-labelledby="title desc">
+  <title id="title">SALSA micro mark</title>
+  <desc id="desc">A transparent optical-size SALSA mark with a deliberately open central negative-space S channel for small icons.</desc>
+  <defs>
+    <mask id="micro-s-channel" maskUnits="userSpaceOnUse" x="0" y="0" width="500" height="500" mask-type="luminance">
+      <rect width="500" height="500" fill="white"/>
+      <path d="M255 148 C203 148 176 175 184 213 C190 244 231 252 257 273 C286 297 281 339 245 359 C220 373 193 364 177 345"
+            fill="none" stroke="black" stroke-width="84" stroke-linecap="round" stroke-linejoin="round"/>
+    </mask>
+  </defs>
+  <g mask="url(#micro-s-channel)" fill="#C62828">
+    <rect x="96" y="132" width="126" height="126" rx="38"/>
+    <rect x="188" y="66" width="126" height="126" rx="38"/>
+    <rect x="316" y="66" width="104" height="104" rx="31"/>
+    <rect x="74" y="306" width="104" height="104" rx="31"/>
+    <rect x="202" y="328" width="126" height="126" rx="38"/>
+    <rect x="318" y="214" width="126" height="126" rx="38"/>
+    <rect x="164" y="188" width="104" height="104" rx="31"/>
+    <rect x="264" y="242" width="104" height="104" rx="31"/>
+  </g>
+</svg>

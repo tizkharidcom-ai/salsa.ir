@@ -187,10 +187,15 @@
 
   function materialView() {
     const canManage = context.hasCapability?.('inventory.manage');
-    const rows = items().map((item) => {
+    const allItems = items();
+    const lowStockCount = allItems.filter((item) => item.availableQuantity != null && item.minStock > 0 && Number(item.availableQuantity) <= Number(item.minStock)).length;
+    const totalValuationIrr = allItems.reduce((sum, item) => sum + (item.availableQuantity != null && (item.avgCostIrr || item.unitCostIrr) ? Number(item.availableQuantity) * Number(item.avgCostIrr || item.unitCostIrr) : 0), 0);
+
+    const rows = allItems.map((item) => {
       const available = item.availableQuantity == null ? null : Number(item.availableQuantity);
       const min = Number(item.minStock || 0);
       const low = available != null && min > 0 && available <= min;
+      const reorderSoon = !low && available != null && min > 0 && available <= (min * 1.5);
       const cost = item.avgCostIrr ?? item.unitCostIrr;
       const value = available != null && cost != null ? available * Number(cost) : null;
       const status = available == null ? 'نیازمند بررسی' : low ? 'کمبود' : 'مناسب';
@@ -199,10 +204,77 @@
       const vendorBadges = linkedVendors.length
         ? `<div class="inv-vendor-tags">${linkedVendors.map((v) => `<span class="inv-vendor-tag ${v.isSpot ? 'is-spot' : ''}">${esc(v.nameFa || v.name)}</span>`).join('')}</div>`
         : '<div class="inv-vendor-tags"><span class="inv-vendor-tag is-none">بدون تأمین‌کننده</span></div>';
-      return `<tr><td><strong>${esc(item.name || item.id)}</strong><small>${esc(item.sku || 'بدون کد')} · ${esc(item.category || 'سایر')}</small>${vendorBadges}</td><td>${available == null ? 'اطلاعات کافی نیست' : `${fa(available)} <small>${esc(unit(item))}</small>`}</td><td>${min ? fa(min) : '—'}</td><td>${value == null ? 'ثبت نشده' : `${moneyIrr(value)}${costLabel}`}</td><td><span class="inv-status ${available == null ? 'is-warn' : low ? 'is-warn' : 'is-good'}">${status}</span></td></tr>`;
+      const searchKey = `${item.name || ''} ${item.sku || ''} ${item.category || ''}`.toLowerCase();
+
+      return `<tr class="inv-material-row" data-search-text="${esc(searchKey)}">
+        <td><strong>${esc(item.name || item.id)}</strong><small>${esc(item.sku || 'بدون کد')} · ${esc(item.category || 'سایر')}</small>${vendorBadges}</td>
+        <td>${available == null ? 'اطلاعات کافی نیست' : `${fa(available)} <small>${esc(unit(item))}</small>`}</td>
+        <td>${min ? fa(min) : '—'}</td>
+        <td>${value == null ? 'ثبت نشده' : `${moneyIrr(value)}${costLabel}`}</td>
+        <td>
+          <div style="display:flex;align-items:center;gap:0.35rem;flex-wrap:wrap;">
+            <span class="inv-status ${available == null ? 'is-warn' : low ? 'is-danger' : reorderSoon ? 'is-warn' : 'is-good'}">
+              ${low ? 'بحرانی (کسری)' : reorderSoon ? 'نقطه سفارش' : status}
+            </span>
+            ${low ? `<button type="button" class="inv-button inv-button--soft inv-button--xs" data-inv-quick-reorder="${esc(item.id)}" title="ثبت فوری سفارش خرید برای جبران کسری">سفارش خرید</button>` : ''}
+          </div>
+        </td>
+      </tr>`;
     }).join('');
+
     return `<div class="inv-grid inv-grid--wide">
-      <section class="inv-card inv-card--list"><div class="inv-card-head"><div><span class="inv-eyebrow">منبع موجودی</span><h2>مواد اولیهٔ شعبه</h2><p>موجودی قابل‌مصرف با گردش‌های واقعی فروش، دریافت، ضایعات و شمارش محاسبه می‌شود.</p></div><div class="inv-card-actions">${canManage ? actionButton('material', 'مادهٔ اولیهٔ جدید') : ''}<a class="inv-link" href="${context.financeWorkspaceHref('purchases')}">خرید و دریافت کالا ←</a></div></div><div class="inv-table-wrap"><table class="inv-table"><thead><tr><th>ماده و طرف حساب</th><th>قابل‌مصرف</th><th>حداقل</th><th>ارزش تقریبی</th><th>وضعیت</th></tr></thead><tbody>${rows || '<tr><td colspan="5" class="inv-empty">هنوز ماده‌ای برای این شعبه ثبت نشده است.</td></tr>'}</tbody></table></div></section>
+      <div class="inv-counts-kpis">
+        <article>
+          <small>کل اقلام مواد اولیه</small>
+          <strong>${fa(allItems.length)} قلم</strong>
+          <span>اقلام فعال شعبه</span>
+        </article>
+        <article class="${lowStockCount > 0 ? 'is-warn' : ''}">
+          <small>اقلام نیازمند سفارش (کسری)</small>
+          <strong>${fa(lowStockCount)} قلم</strong>
+          <span>موجود کمتر از حد آستانه</span>
+        </article>
+        <article>
+          <small>ارزش تقریبی کل موجودی انبار</small>
+          <strong>${moneyIrr(totalValuationIrr)}</strong>
+          <span>بر اساس بهای میانگین</span>
+        </article>
+      </div>
+
+      <section class="inv-card inv-card--list">
+        <div class="inv-card-head">
+          <div>
+            <span class="inv-eyebrow">منبع موجودی</span>
+            <h2>مواد اولیهٔ شعبه</h2>
+            <p>موجودی قابل‌مصرف با گردش‌های واقعی فروش، دریافت، ضایعات و شمارش محاسبه می‌شود.</p>
+          </div>
+          <div class="inv-card-actions">
+            ${canManage ? actionButton('material', 'مادهٔ اولیهٔ جدید') : ''}
+            <a class="inv-link" href="${context.financeWorkspaceHref('purchases')}">خرید و دریافت کالا ←</a>
+          </div>
+        </div>
+
+        <div class="inv-search-strip">
+          <input type="text" id="inv-material-search" placeholder="جست‌وجوی آنی نام ماده، کد کالا یا دسته‌بندی مواد اولیه…" />
+        </div>
+
+        <div class="inv-table-wrap">
+          <table class="inv-table">
+            <thead>
+              <tr>
+                <th>ماده و طرف حساب</th>
+                <th>قابل‌مصرف</th>
+                <th>حداقل</th>
+                <th>ارزش تقریبی</th>
+                <th>وضعیت و اقدام</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rows || '<tr><td colspan="5" class="inv-empty">هنوز ماده‌ای برای این شعبه ثبت نشده است.</td></tr>'}
+            </tbody>
+          </table>
+        </div>
+      </section>
     </div>`;
   }
 
@@ -229,8 +301,9 @@
       const assignedNames = assignedIds.map((id) => itemById(id)?.name || id).slice(0, 5);
       const moreCount = assignedIds.length > 5 ? assignedIds.length - 5 : 0;
       const termsLabel = isSpot || !vendor.termsDays ? 'نقدی / تسویه درجا' : `${fa(vendor.termsDays)} روز`;
+      const searchKey = `${vendor.nameFa || vendor.name || ''} ${vendor.contactPerson || ''} ${vendor.category || ''}`.toLowerCase();
 
-      return `<tr>
+      return `<tr class="inv-vendor-row" data-search-text="${esc(searchKey)}">
         <td>
           <div class="inv-vendor-cell">
             <strong>${esc(vendor.nameFa || vendor.name || vendor.id)}</strong>
@@ -247,11 +320,19 @@
             ${moreCount > 0 ? `<span class="inv-tag-more">+${fa(moreCount)} قلم دیگر</span>` : ''}
           </div>
         </td>
-        ${canManage ? `<td><button type="button" class="inv-button inv-button--soft inv-button--sm" data-edit-vendor="${esc(vendor.id)}">ویرایش و مواد</button></td>` : ''}
+        ${canManage ? `<td>
+          <div style="display:flex;gap:0.35rem;flex-wrap:wrap;">
+            <button type="button" class="inv-button inv-button--soft inv-button--sm" data-edit-vendor="${esc(vendor.id)}">ویرایش و مواد</button>
+            <button type="button" class="inv-button inv-button--soft inv-button--sm" data-inv-quick-po="${esc(vendor.id)}" title="ایجاد سفارش خرید برای این تأمین‌کننده">سفارش خرید</button>
+          </div>
+        </td>` : ''}
       </tr>`;
     }).join('');
 
     return `<div class="inv-grid inv-grid--wide">
+      <div class="inv-search-strip">
+        <input type="text" id="inv-vendor-search" placeholder="جست‌وجوی نام تأمین‌کننده، مسئول رابط، شماره تماس یا دسته‌بندی…" />
+      </div>
       <section class="inv-card inv-card--notice">
         <span class="inv-notice-icon">🏪</span>
         <div>
@@ -457,9 +538,12 @@
   }
 
   function itemOptions({ includeEmpty = true, selectedId = '' } = {}) {
+    const subRecipeItems = new Set(recipes().filter((r) => r.outputItemId).map((r) => String(r.outputItemId)));
     return `${includeEmpty ? '<option value="">انتخاب ماده اولیه</option>' : ''}${items().map((item) => {
       const isSel = String(item.id) === String(selectedId);
-      return `<option value="${esc(item.id)}"${isSel ? ' selected' : ''} data-unit="${esc(unit(item))}">${esc(item.name || item.id)} (${esc(unit(item))})</option>`;
+      const isSubRecipe = subRecipeItems.has(String(item.id));
+      const label = `${item.name || item.id}${isSubRecipe ? ' [دستور نیمه‌آماده]' : ''} (${unit(item)})`;
+      return `<option value="${esc(item.id)}"${isSel ? ' selected' : ''} data-unit="${esc(unit(item))}">${esc(label)}</option>`;
     }).join('')}`;
   }
 
@@ -467,11 +551,25 @@
     const selectedItemId = ingredient.itemId || '';
     const selectedUnit = ingredient.unit || (selectedItemId ? itemById(selectedItemId)?.unit : 'کیلوگرم');
     const qty = ingredient.quantity ?? ingredient.qty ?? '';
-    return `<div class="inv-recipe-line">
+    const basis = ingredient.quantityBasis || 'raw';
+    const yieldPct = ingredient.yieldPercent ?? 100;
+    return `<div class="inv-recipe-line" data-recipe-line>
       <select name="itemId" data-recipe-item required>${itemOptions({ includeEmpty: true, selectedId: selectedItemId })}</select>
-      <input name="quantity" type="number" min="0.0001" step="any" placeholder="مقدار مصرف" value="${qty}" required />
+      <input name="quantity" type="number" min="0.0001" step="any" placeholder="مقدار" value="${qty}" required class="recipe-qty-input" />
       <select name="unit" data-recipe-unit required>${unitSelectOptions(selectedUnit)}</select>
+      <select name="quantityBasis" class="recipe-basis-select" title="مبنای مقدار مصرف">
+        <option value="raw"${basis === 'raw' ? ' selected' : ''}>ناخالص (خرید)</option>
+        <option value="usable"${basis === 'usable' ? ' selected' : ''}>خالص (پخته)</option>
+      </select>
+      <div class="recipe-yield-wrap" title="درصد بازده پس از پاک‌سازی یا پخت (دورریز)">
+        <input name="yieldPercent" type="number" min="1" max="100" step="1" value="${yieldPct}" class="recipe-yield-input" />
+        <span>٪ بازده</span>
+      </div>
       <button type="button" class="inv-icon-button" data-inv-remove-line aria-label="حذف ماده">×</button>
+      <div class="recipe-line-calc" data-line-calc>
+        <span>ناخالص مورد نیاز: <strong data-calc-gross>—</strong></span>
+        <span>بهای برآوردی: <strong data-calc-cost>—</strong></span>
+      </div>
     </div>`;
   }
 
@@ -534,11 +632,6 @@
     </div>`;
   }
 
-  function operationCards() {
-    const operations = list(data.kitchen.recentOperations || data.kitchen.operations);
-    return `<div class="inv-action-grid"><button type="button" data-inv-view="waste"><b>ثبت ضایعات</b><span>کاهش کنترل‌شدهٔ مواد با علت مشخص</span></button><button type="button" data-inv-view="counts"><b>انبارگردانی</b><span>مقایسهٔ شمارش فیزیکی با دفتر موجودی</span></button><button type="button" data-inv-view="production"><b>ثبت تولید</b><span>مصرف مواد و تولید محصول آماده</span></button><a href="${context.financeWorkspaceHref('purchases')}"><b>خرید و دریافت</b><span>سفارش خرید، رسید کالا و پرداختنی</span></a></div><section class="inv-card"><div class="inv-card-head"><div><span class="inv-eyebrow">ردپای ثبت‌شده</span><h2>آخرین گردش‌های انبار</h2></div></div><div class="inv-activity-list">${operations.slice(0, 20).map((row) => `<article><span class="inv-activity-dot"></span><div><strong>${esc(row.kindLabel || movementTypeLabel(row.movementType || row.type || row.source))}</strong><small>${esc(row.itemName || row.itemId || '')} · ${row.occurredAt ? context.fmtDateTime(row.occurredAt) : 'زمان ثبت نشده'}</small></div><em>${row.quantityBase != null ? fa(row.quantityBase) : ''}</em></article>`).join('') || '<p class="inv-empty">هنوز گردش جدیدی برای این شعبه ثبت نشده است.</p>'}</div></section>`;
-  }
-
   function recipeFormMarkup() {
     const allRecipes = recipes();
     return `<form class="inv-form inv-form--recipe" data-inv-form="recipe">
@@ -548,20 +641,402 @@
       <label>تعداد پرس / بازده<input name="yieldQuantity" id="input-yield-qty" inputmode="decimal" type="text" value="۱" required /></label>
       <label>شروع اثر<input name="effectiveFrom" id="input-effective-from" type="date" value="${dateOnly()}" required /></label>
       <label>محصول تولیدی دسته‌ای (اختیاری)<select name="outputItemId" id="select-output-item"><option value="">بدون تولید دسته‌ای</option>${itemOptions({ includeEmpty: false })}</select></label>
+      <div class="recipe-batch-scaler">
+        <span>مقیاس دسته‌ای پخت:</span>
+        <button type="button" class="recipe-scale-btn is-active" data-scale="1">۱×</button>
+        <button type="button" class="recipe-scale-btn" data-scale="2">۲×</button>
+        <button type="button" class="recipe-scale-btn" data-scale="5">۵×</button>
+        <button type="button" class="recipe-scale-btn" data-scale="10">۱۰×</button>
+        <button type="button" class="recipe-scale-btn" data-scale="25">۲۵×</button>
+      </div>
       <div class="inv-form-full"><span class="inv-label">مواد تشکیل‌دهنده</span>${recipeIngredientRows()}</div>
+      <div class="inv-form-full">
+        <label>یادداشت و دستورالعمل پخت
+          <textarea name="notes" id="input-recipe-notes" placeholder="دستورالعمل آماده‌سازی، نکات حرارت و سرو..."></textarea>
+        </label>
+      </div>
+      <div class="recipe-live-summary">
+        <article><small>کل بهای مواد</small><strong id="recipe-sum-total-cost">—</strong></article>
+        <article><small>بهای تمام‌شده هر پرس</small><strong id="recipe-sum-portion-cost">—</strong></article>
+        <article><small>قیمت منو</small><strong id="recipe-sum-menu-price">—</strong></article>
+        <article><small>درصد بهای غذا</small><strong id="recipe-sum-food-cost-pct">—</strong></article>
+      </div>
+      <div id="recipe-cost-alert" class="recipe-danger-alert" style="display:none;"></div>
       <button type="button" class="inv-button inv-button--soft inv-button--sm" id="reset-recipe-form" style="display:none;">دستور تهیه جدید</button>
       <button class="inv-button inv-button--primary" id="btn-save-recipe" type="submit">ارسال نسخهٔ دستور تهیه برای تأیید</button>
     </form>`;
   }
 
+  function operationsView() {
+    const operations = list(data.kitchen.recentOperations || data.kitchen.operations);
+    const pendingPOs = list(data.kitchen.receivablePurchaseOrders);
+
+    return `<div class="inv-grid inv-grid--wide">
+      <div class="inv-action-grid">
+        <button type="button" data-inv-view="waste">
+          <b>ثبت ضایعات</b>
+          <span>کاهش کنترل‌شدهٔ مواد با علت مشخص</span>
+        </button>
+        <button type="button" data-inv-view="counts">
+          <b>انبارگردانی</b>
+          <span>مقایسهٔ شمارش فیزیکی با دفتر موجودی</span>
+        </button>
+        <button type="button" data-inv-view="production">
+          <b>ثبت تولید</b>
+          <span>مصرف مواد و تولید محصول آماده</span>
+        </button>
+        <a href="${context.financeWorkspaceHref('purchases')}">
+          <b>خرید و دریافت</b>
+          <span>سفارش خرید، رسید کالا و پرداختنی</span>
+        </a>
+      </div>
+
+      <section class="inv-card inv-card--list">
+        <div class="inv-card-head">
+          <div>
+            <span class="inv-eyebrow">بارانداز و دریافت کالا در آشپزخانه</span>
+            <h2>سفارش‌های خرید در انتظار تحویل و توزین</h2>
+            <p>مقادیر تحویل‌شده را بررسی و توزین کنید؛ ثبت رسید انبار بلافاصله موجودی انبار را شارژ و سند حسابداری دریافت ایجاد می‌کند.</p>
+          </div>
+          <div class="inv-card-actions">
+            <a class="inv-link" href="${context.financeWorkspaceHref('purchases')}">مدیریت فاکتورها و پرداختنی‌ها ←</a>
+          </div>
+        </div>
+
+        <div class="inv-receiving-dock">
+          ${pendingPOs.length ? pendingPOs.map((po) => `
+            <article class="inv-po-card" data-po-id="${esc(po.id)}">
+              <div class="inv-po-card-head">
+                <div>
+                  <h3>${esc(po.vendorName)} <small style="color:var(--p-text-dim);">· سفارش ${esc(po.number || po.id)}</small></h3>
+                  <p>موعد تحویل: ${po.expectedDate ? esc(po.expectedDate) : 'امروز'} · ${fa(po.lines.length)} قلم کالا</p>
+                </div>
+                <span class="inv-status is-good">آماده تحویل</span>
+              </div>
+              <div class="inv-table-wrap">
+                <table class="inv-receive-table">
+                  <thead>
+                    <tr>
+                      <th>شرح قلم</th>
+                      <th>واحد</th>
+                      <th>سفارش</th>
+                      <th>قبلاً دریافت شده</th>
+                      <th>مانده منتظر</th>
+                      <th style="min-width: 110px;">مقدار دریافتی امروز</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${po.lines.map((line) => `
+                      <tr data-line-id="${esc(line.id)}">
+                        <td><strong>${esc(line.description || line.itemId)}</strong></td>
+                        <td>${esc(line.unit || '—')}</td>
+                        <td>${fa(line.orderedQuantity)}</td>
+                        <td>${fa(line.receivedQuantity)}</td>
+                        <td><strong style="color:var(--p-accent);">${fa(line.remainingQuantity)}</strong></td>
+                        <td>
+                          <input type="text" inputmode="decimal" class="inv-receive-qty-input" data-po-id="${esc(po.id)}" data-line-id="${esc(line.id)}" data-max="${line.remainingQuantity}" value="${line.remainingQuantity}" />
+                        </td>
+                      </tr>
+                    `).join('')}
+                  </tbody>
+                </table>
+              </div>
+              <div class="inv-qc-chips">
+                <span class="inv-qc-chip is-checked" data-qc-check>✓ تأیید دمای استاندارد یخچال و فریزر</span>
+                <span class="inv-qc-chip is-checked" data-qc-check>✓ بررسی سلامت ظاهری و پلمپ بسته‌بندی</span>
+                <span class="inv-qc-chip is-checked" data-qc-check>✓ انقضای معتبر و بهداشتی</span>
+              </div>
+              <div style="display:flex;justify-content:flex-end;gap:0.75rem;">
+                <button type="button" class="inv-button inv-button--primary" data-inv-receive-po="${esc(po.id)}">
+                  تأیید توزین و ثبت رسید انبار (Goods Receipt)
+                </button>
+              </div>
+            </article>
+          `).join('') : '<div class="inv-empty">سفارش خرید بازی در انتظار دریافت کالا برای این شعبه وجود ندارد.</div>'}
+        </div>
+      </section>
+
+      <section class="inv-card">
+        <div class="inv-card-head">
+          <div>
+            <span class="inv-eyebrow">ردپای ثبت‌شده</span>
+            <h2>آخرین گردش‌های انبار</h2>
+          </div>
+        </div>
+        <div class="inv-activity-list">
+          ${operations.slice(0, 25).map((row) => `
+            <article>
+              <span class="inv-activity-dot"></span>
+              <div>
+                <strong>${esc(row.kindLabel || movementTypeLabel(row.movementType || row.type || row.source))}</strong>
+                <small>${esc(row.itemName || row.itemId || '')} · ${row.occurredAt ? context.fmtDateTime(row.occurredAt) : 'زمان ثبت نشده'}</small>
+              </div>
+              <em>${row.quantityBase != null ? fa(row.quantityBase) : ''}</em>
+            </article>
+          `).join('') || '<p class="inv-empty">هنوز گردش جدیدی برای این شعبه ثبت نشده است.</p>'}
+        </div>
+      </section>
+    </div>`;
+  }
+  function operationCards() { return operationsView(); }
+
+  function countsView() {
+    const canManage = context.hasCapability?.('inventory.operations') || context.hasCapability?.('inventory.manage') || context.hasCapability?.('admin.access');
+    const allItems = items();
+    const operations = list(data.kitchen.recentOperations || data.kitchen.operations);
+    const countOps = operations.filter((op) => String(op.source || op.type || op.movementType).includes('stock_count'));
+    const categories = Array.from(new Set(allItems.map((it) => it.category || 'سایر'))).filter(Boolean);
+
+    const rows = allItems.map((item) => {
+      const bookQty = item.availableQuantity == null ? 0 : Number(item.availableQuantity);
+      const cost = Number(item.avgCostIrr ?? item.unitCostIrr ?? 0);
+      return `<tr class="inv-stocktake-row" data-item-id="${esc(item.id)}" data-cat="${esc(item.category || 'سایر')}">
+        <td>
+          <strong>${esc(item.name || item.id)}</strong>
+          <small>${esc(item.sku || 'بدون کد')} · ${esc(item.category || 'سایر')}</small>
+        </td>
+        <td><span class="inv-unit-pill">${esc(unit(item))}</span></td>
+        <td><strong class="inv-book-qty">${fa(bookQty)}</strong></td>
+        <td>
+          <input type="text" inputmode="decimal" class="inv-count-input" data-item-id="${esc(item.id)}" data-book-qty="${bookQty}" data-unit-cost="${cost}" placeholder="مقدار واقعی…" />
+        </td>
+        <td>
+          <span class="inv-variance-pill is-none" data-variance-for="${esc(item.id)}">—</span>
+        </td>
+        <td>
+          <span class="inv-variance-cost" data-cost-for="${esc(item.id)}">—</span>
+        </td>
+        <td>
+          <button type="button" class="inv-button inv-button--soft inv-button--xs" data-inv-quick-count="${esc(item.id)}" title="ثبت فوری شمارش این قلم">ثبت ردیف</button>
+        </td>
+      </tr>`;
+    }).join('');
+
+    return `<div class="inv-grid inv-grid--wide">
+      <section class="inv-card inv-card--list">
+        <div class="inv-card-head">
+          <div>
+            <span class="inv-eyebrow">انبارگردانی و تطبیق فیزیکی</span>
+            <h2>کاربرگ شمارش موجودی انبار</h2>
+            <p>شمارش واقعی را در ستون مربوطه وارد کنید؛ اختلاف کسری یا اضافی و ارزش ریالی انحراف به‌صورت آنی محاسبه می‌شود.</p>
+          </div>
+          <div class="inv-card-actions">
+            ${canManage ? actionButton('counts', 'ثبت شمارش مجزا') : ''}
+            <button type="button" class="inv-button inv-button--primary" data-inv-submit-counts-batch>ثبت نهایی اقلام شمارش‌شده</button>
+            <button type="button" class="inv-button inv-button--soft" onclick="window.print()" title="چاپ فرم جهت شمارش دستی">چاپ فرم شمارش 🖨️</button>
+          </div>
+        </div>
+
+        <div class="inv-counts-kpis">
+          <article>
+            <small>کل اقلام فعال</small>
+            <strong id="st-total-items">${fa(allItems.length)}</strong>
+            <span>قلم کالای موجود</span>
+          </article>
+          <article>
+            <small>اقلام واردشده</small>
+            <strong id="st-counted-items">۰</strong>
+            <span>شمارش‌شده</span>
+          </article>
+          <article class="is-warn">
+            <small>اقلام دارای کسری</small>
+            <strong id="st-shortage-items">۰</strong>
+            <span>کسری فیزیکی</span>
+          </article>
+          <article>
+            <small>اقلام دارای اضافی</small>
+            <strong id="st-surplus-items">۰</strong>
+            <span>مازاد بر دفتر</span>
+          </article>
+          <article>
+            <small>خالص ارزش انحراف</small>
+            <strong id="st-net-variance-cost">۰ تومان</strong>
+            <span>بر مبنای بهای میانگین</span>
+          </article>
+        </div>
+
+        <div class="inv-counts-toolbar">
+          <div class="inv-cat-filters-bar" role="tablist">
+            <button type="button" class="inv-cat-btn is-active" data-st-filter="all">همه (${fa(allItems.length)})</button>
+            ${categories.map((c) => `<button type="button" class="inv-cat-btn" data-st-filter="${esc(c)}">${esc(c)}</button>`).join('')}
+          </div>
+          <div class="inv-counts-actions">
+            <button type="button" class="inv-btn-text" data-inv-count-autofill>شمارش منطبق با دفتر ✓</button>
+            <span class="inv-sep">|</span>
+            <button type="button" class="inv-btn-text" data-inv-count-clear>پاکسازی مقادیر ↺</button>
+            <span class="inv-sep">|</span>
+            <button type="button" class="inv-btn-text" data-inv-count-filter-discrepancy>فقط اقلام دارای اختلاف ⚠️</button>
+          </div>
+        </div>
+
+        <div class="inv-table-wrap">
+          <table class="inv-table inv-stocktake-table">
+            <thead>
+              <tr>
+                <th>ماده اولیه</th>
+                <th>واحد</th>
+                <th>موجودی دفتر</th>
+                <th style="min-width: 140px;">شمارش فیزیکی واقعی</th>
+                <th>اختلاف شمارش</th>
+                <th>ارزش ریالی اختلاف</th>
+                <th>عملیات</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rows || '<tr><td colspan="7" class="inv-empty">هنوز ماده‌ای برای این شعبه ثبت نشده است.</td></tr>'}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      ${countOps.length ? `
+      <section class="inv-card">
+        <div class="inv-card-head">
+          <div>
+            <span class="inv-eyebrow">سوابق انبارگردانی</span>
+            <h2>ثبت‌های اخیر انبارگردانی و تعدیل موجودی</h2>
+          </div>
+        </div>
+        <div class="inv-activity-list">
+          ${countOps.slice(0, 10).map((row) => `
+            <article>
+              <span class="inv-activity-dot"></span>
+              <div>
+                <strong>${esc(itemById(row.itemId)?.name || row.itemId || 'انبارگردانی')}</strong>
+                <small>${row.occurredAt ? context.fmtDateTime(row.occurredAt) : 'زمان ثبت نشده'} · ${esc(row.reason || 'تطبیق دوره‌ای')}</small>
+              </div>
+              <div style="text-align: left;">
+                <em>${row.quantity != null ? fa(row.quantity) : ''} ${esc(row.unit || '')}</em>
+                <span class="inv-status ${statusClass(row.status)}">${statusLabel(row.status)}</span>
+              </div>
+            </article>
+          `).join('')}
+        </div>
+      </section>
+      ` : ''}
+    </div>`;
+  }
+
+  function wasteView() {
+    const canManage = context.hasCapability?.('inventory.operations') || context.hasCapability?.('inventory.manage') || context.hasCapability?.('admin.access');
+    const operations = list(data.kitchen.recentOperations || data.kitchen.operations);
+    const wasteOps = operations.filter((op) => String(op.source || op.type || op.movementType).includes('waste'));
+
+    const totalWasteCount = wasteOps.length;
+    const totalWasteCostIrr = wasteOps.reduce((sum, op) => sum + (Number(op.totalCostIrr) || 0), 0);
+    const totalWasteCostToman = Math.round(totalWasteCostIrr / 10);
+
+    const wasteByItem = new Map();
+    wasteOps.forEach((op) => {
+      const id = String(op.itemId || 'other');
+      const item = itemById(id);
+      const name = item?.name || id;
+      const cost = Number(op.totalCostIrr || 0);
+      const prev = wasteByItem.get(id) || { name, cost: 0, count: 0, unit: item?.unit || op.unit };
+      prev.cost += cost;
+      prev.count += 1;
+      wasteByItem.set(id, prev);
+    });
+    const topWasted = Array.from(wasteByItem.values()).sort((a, b) => b.cost - a.cost).slice(0, 3);
+
+    return `<div class="inv-grid inv-grid--wide">
+      <section class="inv-card inv-card--list">
+        <div class="inv-card-head">
+          <div>
+            <span class="inv-eyebrow">مدیریت هدررفت و ضایعات</span>
+            <h2>پایش و ثبت ضایعات مواد اولیه</h2>
+            <p>ثبت دقیق ضایعات با تعیین علت باعث کاهش خودکار موجودی انبار و ثبت هزینه هدررفت در بهای تمام‌شده می‌شود.</p>
+          </div>
+          <div class="inv-card-actions">
+            ${canManage ? actionButton('waste', 'ثبت ضایعات جدید') : ''}
+            <a class="inv-link" href="${context.financeWorkspaceHref('costing')}">گزارش بهای تمام‌شده و ضایعات ←</a>
+          </div>
+        </div>
+
+        <div class="inv-waste-kpis">
+          <article class="is-danger">
+            <small>زیان مالی ضایعات دوره</small>
+            <strong>${fa(totalWasteCostToman)} تومان</strong>
+            <span>بر مبنای گردش‌های ثبت‌شده</span>
+          </article>
+          <article>
+            <small>تعداد رکوردهای ضایعات</small>
+            <strong>${fa(totalWasteCount)}</strong>
+            <span>مورد ثبت‌شده</span>
+          </article>
+          <article>
+            <small>قلم با بیشترین خسارت</small>
+            <strong>${esc(topWasted[0]?.name || '—')}</strong>
+            <span>${topWasted[0] ? `${fa(Math.round(topWasted[0].cost / 10))} تومان` : 'بدون ضایعات'}</span>
+          </article>
+        </div>
+
+        ${topWasted.length ? `
+        <div class="inv-pareto-panel">
+          <div class="inv-pareto-head">
+            <strong>بیشترین اقلام هدررفت (تحلیل پارتو)</strong>
+            <small>اقلامی که بیشترین هزینه را به مجموعه تحمیل کرده‌اند</small>
+          </div>
+          <div class="inv-pareto-bars">
+            ${topWasted.map((item) => {
+              const pct = totalWasteCostIrr > 0 ? Math.min(100, Math.round((item.cost / totalWasteCostIrr) * 100)) : 0;
+              return `<div class="inv-pareto-row">
+                <div class="inv-pareto-label">
+                  <span>${esc(item.name)}</span>
+                  <small>${fa(Math.round(item.cost / 10))} تومان (${fa(pct)}٪)</small>
+                </div>
+                <div class="inv-pareto-track">
+                  <div class="inv-pareto-fill" style="width: ${pct}%;"></div>
+                </div>
+              </div>`;
+            }).join('')}
+          </div>
+        </div>
+        ` : ''}
+
+        <div class="inv-table-wrap">
+          <table class="inv-table inv-waste-table">
+            <thead>
+              <tr>
+                <th>تاریخ و ساعت</th>
+                <th>ماده اولیه</th>
+                <th>مقدار دورریز</th>
+                <th>واحد</th>
+                <th>ارزش ریالی زیان</th>
+                <th>علت هدررفت</th>
+                <th>وضعیت حسابداری</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${wasteOps.length ? wasteOps.map((op) => {
+                const item = itemById(op.itemId);
+                const costToman = op.totalCostIrr != null ? Math.round(Number(op.totalCostIrr) / 10) : null;
+                return `<tr>
+                  <td><small>${op.occurredAt ? context.fmtDateTime(op.occurredAt) : '—'}</small></td>
+                  <td><strong>${esc(item?.name || op.itemId || 'نامشخص')}</strong></td>
+                  <td><b>${op.quantity != null ? fa(op.quantity) : '—'}</b></td>
+                  <td>${esc(op.unit || item?.unit || '—')}</td>
+                  <td>${costToman != null ? `<strong>${fa(costToman)} تومان</strong>` : '<small class="is-warn">در انتظار ارزش‌گذاری</small>'}</td>
+                  <td><span>${esc(op.reason || 'دورریز عادی')}</span></td>
+                  <td><span class="inv-status ${statusClass(op.status)}">${statusLabel(op.status)}</span></td>
+                </tr>`;
+              }).join('') : '<tr><td colspan="7" class="inv-empty">خوشبختانه هیچ ضایعاتی در این دوره ثبت نشده است.</td></tr>'}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>`;
+  }
+
   function movementForm(kind) {
-    const isWaste = kind === 'waste';
-    return `<section class="inv-card inv-card--list"><div class="inv-card-head"><div><span class="inv-eyebrow">${isWaste ? 'ضایعات' : 'انبارگردانی'}</span><h2>${isWaste ? 'ثبت ضایعات مواد' : 'ثبت شمارش فیزیکی'}</h2><p>${isWaste ? 'ثبت باعث ایجاد گردش مالی و کاهش موجودی قابل‌مصرف می‌شود.' : 'عدد شمارش‌شده با ماندهٔ واقعی مقایسه و اختلاف در دفتر ثبت می‌شود.'}</p></div>${actionButton(kind, isWaste ? 'ثبت ضایعات' : 'ثبت شمارش')}</div><div class="inv-empty">برای شروع، فرم ثبت را باز کنید.</div></section>`;
+    if (kind === 'counts') return countsView();
+    if (kind === 'waste') return wasteView();
+    return `<section class="inv-card inv-card--list"><div class="inv-card-head"><div><span class="inv-eyebrow">${esc(kind)}</span><h2>ثبت گردش انبار</h2></div></div></section>`;
   }
 
   function movementFormMarkup(kind) {
     const isWaste = kind === 'waste';
-    return `<form class="inv-form" data-inv-form="${kind}"><label>ماده<select name="itemId" required>${itemOptions()}</select></label><label>${isWaste ? 'مقدار ضایعات' : 'مقدار شمارش‌شده'}<input name="quantity" inputmode="decimal" type="text" required /></label><label>واحد<select name="unit" required>${unitSelectOptions('کیلوگرم')}</select></label><label class="inv-form-full">${isWaste ? 'علت ضایعات' : 'توضیح شمارش'}<textarea name="reason" required placeholder="توضیح کوتاه و قابل پیگیری"></textarea></label><button class="inv-button inv-button--primary" type="submit">ثبت ${isWaste ? 'ضایعات' : 'شمارش'}</button></form>`;
+    return `<form class="inv-form" data-inv-form="${kind}"><label>ماده<select name="itemId" required>${itemOptions()}</select></label><label>${isWaste ? 'مقدار ضایعات' : 'مقدار شمارش‌شده'}<input name="quantity" inputmode="decimal" type="text" required /></label><label>واحد<select name="unit" required>${unitSelectOptions('کیلوگرم')}</select></label>${isWaste ? `<div class="inv-form-full"><span class="inv-label">علت شایع ضایعات:</span><div class="inv-qc-chips"><span class="inv-qc-chip" data-waste-preset="دورریز آماده‌سازی و پاک‌کردن">دورریز آماده‌سازی</span><span class="inv-qc-chip" data-waste-preset="فساد و انقضای تاریخ مصرف">انقضا و فساد</span><span class="inv-qc-chip" data-waste-preset="سوختگی و خطای پخت پرسنل">سوختگی و پخت</span><span class="inv-qc-chip" data-waste-preset="افتادن و شکستگی ظرف">افتادن / شکستگی</span><span class="inv-qc-chip" data-waste-preset="مرجوعی مهمان سالن">مرجوعی مهمان</span></div></div>` : ''}<label class="inv-form-full">${isWaste ? 'علت ضایعات' : 'توضیح شمارش'}<textarea name="reason" required placeholder="توضیح کوتاه و قابل پیگیری"></textarea></label><button class="inv-button inv-button--primary" type="submit">ثبت ${isWaste ? 'ضایعات' : 'شمارش'}</button></form>`;
   }
 
   function productionView() {
@@ -687,8 +1162,8 @@
       itemId: formValue(line, 'itemId'),
       quantity: parseInputNumber(formValue(line, 'quantity')),
       unit: formValue(line, 'unit') || itemById(formValue(line, 'itemId'))?.unit || 'کیلوگرم',
-      quantityBasis: 'raw',
-      yieldPercent: 100,
+      quantityBasis: formValue(line, 'quantityBasis') || 'raw', // fallback quantityBasis: 'raw'
+      yieldPercent: parseInputNumber(formValue(line, 'yieldPercent') || 100) || 100, // fallback yieldPercent: 100
     }));
     const invalidLines = ingredients
       .map((line, index) => (!line.itemId || !Number.isFinite(line.quantity) || line.quantity <= 0 ? index + 1 : null))
@@ -699,12 +1174,87 @@
       recipeId: formValue(form, 'recipeId') || null,
       menuItemId: formValue(form, 'menuItemId'),
       name: formValue(form, 'recipeName'),
+      notes: formValue(form, 'notes') || null,
       effectiveFrom: formValue(form, 'effectiveFrom'),
       yieldQuantity: parseInputNumber(formValue(form, 'yieldQuantity') || 1),
       outputItemId: formValue(form, 'outputItemId') || null,
       ingredients: ingredients.filter((line) => line.itemId && Number.isFinite(line.quantity) && line.quantity > 0),
       invalidLines,
     };
+  }
+
+  function recalculateRecipeSummary(form) {
+    if (!form) return;
+    const lines = form.querySelectorAll('.inv-recipe-line');
+    let totalCostIrr = 0;
+    const allMenuItems = menuItems();
+    const menuItemId = form.querySelector('#select-menu-item')?.value;
+    const menuItem = allMenuItems.find((m) => String(m.id) === String(menuItemId));
+    const yieldQty = parseInputNumber(form.querySelector('#input-yield-qty')?.value || 1) || 1;
+
+    lines.forEach((line) => {
+      const itemId = line.querySelector('[data-recipe-item]')?.value;
+      const qty = parseInputNumber(line.querySelector('.recipe-qty-input')?.value || 0) || 0;
+      const unit = line.querySelector('[data-recipe-unit]')?.value || '';
+      const basis = line.querySelector('.recipe-basis-select')?.value || 'raw';
+      const yieldPct = Math.max(1, Math.min(100, parseInputNumber(line.querySelector('.recipe-yield-input')?.value || 100) || 100));
+
+      const item = itemById(itemId);
+      if (!item || !qty) {
+        const grossEl = line.querySelector('[data-calc-gross]');
+        const costEl = line.querySelector('[data-calc-cost]');
+        if (grossEl) grossEl.textContent = '—';
+        if (costEl) costEl.textContent = '—';
+        return;
+      }
+
+      const grossNeeded = basis === 'usable' ? (qty / (yieldPct / 100)) : qty;
+      const unitCostIrr = item.avgCostIrr || item.unitCostIrr || (item.cost ? item.cost * 10 : 0) || 0;
+      const lineCostIrr = grossNeeded * unitCostIrr;
+      totalCostIrr += lineCostIrr;
+
+      const grossEl = line.querySelector('[data-calc-gross]');
+      const costEl = line.querySelector('[data-calc-cost]');
+      if (grossEl) grossEl.textContent = `${fa(Math.round(grossNeeded * 1000) / 1000)} ${esc(unit || item.unit)}`;
+      if (costEl) costEl.textContent = moneyIrr(lineCostIrr);
+    });
+
+    const totalCostToman = Math.round(totalCostIrr / 10);
+    const portionCostToman = Math.round(totalCostToman / yieldQty);
+    const menuPriceToman = menuItem?.price || 0;
+
+    const totalEl = form.querySelector('#recipe-sum-total-cost');
+    const portionEl = form.querySelector('#recipe-sum-portion-cost');
+    const menuEl = form.querySelector('#recipe-sum-menu-price');
+    const pctEl = form.querySelector('#recipe-sum-food-cost-pct');
+    const alertEl = form.querySelector('#recipe-cost-alert');
+
+    if (totalEl) totalEl.textContent = `${fa(totalCostToman.toLocaleString())} تومان`;
+    if (portionEl) portionEl.textContent = `${fa(portionCostToman.toLocaleString())} تومان`;
+    if (menuEl) menuEl.textContent = menuPriceToman ? `${fa(menuPriceToman.toLocaleString())} تومان` : 'تعریف‌نشده';
+
+    if (pctEl) {
+      if (menuPriceToman > 0) {
+        const pct = Math.round((portionCostToman / menuPriceToman) * 100);
+        pctEl.textContent = `٪${fa(pct)}`;
+        pctEl.style.color = pct <= 30 ? 'var(--p-accent)' : pct <= 38 ? '#f59e0b' : '#ef4444';
+      } else {
+        pctEl.textContent = '—';
+        pctEl.style.color = '';
+      }
+    }
+
+    if (alertEl) {
+      if (menuPriceToman > 0 && portionCostToman > menuPriceToman) {
+        alertEl.style.display = 'block';
+        alertEl.textContent = `⚠️ هشدار بحرانی: بهای تمام‌شده هر پرس (${fa(portionCostToman.toLocaleString())} ت) بیشتر از قیمت فروش در منو (${fa(menuPriceToman.toLocaleString())} ت) است! این محصول زیان‌ده است.`;
+      } else if (menuPriceToman > 0 && (portionCostToman / menuPriceToman) > 0.38) {
+        alertEl.style.display = 'block';
+        alertEl.textContent = `توجه: بهای تمام‌شده این غذا بالای ۳۸٪ قیمت فروش است. هدف‌گذاری مطلوب صنعت رستوران ۲۵٪ تا ۳۰٪ است.`;
+      } else {
+        alertEl.style.display = 'none';
+      }
+    }
   }
 
   function populateRecipeForm(recipe) {
@@ -718,6 +1268,7 @@
     const yieldInput = form.querySelector('#input-yield-qty');
     const effectiveInput = form.querySelector('#input-effective-from');
     const outputSelect = form.querySelector('#select-output-item');
+    const notesInput = form.querySelector('#input-recipe-notes');
     const titleEl = root.querySelector('#recipe-form-title');
     const eyebrowEl = root.querySelector('#recipe-form-eyebrow');
     const resetBtn = root.querySelector('#reset-recipe-form');
@@ -731,6 +1282,7 @@
       if (yieldInput) yieldInput.value = recipe.yieldQuantity || recipe.servings || 1;
       if (effectiveInput) effectiveInput.value = (recipe.effectiveFrom ? String(recipe.effectiveFrom).slice(0, 10) : dateOnly());
       if (outputSelect) outputSelect.value = recipe.outputItemId || '';
+      if (notesInput) notesInput.value = recipe.notes || '';
 
       const ingHtml = list(recipe.ingredients).map(recipeIngredientLineHtml).join('');
       if (linesWrap) linesWrap.innerHTML = ingHtml || recipeIngredientLineHtml();
@@ -745,12 +1297,57 @@
       if (yieldInput) yieldInput.value = '1';
       if (effectiveInput) effectiveInput.value = dateOnly();
       if (outputSelect) outputSelect.value = '';
+      if (notesInput) notesInput.value = '';
       if (linesWrap) linesWrap.innerHTML = recipeIngredientLineHtml();
 
       if (titleEl) titleEl.textContent = 'ثبت یا ویرایش دستور تهیه محصول';
       if (eyebrowEl) eyebrowEl.textContent = 'مدیریت دستور تهیه';
       if (resetBtn) resetBtn.style.display = 'none';
       if (saveBtn) saveBtn.textContent = 'ارسال نسخهٔ دستور تهیه برای تأیید';
+    }
+
+    recalculateRecipeSummary(form);
+  }
+
+  function updateStocktakeKpis() {
+    if (!root) return;
+    const countInputs = root.querySelectorAll('.inv-count-input');
+    if (!countInputs.length) return;
+
+    let countedCount = 0;
+    let shortageCount = 0;
+    let surplusCount = 0;
+    let netVarianceCostToman = 0;
+
+    countInputs.forEach((input) => {
+      const rawVal = String(input.value || '').trim();
+      if (rawVal === '') return;
+      const counted = parseInputNumber(rawVal);
+      if (!Number.isFinite(counted)) return;
+
+      countedCount++;
+      const bookQty = Number(input.dataset.bookQty) || 0;
+      const unitCostIrr = Number(input.dataset.unitCost) || 0;
+      const diff = counted - bookQty;
+      const costToman = Math.round((diff * unitCostIrr) / 10);
+      netVarianceCostToman += costToman;
+
+      if (diff < -0.0001) shortageCount++;
+      else if (diff > 0.0001) surplusCount++;
+    });
+
+    const countedEl = root.querySelector('#st-counted-items');
+    const shortageEl = root.querySelector('#st-shortage-items');
+    const surplusEl = root.querySelector('#st-surplus-items');
+    const netCostEl = root.querySelector('#st-net-variance-cost');
+
+    if (countedEl) countedEl.textContent = fa(countedCount);
+    if (shortageEl) shortageEl.textContent = fa(shortageCount);
+    if (surplusEl) surplusEl.textContent = fa(surplusCount);
+    if (netCostEl) {
+      const prefix = netVarianceCostToman > 0 ? '+' : '';
+      netCostEl.textContent = `${prefix}${fa(netVarianceCostToman.toLocaleString())} تومان`;
+      netCostEl.style.color = netVarianceCostToman < 0 ? '#ef4444' : netVarianceCostToman > 0 ? '#10b981' : '';
     }
   }
 
@@ -815,6 +1412,207 @@
           const noMatchEl = wrapper.querySelector('[data-multiselect-no-match]');
           if (noMatchEl) noMatchEl.style.display = matches === 0 ? 'block' : 'none';
         }
+        return;
+      }
+
+      // Stocktake category filter
+      const stFilterBtn = event.target.closest('[data-st-filter]');
+      if (stFilterBtn) {
+        const cat = stFilterBtn.dataset.stFilter;
+        const toolbar = stFilterBtn.closest('.inv-counts-toolbar');
+        toolbar?.querySelectorAll('[data-st-filter]').forEach((b) => b.classList.toggle('is-active', b === stFilterBtn));
+        const rows = root.querySelectorAll('.inv-stocktake-table tbody tr.inv-stocktake-row');
+        rows.forEach((row) => {
+          const rowCat = row.dataset.cat || 'سایر';
+          const match = cat === 'all' || rowCat === cat;
+          row.style.display = match ? '' : 'none';
+        });
+        return;
+      }
+
+      // Stocktake autofill book quantity
+      if (event.target.closest('[data-inv-count-autofill]')) {
+        const inputs = root.querySelectorAll('.inv-count-input');
+        inputs.forEach((input) => {
+          input.value = input.dataset.bookQty || '0';
+          input.dispatchEvent(new Event('input', { bubbles: true }));
+        });
+        context.showToast?.('مقادیر موجودی دفتر در ستون شمارش درج شد.', 'info');
+        return;
+      }
+
+      // Stocktake clear counts
+      if (event.target.closest('[data-inv-count-clear]')) {
+        const inputs = root.querySelectorAll('.inv-count-input');
+        inputs.forEach((input) => {
+          input.value = '';
+          input.dispatchEvent(new Event('input', { bubbles: true }));
+        });
+        context.showToast?.('مقادیر شمارش فیزیکی پاکسازی شد.', 'info');
+        return;
+      }
+
+      // Stocktake discrepancy filter toggle
+      const discBtn = event.target.closest('[data-inv-count-filter-discrepancy]');
+      if (discBtn) {
+        const isFiltered = discBtn.classList.toggle('is-active');
+        const rows = root.querySelectorAll('.inv-stocktake-table tbody tr.inv-stocktake-row');
+        rows.forEach((row) => {
+          if (!isFiltered) {
+            row.style.display = '';
+          } else {
+            const status = row.dataset.varianceStatus;
+            row.style.display = (status === 'shortage' || status === 'surplus') ? '' : 'none';
+          }
+        });
+        return;
+      }
+
+      // Single item quick count submission
+      const quickCountBtn = event.target.closest('[data-inv-quick-count]');
+      if (quickCountBtn) {
+        const itemId = quickCountBtn.dataset.invQuickCount;
+        const input = root.querySelector(`.inv-count-input[data-item-id="${itemId}"]`);
+        const countedQty = parseInputNumber(input?.value);
+        if (!Number.isFinite(countedQty)) {
+          context.showToast?.('لطفاً ابتدا مقدار شمارش فیزیکی این قلم را وارد کنید.', 'warn');
+          input?.focus();
+          return;
+        }
+        const item = itemById(itemId);
+        const branchId = context.currentBranch?.()?.id;
+        mutate(quickCountBtn, async () => {
+          await context.api('/api/kitchen/inventory/stock-counts', {
+            method: 'POST',
+            headers: { 'Idempotency-Key': key('stock-count-' + itemId) },
+            body: JSON.stringify({
+              branchId,
+              itemId,
+              countedQuantity: countedQty,
+              unit: item?.unit || 'عدد',
+              reason: 'تطبیق فیزیکی ردیفی',
+            }),
+          });
+        });
+        return;
+      }
+
+      // Batch stock count submission
+      const batchCountBtn = event.target.closest('[data-inv-submit-counts-batch]');
+      if (batchCountBtn) {
+        const inputs = root.querySelectorAll('.inv-count-input');
+        const itemsToSubmit = [];
+        inputs.forEach((input) => {
+          const raw = String(input.value || '').trim();
+          if (raw === '') return;
+          const counted = parseInputNumber(raw);
+          if (!Number.isFinite(counted)) return;
+          const itemId = input.dataset.itemId;
+          const item = itemById(itemId);
+          itemsToSubmit.push({
+            itemId,
+            countedQuantity: counted,
+            unit: item?.unit || 'عدد',
+            reason: 'انبارگردانی دوره‌ای',
+          });
+        });
+
+        if (!itemsToSubmit.length) {
+          context.showToast?.('هیچ مقداری برای ثبت انبارگردانی وارد نشده است.', 'warn');
+          return;
+        }
+
+        const branchId = context.currentBranch?.()?.id;
+        mutate(batchCountBtn, async () => {
+          for (const record of itemsToSubmit) {
+            await context.api('/api/kitchen/inventory/stock-counts', {
+              method: 'POST',
+              headers: { 'Idempotency-Key': key('batch-count-' + record.itemId) },
+              body: JSON.stringify({ branchId, ...record }),
+            });
+          }
+        });
+        return;
+      }
+
+      // QC inspection check toggle
+      const qcChip = event.target.closest('[data-qc-check]');
+      if (qcChip) {
+        qcChip.classList.toggle('is-checked');
+        return;
+      }
+
+      // Inbound Goods Receipt confirmation for PO
+      const receivePoBtn = event.target.closest('[data-inv-receive-po]');
+      if (receivePoBtn) {
+        const poId = receivePoBtn.dataset.invReceivePo;
+        const card = receivePoBtn.closest('.inv-po-card');
+        const inputs = card?.querySelectorAll('.inv-receive-qty-input') || [];
+        const lines = [];
+        inputs.forEach((inp) => {
+          const lineId = inp.dataset.lineId;
+          const qty = parseInputNumber(inp.value);
+          if (Number.isFinite(qty) && qty > 0) {
+            lines.push({ purchaseOrderLineId: lineId, receivedQuantity: qty });
+          }
+        });
+
+        if (!lines.length) {
+          context.showToast?.('حداقل مقدار یک قلم کالای تحویلی باید بزرگ‌تر از صفر باشد.', 'warn');
+          return;
+        }
+
+        const branchId = context.currentBranch?.()?.id;
+        const payload = {
+          branchId,
+          purchaseOrderId: poId,
+          deliveryNoteNumber: `DN-${Date.now().toString().slice(-6)}`,
+          receivedAt: new Date().toISOString(),
+          lines,
+        };
+
+        mutate(receivePoBtn, async () => {
+          try {
+            await context.api('/api/kitchen/inventory/goods-receipts', {
+              method: 'POST',
+              headers: { 'Idempotency-Key': key('goods-receipt-' + poId) },
+              body: JSON.stringify(payload),
+            });
+          } catch {
+            await context.api('/api/admin/v2/finance/goods-receipts', {
+              method: 'POST',
+              headers: { 'Idempotency-Key': key('goods-receipt-' + poId) },
+              body: JSON.stringify(payload),
+            });
+          }
+        });
+        return;
+      }
+
+      // Waste reason quick preset chips
+      const presetChip = event.target.closest('[data-waste-preset]');
+      if (presetChip) {
+        const presetText = presetChip.dataset.wastePreset;
+        const form = presetChip.closest('form');
+        const reasonTextarea = form?.querySelector('textarea[name="reason"]');
+        if (reasonTextarea) {
+          reasonTextarea.value = presetText;
+          reasonTextarea.focus();
+        }
+        return;
+      }
+
+      // Quick reorder and PO buttons
+      const reorderBtn = event.target.closest('[data-inv-quick-reorder]');
+      if (reorderBtn) {
+        context.showToast?.('هدایت به کارتابل سفارش‌های خرید تأمین‌کنندگان...', 'info');
+        window.location.href = context.financeWorkspaceHref?.('purchases') || '#finance/purchases';
+        return;
+      }
+      const quickPoBtn = event.target.closest('[data-inv-quick-po]');
+      if (quickPoBtn) {
+        context.showToast?.('هدایت به ثبت پیش‌فاکتور خرید این تأمین‌کننده...', 'info');
+        window.location.href = context.financeWorkspaceHref?.('purchases') || '#finance/purchases';
         return;
       }
 
@@ -926,6 +1724,34 @@
           const div = document.createElement('div');
           div.innerHTML = recipeIngredientLineHtml();
           lines.appendChild(div.firstElementChild);
+          const form = lines.closest('form');
+          if (form) recalculateRecipeSummary(form);
+        }
+        return;
+      }
+      const scaleBtn = event.target.closest('.recipe-scale-btn');
+      if (scaleBtn) {
+        const factor = Number(scaleBtn.dataset.scale) || 1;
+        const form = scaleBtn.closest('form');
+        if (form) {
+          form.querySelectorAll('.recipe-scale-btn').forEach((b) => b.classList.toggle('is-active', b === scaleBtn));
+          const yieldInput = form.querySelector('#input-yield-qty');
+          if (yieldInput) {
+            if (!yieldInput.dataset.baseYield) yieldInput.dataset.baseYield = String(parseInputNumber(yieldInput.value) || 1);
+            const baseYield = Number(yieldInput.dataset.baseYield) || 1;
+            yieldInput.value = String(baseYield * factor);
+          }
+          form.querySelectorAll('.inv-recipe-line').forEach((line) => {
+            const qInput = line.querySelector('.recipe-qty-input');
+            if (qInput) {
+              if (!qInput.dataset.baseQty) qInput.dataset.baseQty = String(parseInputNumber(qInput.value) || 0);
+              const baseQty = Number(qInput.dataset.baseQty) || 0;
+              if (baseQty > 0) {
+                qInput.value = String(Math.round(baseQty * factor * 10000) / 10000);
+              }
+            }
+          });
+          recalculateRecipeSummary(form);
         }
         return;
       }
@@ -956,12 +1782,36 @@
       }
       const remove = event.target.closest('[data-inv-remove-line]');
       if (remove) {
+        const form = remove.closest('form');
         const lines = root.querySelectorAll('.inv-recipe-line');
-        if (lines.length > 1) remove.closest('.inv-recipe-line').remove();
+        if (lines.length > 1) {
+          remove.closest('.inv-recipe-line').remove();
+          if (form) recalculateRecipeSummary(form);
+        }
       }
     });
 
     root.addEventListener('keydown', (event) => {
+      // Global navigation shortcuts (Alt + M/V/R/O/C/W)
+      if (event.altKey && !event.ctrlKey && !event.metaKey) {
+        const k = event.key.toLowerCase();
+        const map = {
+          m: 'materials',
+          v: 'vendors',
+          r: 'recipes',
+          o: 'operations',
+          c: 'counts',
+          w: 'waste',
+        };
+        if (map[k]) {
+          event.preventDefault();
+          const tab = context.activeTab?.() || 'inventory';
+          viewByTab[tab] = map[k];
+          render(tab);
+          return;
+        }
+      }
+
       if (event.target.matches('[data-multiselect-search]') && event.key === 'Enter') {
         event.preventDefault();
         return;
@@ -978,6 +1828,73 @@
     });
 
     root.addEventListener('input', (event) => {
+      const recipeForm = event.target.closest('form[data-inv-form="recipe"]');
+      if (recipeForm) recalculateRecipeSummary(recipeForm);
+
+      // Stocktake input live variance calculation
+      if (event.target.matches('.inv-count-input')) {
+        const input = event.target;
+        const itemId = input.dataset.itemId;
+        const bookQty = Number(input.dataset.bookQty) || 0;
+        const unitCostIrr = Number(input.dataset.unitCost) || 0;
+        const item = itemById(itemId);
+        const u = item?.unit || '';
+        const pill = root.querySelector(`[data-variance-for="${itemId}"]`);
+        const costEl = root.querySelector(`[data-cost-for="${itemId}"]`);
+        const row = input.closest('tr');
+
+        const raw = String(input.value || '').trim();
+        if (raw === '') {
+          if (pill) { pill.className = 'inv-variance-pill is-none'; pill.textContent = '—'; }
+          if (costEl) { costEl.className = 'inv-variance-cost'; costEl.textContent = '—'; }
+          if (row) delete row.dataset.varianceStatus;
+        } else {
+          const val = parseInputNumber(raw);
+          if (!Number.isFinite(val)) {
+            if (pill) { pill.className = 'inv-variance-pill is-none'; pill.textContent = 'نامعتبر'; }
+            if (costEl) costEl.textContent = '—';
+            if (row) delete row.dataset.varianceStatus;
+          } else {
+            const diff = Math.round((val - bookQty) * 1000) / 1000;
+            const diffCostToman = Math.round((diff * unitCostIrr) / 10);
+            if (Math.abs(diff) < 0.0001) {
+              if (pill) { pill.className = 'inv-variance-pill is-match'; pill.textContent = 'منطبق ✓'; }
+              if (costEl) { costEl.className = 'inv-variance-cost'; costEl.textContent = '۰ ت'; }
+              if (row) row.dataset.varianceStatus = 'match';
+            } else if (diff < 0) {
+              if (pill) { pill.className = 'inv-variance-pill is-shortage'; pill.textContent = `${fa(diff)} ${u}`; }
+              if (costEl) { costEl.className = 'inv-variance-cost is-danger'; costEl.textContent = `${fa(Math.abs(diffCostToman).toLocaleString())} ت (کسری)`; }
+              if (row) row.dataset.varianceStatus = 'shortage';
+            } else {
+              if (pill) { pill.className = 'inv-variance-pill is-surplus'; pill.textContent = `+${fa(diff)} ${u}`; }
+              if (costEl) { costEl.className = 'inv-variance-cost is-good'; costEl.textContent = `+${fa(diffCostToman.toLocaleString())} ت (مازاد)`; }
+              if (row) row.dataset.varianceStatus = 'surplus';
+            }
+          }
+        }
+        updateStocktakeKpis();
+      }
+
+      // Materials live table filter
+      if (event.target.matches('#inv-material-search')) {
+        const query = String(event.target.value || '').trim().toLowerCase();
+        const rows = root.querySelectorAll('.inv-materials-table tbody tr');
+        rows.forEach((tr) => {
+          const text = tr.textContent.toLowerCase();
+          tr.style.display = !query || text.includes(query) ? '' : 'none';
+        });
+      }
+
+      // Vendors live table filter
+      if (event.target.matches('#inv-vendor-search')) {
+        const query = String(event.target.value || '').trim().toLowerCase();
+        const rows = root.querySelectorAll('.inv-vendors-table tbody tr');
+        rows.forEach((tr) => {
+          const text = tr.textContent.toLowerCase();
+          tr.style.display = !query || text.includes(query) ? '' : 'none';
+        });
+      }
+
       if (event.target.matches('[data-multiselect-search]')) {
         const q = String(event.target.value || '').trim().toLowerCase();
         const wrapper = event.target.closest('[data-inv-multiselect]');
@@ -1001,6 +1918,9 @@
     });
 
     root.addEventListener('change', (event) => {
+      const recipeForm = event.target.closest('form[data-inv-form="recipe"]');
+      if (recipeForm) recalculateRecipeSummary(recipeForm);
+
       if (event.target.matches('input[name="itemIds"]')) {
         const itemRow = event.target.closest('.inv-multiselect-item');
         if (itemRow) itemRow.classList.toggle('is-selected', event.target.checked);

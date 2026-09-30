@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="light dark">
+  <meta id="meta-theme-color" name="theme-color" content="#0B0B0D">
+  <title>SALSA GODMODE — مرکز مدیریت پلتفرم (سیستم‌عامل رستوران)</title>
+  <link rel="icon" type="image/png" href="assets/images/salsa-favicon.png">
+  <link rel="shortcut icon" href="assets/images/favicon.ico">
+  <link rel="preload" href="assets/fonts/Vazirmatn-Variable.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="css/tokens.css?v=salsa-brand-v2-nocache" as="style">
+  <link rel="preload" href="css/apple-design.css?v=salsa-brand-v2-nocache" as="style">
+  <link rel="stylesheet" href="css/tokens.css?v=salsa-brand-v2-nocache">
+  <link rel="stylesheet" href="css/prototype.css?v=salsa-brand-v2-nocache">
+  <link rel="stylesheet" href="css/godmode-workspace.css?v=salsa-production-truth-20260924-4">
+  <link rel="stylesheet" href="css/gm02-dashboard.css?v=salsa-brand-v2-nocache">
+  <link rel="stylesheet" href="css/shadcn-godmode.css?v=salsa-brand-v2-nocache">
+  <link rel="stylesheet" href="css/apple-design.css?v=salsa-brand-v2-nocache">
+  <link rel="stylesheet" href="css/salsa-auth-barrier.css?v=salsa-auth-westo-parity-1">
+  <!-- Injected by the frontend server; production deployments use same-origin API proxying. -->
+  <script src="runtime-config.js"></script>
+  <script>
+    (function () {
+      try {
+        var salsaBrandVer = 'salsa-v2-fresh';
+        if (localStorage.getItem('salsa_brand_cache_ver') !== salsaBrandVer) {
+          localStorage.setItem('salsa_brand_cache_ver', salsaBrandVer);
+          localStorage.setItem('salsa_theme', 'dark');
+        }
+        var pref = localStorage.getItem('salsa_theme') || 'dark';
+        var resolved = pref;
+        if (pref === 'system') {
+          resolved = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+        }
+        document.documentElement.setAttribute('data-theme', resolved);
+        document.documentElement.setAttribute('data-theme-pref', pref);
+      } catch (e) {}
+    })();
+  </script>
+</head>
+<body>
+
+  <!-- Accessible Skip Navigation Link (WCAG 2.4.1) -->
+  <a href="#main-content" class="skip-to-content">پرش به محتوای اصلی</a>
+
+  <!-- Accessible Route Live Region Announcer (WCAG 4.1.3) -->
+  <div id="route-announcer" class="sr-only" aria-live="polite" aria-atomic="true"></div>
+
+  <!-- App Layout Container -->
+  <div class="app-layout">
+    
+    <!-- Top Persistent Provenance Banner: global platform context only -->
+    <div class="prototype-banner" id="prototype-banner" role="region" aria-label="نوار منشأ داده و وضعیت سامانه">
+      <div class="prototype-banner-copy">
+        <span class="prototype-banner-dot" aria-hidden="true"></span>
+        <span class="badge badge-warning">اتصال تأییدنشده</span>
+        <strong>مرکز مدیریت SALSA GODMODE</strong>
+        <span class="prototype-banner-detail">وضعیت عملیاتی و منبع زندهٔ داده‌ها تا دریافت پاسخ معتبر از کنترل‌پلین تأیید نشده است.</span>
+      </div>
+    </div>
+
+    <!-- Top Navigation Header -->
+    <header class="app-header">
+        <button class="mobile-menu-btn" id="mobile-menu-btn" onclick="window.GMApp.toggleSidebar()" aria-label="منوی ناوبری اصلی" aria-expanded="false" aria-controls="app-sidebar">
+          ☰
+        </button>
+        <div class="brand-logo" onclick="location.hash='#home'" style="cursor: pointer;" title="سالسا؛ سیستم‌عامل رستوران‌های مدرن">
+          <div class="brand-badge" aria-label="لوگوی رسمی سالسا"></div>
+          <div>
+            <div class="brand-name">مرکز کنترل SALSA</div>
+            <div class="brand-subtitle">سیستم‌عامل رستوران · Restaurant OS</div>
+          </div>
+        </div>
+
+        <!-- Global Command & Quick Switcher Trigger -->
+        <button class="header-command-trigger" id="header-command-trigger" onclick="window.GMApp ? window.GMApp.openCommandPalette() : null" aria-label="جست‌وجوی سراسری و پالت دستورات (کلید میانبر: کنترل + K یا اسلش)" aria-haspopup="dialog">
+          <span class="command-trigger-icon" aria-hidden="true"></span>
+          <span class="command-trigger-text">جست‌وجوی مشتری، فاکتور، درخواست پشتیبانی، دامنه یا اقدام…</span>
+          <kbd class="command-trigger-kbd"><abbr title="Command">⌘</abbr>K</kbd>
+        </button>
+
+      <div class="header-right">
+        <span class="badge badge-warning header-env-badge" id="header-env-badge" style="font-size: 11px;">
+          <span class="status-dot dot-amber"></span>
+          اتصال کنترل‌پلین تأییدنشده
+        </span>
+        <!-- Theme Switcher Trigger Modal Button -->
+        <button class="theme-modal-btn btn btn-ghost btn-xs" id="btn-theme-modal" onclick="window.GMApp ? window.GMApp.openThemeModal() : null" aria-label="تنظیم پوسته و تم (روشن / تیره)" title="تغییر پوسته (روشن / تیره)" aria-haspopup="dialog">
+          <span class="theme-btn-icon" id="header-theme-icon" aria-hidden="true">🌓</span>
+          <span class="theme-btn-label">پوسته</span>
+        </button>
+        <!-- Operational Activity & Event Ledger Bell Button -->
+        <button class="activity-bell-btn btn btn-ghost btn-xs" id="btn-activity-ledger" onclick="window.GMApp ? window.GMApp.toggleActivityDrawer() : null" aria-label="مرکز تاریخچه و رویدادهای عملیاتی" aria-haspopup="dialog">
+          <span class="activity-bell-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" focusable="false" aria-hidden="true">
+              <path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4" />
+            </svg>
+          </span>
+          <span class="activity-badge-count" id="activity-badge-count" style="display: none;">۰</span>
+        </button>
+        <div class="header-user-chip" id="header-user-chip" onclick="location.hash='#login'" title="ورود به امنیت حساب مدیر">
+          <span class="header-user-avatar" aria-hidden="true">—</span>
+          <div class="header-user-copy">
+            <div class="header-user-name">ورود انجام نشده</div>
+            <div class="user-subtitle">احراز هویت لازم است</div>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <!-- Sidebar Navigation (GODMODE.MD §20.4) -->
+    <aside class="app-sidebar" id="app-sidebar" aria-label="منوی ناوبری سامانه">
+      <div class="mobile-sidebar-header">
+          <div class="brand-logo" onclick="location.hash='#home'" style="cursor: pointer;">
+          <div class="brand-badge" aria-label="لوگوی رسمی سالسا"></div>
+          <div>
+            <div class="brand-name" style="font-size: 12px;">مرکز مدیریت SALSA</div>
+            <div style="font-size: 9px; color: var(--salsa-warm-gray, #8D8F94); font-family: var(--font-mono);">SALSA GODMODE · RESTAURANT OS</div>
+          </div>
+        </div>
+        <button class="mobile-close-btn" onclick="window.GMApp.toggleSidebar()" aria-label="بستن منوی ناوبری">✕</button>
+      </div>
+
+      <div class="sidebar-header-row">
+        <span class="nav-system-label">مرکز مدیریت SALSA</span>
+        <button id="sidebar-collapse-toggle" class="btn-sidebar-collapse" onclick="window.GMApp ? window.GMApp.toggleSidebarCollapse() : null" title="جمع‌کردن / بازکردن منو (۷۲px / ۲۶۴px)" aria-label="تغییر اندازه سایدبار">
+          <span class="collapse-icon">⮂</span>
+        </button>
+      </div>
+
+      <div class="nav-controlplane-separator">
+        <span>بخش‌های مدیریت پلتفرم</span>
+      </div>
+
+      <!-- Primary operator navigation: exactly 5 top-level destinations (superadmin.md §3) -->
+      <div class="sidebar-nav-groups gm-primary-nav" id="sidebar-nav-groups">
+        <div class="nav-group is-active-group" data-nav-group="home">
+          <a href="#home" class="nav-item active active-nav" title="مرکز کارهای فوری، صندوق اقدام و سلامت کلی">
+            <span class="nav-title"><span class="nav-icon" aria-hidden="true">🏠</span><span>خانه</span></span>
+          </a>
+        </div>
+
+        <div class="nav-group" data-nav-group="restaurants">
+          <a href="#restaurants" class="nav-item" title="مدیریت مجموعه‌ها، پرونده ۷ تب و ایجاد سریع">
+            <span class="nav-title"><span class="nav-icon" aria-hidden="true">🍽</span><span>رستوران‌ها</span></span>
+          </a>
+        </div>
+
+        <div class="nav-group" data-nav-group="commercial">
+          <a href="#commercial" class="nav-item" title="کاتالوگ ماژول‌ها، پلن‌ها، قیمت‌گذاری و استثنائات مالی">
+            <span class="nav-title"><span class="nav-icon" aria-hidden="true">💼</span><span>بازرگانی</span></span>
+          </a>
+        </div>
+
+        <div class="nav-group" data-nav-group="operations">
+          <a href="#operations" class="nav-item" title="مانیتورینگ بلادرنگ، استقرارها، سلامت پورت‌ها و صف کارها">
+            <span class="nav-title"><span class="nav-icon" aria-hidden="true">⚡</span><span>عملیات پلتفرم</span></span>
+          </a>
+        </div>
+
+        <div class="nav-group" data-nav-group="settings">
+          <a href="#settings" class="nav-item" title="تیم سالسا، امنیت، ممیزی و کاتالوگ سخت‌افزار">
+            <span class="nav-title"><span class="nav-icon" aria-hidden="true">⚙</span><span>تنظیمات</span></span>
+          </a>
+        </div>
+      </div>
+
+      <div class="nav-section-title" style="margin-top: 1rem;">یافتن و جابه‌جایی</div>
+      <div style="padding: 0 0.5rem;">
+        <button class="btn btn-secondary btn-sm" style="width: 100%; font-size: 0.75rem; justify-content: center; gap: 0.4rem; padding: 0.45rem 0.5rem;" onclick="window.GMApp ? window.GMApp.toggleCommandPalette() : null">
+          <span aria-hidden="true"></span>
+          <span>جست‌وجو یا اجرای اقدام <kbd class="sidebar-shortcut">⌘K</kbd></span>
+        </button>
+      </div>
+      <div class="sidebar-help-note" role="note">
+        <span class="sidebar-help-icon" aria-hidden="true">i</span>
+        <span><strong>راهنما</strong><br>برای هر مجموعه، ابتدا پرونده را باز کنید؛ ابزارهای همان مجموعه در همان مسیر در دسترس‌اند.</span>
+      </div>
+    </aside>
+
+    <!-- Main Workspace Content -->
+    <main class="app-main" id="main-content" tabindex="-1" aria-label="محتوای اصلی پلتفرم">
+      <!-- Injected dynamically by router -->
+    </main>
+
+  </div>
+
+  <!-- Global Slide-Over Drawer Container (GODMODE.MD §20.2 & §20.5) -->
+  <div class="drawer-backdrop" id="drawer-backdrop" aria-hidden="true"></div>
+  <aside class="drawer" id="app-drawer" role="dialog" aria-modal="true" aria-labelledby="drawer-title" aria-describedby="drawer-body" aria-hidden="true" inert>
+    <div class="drawer-header">
+      <div class="drawer-title-group">
+        <div class="drawer-title" id="drawer-title">عنوان پنل</div>
+        <div class="drawer-subtitle" id="drawer-subtitle" style="display: none;"></div>
+      </div>
+      <button class="drawer-close close-btn" onclick="window.GMApp.closeDrawer()" aria-label="بستن پنل کشویی">✕</button>
+    </div>
+    <div class="drawer-body" id="drawer-body">
+      <!-- Dynamic Drawer Content -->
+    </div>
+    <div class="drawer-footer" id="drawer-footer" style="display: none;">
+      <!-- Dynamic Drawer Footer Actions -->
+    </div>
+  </aside>
+
+  <!-- Global Modal Container -->
+  <div class="modal-backdrop" id="modal-backdrop" aria-hidden="true" inert>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title" aria-describedby="modal-body">
+      <div class="modal-header">
+        <div class="modal-title-group">
+          <div class="modal-title" id="modal-title">عنوان کادر</div>
+          <span id="modal-severity-badge" class="badge" style="display: none;"></span>
+        </div>
+        <button class="modal-close close-btn" onclick="window.GMApp.closeModal()" aria-label="بستن کادر محاوره‌ای">✕</button>
+      </div>
+      <div class="modal-body" id="modal-body">
+        <!-- Dynamic Modal Content -->
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="modal-cancel-btn" onclick="window.GMApp.closeModal()" aria-label="انصراف و بستن کادر محاوره‌ای">انصراف</button>
+        <button class="btn btn-primary" id="modal-confirm-btn" aria-label="تأیید و ادامه عملیات کادر محاوره‌ای">تأیید و ادامه</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Global Command & Quick Switcher Palette -->
+  <div class="command-palette-backdrop" id="command-palette-backdrop" role="dialog" aria-modal="true" aria-label="پالت دستورات و ناوبری سریع پلتفرم" aria-hidden="true">
+    <div class="command-palette-container" id="command-palette-container">
+      <div class="command-palette-header">
+        <span class="command-search-icon" aria-hidden="true"></span>
+        <input type="search" id="command-palette-input" class="command-palette-input" placeholder="جست‌وجوی یک صفحه، مشتری یا اقدام..." aria-label="جست‌وجوی سریع در صفحات و اقدامات پلتفرم" autocomplete="off" autocorrect="off" spellcheck="false" />
+        <kbd class="command-esc-badge" onclick="window.GMApp ? window.GMApp.closeCommandPalette() : null">ESC</kbd>
+      </div>
+      <div class="command-palette-body" id="command-palette-results" role="listbox" aria-label="نتایج جست‌وجو">
+        <!-- Dynamically rendered by window.GMCommandPalette -->
+      </div>
+      <div class="command-palette-footer">
+        <div class="command-footer-hints">
+          <span><kbd class="kbd-hint">↑</kbd><kbd class="kbd-hint">↓</kbd> پیمایش</span>
+          <span><kbd class="kbd-hint">↵</kbd> انتخاب</span>
+          <span><kbd class="kbd-hint">ESC</kbd> خروج</span>
+        </div>
+        <div class="command-footer-meta" id="command-footer-meta">
+          ۱۲ مقصد سراسری · پرونده مشتری از فهرست مشتریان
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Global Toast Notification Hub -->
+  <div class="toast-container" id="toast-container" role="region" aria-label="اعلان‌های سامانه" aria-live="polite" aria-atomic="true"></div>
+
+  <!-- Foundation Components & Stores -->
+  <script defer src="js/contracts.js?v=1.4.3-short-routes"></script>
+  <script defer src="js/store.js?v=2.7.0-audit-channel"></script>
+  <script defer src="js/components/toast.js?v=1.7.0-escaped-message"></script>
+  <script defer src="js/components/drawer.js?v=1.6.0"></script>
+  <script defer src="js/components/modal.js?v=1.6.0"></script>
+  <script defer src="js/components/table-batch.js?v=1.6.0"></script>
+  <script defer src="js/components/command-palette.js?v=1.8.0-origin-links"></script>
+  <script defer src="js/components/form-utils.js?v=1.6.0"></script>
+  <script defer src="js/components/activity-ledger.js?v=1.6.1-global-context"></script>
+  <script defer src="js/components/provenance-banner.js?v=1.7.0-global-context"></script>
+
+  <!-- God Mode v2 Modular Architecture (superadmin.md) -->
+  <script defer src="js/godmode/app/registry.js"></script>
+  <script defer src="js/godmode/app/app-mode.js"></script>
+  <script defer src="js/godmode/app/permissions.js"></script>
+  <script defer src="js/godmode/api/control-plane-client.js"></script>
+  <script defer src="js/godmode/domain/restaurants/repository.js"></script>
+  <script defer src="js/godmode/domain/entitlements/repository.js?v=salsa-production-truth-20260924-4"></script>
+  <script defer src="js/godmode/domain/operations/repository.js"></script>
+  <script defer src="js/godmode/domain/commercial/repository.js?v=salsa-production-truth-20260924-4"></script>
+  <script defer src="js/godmode/domain/support/repository.js"></script>
+  <script defer src="js/godmode/components/status-badge.js"></script>
+  <script defer src="js/godmode/components/source-state.js"></script>
+  <script defer src="js/godmode/components/restaurant-context-header.js"></script>
+  <script defer src="js/godmode/components/confirm-dialog.js"></script>
+  <script defer src="js/godmode/components/command-framework.js"></script>
+  <script defer src="js/godmode/components/app-shell.js?v=salsa-production-truth-20260924-4"></script>
+  <script defer src="js/godmode/app/bootstrap.js?v=salsa-auth-westo-parity-1"></script>
+  <script defer src="js/godmode/app/router.js"></script>
+  <script defer src="js/godmode/pages/home/home.js"></script>
+  <script defer src="js/godmode/pages/restaurants/list.js"></script>
+  <script defer src="js/godmode/pages/restaurants/create.js"></script>
+  <script defer src="js/godmode/pages/restaurants/workspace/shell.js"></script>
+  <script defer src="js/godmode/pages/restaurants/workspace/overview.js"></script>
+  <script defer src="js/godmode/pages/restaurants/workspace/subscription.js"></script>
+  <script defer src="js/godmode/pages/restaurants/workspace/people.js"></script>
+  <script defer src="js/godmode/pages/restaurants/workspace/hardware.js"></script>
+  <script defer src="js/godmode/pages/restaurants/workspace/channels.js"></script>
+  <script defer src="js/godmode/pages/restaurants/workspace/reliability.js"></script>
+  <script defer src="js/godmode/pages/restaurants/workspace/activity.js"></script>
+  <script defer src="js/godmode/pages/commercial/commercial.js?v=salsa-production-truth-20260924-4"></script>
+  <script defer src="js/godmode/pages/operations/operations.js"></script>
+  <script defer src="js/godmode/pages/settings/settings.js"></script>
+  <script>
+    // Phase 2: Start with Real Auth Bootstrap Orchestrator
+    document.addEventListener('DOMContentLoaded', () => {
+      if (window.GodModeBootstrap) {
+        window.GodModeBootstrap.init();
+      } else {
+        if (window.GodModeAppShell) window.GodModeAppShell.init();
+        if (window.GodModeRouter) window.GodModeRouter.init();
+      }
+    });
+  </script>
+
+</body>
+</html>

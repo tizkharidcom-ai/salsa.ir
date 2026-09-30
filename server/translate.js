@@ -1,4 +1,7 @@
-/* Menu FA→EN / FA→AR translation: OpenAI when keyed, else glossary + cleanup. */
+/* Menu FA→EN / FA→AR translation: local glossary by default; an explicit
+   operator opt-in is required before any foreign hosted API is contacted. */
+
+const { foreignRuntimeAllowed } = require('./salsa/provider-policy');
 
 const GLOSSARY = {
   سالاد: 'Salad',
@@ -462,7 +465,7 @@ async function fetchOpenAiTranslation(text, field, lang, key) {
 
 async function openaiTranslate(text, field, lang, { cache = true } = {}) {
   const key = process.env.OPENAI_API_KEY;
-  if (!key || !text) return null;
+  if (!key || !text || !foreignRuntimeAllowed()) return null;
 
   const cacheKey = openaiCacheKey(text, field, lang);
   if (cache && openaiCache.has(cacheKey)) {

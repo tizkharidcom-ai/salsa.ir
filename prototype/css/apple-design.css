@@ -1,0 +1,691 @@
+/**
+ * prototype/css/apple-design.css
+ *
+ * SALSA GODMODE — Complete Apple Design System Overhaul (WWDC Fluid Interfaces & HIG)
+ * Translates Apple's design philosophy into web excellence:
+ * - Fluid Physics & Zero Input Latency (:active scale 0.97 in <80ms)
+ * - Translucent Vibrancy Materials & Light Catchers (backdrop-filter blur + bevels)
+ * - Optical Typography & Dynamic Tracking (Vazirmatn + Tabular Figures)
+ * - macOS Sonoma / Sequoia Frosted Glass Sidebar & Top Toolbar
+ * - Native Apple Segmented Controls & Authentic iOS 18 Switches
+ * - Spotlight HUD Command Palette & Inspector Sheets with Grab Handles
+ * - Continuous Curvature Superellipses (Apple Squircles)
+ */
+
+/* ==========================================================================
+   1. Root Variable Authority & Apple HIG Palette Override
+   ========================================================================== */
+:root {
+  /* Salsa Official System Palette */
+  --apple-blue: #E6292A;                /* Salsa Chili Red Primary Accent */
+  --apple-blue-hover: #D32021;
+  --apple-blue-subtle: rgba(230, 41, 42, 0.08);
+  --apple-green: #4F8A34;               /* Salsa Leaf Green */
+  --apple-green-subtle: rgba(79, 138, 52, 0.12);
+  --apple-orange: #f59e0b;
+  --apple-orange-subtle: rgba(245, 158, 11, 0.12);
+  --apple-red: #E6292A;
+  --apple-red-subtle: rgba(230, 41, 42, 0.12);
+  --apple-purple: #af52de;
+  --apple-teal: #4F8A34;
+  --apple-indigo: #8D8F94;
+
+  /* Apple Neutral Scale */
+  --apple-gray-1: #8D8F94;
+  --apple-gray-2: #aeaeb2;
+  --apple-gray-3: #c7c7cc;
+  --apple-gray-4: #d1d1d6;
+  --apple-gray-5: #e5e5ea;
+  --apple-gray-6: #f4f0e8;
+
+  /* Surfaces & Materials (Light) */
+  --apple-canvas: #f8f6f0;
+  --apple-surface: rgba(255, 255, 255, 0.88);
+  --apple-surface-elevated: #ffffff;
+  --apple-surface-hover: rgba(0, 0, 0, 0.035);
+  --apple-glass-ultra-thin: rgba(255, 255, 255, 0.5);
+  --apple-glass-thin: rgba(255, 255, 255, 0.72);
+  --apple-glass-regular: rgba(255, 255, 255, 0.84);
+  --apple-glass-thick: rgba(255, 255, 255, 0.94);
+  --apple-blur-subtle: blur(16px) saturate(180%);
+  --apple-blur-regular: blur(28px) saturate(200%);
+  --apple-blur-modal: blur(36px) saturate(210%);
+  --apple-bevel-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.75);
+
+  /* Physics & Timing (WWDC Fluid Interfaces) */
+  --apple-spring-response: 0.36s;
+  --apple-spring-damping: 1.0;
+  --apple-ease: cubic-bezier(0.16, 1, 0.3, 1);
+  --apple-ease-spring: cubic-bezier(0.25, 1, 0.35, 1);
+  --apple-ease-bounce: cubic-bezier(0.34, 1.45, 0.64, 1);
+  --apple-press-feedback: scale(0.97);
+
+  /* Unified Workspace Overrides (Salsa Brand Book) */
+  --gm-accent: #E6292A !important;
+  --gm-accent-hover: #D32021 !important;
+  --gm-accent-soft: rgba(230, 41, 42, 0.1) !important;
+  --gm-canvas: var(--apple-canvas) !important;
+  --gm-surface: #ffffff !important;
+  --gm-sidebar: rgba(248, 246, 240, 0.88) !important;
+  --gm-sidebar-soft: rgba(0, 0, 0, 0.04) !important;
+  --gm-sidebar-text: #0B0B0D !important;
+  --gm-sidebar-muted: #5F6166 !important;
+  --gm-ink: #0B0B0D !important;
+  --gm-muted: #5F6166 !important;
+  --gm-border: rgba(0, 0, 0, 0.08) !important;
+  --gm-border-strong: rgba(0, 0, 0, 0.16) !important;
+  --gm-shadow: 0 1px 3px rgba(0, 0, 0, 0.04), 0 4px 14px rgba(0, 0, 0, 0.03) !important;
+
+  --background: var(--apple-canvas) !important;
+  --foreground: #0B0B0D !important;
+  --card: #ffffff !important;
+  --card-foreground: #0B0B0D !important;
+  --popover: #ffffff !important;
+  --popover-foreground: #0B0B0D !important;
+  --primary: #E6292A !important;
+  --primary-hover: #D32021 !important;
+  --primary-foreground: #ffffff !important;
+  --secondary: rgba(0, 0, 0, 0.05) !important;
+  --secondary-foreground: #0B0B0D !important;
+  --muted: #f4f0e8 !important;
+  --muted-foreground: #5F6166 !important;
+  --sidebar: rgba(248, 246, 240, 0.88) !important;
+  --sidebar-foreground: #0B0B0D !important;
+  --sidebar-primary: #E6292A !important;
+  --sidebar-accent: rgba(0, 0, 0, 0.045) !important;
+  --sidebar-border: rgba(0, 0, 0, 0.08) !important;
+  --border: rgba(0, 0, 0, 0.08) !important;
+
+  --text-primary: #0B0B0D !important;
+  --text-secondary: #5F6166 !important;
+  --text-tertiary: #8D8F94 !important;
+
+  --radius-xs: 6px;
+  --radius-sm: 10px;
+  --radius-md: 14px;
+  --radius-lg: 18px;
+  --radius-xl: 24px;
+  --radius-2xl: 32px;
+  --radius-full: 9999px;
+  --radius: 14px !important;
+
+  --focus-ring: 0 0 0 3.5px rgba(230, 41, 42, 0.3) !important;
+}
+
+/* Apple Dark Mode (Salsa 70% Dark Surfaces: Charcoal #0B0B0D & Graphite #18191C) */
+[data-theme="dark"] {
+  --apple-canvas: #0B0B0D;
+  --apple-surface: rgba(24, 25, 28, 0.9);
+  --apple-surface-elevated: #232529;
+  --apple-surface-hover: rgba(244, 240, 232, 0.08);
+  --apple-glass-ultra-thin: rgba(24, 25, 28, 0.5);
+  --apple-glass-thin: rgba(24, 25, 28, 0.72);
+  --apple-glass-regular: rgba(24, 25, 28, 0.88);
+  --apple-glass-thick: rgba(24, 25, 28, 0.95);
+  --apple-bevel-highlight: inset 0 1px 0 rgba(244, 240, 232, 0.1);
+
+  --gm-accent: #E6292A !important;
+  --gm-accent-hover: #F03A3B !important;
+  --gm-accent-soft: rgba(230, 41, 42, 0.16) !important;
+  --gm-canvas: #0B0B0D !important;
+  --gm-surface: #18191C !important;
+  --gm-sidebar: rgba(24, 25, 28, 0.94) !important;
+  --gm-sidebar-soft: rgba(244, 240, 232, 0.06) !important;
+  --gm-sidebar-text: #F4F0E8 !important;
+  --gm-sidebar-muted: #8D8F94 !important;
+  --gm-ink: #F4F0E8 !important;
+  --gm-muted: #8D8F94 !important;
+  --gm-border: rgba(141, 143, 148, 0.18) !important;
+  --gm-border-strong: rgba(141, 143, 148, 0.28) !important;
+
+  --background: #0B0B0D !important;
+  --foreground: #F4F0E8 !important;
+  --card: #18191C !important;
+  --card-foreground: #F4F0E8 !important;
+  --popover: #232529 !important;
+  --popover-foreground: #F4F0E8 !important;
+  --primary: #E6292A !important;
+  --primary-hover: #F03A3B !important;
+  --primary-foreground: #ffffff !important;
+  --secondary: rgba(244, 240, 232, 0.08) !important;
+  --secondary-foreground: #F4F0E8 !important;
+  --muted: #18191C !important;
+  --muted-foreground: #8D8F94 !important;
+  --sidebar: rgba(24, 25, 28, 0.94) !important;
+  --sidebar-foreground: #F4F0E8 !important;
+  --sidebar-primary: #E6292A !important;
+  --sidebar-accent: rgba(244, 240, 232, 0.06) !important;
+  --sidebar-border: rgba(141, 143, 148, 0.18) !important;
+  --border: rgba(141, 143, 148, 0.18) !important;
+
+  --text-primary: #F4F0E8 !important;
+  --text-secondary: #A8AAAF !important;
+  --text-tertiary: #8D8F94 !important;
+
+  --focus-ring: 0 0 0 3.5px rgba(230, 41, 42, 0.35) !important;
+}
+
+/* ==========================================================================
+   2. Typography & Optical Sizing
+   ========================================================================== */
+html, body {
+  background-color: var(--apple-canvas) !important;
+  color: var(--text-primary) !important;
+  font-family: var(--font-sans);
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3, .page-title, .dashboard-title {
+  letter-spacing: -0.022em !important;
+  font-weight: 700 !important;
+  color: var(--text-primary) !important;
+}
+
+h4, h5, h6, .card-title, .section-title {
+  letter-spacing: -0.012em !important;
+  font-weight: 600 !important;
+  color: var(--text-primary) !important;
+}
+
+.badge, .status-pill, .nav-badge, .command-trigger-kbd, kbd, small, .eyebrow, .meta-text {
+  letter-spacing: 0.02em !important;
+}
+
+.tabular-nums, .stat-value, .metric-value, .badge-count, td, code, pre {
+  font-variant-numeric: tabular-nums !important;
+  font-feature-settings: "tnum" 1 !important;
+}
+
+/* ==========================================================================
+   3. Response: Kill Latency on Every Interactive Element
+   ========================================================================== */
+.btn:active,
+button:active,
+.nav-item:active,
+.header-command-trigger:active,
+.theme-card-option:active,
+.workflow-hub-btn:active,
+.activity-bell-btn:active,
+.kernel-health-btn:active,
+.mobile-menu-btn:active,
+.btn-sidebar-collapse:active,
+.card.is-clickable:active,
+.gm02-dashboard-list-row:active,
+.tenant-row:active,
+.feature-card:active,
+.segmented-item:active,
+.tab-item:active {
+  transform: var(--apple-press-feedback) !important;
+  transition: transform 80ms cubic-bezier(0.25, 1, 0.5, 1) !important;
+}
+
+.btn,
+button,
+.nav-item,
+.header-command-trigger,
+.theme-card-option,
+.workflow-hub-btn,
+.activity-bell-btn,
+.kernel-health-btn,
+.mobile-menu-btn,
+.btn-sidebar-collapse,
+.card.is-clickable,
+.segmented-item,
+.tab-item {
+  transition: transform 200ms var(--apple-ease),
+              background-color 160ms ease,
+              border-color 160ms ease,
+              box-shadow 200ms var(--apple-ease) !important;
+}
+
+/* ==========================================================================
+   4. App Shell: Top Translucent Header
+   ========================================================================== */
+.app-header {
+  height: 52px !important;
+  padding: 0 1.25rem !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  background: var(--apple-glass-regular) !important;
+  backdrop-filter: var(--apple-blur-regular) !important;
+  -webkit-backdrop-filter: var(--apple-blur-regular) !important;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08) !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02), var(--apple-bevel-highlight) !important;
+}
+
+[data-theme="dark"] .app-header {
+  background: rgba(24, 24, 28, 0.82) !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1) !important;
+}
+
+/* Spotlight Command Trigger */
+.header-command-trigger {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 0.65rem !important;
+  background: rgba(0, 0, 0, 0.045) !important;
+  border: 1px solid rgba(0, 0, 0, 0.07) !important;
+  border-radius: var(--radius-full) !important;
+  padding: 0.45rem 0.95rem !important;
+  color: var(--text-secondary) !important;
+  font-size: var(--font-size-sm, 0.844rem) !important;
+  cursor: pointer !important;
+  width: clamp(220px, 30vw, 380px) !important;
+}
+
+.header-command-trigger:hover {
+  background: rgba(0, 0, 0, 0.07) !important;
+  border-color: rgba(0, 0, 0, 0.14) !important;
+  color: var(--text-primary) !important;
+}
+
+[data-theme="dark"] .header-command-trigger {
+  background: rgba(255, 255, 255, 0.08) !important;
+  border-color: rgba(255, 255, 255, 0.08) !important;
+  color: var(--text-secondary) !important;
+}
+
+[data-theme="dark"] .header-command-trigger:hover {
+  background: rgba(255, 255, 255, 0.13) !important;
+  border-color: rgba(255, 255, 255, 0.18) !important;
+  color: #ffffff !important;
+}
+
+.command-trigger-kbd {
+  display: inline-flex !important;
+  align-items: center !important;
+  background: rgba(0, 0, 0, 0.06) !important;
+  border: 1px solid rgba(0, 0, 0, 0.08) !important;
+  border-radius: 6px !important;
+  padding: 0.1rem 0.4rem !important;
+  font-size: 0.72rem !important;
+  font-weight: 600 !important;
+  font-family: var(--font-mono) !important;
+  color: var(--text-tertiary) !important;
+  margin-right: auto !important;
+}
+
+[data-theme="dark"] .command-trigger-kbd {
+  background: rgba(255, 255, 255, 0.1) !important;
+  border-color: rgba(255, 255, 255, 0.12) !important;
+  color: var(--text-secondary) !important;
+}
+
+.brand-badge {
+  width: 36px !important;
+  height: 36px !important;
+  border-radius: 10px !important;
+  background: #0B0B0D url('../assets/images/salsa-symbol.png') center center / contain no-repeat !important;
+  border: 1px solid rgba(244, 240, 232, 0.16) !important;
+  color: transparent !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  font-size: 0 !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5), 0 0 12px rgba(230, 41, 42, 0.25) !important;
+  flex-shrink: 0 !important;
+}
+
+.header-user-chip {
+  display: flex !important;
+  align-items: center !important;
+  gap: 0.6rem !important;
+  padding: 0.35rem 0.75rem !important;
+  border-radius: var(--radius-full) !important;
+  background: rgba(0, 0, 0, 0.04) !important;
+  border: 1px solid rgba(0, 0, 0, 0.06) !important;
+}
+
+[data-theme="dark"] .header-user-chip {
+  background: rgba(255, 255, 255, 0.06) !important;
+  border-color: rgba(255, 255, 255, 0.08) !important;
+}
+
+/* ==========================================================================
+   5. macOS Sonoma Frosted Sidebar
+   ========================================================================== */
+.app-sidebar {
+  background: var(--apple-surface) !important;
+  backdrop-filter: var(--apple-blur-regular) !important;
+  -webkit-backdrop-filter: var(--apple-blur-regular) !important;
+  border-left: 1px solid rgba(0, 0, 0, 0.08) !important;
+  color: var(--text-primary) !important;
+}
+
+[data-theme="dark"] .app-sidebar {
+  background: rgba(24, 25, 28, 0.94) !important;
+  border-left: 1px solid rgba(141, 143, 148, 0.18) !important;
+  color: var(--text-primary) !important;
+}
+
+.nav-system-label {
+  color: var(--text-secondary) !important;
+  font-weight: 700 !important;
+  font-size: 0.76rem !important;
+  letter-spacing: 0.04em !important;
+}
+
+.nav-group-title {
+  color: var(--text-tertiary) !important;
+  font-weight: 600 !important;
+  border-radius: 8px !important;
+}
+
+.nav-group-title:hover {
+  color: var(--text-primary) !important;
+}
+
+.nav-item {
+  border-radius: 10px !important;
+  color: var(--text-secondary) !important;
+  font-weight: 500 !important;
+  padding: 0.52rem 0.8rem !important;
+  margin: 2px 0 !important;
+}
+
+.nav-item:hover {
+  background: rgba(0, 0, 0, 0.045) !important;
+  color: var(--text-primary) !important;
+}
+
+[data-theme="dark"] .nav-item:hover {
+  background: rgba(244, 240, 232, 0.065) !important;
+  color: #F4F0E8 !important;
+}
+
+.nav-item.active {
+  background: #E6292A !important;
+  color: #ffffff !important;
+  font-weight: 600 !important;
+  box-shadow: 0 2px 10px rgba(230, 41, 42, 0.38) !important;
+}
+
+.nav-item.active .nav-icon,
+.nav-item.active span {
+  color: #ffffff !important;
+}
+
+.nav-item.active .nav-badge {
+  background: rgba(255, 255, 255, 0.25) !important;
+  color: #ffffff !important;
+}
+
+/* ==========================================================================
+   6. Buttons: Apple Squircles & Vibrancy
+   ========================================================================== */
+.btn {
+  border-radius: var(--radius-md) !important;
+  font-weight: 600 !important;
+  letter-spacing: -0.01em !important;
+}
+
+.btn-primary {
+  background: #E6292A !important;
+  color: #ffffff !important;
+  box-shadow: 0 2px 6px rgba(230, 41, 42, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.3) !important;
+  border: 1px solid rgba(0, 0, 0, 0.04) !important;
+}
+
+.btn-primary:hover {
+  background: #D32021 !important;
+  box-shadow: 0 3px 10px rgba(230, 41, 42, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.35) !important;
+}
+
+.btn-secondary,
+.btn-ghost {
+  background: rgba(0, 0, 0, 0.04) !important;
+  color: var(--text-primary) !important;
+  border: 1px solid rgba(0, 0, 0, 0.07) !important;
+}
+
+.btn-secondary:hover,
+.btn-ghost:hover {
+  background: rgba(0, 0, 0, 0.07) !important;
+  border-color: rgba(0, 0, 0, 0.12) !important;
+}
+
+[data-theme="dark"] .btn-secondary,
+[data-theme="dark"] .btn-ghost {
+  background: rgba(255, 255, 255, 0.08) !important;
+  color: #f5f5f7 !important;
+  border: 1px solid rgba(255, 255, 255, 0.09) !important;
+}
+
+[data-theme="dark"] .btn-secondary:hover,
+[data-theme="dark"] .btn-ghost:hover {
+  background: rgba(255, 255, 255, 0.13) !important;
+  border-color: rgba(255, 255, 255, 0.16) !important;
+}
+
+/* ==========================================================================
+   7. Native Apple Segmented Controls
+   ========================================================================== */
+.segmented-control,
+.tabs,
+.nav-tabs,
+.subgroup-tabs,
+.tab-group {
+  display: inline-flex !important;
+  align-items: center !important;
+  background: rgba(0, 0, 0, 0.05) !important;
+  border-radius: 12px !important;
+  padding: 3px !important;
+  gap: 2px !important;
+  border: 1px solid rgba(0, 0, 0, 0.03) !important;
+}
+
+[data-theme="dark"] .segmented-control,
+[data-theme="dark"] .tabs,
+[data-theme="dark"] .nav-tabs,
+[data-theme="dark"] .subgroup-tabs,
+[data-theme="dark"] .tab-group {
+  background: rgba(255, 255, 255, 0.08) !important;
+  border-color: rgba(255, 255, 255, 0.04) !important;
+}
+
+.segmented-item,
+.tab-item,
+.nav-tab,
+.tabs button {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  padding: 0.42rem 0.95rem !important;
+  border-radius: 9px !important;
+  border: none !important;
+  background: transparent !important;
+  color: var(--text-secondary) !important;
+  font-size: var(--font-size-sm, 0.844rem) !important;
+  font-weight: 500 !important;
+  cursor: pointer !important;
+}
+
+.segmented-item.active,
+.tab-item.active,
+.nav-tab.active,
+.tabs button.active {
+  background: #ffffff !important;
+  color: #1d1d1f !important;
+  font-weight: 600 !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1), 0 1px 2px rgba(0, 0, 0, 0.06) !important;
+}
+
+[data-theme="dark"] .segmented-item.active,
+[data-theme="dark"] .tab-item.active,
+[data-theme="dark"] .nav-tab.active,
+[data-theme="dark"] .tabs button.active {
+  background: #323236 !important;
+  color: #ffffff !important;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.45) !important;
+}
+
+/* ==========================================================================
+   8. Authentic iOS Toggles (Switches)
+   ========================================================================== */
+.switch,
+.toggle {
+  position: relative !important;
+  display: inline-block !important;
+  width: 48px !important;
+  height: 28px !important;
+}
+
+.switch input,
+.toggle input {
+  opacity: 0 !important;
+  width: 0 !important;
+  height: 0 !important;
+}
+
+.slider,
+.toggle-slider {
+  position: absolute !important;
+  cursor: pointer !important;
+  inset: 0 !important;
+  background-color: rgba(0, 0, 0, 0.14) !important;
+  border-radius: var(--radius-full) !important;
+  transition: background-color 220ms var(--apple-ease) !important;
+}
+
+[data-theme="dark"] .slider,
+[data-theme="dark"] .toggle-slider {
+  background-color: rgba(255, 255, 255, 0.2) !important;
+}
+
+.slider::before,
+.toggle-slider::before {
+  position: absolute !important;
+  content: "" !important;
+  height: 24px !important;
+  width: 24px !important;
+  left: 2px !important;
+  bottom: 2px !important;
+  background-color: #ffffff !important;
+  border-radius: 50% !important;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.22) !important;
+  transition: transform 220ms var(--apple-ease) !important;
+}
+
+input:checked + .slider,
+input:checked + .toggle-slider {
+  background-color: var(--apple-green) !important;
+}
+
+input:checked + .slider::before,
+input:checked + .toggle-slider::before {
+  transform: translateX(20px) !important;
+}
+
+/* ==========================================================================
+   9. Cards & Dashboard Widgets (GM-02 & Beyond)
+   ========================================================================== */
+.card,
+.panel,
+.stat-card,
+.dossier-card,
+.gm02-dashboard-heading,
+.gm02-dashboard-panel,
+.gm02-chart-panel,
+.gm02-subsystems-panel {
+  background: var(--apple-surface) !important;
+  backdrop-filter: var(--apple-blur-regular) !important;
+  -webkit-backdrop-filter: var(--apple-blur-regular) !important;
+  border: 1px solid rgba(0, 0, 0, 0.07) !important;
+  border-radius: var(--radius-lg, 18px) !important;
+  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.04), 0 1px 3px rgba(0, 0, 0, 0.02), var(--apple-bevel-highlight) !important;
+}
+
+[data-theme="dark"] .card,
+[data-theme="dark"] .panel,
+[data-theme="dark"] .stat-card,
+[data-theme="dark"] .dossier-card,
+[data-theme="dark"] .gm02-dashboard-heading,
+[data-theme="dark"] .gm02-dashboard-panel,
+[data-theme="dark"] .gm02-chart-panel,
+[data-theme="dark"] .gm02-subsystems-panel {
+  background: rgba(28, 28, 30, 0.82) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  box-shadow: 0 8px 24px -4px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.1) !important;
+}
+
+.stat-value {
+  font-size: 1.85rem !important;
+  font-weight: 800 !important;
+  letter-spacing: -0.03em !important;
+  color: var(--text-primary) !important;
+}
+
+/* ==========================================================================
+   10. Slide-Over Inspector Sheet & Spotlight HUD
+   ========================================================================== */
+.drawer-backdrop {
+  background: rgba(0, 0, 0, 0.32) !important;
+  backdrop-filter: blur(8px) !important;
+}
+
+.drawer {
+  background: var(--apple-glass-thick) !important;
+  backdrop-filter: var(--apple-blur-modal) !important;
+  -webkit-backdrop-filter: var(--apple-blur-modal) !important;
+  border-left: 1px solid rgba(0, 0, 0, 0.1) !important;
+  box-shadow: -12px 0 40px rgba(0, 0, 0, 0.15) !important;
+}
+
+html[dir="rtl"] .drawer {
+  border-left: none !important;
+  border-right: 1px solid rgba(0, 0, 0, 0.1) !important;
+  box-shadow: 12px 0 40px rgba(0, 0, 0, 0.15) !important;
+}
+
+[data-theme="dark"] .drawer {
+  background: rgba(28, 28, 32, 0.94) !important;
+  border-color: rgba(255, 255, 255, 0.1) !important;
+}
+
+.drawer::before {
+  content: "" !important;
+  display: block !important;
+  width: 42px !important;
+  height: 5px !important;
+  background: rgba(0, 0, 0, 0.18) !important;
+  border-radius: var(--radius-full) !important;
+  margin: 10px auto 0 !important;
+}
+
+[data-theme="dark"] .drawer::before {
+  background: rgba(255, 255, 255, 0.2) !important;
+}
+
+.command-palette-backdrop {
+  background: rgba(0, 0, 0, 0.35) !important;
+  backdrop-filter: blur(14px) !important;
+}
+
+.command-palette-container {
+  background: var(--apple-glass-thick) !important;
+  backdrop-filter: var(--apple-blur-modal) !important;
+  -webkit-backdrop-filter: var(--apple-blur-modal) !important;
+  border-radius: var(--radius-xl, 24px) !important;
+  box-shadow: 0 24px 60px -12px rgba(0, 0, 0, 0.2) !important;
+}
+
+[data-theme="dark"] .command-palette-container {
+  background: rgba(30, 30, 34, 0.94) !important;
+  border-color: rgba(255, 255, 255, 0.12) !important;
+  box-shadow: 0 28px 64px rgba(0, 0, 0, 0.65) !important;
+}
+
+.modal {
+  border-radius: var(--radius-xl, 24px) !important;
+  background: #ffffff !important;
+  backdrop-filter: var(--apple-blur-modal) !important;
+  box-shadow: 0 24px 60px -12px rgba(0, 0, 0, 0.2) !important;
+}
+
+[data-theme="dark"] .modal {
+  background: #111726 !important;
+  border-color: rgba(255, 255, 255, 0.12) !important;
+}

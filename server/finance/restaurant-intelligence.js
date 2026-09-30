@@ -1,30 +1,27 @@
 'use strict';
 
+const valueContracts = require('./value-contracts');
+
 const PAID_STATUSES = new Set(['paid', 'preparing', 'ready', 'dispatched', 'picked_up', 'delivered', 'done']);
-
-const UNIT_ALIASES = Object.freeze({
-  g: 'g', gram: 'g', grams: 'g', 'گرم': 'g',
-  kg: 'kg', kilogram: 'kg', kilograms: 'kg', 'کیلو': 'kg', 'کیلوگرم': 'kg',
-  ml: 'ml', milliliter: 'ml', milliliters: 'ml', 'میلی لیتر': 'ml', 'میلی‌لیتر': 'ml',
-  l: 'l', liter: 'l', litre: 'l', liters: 'l', litres: 'l', 'لیتر': 'l',
-  count: 'count', each: 'count', unit: 'count', pcs: 'count', piece: 'count', 'عدد': 'count', 'واحد': 'count',
-});
-
-const UNIT_META = Object.freeze({
-  g: { dimension: 'mass', baseFactor: 1 },
-  kg: { dimension: 'mass', baseFactor: 1000 },
-  ml: { dimension: 'volume', baseFactor: 1 },
-  l: { dimension: 'volume', baseFactor: 1000 },
-  count: { dimension: 'count', baseFactor: 1 },
-});
+const UNIT_ALIASES = valueContracts.UNIT_ALIASES;
+const UNIT_META = valueContracts.UNIT_META;
 
 function list(value) { return Array.isArray(value) ? value : []; }
-function number(value) { return Number.isFinite(Number(value)) ? Number(value) : null; }
+function number(value) {
+  try {
+    return valueContracts.parseDecimal(value, { emptyValue: null, label: 'عدد' });
+  } catch {
+    return null;
+  }
+}
 function int(value) { return Number.isSafeInteger(Number(value)) ? Number(value) : null; }
-function canonicalUnit(value) { return UNIT_ALIASES[String(value || '').trim().toLowerCase()] || null; }
+function canonicalUnit(value) { return valueContracts.canonicalUnit(value); }
 function sameBranch(row, branchId) { return !branchId || Number(row?.branchId) === Number(branchId); }
 function sharedOrBranch(row, branchId) { return row?.branchId == null || sameBranch(row, branchId); }
-function isPaid(order) { return order?.paymentStatus === 'paid' || PAID_STATUSES.has(String(order?.status || '')); }
+function isPaid(order) {
+  if (order?.paymentStatus === 'unpaid' || order?.paymentStatus === 'pending') return false;
+  return order?.paymentStatus === 'paid' || PAID_STATUSES.has(String(order?.status || ''));
+}
 
 function itemConversion(quantity, fromUnit, toUnit, conversions = []) {
   for (const row of list(conversions)) {
@@ -38,20 +35,7 @@ function itemConversion(quantity, fromUnit, toUnit, conversions = []) {
 }
 
 function convertQuantity(quantity, from, to, conversions = []) {
-  const value = number(quantity);
-  const fromUnit = canonicalUnit(from);
-  const toUnit = canonicalUnit(to);
-  if (value == null || value < 0) return { ok: false, code: 'quantity_invalid', value: null };
-  if (!fromUnit || !toUnit) return { ok: false, code: 'unit_unknown', value: null, fromUnit, toUnit };
-  if (fromUnit === toUnit) return { ok: true, value, fromUnit, toUnit, source: 'same_unit' };
-  const explicit = itemConversion(value, fromUnit, toUnit, conversions);
-  if (explicit != null) return { ok: true, value: explicit, fromUnit, toUnit, source: 'item_conversion' };
-  const fromMeta = UNIT_META[fromUnit];
-  const toMeta = UNIT_META[toUnit];
-  if (!fromMeta || !toMeta || fromMeta.dimension !== toMeta.dimension) {
-    return { ok: false, code: 'unit_incompatible', value: null, fromUnit, toUnit };
-  }
-  return { ok: true, value: value * fromMeta.baseFactor / toMeta.baseFactor, fromUnit, toUnit, source: 'dimension_conversion' };
+  return valueContracts.convertQuantity(quantity, from, to, conversions);
 }
 
 function availableQuantity(item) {
@@ -61,8 +45,8 @@ function availableQuantity(item) {
   const quarantined = number(item.quarantinedQty ?? item.qtyQuarantined) || 0;
   const expired = number(item.expiredQty ?? item.qtyExpired) || 0;
   const safetyStock = number(item.safetyStockBase ?? item.safetyStockQty ?? item.safetyStock) || 0;
-  const raw = onHand - reserved - quarantined - expired - safetyStock;
-  return { ok: true, value: Math.max(0, raw), raw, negative: raw < 0 };
+  const raw = onHand - reserved - quarantined - expired;
+  return { ok: true, value: Math.max(0, raw), raw, negative: raw < 0, safetyStock };
 }
 
 function recipePortions(recipe) {
@@ -85,11 +69,48 @@ function ingredientRequirement(ingredient, recipe, item) {
 
 function calculateRecipeCapacity({ items = [], recipes = [], branchId = null } = {}) {
   const scopedItems = list(items).filter((row) => sameBranch(row, branchId));
-  const itemMap = new Map(scopedItems.map((row) => [String(row.id), row]));
+  const numBranch = Number(branchId);
+  const branchSuffix = numBranch ? `-b${numBranch}`.toLowerCase() : null;
+  const itemMap = new Map();
+  for (const row of scopedItems) {
+    const idStr = String(row.id || '').trim();
+    const skuStr = String(row.sku || '').trim();
+    if (idStr) {
+      itemMap.set(idStr, row);
+      itemMap.set(idStr.toLowerCase(), row);
+      if (branchSuffix && idStr.toLowerCase().endsWith(branchSuffix)) {
+        const base = idStr.slice(0, -branchSuffix.length);
+        if (base && !itemMap.has(base)) {
+          itemMap.set(base, row);
+          itemMap.set(base.toLowerCase(), row);
+        }
+      }
+    }
+    if (skuStr) {
+      itemMap.set(skuStr, row);
+      itemMap.set(skuStr.toLowerCase(), row);
+      itemMap.set(`sku:${skuStr}`, row);
+      itemMap.set(`sku:${skuStr.toLowerCase()}`, row);
+      if (branchSuffix && skuStr.toLowerCase().endsWith(branchSuffix)) {
+        const baseSku = skuStr.slice(0, -branchSuffix.length);
+        if (baseSku && !itemMap.has(`sku:${baseSku}`)) {
+          itemMap.set(`sku:${baseSku}`, row);
+          itemMap.set(`sku:${baseSku.toLowerCase()}`, row);
+          itemMap.set(baseSku, row);
+          itemMap.set(baseSku.toLowerCase(), row);
+        }
+      }
+    }
+  }
   return list(recipes).filter((row) => sharedOrBranch(row, branchId)).map((recipe) => {
     const issues = [];
     const ingredients = list(recipe.ingredients).map((ingredient) => {
-      const item = itemMap.get(String(ingredient.itemId));
+      const ingredientKey = String(ingredient.itemId ?? '').trim();
+      const item = itemMap.get(ingredientKey)
+        || itemMap.get(ingredientKey.toLowerCase())
+        || itemMap.get(`sku:${ingredientKey}`)
+        || itemMap.get(`sku:${ingredientKey.toLowerCase()}`)
+        || (branchSuffix ? (itemMap.get(`${ingredientKey}${branchSuffix}`) || itemMap.get(`${ingredientKey.toLowerCase()}${branchSuffix}`)) : null);
       if (!item) {
         const issue = { code: 'ingredient_item_missing', itemId: ingredient.itemId || null };
         issues.push(issue);
@@ -242,7 +263,14 @@ function calculateStockoutForecast({
     return { status: 'insufficient_data', historyDays: window.days, minimumHistoryDays: minHistoryDays, items: [], recipeCoveragePercent: null };
   }
   const scopedRecipes = list(recipes).filter((row) => sharedOrBranch(row, branchId));
-  const itemMap = new Map(list(items).filter((row) => sameBranch(row, branchId)).map((item) => [String(item.id), item]));
+  const branchItems = list(items).filter((row) => sameBranch(row, branchId));
+  const itemMap = new Map();
+  for (const item of branchItems) {
+    itemMap.set(String(item.id), item);
+    const baseId = String(item.id).replace(/-b\d+$/, '');
+    if (!itemMap.has(baseId)) itemMap.set(baseId, item);
+    if (item.sku) itemMap.set(String(item.sku), item);
+  }
   const usage = new Map();
   const usageByDateMap = new Map();
   let soldLines = 0;
@@ -258,7 +286,7 @@ function calculateStockoutForecast({
       const contributions = [];
       let covered = true;
       for (const ingredient of list(recipe.ingredients)) {
-        const item = itemMap.get(String(ingredient.itemId));
+        const item = itemMap.get(String(ingredient.itemId)) || itemMap.get(String(ingredient.itemId).replace(/-b\d+$/, ''));
         if (!item) { coverageIssues.push({ code: 'ingredient_item_missing', itemId: ingredient.itemId || null, menuItemId: line.menuItemId || null, orderId: order.id || null }); covered = false; break; }
         const required = ingredientRequirement(ingredient, recipe, item);
         if (!required.ok) { coverageIssues.push({ code: required.code, itemId: item.id, menuItemId: line.menuItemId || null, orderId: order.id || null }); covered = false; break; }
@@ -350,7 +378,7 @@ function calculateStockoutForecast({
     policy: {
       paidOrdersOnly: true, effectiveRecipeVersionRequired: true, completeLineCoverageRequired: true,
       approvedFuturePurchaseOrdersIncluded: true, overduePurchaseOrdersNotAssumedReceived: true,
-      safetyStockQuantityDeductedFromAvailable: true, safetyDaysRequireExplicitItemValue: true,
+      safetyStockTrackedSeparatelyFromAvailable: true, safetyDaysRequireExplicitItemValue: true,
     },
   };
 }

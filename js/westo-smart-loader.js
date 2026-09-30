@@ -8,7 +8,7 @@
 
   if (window.WestoResources && window.WestoSmartLoad) return;
 
-  const VERSION = 'release14uf1d28-webp-only';
+  const VERSION = 'release14-menu-payload-contract-v2';
   // The static bootstrap is immutable-cached. Bump this independently when
   // the public menu catalogue changes so a recovered/offline menu cannot keep
   // serving an older catalogue after a data foundation refresh.

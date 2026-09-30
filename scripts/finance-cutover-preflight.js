@@ -8,6 +8,7 @@ const financeV2 = require('../server/finance-v2');
 const { classifyLegacyFinance } = require('../server/finance/legacy-classifier');
 const { reconciliationSummary } = require('../server/postgres-state');
 const { normalizedSchemaAvailable } = require('../server/finance-postgres-repository');
+const { buildCutoverRunbook } = require('../server/finance/cutover-runbook');
 const { discoverMigrations, buildMigrationPlan, readAppliedMigrations } = require('./migrate-finance-v2-postgres');
 
 function sha256(value) {
@@ -86,16 +87,25 @@ function compareSummaries(source, destination) {
 }
 
 function legacySourceFingerprint(row) {
+  // PostgreSQL returns BIGINT values as strings and nullable columns as
+  // `null`, while the JSON source uses numbers and explicit nulls. Normalize
+  // both representations before hashing; otherwise a faithful archive is
+  // falsely reported as a fingerprint mismatch (and blocks cutover).
+  const value = (snake, camel) => Object.hasOwn(row, snake) ? row[snake] : row[camel];
+  const branch = value('branch_id', 'branchId');
+  const amount = value('amount_irr', 'amountIrr');
+  const occurred = value('occurred_at', 'occurredAt');
+  const normalizedOccurred = occurred == null ? null : occurred instanceof Date ? occurred.toISOString() : occurred;
   return sha256(canonicalJson({
-    sourceTable: row.source_table || row.sourceTable,
-    sourceId: String(row.source_id ?? row.sourceId),
-    trustStatus: row.trust_status || row.trustStatus,
+    sourceTable: value('source_table', 'sourceTable'),
+    sourceId: String(value('source_id', 'sourceId')),
+    trustStatus: value('trust_status', 'trustStatus'),
     reason: row.reason,
-    sourcePayload: row.source_payload || row.sourcePayload,
-    branchId: row.branch_id ?? row.branchId,
-    amountIrr: row.amount_irr ?? row.amountIrr,
-    occurredAt: row.occurred_at || row.occurredAt,
-    classificationDetails: row.classification_details || row.classificationDetails,
+    sourcePayload: value('source_payload', 'sourcePayload'),
+    branchId: branch == null ? null : Number(branch),
+    amountIrr: amount == null ? null : Number(amount),
+    occurredAt: normalizedOccurred,
+    classificationDetails: value('classification_details', 'classificationDetails') ?? {},
   }));
 }
 
@@ -334,6 +344,10 @@ async function main() {
   const storageStatus = { available: destination.normalizedSchema === true, required: true, reason: destination.reason || (destination.normalizedSchema ? 'available' : 'finance_schema_missing') };
   const shadowReadiness = financeV2.shadowRunReadiness(db, Number(process.env.WESTO_BRANCH_ID) || 1, { storageStatus });
   const decision = evaluatePreflight(source, destination, shadowReadiness);
+  // Include destination-only gates as well as shadow gates.  Otherwise an
+  // operator could receive a runbook that omits a failed checksum, snapshot,
+  // or archive-integrity gate which is only evaluated against PostgreSQL.
+  decision.runbook = buildCutoverRunbook({ shadowReadiness, destination, preflightGates: decision.gates });
   const report = {
     schemaVersion: 2,
     generatedAt: new Date().toISOString(),
@@ -360,6 +374,6 @@ if (require.main === module) {
 }
 
 module.exports = {
-  sha256, canonicalJson, financeCounts, buildSourceEvidence, compareSummaries,
+  sha256, canonicalJson, financeCounts, buildSourceEvidence, compareSummaries, legacySourceFingerprint,
   inspectDestination, evaluatePreflight, writeEvidenceBundle, main,
 };

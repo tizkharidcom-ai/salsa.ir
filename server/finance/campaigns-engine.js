@@ -11,6 +11,44 @@
 
 const shamsi = require('./shamsi');
 const walletEngine = require('./wallet-engine');
+const crypto = require('node:crypto');
+const program = require('./club-program');
+const { normalizePhoneKey, isValidCompletedOrder, orderBelongsToMember } = require('./loyalty-achievements');
+
+function normalizeCampaignConfig(db, input) {
+  const config = getCampaignConfig(db);
+  const aliases = {
+    birthday: { rewardWalletToman: 'walletBonusToman', rewardPoints: 'pointsBonus', validDaysAfter: 'windowDaysAfter' },
+    referral: { referrerRewardWalletToman: 'inviterRewardWalletToman', refereeRewardWalletToman: 'inviteeRewardWalletToman', minFirstOrderToman: 'minOrderToUnlockToman' },
+  };
+  for (const section of ['birthday', 'referral', 'happyHour']) {
+    if (input[section] === undefined) continue;
+    if (!input[section] || typeof input[section] !== 'object' || Array.isArray(input[section])) program.fail('campaign_config_invalid', 'تنظیمات کمپین معتبر نیست.');
+    for (const [rawKey, rawValue] of Object.entries(input[section])) {
+      const key = aliases[section]?.[rawKey] || rawKey;
+      if (!(key in DEFAULT_CAMPAIGN_CONFIG[section])) program.fail('campaign_field_invalid', `گزینهٔ ${rawKey} پشتیبانی نمی‌شود.`);
+      let value = rawValue;
+      if (key === 'enabled') {
+        if (typeof value !== 'boolean') program.fail('campaign_enabled_invalid', 'وضعیت کمپین معتبر نیست.');
+      } else if (['title', 'bannerText', 'messageTemplate'].includes(key)) {
+        value = String(value || '').trim().slice(0, 500);
+      } else if (['activeDays', 'categoryFilter'].includes(key)) {
+        if (!Array.isArray(value) || value.length > 100) program.fail('campaign_list_invalid', 'فهرست کمپین معتبر نیست.');
+        value = [...new Set(value.map((v) => program.number(v, { max: key === 'activeDays' ? 6 : 1e9 })))];
+      } else if (['startHour', 'endHour'].includes(key) && typeof value === 'string' && value.includes(':')) {
+        if (!/^\d{1,2}:\d{2}$/.test(value)) program.fail('campaign_time_invalid', 'ساعت باید به شکل ۱۶:۳۰ باشد.');
+        const [hour, minute] = value.split(':');
+        config[section][key.replace('Hour', 'Minute')] = program.number(minute, { max: 59 });
+        value = program.number(hour, { max: 23 });
+      } else {
+        const max = key.endsWith('Hour') ? 23 : key.endsWith('Minute') ? 59 : key.endsWith('Pct') ? 100 : key.startsWith('windowDays') ? 30 : key === 'pointsMultiplier' ? 10 : 1e8;
+        value = program.number(value, { min: key === 'pointsMultiplier' ? 1 : 0, max, integer: key !== 'pointsMultiplier' });
+      }
+      config[section][key] = value;
+    }
+  }
+  return config;
+}
 
 const DEFAULT_CAMPAIGN_CONFIG = Object.freeze({
   birthday: {
@@ -61,9 +99,7 @@ function getCampaignConfig(db) {
 }
 
 function generateReferralCode(user) {
-  const phone = String(user?.phone || '').trim();
-  const digits = phone.slice(-4) || Math.floor(1000 + Math.random() * 9000);
-  return `WESTO-${digits}`;
+  return `WESTO-${crypto.createHash('sha256').update(`club-referral:${user?.id ?? normalizePhoneKey(user?.phone)}`).digest('hex').slice(0, 16).toUpperCase()}`;
 }
 
 function ensureUserReferral(user) {
@@ -74,7 +110,7 @@ function ensureUserReferral(user) {
   return user.referralCode;
 }
 
-function applyReferralCode(db, { inviteePhone, referralCode }) {
+function applyReferralCode(db, { inviteePhone, referralCode, walletTopup = null }) {
   const code = String(referralCode || '').trim().toUpperCase();
   const phone = String(inviteePhone || '').trim();
   if (!code || !phone) {
@@ -87,17 +123,19 @@ function applyReferralCode(db, { inviteePhone, referralCode }) {
   }
 
   // Find inviter
-  const inviter = (db.users || []).find((u) => ensureUserReferral(u).toUpperCase() === code);
+  const inviters = (db.users || []).filter((u) => !u.blocked && ensureUserReferral(u).toUpperCase() === code);
+  if (inviters.length > 1) program.fail('referral_code_ambiguous', 'کد قدیمی معرف تکراری است؛ از معرف کد جدید بخواهید.', 409);
+  const inviter = inviters[0];
   if (!inviter) {
     throw Object.assign(new Error('کد معرف وارد شده معتبر نیست.'), { code: 'referral_code_not_found' });
   }
 
-  if (inviter.phone === phone) {
+  if (normalizePhoneKey(inviter.phone) === normalizePhoneKey(phone)) {
     throw Object.assign(new Error('نمی‌توانید از کد معرف خودتان استفاده کنید.'), { code: 'self_referral_forbidden' });
   }
 
   db.referrals = db.referrals || [];
-  const existing = db.referrals.find((r) => r.inviteePhone === phone);
+  const existing = db.referrals.find((r) => normalizePhoneKey(r.inviteePhone) === normalizePhoneKey(phone));
   if (existing) {
     throw Object.assign(new Error('برای این حساب کاربری قبلاً کد معرف ثبت شده است.'), { code: 'referral_already_applied' });
   }
@@ -120,20 +158,26 @@ function applyReferralCode(db, { inviteePhone, referralCode }) {
 
   db.referrals.unshift(referralRecord);
 
-  // Immediately award invitee welcome bonus
+  // Immediately award invitee welcome bonus. In production the injected
+  // callback posts the marketing-funded liability journal before crediting.
   if (config.inviteeRewardWalletToman > 0) {
-    walletEngine.topupWallet(db, {
+    const topup = {
       phone,
       amountToman: config.inviteeRewardWalletToman,
       paymentMethod: 'referral_welcome',
-      reference: `REF-WELCOME-${inviter.phone}`,
+      // The inviter is not a sufficient idempotency boundary: one inviter
+      // may welcome multiple invitees. Include the beneficiary phone so a
+      // second legitimate referral cannot replay the first person's event.
+      reference: `REF-WELCOME-${inviter.phone}-${phone}`,
       actor: 'referral-system',
-    });
+    };
+    if (typeof walletTopup === 'function') walletTopup(topup);
+    else walletEngine.topupWallet(db, topup);
   }
 
   const invitee = (db.users || []).find((u) => u.phone === phone);
   if (invitee && config.inviteeRewardPoints > 0) {
-    invitee.points = (Number(invitee.points) || 0) + config.inviteeRewardPoints;
+    program.appendPoints(db, invitee, config.inviteeRewardPoints, 'referral_welcome', { key: `referral-welcome:${referralRecord.id}` });
   }
 
   return {
@@ -147,36 +191,38 @@ function applyReferralCode(db, { inviteePhone, referralCode }) {
   };
 }
 
-function checkAndRewardReferralOnOrder(db, order) {
-  if (!order || !order.phone || !order.total) return null;
+function checkAndRewardReferralOnOrder(db, order, { walletTopup = null } = {}) {
+  if (!order || !order.phone || !order.total || !isValidCompletedOrder(order)) return null;
   const config = getCampaignConfig(db).referral;
   if (!config.enabled) return null;
 
   db.referrals = db.referrals || [];
-  const referral = db.referrals.find((r) => r.inviteePhone === order.phone && r.status === 'registered');
+  const referral = db.referrals.find((r) => normalizePhoneKey(r.inviteePhone) === normalizePhoneKey(order.phone) && r.status === 'registered');
   if (!referral) return null;
 
   const orderTotal = Math.max(0, Math.round(Number(order.total) || 0));
-  if (orderTotal < (config.minOrderToUnlockToman || 0)) return null;
+  if (orderTotal < (referral.minOrderToUnlockToman ?? config.minOrderToUnlockToman ?? 0)) return null;
 
-  // Unlock inviter reward
-  referral.status = 'rewarded';
-  referral.unlockedAt = new Date().toISOString();
-  referral.qualifyingOrderId = order.id;
-
+  // Unlock inviter reward only after the wallet journal/credit succeeds.
   if (config.inviterRewardWalletToman > 0) {
-    walletEngine.topupWallet(db, {
+    const topup = {
       phone: referral.inviterPhone,
       amountToman: config.inviterRewardWalletToman,
       paymentMethod: 'referral_bonus',
       reference: `REF-BONUS-${order.id}`,
       actor: 'referral-system',
-    });
+    };
+    if (typeof walletTopup === 'function') walletTopup(topup);
+    else walletEngine.topupWallet(db, topup);
   }
+
+  referral.status = 'rewarded';
+  referral.unlockedAt = new Date().toISOString();
+  referral.qualifyingOrderId = order.id;
 
   const inviter = (db.users || []).find((u) => u.phone === referral.inviterPhone);
   if (inviter && config.inviterRewardPoints > 0) {
-    inviter.points = (Number(inviter.points) || 0) + config.inviterRewardPoints;
+    program.appendPoints(db, inviter, config.inviterRewardPoints, 'referral_bonus', { key: `referral-bonus:${referral.id}`, orderId: order.id });
   }
 
   return {
@@ -213,7 +259,7 @@ function checkBirthdayEligibility(db, user, now = new Date()) {
   }
 
   // Parse birthdate (supports formats: '1370/06/15', '1370-06-15', '06/15')
-  const cleanBirth = String(user.birthdate).trim().replace(/-/g, '/');
+  const cleanBirth = shamsi.toEnDigits(String(user.birthdate)).trim().replace(/-/g, '/');
   const bParts = cleanBirth.split('/').map((n) => parseInt(n, 10));
   let bMonth = 0;
   let bDay = 0;
@@ -230,13 +276,20 @@ function checkBirthdayEligibility(db, user, now = new Date()) {
     return { eligible: false, reason: 'قالب تاریخ تولد نامعتبر است.' };
   }
 
-  // Calculate day difference within Shamsi calendar (simple month*30 + day distance)
-  const currentDayIndex = (currentShamsiMonth - 1) * 30 + currentShamsiDay;
-  const birthDayIndex = (bMonth - 1) * 30 + bDay;
-  const diffDays = currentDayIndex - birthDayIndex;
+  const today = shamsi.jalaliToGregorian(currentShamsiYear, currentShamsiMonth, currentShamsiDay);
+  const todayMs = Date.UTC(today.gy, today.gm - 1, today.gd);
+  const anniversaries = [currentShamsiYear - 1, currentShamsiYear, currentShamsiYear + 1].map((year) => {
+    const day = bMonth === 12 && bDay === 30 && !shamsi.isJalaliLeapYear(year) ? 29 : bDay;
+    const date = shamsi.jalaliToGregorian(year, bMonth, day);
+    return { year, diff: Math.round((todayMs - Date.UTC(date.gy, date.gm - 1, date.gd)) / 86400000) };
+  }).sort((a, b) => Math.abs(a.diff) - Math.abs(b.diff));
+  const { year: rewardYear, diff: diffDays } = anniversaries[0];
+  if ((db.campaignLog || []).some((entry) => entry.type === 'birthday' && normalizePhoneKey(entry.phone) === normalizePhoneKey(user.phone) && Number(entry.year) === rewardYear)) {
+    return { eligible: false, alreadyRewarded: true, reason: 'هدیهٔ این سالروز قبلاً دریافت شده است.' };
+  }
 
   // Check window: windowDaysBefore <= diff <= windowDaysAfter
-  const isWithinWindow = diffDays >= -(config.windowDaysBefore || 3) && diffDays <= (config.windowDaysAfter || 7);
+  const isWithinWindow = diffDays >= -(config.windowDaysBefore ?? 3) && diffDays <= (config.windowDaysAfter ?? 7);
 
   if (!isWithinWindow) {
     return {
@@ -250,7 +303,7 @@ function checkBirthdayEligibility(db, user, now = new Date()) {
 
   return {
     eligible: true,
-    shamsiYear: currentShamsiYear,
+    shamsiYear: rewardYear,
     walletBonusToman: config.walletBonusToman,
     pointsBonus: config.pointsBonus,
     discountPct: config.discountPct,
@@ -258,7 +311,7 @@ function checkBirthdayEligibility(db, user, now = new Date()) {
   };
 }
 
-function grantBirthdayGift(db, phone, now = new Date()) {
+function grantBirthdayGift(db, phone, now = new Date(), { walletTopup = null } = {}) {
   const normalizedPhone = String(phone || '').trim();
   const user = (db.users || []).find((u) => u.phone === normalizedPhone);
   if (!user) {
@@ -271,23 +324,24 @@ function grantBirthdayGift(db, phone, now = new Date()) {
   }
 
   const parts = shamsi.toShamsiParts(now);
-  user.lastBirthdayRewardYear = parts.year;
-
   // Credit wallet
   let walletResult = null;
   if (check.walletBonusToman > 0) {
-    walletResult = walletEngine.topupWallet(db, {
+    const topup = {
       phone: user.phone,
       amountToman: check.walletBonusToman,
       paymentMethod: 'birthday_gift',
-      reference: `HBD-${parts.year}-${user.phone.slice(-4)}`,
+      reference: `HBD-${check.shamsiYear}-${normalizePhoneKey(user.phone)}`,
       actor: 'birthday-campaign',
-    });
+    };
+    walletResult = typeof walletTopup === 'function' ? walletTopup(topup) : walletEngine.topupWallet(db, topup);
   }
+
+  user.lastBirthdayRewardYear = check.shamsiYear;
 
   // Credit loyalty points
   if (check.pointsBonus > 0) {
-    user.points = (Number(user.points) || 0) + check.pointsBonus;
+    program.appendPoints(db, user, check.pointsBonus, 'birthday', { key: `birthday:${check.shamsiYear}` });
   }
 
   // Record campaign log
@@ -296,7 +350,7 @@ function grantBirthdayGift(db, phone, now = new Date()) {
     id: db.campaignLog.length + 1,
     type: 'birthday',
     phone: user.phone,
-    year: parts.year,
+    year: check.shamsiYear,
     walletBonusToman: check.walletBonusToman,
     pointsBonus: check.pointsBonus,
     at: new Date().toISOString(),
@@ -316,26 +370,33 @@ function grantBirthdayGift(db, phone, now = new Date()) {
   };
 }
 
-function checkHappyHourStatus(db, now = new Date()) {
+function checkHappyHourStatus(db, now = new Date(), branchId = null) {
   const config = getCampaignConfig(db).happyHour;
   if (!config.enabled) {
     return { active: false, config };
   }
 
   // Javascript getDay(): 0: Sunday, 1: Monday, 2: Tuesday, 3: Wednesday, 4: Thursday, 5: Friday, 6: Saturday
-  const currentWeekday = now.getDay();
-  const currentHour = now.getHours();
-  const currentMinute = now.getMinutes();
+  const branch = (db.branches || []).find((item) => String(item.id) === String(branchId));
+  let timeZone = branch?.timeZone || branch?.timezone || db.settings?.businessTimeZone || 'Asia/Tehran';
+  try { new Intl.DateTimeFormat('en-US', { timeZone }); } catch (_) { timeZone = 'Asia/Tehran'; }
+  if (!Number.isFinite(now.getTime())) return { active: false, config };
+  const parts = Object.fromEntries(new Intl.DateTimeFormat('en-US', { timeZone, hour: '2-digit', minute: '2-digit', hourCycle: 'h23', weekday: 'short' }).formatToParts(now).map((part) => [part.type, part.value]));
+  const currentWeekday = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].indexOf(parts.weekday);
+  const currentHour = Number(parts.hour);
+  const currentMinute = Number(parts.minute);
   const currentTotalMinutes = currentHour * 60 + currentMinute;
 
   const startTotalMinutes = (config.startHour || 0) * 60 + (config.startMinute || 0);
   const endTotalMinutes = (config.endHour || 0) * 60 + (config.endMinute || 0);
 
-  const isDayActive = Array.isArray(config.activeDays) && config.activeDays.includes(currentWeekday);
-  const isTimeActive = currentTotalMinutes >= startTotalMinutes && currentTotalMinutes < endTotalMinutes;
+  const overnight = endTotalMinutes < startTotalMinutes;
+  const campaignDay = overnight && currentTotalMinutes < endTotalMinutes ? (currentWeekday + 6) % 7 : currentWeekday;
+  const isDayActive = Array.isArray(config.activeDays) && config.activeDays.includes(campaignDay);
+  const isTimeActive = overnight ? currentTotalMinutes >= startTotalMinutes || currentTotalMinutes < endTotalMinutes : currentTotalMinutes >= startTotalMinutes && currentTotalMinutes < endTotalMinutes;
 
   const active = isDayActive && isTimeActive;
-  const remainingMinutes = active ? endTotalMinutes - currentTotalMinutes : 0;
+  const remainingMinutes = active ? (endTotalMinutes - currentTotalMinutes + 1440) % 1440 : 0;
 
   return {
     active,
@@ -377,6 +438,7 @@ function summarizeCampaigns(db) {
 module.exports = {
   DEFAULT_CAMPAIGN_CONFIG,
   getCampaignConfig,
+  normalizeCampaignConfig,
   generateReferralCode,
   ensureUserReferral,
   applyReferralCode,

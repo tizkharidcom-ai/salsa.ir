@@ -7,17 +7,31 @@ const {
   ingredientRequirement,
   recipeCatalog,
 } = require('./restaurant-intelligence');
+const valueContracts = require('./value-contracts');
 
 function list(value) { return Array.isArray(value) ? value : []; }
-function number(value) { return Number.isFinite(Number(value)) ? Number(value) : null; }
-function safeIrr(value) { return Number.isSafeInteger(Number(value)) && Number(value) >= 0 ? Number(value) : null; }
+function number(value) {
+  try { return valueContracts.parseDecimal(value, { emptyValue: null, label: 'عدد' }); } catch { return null; }
+}
+function safeIrr(value) {
+  try { return valueContracts.parseIrr(value, { allowNegative: false }); } catch { return null; }
+}
 function id() { return crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${crypto.randomBytes(12).toString('hex')}`; }
-function sameBranch(row, branchId) { return row?.branchId == null || Number(row.branchId) === Number(branchId); }
+// Costing is a branch-owned accounting fact. An unscoped inventory item or
+// movement must never be silently treated as belonging to the current branch;
+// doing so can make another branch's stock pay for this sale's COGS.
+function sameBranch(row, branchId) {
+  if (!branchId) return true;
+  return row?.branchId != null && Number(row.branchId) === Number(branchId);
+}
 
 function legacyOrderAmountToIrr(value) {
   const amount = number(value);
-  if (amount == null || amount < 0) return null;
-  const irr = Math.round(amount) * 10;
+  // Legacy line amounts are stored in whole toman. Rounding malformed
+  // fractional values here can create a revenue/COGS margin that the order
+  // never actually recorded.
+  if (amount == null || !Number.isSafeInteger(amount) || amount < 0) return null;
+  const irr = amount * 10;
   return Number.isSafeInteger(irr) ? irr : null;
 }
 
@@ -31,13 +45,16 @@ function unitCostIrr(item, ingredient, settings = {}) {
     if (value === undefined || value === null || String(value).trim() === '') continue;
     const amount = safeIrr(value);
     if (amount == null) return { ok: false, code: 'inventory_cost_unsafe' };
+    // Zero is not a usable material valuation for COGS. Treat it as missing
+    // evidence so a paid sale cannot become a falsely complete zero-cost sale.
+    if (amount <= 0) return { ok: false, code: 'inventory_cost_missing' };
     return { ok: true, amountIrr: amount, source };
   }
 
   const policy = String(settings.legacyInventoryCostUnit || '').toUpperCase();
   const legacy = item?.avgCost ?? item?.unitCost ?? ingredient?.unitCost;
   const amount = number(legacy);
-  if (amount == null || amount < 0 || !['IRR', 'TOMAN'].includes(policy)) {
+  if (amount == null || amount <= 0 || !['IRR', 'TOMAN'].includes(policy)) {
     return { ok: false, code: 'inventory_cost_unit_ambiguous' };
   }
   const amountIrr = Math.round(amount) * (policy === 'TOMAN' ? 10 : 1);
@@ -62,22 +79,23 @@ function physicalAvailable(item, state, branchId) {
   if (onHand == null) return { ok: false, code: 'on_hand_missing' };
   if (onHand < 0) return { ok: false, code: 'negative_on_hand' };
   const controls = [
-    ['reservedQty', 'qtyReserved', 'reserved_quantity_invalid'],
-    ['quarantinedQty', 'qtyQuarantined', 'quarantined_quantity_invalid'],
-    ['expiredQty', 'qtyExpired', 'expired_quantity_invalid'],
+    ['reservedQty', 'qtyReserved', 'reserved', 'reserved_quantity_invalid'],
+    ['quarantinedQty', 'qtyQuarantined', 'quarantined', 'quarantined_quantity_invalid'],
+    ['expiredQty', 'qtyExpired', 'expired', 'expired_quantity_invalid'],
+    ['safetyStockBase', 'safetyStockQty', 'safetyStock', 'safety_stock_quantity_invalid'],
   ];
   const values = {};
-  for (const [primary, fallback, code] of controls) {
-    const raw = item?.[primary] ?? item?.[fallback];
+  for (const [primary, fallback, legacy, code] of controls) {
+    const raw = item?.[primary] ?? item?.[fallback] ?? item?.[legacy];
     const value = raw === undefined || raw === null || raw === '' ? 0 : number(raw);
     if (value == null || value < 0) return { ok: false, code };
     values[primary] = value;
   }
   const shadow = movementBalance(state, item.id, branchId);
   if (!shadow.ok) return shadow;
-  const { reservedQty: reserved, quarantinedQty: quarantined, expiredQty: expired } = values;
+  const { reservedQty: reserved, quarantinedQty: quarantined, expiredQty: expired, safetyStockBase: safetyStock } = values;
   const shadowMovement = shadow.value;
-  return { ok: true, value: onHand - reserved - quarantined - expired + shadowMovement, openingOnHand: onHand, shadowMovement };
+  return { ok: true, value: onHand - reserved - quarantined - expired + shadowMovement, openingOnHand: onHand, shadowMovement, safetyStock };
 }
 
 function orderLineSalesIrr(line) {
@@ -100,10 +118,38 @@ function buildOrderCosting(db, order) {
   if (!Number.isFinite(new Date(occurredAt).getTime())) issues.push({ code: 'sale_date_invalid', message: 'زمان قطعی فروش معتبر نیست.' });
 
   const items = list(accounting.inventoryItems).filter((row) => sameBranch(row, branchId));
+  const numBranch = Number(branchId);
+  const branchSuffix = numBranch ? `-b${numBranch}`.toLowerCase() : null;
   const itemMap = new Map();
   items.forEach((row) => {
-    itemMap.set(String(row.id), row);
-    if (row.sku != null && String(row.sku).trim()) itemMap.set(`sku:${String(row.sku).trim()}`, row);
+    const idStr = String(row.id || '').trim();
+    const skuStr = String(row.sku || '').trim();
+    if (idStr) {
+      itemMap.set(idStr, row);
+      itemMap.set(idStr.toLowerCase(), row);
+      if (branchSuffix && idStr.toLowerCase().endsWith(branchSuffix)) {
+        const base = idStr.slice(0, -branchSuffix.length);
+        if (base && !itemMap.has(base)) {
+          itemMap.set(base, row);
+          itemMap.set(base.toLowerCase(), row);
+        }
+      }
+    }
+    if (skuStr) {
+      itemMap.set(`sku:${skuStr}`, row);
+      itemMap.set(`sku:${skuStr.toLowerCase()}`, row);
+      itemMap.set(skuStr, row);
+      itemMap.set(skuStr.toLowerCase(), row);
+      if (branchSuffix && skuStr.toLowerCase().endsWith(branchSuffix)) {
+        const baseSku = skuStr.slice(0, -branchSuffix.length);
+        if (baseSku && !itemMap.has(`sku:${baseSku}`)) {
+          itemMap.set(`sku:${baseSku}`, row);
+          itemMap.set(`sku:${baseSku.toLowerCase()}`, row);
+          itemMap.set(baseSku, row);
+          itemMap.set(baseSku.toLowerCase(), row);
+        }
+      }
+    }
   });
   const recipes = recipeCatalog(db, branchId);
   const snapshots = [];
@@ -132,7 +178,11 @@ function buildOrderCosting(db, order) {
     let lineComplete = true;
     for (const ingredient of list(recipe.ingredients)) {
       const ingredientKey = String(ingredient.itemId ?? '').trim();
-      const item = itemMap.get(ingredientKey) || itemMap.get(`sku:${ingredientKey}`);
+      const item = itemMap.get(ingredientKey)
+        || itemMap.get(ingredientKey.toLowerCase())
+        || itemMap.get(`sku:${ingredientKey}`)
+        || itemMap.get(`sku:${ingredientKey.toLowerCase()}`)
+        || (branchSuffix ? (itemMap.get(`${ingredientKey}${branchSuffix}`) || itemMap.get(`${ingredientKey.toLowerCase()}${branchSuffix}`)) : null);
       if (!item) {
         issues.push({ code: 'ingredient_item_missing', orderLineKey, itemId: ingredient.itemId ?? null, recipeVersionId: recipe.id ?? null });
         lineComplete = false;
@@ -185,7 +235,10 @@ function buildOrderCosting(db, order) {
       menuItemId: line.menuItemId == null ? null : String(line.menuItemId), itemName: line.name || null,
       quantity, netSalesIrr, recipeVersionId: String(recipe.id ?? recipe.versionId ?? recipe.version ?? ''),
       recipeVersion: recipe.version ?? null, theoreticalCogsIrr: lineCogsIrr,
-      components, capturedAt: new Date().toISOString(),
+      // Reports and readiness gates must follow the source sale date. Using
+      // wall-clock capture time makes a historical sale disappear from its
+      // period when the capture is retried on a later day.
+      components, capturedAt: order.paidAt || order.createdAt || new Date().toISOString(),
     });
   }
 

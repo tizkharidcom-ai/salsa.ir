@@ -1,6 +1,6 @@
 /* Starts the local WESTO stack together.
  *
- * The public/client app, the isolated GODMODE prototype, and the NEEM Control
+ * The public/client app, the isolated GODMODE prototype, and the SALSA Control
  * Plane are separate processes with separate ports. Keeping these boundaries
  * explicit prevents mock UI data from being mistaken for live operations.
  */
@@ -11,26 +11,48 @@ const { spawn } = require('child_process');
 const root = path.join(__dirname, '..');
 
 function buildServiceDefinitions(sourceEnv = process.env) {
-  const bridgeSecret = sourceEnv.WESTO_NEEM_BRIDGE_SECRET || crypto.randomBytes(32).toString('hex');
+  const persistentKeyPath = path.join(__dirname, 'data', 'secret.key');
+  let fallbackKey = '';
+  try {
+    if (require('fs').existsSync(persistentKeyPath)) {
+      fallbackKey = require('fs').readFileSync(persistentKeyPath, 'utf8').trim();
+    }
+  } catch (_) {}
+  const bridgeSecret = sourceEnv.WESTO_SALSA_BRIDGE_SECRET || sourceEnv.WESTO_NEEM_BRIDGE_SECRET || fallbackKey || crypto.randomBytes(32).toString('hex');
   // Keep the local defaults aligned with the smoke gates and GODMODE topology.
   const westoPort = String(sourceEnv.PORT || '4180');
   const godmodePort = String(sourceEnv.GODMODE_PORT || '3050');
   const godmodeHost = String(sourceEnv.GODMODE_HOST || '127.0.0.1');
-  const controlPort = String(sourceEnv.NEEM_CONTROL_PORT || '3061');
-  const bridgeUrl = sourceEnv.NEEM_BRIDGE_URL
+  const controlPort = String(sourceEnv.SALSA_CONTROL_PORT || sourceEnv.NEEM_CONTROL_PORT || '3061');
+  const bridgeUrl = sourceEnv.SALSA_BRIDGE_URL || sourceEnv.NEEM_BRIDGE_URL
     || `http://127.0.0.1:${controlPort}/api/control/integrations/westo/events`;
-  // The ephemeral Control Plane fixture registers `westo-demo`; production
-  // deployments must provide their canonical tenant ID explicitly.
-  const tenantId = sourceEnv.NEEM_TENANT_ID
-    || (sourceEnv.NEEM_CONTROL_ALLOW_EPHEMERAL_DEV === 'true' ? 'westo-demo' : 'westo');
+  // Canonical flagship tenant is 'westo'
+  const tenantId = sourceEnv.SALSA_TENANT_ID || sourceEnv.NEEM_TENANT_ID || 'westo';
+  const piiKey = crypto.randomBytes(32).toString('hex');
+  const defaultPiiKeyring = JSON.stringify({ v1: piiKey });
+  const defaultMfaKey = crypto.randomBytes(32).toString('hex');
   const common = {
     ...sourceEnv,
+    WESTO_SALSA_BRIDGE_SECRET: bridgeSecret,
     WESTO_NEEM_BRIDGE_SECRET: bridgeSecret,
+    SALSA_CONTROL_SECRET: sourceEnv.SALSA_CONTROL_SECRET || sourceEnv.NEEM_CONTROL_SECRET || bridgeSecret,
+    NEEM_CONTROL_SECRET: sourceEnv.NEEM_CONTROL_SECRET || sourceEnv.SALSA_CONTROL_SECRET || bridgeSecret,
+    SALSA_BRIDGE_URL: bridgeUrl,
     NEEM_BRIDGE_URL: bridgeUrl,
+    SALSA_TENANT_ID: tenantId,
     NEEM_TENANT_ID: tenantId,
-    // An explicit opt-in is required until the control-plane tenant registry,
-    // database, and deployment secrets are configured for the local stack.
-    NEEM_BRIDGE_ENABLED: sourceEnv.NEEM_BRIDGE_ENABLED || 'false',
+    SALSA_SESSION_SECRET: sourceEnv.SALSA_SESSION_SECRET || sourceEnv.NEEM_SESSION_SECRET || bridgeSecret,
+    NEEM_SESSION_SECRET: sourceEnv.NEEM_SESSION_SECRET || sourceEnv.SALSA_SESSION_SECRET || bridgeSecret,
+    SALSA_PII_KEYRING: sourceEnv.SALSA_PII_KEYRING || sourceEnv.NEEM_PII_KEYRING || defaultPiiKeyring,
+    NEEM_PII_KEYRING: sourceEnv.NEEM_PII_KEYRING || sourceEnv.SALSA_PII_KEYRING || defaultPiiKeyring,
+    SALSA_MFA_ENCRYPTION_KEY: sourceEnv.SALSA_MFA_ENCRYPTION_KEY || sourceEnv.NEEM_MFA_ENCRYPTION_KEY || defaultMfaKey,
+    NEEM_MFA_ENCRYPTION_KEY: sourceEnv.NEEM_MFA_ENCRYPTION_KEY || sourceEnv.SALSA_MFA_ENCRYPTION_KEY || defaultMfaKey,
+    SALSA_INBOX_ACK_SECRET: sourceEnv.SALSA_INBOX_ACK_SECRET || sourceEnv.NEEM_INBOX_ACK_SECRET || bridgeSecret,
+    NEEM_INBOX_ACK_SECRET: sourceEnv.NEEM_INBOX_ACK_SECRET || sourceEnv.SALSA_INBOX_ACK_SECRET || bridgeSecret,
+    SALSA_CONTROL_ALLOW_EPHEMERAL_DEV: sourceEnv.SALSA_CONTROL_ALLOW_EPHEMERAL_DEV || sourceEnv.NEEM_CONTROL_ALLOW_EPHEMERAL_DEV || 'true',
+    NEEM_CONTROL_ALLOW_EPHEMERAL_DEV: sourceEnv.NEEM_CONTROL_ALLOW_EPHEMERAL_DEV || sourceEnv.SALSA_CONTROL_ALLOW_EPHEMERAL_DEV || 'true',
+    SALSA_BRIDGE_ENABLED: sourceEnv.SALSA_BRIDGE_ENABLED || sourceEnv.NEEM_BRIDGE_ENABLED || 'true',
+    NEEM_BRIDGE_ENABLED: sourceEnv.NEEM_BRIDGE_ENABLED || sourceEnv.SALSA_BRIDGE_ENABLED || 'true',
   };
 
   return [
@@ -40,14 +62,14 @@ function buildServiceDefinitions(sourceEnv = process.env) {
       env: { ...common, PORT: westoPort },
     },
     {
-      name: 'NEEM GODMODE prototype',
+      name: 'SALSA GODMODE prototype',
       args: ['prototype/server.js'],
       env: { ...common, PORT: godmodePort, GODMODE_HOST: godmodeHost },
     },
     {
-      name: 'NEEM Control Plane',
-      args: ['server/neem/control-plane/server.js'],
-      env: { ...common, NEEM_CONTROL_PORT: controlPort },
+      name: 'SALSA Control Plane',
+      args: ['server/salsa/control-plane/server.js'],
+      env: { ...common, SALSA_CONTROL_PORT: controlPort, NEEM_CONTROL_PORT: controlPort },
     },
   ];
 }

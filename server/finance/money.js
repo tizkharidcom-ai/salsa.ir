@@ -44,6 +44,32 @@ function normalizeUnit(inputUnit) {
   throw new RangeError(`واحد مبلغ نامعتبر است: ${inputUnit}`);
 }
 
+/**
+ * Normalizes user-entered numeric text without losing the distinction between
+ * Persian grouping (۱۲۳٫۴۵۶) and a decimal quantity (۱۲٫۵). The UI presents
+ * grouped values with ٫, while API clients may use comma grouping or a Latin
+ * decimal point.
+ */
+function normalizeNumericText(value) {
+  let source = toEnDigits(String(value ?? ''))
+    .replace(/تومان|ریال/g, '')
+    .replace(/[\s_]/g, '')
+    .trim();
+  const hasGroupingMark = /[٬,]/.test(source);
+  const persianSeparatorCount = (source.match(/٫/g) || []).length;
+  source = source.replace(/[٬,]/g, '');
+  if (persianSeparatorCount > 0) {
+    const isGrouped = /^[-+]?\d{1,3}(?:٫\d{3})+$/.test(source)
+      || (hasGroupingMark && /٫\d{3}$/.test(source));
+    source = isGrouped
+      ? source.replace(/٫/g, '')
+      : persianSeparatorCount === 1
+        ? source.replace('٫', '.')
+        : source;
+  }
+  return source;
+}
+
 function parseDecimalRational(value) {
   if (value === null || value === undefined || value === '') {
     return { numerator: 0n, denominator: 1n };
@@ -55,7 +81,7 @@ function parseDecimalRational(value) {
     throw new RangeError('مبلغ باید عددی متناهی باشد؛ NaN و Infinity مجاز نیستند.');
   }
 
-  const source = toEnDigits(String(value)).replace(/[٫]/g, '.').replace(/[٬,]/g, '').trim();
+  const source = normalizeNumericText(value);
   if (source.length > MAX_NUMERIC_INPUT_LENGTH) {
     throw new RangeError('مبلغ از طول مجاز ورودی بیشتر است.');
   }
@@ -247,6 +273,8 @@ function formatNumber(n, opts = {}) {
 module.exports = {
   toFaDigits,
   toEnDigits,
+  normalizeNumericText,
+  parseDecimalRational,
   toIRR,
   toIntegerIRR,
   toInt: toIRR,

@@ -29,6 +29,25 @@ html[data-theme='dark'] {
   --rp-shadow: 0 18px 50px rgba(0, 0, 0, .5);
 }
 
+html[data-theme='dark'] .role-dialog__sheet {
+  background: var(--rp-surface);
+  color: var(--rp-ink);
+}
+
+html[data-theme='dark'] .role-dialog__sheet > header {
+  border-color: var(--rp-line);
+}
+
+html[data-theme='dark'] .role-dialog__sheet > header button {
+  color: var(--rp-ink);
+}
+
+html[data-theme='dark'] .role-danger {
+  border-color: rgba(248, 113, 113, .28);
+  background: rgba(248, 113, 113, .12);
+  color: #fecaca;
+}
+
 html[data-theme='dark'] .role-header {
   background: rgba(21, 26, 30, 0.88);
   border-color: rgba(255, 255, 255, 0.1);
@@ -45,8 +64,9 @@ html[data-theme='dark'] .role-user {
 }
 
 html[data-theme='dark'] .role-shift {
-  background: var(--rp-ink);
-  color: #0d1114;
+  border-color: var(--rp-brand);
+  background: var(--rp-brand);
+  color: #062125;
 }
 
 html[data-theme='dark'] .role-shift.is-open {
@@ -183,8 +203,10 @@ button, a { -webkit-tap-highlight-color: transparent; }
 .order-card__top span, .order-card__meta { color: var(--rp-muted); font-size: 12px; }
 .order-card__items { margin: 12px 0; line-height: 1.9; color: #30383a; }
 .order-card__bottom b { font-size: 15px; }
+.cash-movement-finance-state { display: block; margin-top: 8px; color: var(--rp-warn); font-size: 12px; font-weight: 750; line-height: 1.7; }
+.cash-movement-finance-state.is-posted { color: var(--rp-good); }
 .order-actions { display: flex; gap: 7px; flex-wrap: wrap; justify-content: end; }
-.order-actions button { min-height: 38px; }
+.order-actions button { min-height: 44px; }
 .empty-state { padding: 34px 16px; text-align: center; color: var(--rp-muted); border: 1px dashed var(--rp-line); border-radius: 16px; }
 .floor-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(145px, 1fr)); gap: 10px; }
 .floor-table { position: relative; min-height: 132px; padding: 15px; border: 1px solid var(--rp-line); border-radius: 18px; background: var(--rp-surface-2); text-align: right; cursor: pointer; }
@@ -548,6 +570,7 @@ button, a { -webkit-tap-highlight-color: transparent; }
 .role-toast { position: fixed; z-index: 100; left: 20px; bottom: 20px; max-width: min(420px, calc(100vw - 40px)); padding: 13px 16px; border-radius: 14px; background: #111819; color: #fff; box-shadow: var(--rp-shadow); opacity: 0; transform: translateY(12px); pointer-events: none; transition: .2s ease; }
 .role-toast.show { opacity: 1; transform: none; }
 .role-toast.error { background: #942f37; }
+.role-toast.warning { background: #8a5b08; }
 @media (max-width: 980px) {
   .role-header { align-items: flex-start; }
   .role-brand div { display: none; }
@@ -640,6 +663,25 @@ button, a { -webkit-tap-highlight-color: transparent; }
   .pos-order-row p { grid-column: 1 / -1; }
   .pos-order-row .pos-status { grid-column: 1; }
   .pos-order-row__action { grid-column: 3; grid-row: 1; }
+}
+
+/* Cashier reconciliation queue: readable payment state and touch-safe actions. */
+.order-card__items { color: var(--rp-ink); }
+.order-card__meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; line-height: 1.7; }
+.order-card__payment { color: var(--rp-ink); font-weight: 800; }
+.cashier-register-head-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; }
+.cashier-register-head-actions button { min-height: 44px; }
+html[data-theme='dark'] .is-cashier-workspace .role-inline-warning { border-color: rgba(251, 191, 36, .35); background: rgba(120, 76, 12, .22); color: #f5d48a; }
+
+@media (max-width: 620px) {
+  .role-page-head:has(.cashier-register-head-actions) { flex-direction: column; align-items: stretch; }
+  .cashier-register-head-actions { width: 100%; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .cashier-register-head-actions button { width: 100%; min-height: 48px; padding-inline: 8px; }
+  .order-card__items { font-size: 15px; line-height: 1.75; }
+  .order-card__meta { font-size: 14px; }
+  .order-card__bottom { align-items: stretch; flex-direction: column; }
+  .order-actions { display: grid; grid-template-columns: minmax(0, 1fr); width: 100%; }
+  .order-actions button { width: 100%; min-height: 48px; }
 }
 
 /* Fixed-viewport cashier station: page never scrolls; dense lists use paging. */
@@ -1000,23 +1042,21 @@ body.is-pos-station { height: 100dvh; overflow: hidden; overscroll-behavior: non
 }
 
 @media (max-height: 500px) and (min-width: 621px) {
-  .is-pos-station .pos-category-rail { gap: 2px; }
-  .is-pos-station .pos-category-rail button { min-height: 20px; padding: 1px 3px; border-radius: 5px; font-size: 8px; }
-  .is-pos-station .pos-product-grid { gap: 3px; }
-  .is-pos-station .pos-product-card { grid-template-columns: 28px minmax(0, 1fr); border-radius: 6px; }
+  .is-pos-station .pos-category-rail { gap: 4px; }
+  .is-pos-station .pos-category-rail button { min-height: 36px; padding: 4px 8px; border-radius: 7px; font-size: 12px; }
+  .is-pos-station .pos-product-grid { gap: 5px; }
+  .is-pos-station .pos-product-card { min-height: 44px; grid-template-columns: 36px minmax(0, 1fr); border-radius: 7px; }
   .is-pos-station .pos-product-card > img,
-  .is-pos-station .pos-product-card__placeholder { width: 28px; }
-  .is-pos-station .pos-product-card__add { padding: 2px 3px 2px 15px; }
-  .is-pos-station .pos-product-card__add b { font-size: 8px; }
-  .is-pos-station .pos-product-card__add small { font-size: 7px; }
-  .is-pos-station .pos-product-card__add span { display: none; }
-  .is-pos-station .pos-product-card__customize { top: 2px; left: 2px; width: 14px; height: 14px; font-size: 6px; }
-  .is-pos-station .pos-line__edit b { font-size: 9px; }
-  .is-pos-station .pos-line__edit > span { font-size: 8px; }
-  .is-pos-station .pos-line__complement-tag, .is-pos-station .pos-line__complement small { display: none; }
-  .is-pos-station .pos-line__complement b { font-size: 8px; }
-  .is-pos-station .pos-line__complement > span { font-size: 7px; }
-  .is-pos-station .pos-line__qty button { width: 19px; height: 19px; }
+  .is-pos-station .pos-product-card__placeholder { width: 36px; }
+  .is-pos-station .pos-product-card__add { min-height: 44px; padding: 4px 8px; }
+  .is-pos-station .pos-product-card__add b { font-size: 12px; }
+  .is-pos-station .pos-product-card__add small { font-size: 11px; }
+  .is-pos-station .pos-product-card__customize { top: 3px; left: 3px; width: 36px; height: 36px; font-size: 12px; }
+  .is-pos-station .pos-line__edit b { font-size: 12px; }
+  .is-pos-station .pos-line__edit > span { font-size: 11px; }
+  .is-pos-station .pos-line__complement b { font-size: 11px; }
+  .is-pos-station .pos-line__complement > span { font-size: 10px; }
+  .is-pos-station .pos-line__qty button { width: 32px; height: 32px; }
   .is-cashier-workspace .pos-table-picker { grid-template-columns: repeat(7, minmax(0, 1fr)); }
 }
 
@@ -1199,24 +1239,27 @@ body.is-pos-station { height: 100dvh; overflow: hidden; overscroll-behavior: non
 }
 
 @media (max-height: 500px) and (min-width: 621px) {
-  .is-pos-station .pos-category-deck { gap: 3px; }
-  .is-pos-station .pos-category-card { border-radius: 6px; }
-  .is-pos-station .pos-category-card__content { right: 5px; bottom: 3px; left: 20px; }
-  .is-pos-station .pos-category-card__content b { font-size: 8px; }
-  .is-pos-station .pos-category-card__content small { display: none; }
-  .is-pos-station .pos-category-card > i { left: 3px; bottom: 3px; width: 14px; height: 14px; font-size: 7px; }
-  .is-pos-station .pos-menu-path { flex-basis: 24px; min-height: 24px; }
-  .is-pos-station .pos-menu-path > button { min-height: 20px; padding-inline: 6px; font-size: 7px; }
-  .is-pos-station .pos-menu-path b { font-size: 9px; }
-  .is-pos-station .pos-menu-path span { font-size: 7px; }
-  .is-pos-station .pos-product-grid { gap: 3px; }
-  .is-pos-station .pos-product-card { border-radius: 6px; }
-  .is-pos-station .pos-product-card__info { right: 0; bottom: 0; left: 0; min-height: 42%; padding: 3px 5px 2px; row-gap: 1px; }
-  .is-pos-station .pos-product-card__info::before { right: 5px; }
-  .is-pos-station .pos-product-card__info b { font-size: 9px; }
-  .is-pos-station .pos-product-card__info small { font-size: 7px; }
+  .is-pos-station .pos-category-deck { gap: 5px; }
+  .is-pos-station .pos-category-card { border-radius: 8px; }
+  .is-pos-station .pos-category-card__content { right: 8px; bottom: 7px; left: 34px; }
+  .is-pos-station .pos-category-card__content b { font-size: 13px; }
+  .is-pos-station .pos-category-card__content small { display: block; font-size: 10px; }
+  .is-pos-station .pos-category-card > i { left: 4px; bottom: 5px; width: 28px; height: 28px; font-size: 12px; }
+  .is-pos-station .pos-menu-path { flex-basis: 38px; min-height: 38px; }
+  .is-pos-station .pos-menu-path > button { min-height: 34px; padding-inline: 8px; font-size: 11px; }
+  .is-pos-station .pos-menu-path b { font-size: 13px; }
+  .is-pos-station .pos-menu-path span { font-size: 10px; }
+  .is-pos-station .pos-product-grid { gap: 5px; }
+  .is-pos-station .pos-product-card { min-height: 50px; border-radius: 7px; }
+  .is-pos-station .pos-product-card__info { right: 0; bottom: 0; left: 0; min-height: 38px; padding: 4px 7px 3px; row-gap: 2px; }
+  .is-pos-station .pos-product-card__info::before { right: 7px; }
+  .is-pos-station .pos-product-card__info b { font-size: 13px; line-height: 1.15; -webkit-line-clamp: 2; }
+  .is-pos-station .pos-product-card__info small { font-size: 12px; }
   .is-pos-station .pos-product-card__info > span { display: none; }
-  .is-pos-station .pos-product-card__customize { top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 4px; font-size: 6px; }
+  .is-pos-station .pos-product-card__customize { top: 3px; left: 3px; width: 32px; height: 32px; border-radius: 7px; font-size: 11px; }
+  .is-pos-station .pos-line__edit b { font-size: 12px; }
+  .is-pos-station .pos-line__edit > span { font-size: 11px; }
+  .is-pos-station .pos-line__qty button { width: 32px; height: 32px; }
 }
 
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; animation: none !important; transition: none !important; } }
@@ -1227,6 +1270,113 @@ body.is-pos-station { height: 100dvh; overflow: hidden; overscroll-behavior: non
 .pos-toolbar__actions .pos-ghost { border: 1px solid var(--rp-line); background: var(--rp-surface-2); color: var(--rp-ink); }
 .is-pos-station .pos-toolbar__actions { display: flex; }
 .is-pos-station .pos-toolbar__actions button { min-height: 40px; }
+
+/* Keep the cashier's operational surfaces readable when the account theme is dark. */
+html[data-theme='dark'] .is-cashier-workspace .pos-shell,
+html[data-theme='dark'] .is-cashier-workspace .pos-catalog,
+html[data-theme='dark'] .is-cashier-workspace .pos-check,
+html[data-theme='dark'] .is-cashier-workspace .pos-toolbar,
+html[data-theme='dark'] .is-cashier-workspace .pos-check__tabs button,
+html[data-theme='dark'] .is-cashier-workspace .pos-line,
+html[data-theme='dark'] .is-cashier-workspace .pos-product-grid button,
+html[data-theme='dark'] .is-cashier-workspace .pos-grid button,
+html[data-theme='dark'] .is-cashier-workspace .pos-order-types > button,
+html[data-theme='dark'] .is-cashier-workspace .payment-methods > button,
+html[data-theme='dark'] .is-cashier-workspace .pos-action-list > button,
+html[data-theme='dark'] .is-cashier-workspace .modifier-qty button,
+html[data-theme='dark'] .is-cashier-workspace .split-options > button,
+html[data-theme='dark'] .is-cashier-workspace .split-options label,
+html[data-theme='dark'] .is-cashier-workspace .pos-order-row,
+html[data-theme='dark'] .is-cashier-workspace .pos-pager button {
+  background: var(--rp-surface);
+  color: var(--rp-ink);
+}
+
+html[data-theme='dark'] .is-cashier-workspace .pos-catalog {
+  background: var(--rp-bg);
+}
+
+html[data-theme='dark'] .is-cashier-workspace .pos-ghost,
+html[data-theme='dark'] .is-cashier-workspace .pos-status,
+html[data-theme='dark'] .is-cashier-workspace .pos-table-picker button,
+html[data-theme='dark'] .is-cashier-workspace .modifier-layout > aside,
+html[data-theme='dark'] .is-cashier-workspace .pos-complement-card,
+html[data-theme='dark'] .is-cashier-workspace .pos-complement-qty,
+html[data-theme='dark'] .is-cashier-workspace .pos-complement-layer > footer,
+html[data-theme='dark'] .is-cashier-workspace .split-options,
+html[data-theme='dark'] .is-cashier-workspace .payment-total,
+html[data-theme='dark'] .is-cashier-workspace .pos-floor,
+html[data-theme='dark'] .is-cashier-workspace .pos-floor__zones button,
+html[data-theme='dark'] .is-cashier-workspace .pos-floor__map,
+html[data-theme='dark'] .is-cashier-workspace .pos-floor__map button,
+html[data-theme='dark'] .is-cashier-workspace .pos-floor__map time,
+html[data-theme='dark'] .is-cashier-workspace .pos-order-row__action {
+  border-color: var(--rp-line);
+  background: var(--rp-surface-2);
+  color: var(--rp-ink);
+}
+
+html[data-theme='dark'] .is-cashier-workspace .pos-check__tabs button.active,
+html[data-theme='dark'] .is-cashier-workspace .pos-status.is-sent,
+html[data-theme='dark'] .is-cashier-workspace .pos-table-picker button[data-state="busy"],
+html[data-theme='dark'] .is-cashier-workspace .pos-floor__zones button.active,
+html[data-theme='dark'] .is-cashier-workspace .pos-floor__map button[data-state="busy"],
+html[data-theme='dark'] .is-cashier-workspace .pos-order-row__action.is-edit,
+html[data-theme='dark'] .is-cashier-workspace .cash-presets button {
+  background: var(--rp-brand-soft);
+  color: var(--rp-brand);
+}
+
+html[data-theme='dark'] .is-cashier-workspace .pos-table-picker button[data-state="attention"],
+html[data-theme='dark'] .is-cashier-workspace .pos-floor__map button[data-state="attention"],
+html[data-theme='dark'] .is-cashier-workspace .pos-transaction-list article.is-warning,
+html[data-theme='dark'] .is-cashier-workspace .role-inline-warning,
+html[data-theme='dark'] .is-cashier-workspace .pos-edit-lock-note {
+  border-color: rgba(248, 113, 113, .35);
+  background: rgba(248, 113, 113, .1);
+  color: #fecaca;
+}
+
+html[data-theme='dark'] .is-cashier-workspace .pos-floor__map button[data-state="reserved"] {
+  background: rgba(251, 191, 36, .12);
+  color: #fde68a;
+}
+
+html[data-theme='dark'] .is-cashier-workspace .pos-complement-intro {
+  border-color: var(--rp-line);
+  background: linear-gradient(135deg, var(--rp-surface-2), var(--rp-surface));
+}
+
+html[data-theme='dark'] .is-cashier-workspace .pos-complement-card__placeholder {
+  background: var(--rp-surface-2);
+  color: var(--rp-muted);
+}
+
+html[data-theme='dark'] .is-cashier-workspace .pos-complement-qty button {
+  background: var(--rp-brand-soft);
+  color: var(--rp-brand);
+}
+
+html[data-theme='dark'] .is-cashier-workspace .pos-complement-skip {
+  border-color: var(--rp-line);
+  background: var(--rp-surface-2);
+  color: var(--rp-ink);
+}
+
+html[data-theme='dark'] .is-cashier-workspace .pos-floor__map time.is-ending {
+  background: rgba(251, 191, 36, .12);
+  color: #fde68a;
+}
+
+html[data-theme='dark'] .is-cashier-workspace .pos-toolbar__actions button:not(.pos-ghost) {
+  border: 1px solid var(--rp-brand);
+  background: var(--rp-brand);
+  color: #062125;
+}
+
+html[data-theme='dark'] .is-cashier-workspace .pos-order-row__action.is-edit {
+  color: var(--rp-brand);
+}
 .printer-settings { max-width: 720px; margin: 0 auto; display: grid; gap: 14px; }
 .printer-settings__intro { display: grid; gap: 4px; padding: 13px 15px; border-radius: 15px; background: #edf9fa; border: 1px solid #c9ecef; }
 .printer-settings__intro strong { color: #075f68; font-size: 16px; }
@@ -1323,4 +1473,594 @@ body.is-pos-station { height: 100dvh; overflow: hidden; overscroll-behavior: non
   .reservation-mini-card { padding: 10px; }
   .reservation-mini-card b { font-size: 11px; }
   .role-dialog:has(.waitlist-dialog) { width: 100vw; }
+}
+
+/* Phase 2 Ergonomics: Banknote presets, quick prep tags, and POS discount chips */
+.banknote-presets { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+.banknote-chip {
+  min-height: 36px;
+  padding: 4px 10px;
+  border-radius: 9px;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  background: rgba(16, 185, 129, 0.08);
+  color: #059669;
+  font-weight: 800;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all .15s ease;
+}
+.banknote-chip:hover {
+  background: rgba(16, 185, 129, 0.18);
+  border-color: #059669;
+  transform: translateY(-1px);
+}
+.quick-prep-tags { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 8px; }
+.quick-prep-tag {
+  padding: 4px 9px;
+  border-radius: 7px;
+  border: 1px solid var(--rp-line);
+  background: #f8fafc;
+  color: #334155;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all .15s ease;
+}
+.quick-prep-tag:hover {
+  border-color: var(--rp-brand);
+  background: var(--rp-brand-soft);
+  color: #075e67;
+}
+.quick-prep-tag.is-active {
+  border-color: #059669;
+  background: #ecfdf5;
+  color: #065f46;
+  font-weight: 900;
+  box-shadow: 0 0 0 1px #059669;
+}
+
+/* Mobile POS: keep product names, prices and primary touch targets readable. */
+@media (max-width: 620px) and (min-height: 501px) {
+  .is-pos-station .pos-category-deck {
+    flex: 1 1 0;
+    min-height: 0;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-rows: none;
+    grid-auto-rows: minmax(64px, auto);
+    align-content: start;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 2px 2px 8px;
+  }
+  .is-pos-station .pos-category-card { min-height: 64px; }
+  .is-pos-station .pos-category-card__content { right: 8px; bottom: 7px; left: 34px; }
+  .is-pos-station .pos-category-card__content b { font-size: 14px; line-height: 1.35; }
+  .is-pos-station .pos-category-card__content small { font-size: 11px; }
+  .is-pos-station .pos-category-card > i { left: 5px; bottom: 6px; width: 26px; height: 26px; font-size: 12px; }
+  .is-pos-station .pos-category-rail {
+    display: flex;
+    overflow-x: auto;
+    padding: 2px;
+    gap: 6px;
+    scrollbar-width: thin;
+  }
+  .is-pos-station .pos-category-rail button {
+    flex: 0 0 auto;
+    min-width: 82px;
+    min-height: 44px;
+    padding: 6px 10px;
+    font-size: 13px;
+  }
+  .is-pos-station .pos-product-grid {
+    height: auto;
+    max-height: none;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: none;
+    grid-auto-rows: minmax(78px, auto);
+    gap: 8px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+  .is-pos-station .pos-product-card { min-height: 78px; border-radius: 12px; background: var(--rp-surface); }
+  .is-pos-station .pos-product-grid .pos-product-card__add {
+    min-height: 78px;
+    padding: 8px;
+    display: grid;
+    grid-template-columns: 64px minmax(0, 1fr);
+    align-items: center;
+    gap: 10px;
+    background: var(--rp-surface);
+    color: var(--rp-ink);
+  }
+  .is-pos-station .pos-product-grid .pos-product-card__add::after { display: none; }
+  .is-pos-station .pos-product-grid .pos-product-card__add > img,
+  .is-pos-station .pos-product-grid .pos-product-card__add > .pos-product-card__placeholder {
+    position: static;
+    grid-column: 1;
+    grid-row: 1;
+    width: 64px;
+    height: 64px;
+    border-radius: 9px;
+    opacity: 1;
+  }
+  .is-pos-station .pos-product-card__info {
+    position: static;
+    grid-column: 2;
+    grid-row: 1;
+    min-height: 0;
+    padding: 4px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-content: center;
+    gap: 4px 8px;
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+    color: var(--rp-ink);
+    backdrop-filter: none;
+  }
+  .is-pos-station .pos-product-card__info::before { display: none; }
+  .is-pos-station .pos-product-card__info b {
+    grid-column: 1 / -1;
+    display: -webkit-box;
+    color: var(--rp-ink);
+    font-size: 15px;
+    line-height: 1.4;
+    white-space: normal;
+    text-shadow: none;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+  .is-pos-station .pos-product-card__info small { grid-column: 1; color: var(--rp-muted); font-size: 13px; }
+  .is-pos-station .pos-product-card__info > span {
+    grid-column: 2;
+    display: inline-block;
+    border-color: var(--rp-brand);
+    background: var(--rp-brand-soft);
+    color: var(--rp-ink);
+    font-size: 12px;
+  }
+  .is-pos-station .pos-check { flex-basis: 300px; overflow-y: auto; }
+  .is-pos-station .pos-check__title { min-height: 46px; height: auto; }
+  .is-pos-station .pos-check__tabs button { min-height: 40px; font-size: 13px; }
+  .is-pos-station .pos-line { min-height: 46px; max-height: none; flex: 0 0 auto; }
+  .is-pos-station .pos-line__edit b { font-size: 13px; }
+  .is-pos-station .pos-line__edit > span { font-size: 12px; }
+  .is-pos-station .pos-line__qty button { width: 40px; height: 40px; }
+  .is-pos-station .pos-check__buttons button,
+  .is-pos-station .pos-send { min-height: 44px; font-size: 13px; }
+}
+.pos-discount-strip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border-top: 1px solid var(--rp-line);
+  font-size: 11.5px;
+}
+.pos-discount-chip {
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--rp-line);
+  background: #f1f5f9;
+  color: #475569;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all .12s ease;
+}
+.pos-discount-chip:hover { background: #e2e8f0; }
+.pos-discount-chip.is-active {
+  border-color: #f43f5e;
+  background: #fff1f2;
+  color: #e11d48;
+  font-weight: 900;
+  box-shadow: 0 0 0 1px #f43f5e;
+}
+
+/* Waiter menu cards: readable single-column ordering on narrow touch screens. */
+@media (max-width: 640px) {
+  body.is-waiter-floor-app .wt-menu-screen .wt-menu-stage .wt-items-list {
+    grid-template-columns: minmax(0, 1fr) !important;
+    grid-auto-rows: minmax(96px, auto) !important;
+    gap: 8px !important;
+    padding: 8px 10px max(18px, env(safe-area-inset-bottom)) !important;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  body.is-waiter-floor-app .wt-menu-screen .wt-menu-stage .wt-items-list .wt-item-card {
+    min-width: 0;
+    min-height: 96px !important;
+    grid-template-columns: 72px minmax(0, 1fr) !important;
+    grid-template-rows: minmax(72px, auto) !important;
+    align-items: center;
+    gap: 8px !important;
+    padding: 8px !important;
+    touch-action: manipulation;
+  }
+
+  body.is-waiter-floor-app .wt-menu-screen .wt-menu-stage .wt-item-card__visual {
+    grid-column: 1 !important;
+    grid-row: 1 !important;
+    width: 72px !important;
+    height: 72px !important;
+    min-height: 72px !important;
+  }
+
+  body.is-waiter-floor-app .wt-menu-screen .wt-menu-stage .wt-item-card__info {
+    grid-column: 2 !important;
+    grid-row: 1 !important;
+    min-width: 0;
+    align-content: center;
+    gap: 5px !important;
+    /* The add affordance sits on the physical left in the RTL card. */
+    padding: 3px 4px 3px 60px !important;
+  }
+
+  body.is-waiter-floor-app .wt-menu-screen .wt-menu-stage .wt-item-card__info strong {
+    overflow: visible;
+    font-size: 16px !important;
+    line-height: 1.45 !important;
+    white-space: normal !important;
+    overflow-wrap: anywhere;
+    -webkit-line-clamp: unset !important;
+  }
+
+  body.is-waiter-floor-app .wt-menu-screen .wt-menu-stage .wt-item-card__info > span:not(.wt-stock-badge) {
+    font-size: 14px !important;
+    line-height: 1.45;
+    white-space: nowrap;
+  }
+
+  body.is-waiter-floor-app .wt-menu-screen .wt-menu-stage .wt-item-card .wt-item-row__add-btn {
+    top: 50% !important;
+    right: auto !important;
+    bottom: auto !important;
+    left: 8px !important;
+    width: 48px !important;
+    height: 48px !important;
+    min-width: 48px;
+    min-height: 48px;
+    transform: translateY(-50%) !important;
+  }
+
+  body.is-waiter-floor-app .wt-menu-screen .wt-menu-stage .wt-item-card:focus-visible {
+    outline: 3px solid #0284c7 !important;
+    outline-offset: 2px;
+  }
+}
+
+@media (max-width: 360px) {
+  body.is-waiter-floor-app .wt-menu-screen .wt-menu-stage .wt-items-list .wt-item-card {
+    grid-template-columns: 64px minmax(0, 1fr) !important;
+    gap: 6px !important;
+    padding: 7px !important;
+  }
+
+  body.is-waiter-floor-app .wt-menu-screen .wt-menu-stage .wt-item-card__visual {
+    width: 64px !important;
+    height: 64px !important;
+    min-height: 64px !important;
+  }
+}
+
+/* Waiter menu card cascade guard: this sheet loads before waiter-floor-plan.css. */
+@media (max-width: 640px) {
+  html body.is-waiter-floor-app.is-waiter-terminal .wt-menu-screen .wt-menu-stage .wt-items-list {
+    display: grid !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+    grid-template-columns: minmax(0, 1fr) !important;
+    grid-auto-rows: minmax(104px, auto) !important;
+    overflow-x: hidden !important;
+  }
+
+  html body.is-waiter-floor-app.is-waiter-terminal .wt-menu-screen .wt-menu-stage .wt-items-list .wt-item-card {
+    display: grid !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+    grid-template-columns: 76px minmax(0, 1fr) !important;
+    grid-template-rows: minmax(76px, auto) !important;
+    min-height: 104px !important;
+  }
+
+  html body.is-waiter-floor-app.is-waiter-terminal .wt-menu-screen .wt-menu-stage .wt-item-card__info {
+    min-width: 0 !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+    overflow: visible !important;
+  }
+
+  html body.is-waiter-floor-app.is-waiter-terminal .wt-menu-screen .wt-menu-stage .wt-item-card__info strong,
+  html body.is-waiter-floor-app.is-waiter-terminal .wt-menu-screen .wt-menu-stage .wt-item-card__info > span:not(.wt-stock-badge) {
+    display: block !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    overflow: visible !important;
+    text-overflow: clip !important;
+    white-space: normal !important;
+    overflow-wrap: anywhere !important;
+    word-break: normal !important;
+  }
+
+  html body.is-waiter-floor-app.is-waiter-terminal .wt-menu-screen .wt-menu-stage .wt-item-card__info strong {
+    font-size: 16px !important;
+    line-height: 1.5 !important;
+    -webkit-line-clamp: unset !important;
+  }
+
+  html body.is-waiter-floor-app.is-waiter-terminal .wt-menu-screen .wt-menu-stage .wt-item-card__info > span:not(.wt-stock-badge) {
+    font-size: 14px !important;
+    line-height: 1.5 !important;
+  }
+}
+
+/* Waiter mobile cards: let operational labels wrap instead of hiding table state. */
+html body.is-waiter-workspace .call-row--table-detail {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+@media (max-width: 620px) {
+  html body.is-waiter-floor-app .floor-grid .floor-table.waiter-table-card {
+    box-sizing: border-box !important;
+    height: auto !important;
+    min-height: 156px !important;
+    overflow: visible !important;
+    padding: 13px !important;
+  }
+
+  html body.is-waiter-floor-app .floor-table.waiter-table-card .waiter-table-card__top {
+    align-items: flex-start !important;
+    flex-wrap: wrap !important;
+    gap: 7px !important;
+  }
+
+  html body.is-waiter-floor-app .floor-table.waiter-table-card .waiter-table-card__top strong {
+    flex: 1 1 92px;
+    min-width: 0 !important;
+    font-size: 16px !important;
+    line-height: 1.45 !important;
+    overflow-wrap: anywhere !important;
+  }
+
+  html body.is-waiter-floor-app .floor-table.waiter-table-card .waiter-table-card__top b {
+    flex: 1 1 100%;
+    width: auto !important;
+    max-width: 100% !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+    font-size: 14px !important;
+    line-height: 1.45 !important;
+    text-overflow: clip !important;
+    white-space: normal !important;
+    overflow-wrap: anywhere !important;
+  }
+
+  html body.is-waiter-floor-app .floor-table.waiter-table-card > small,
+  html body.is-waiter-floor-app .floor-table.waiter-table-card > em {
+    min-width: 0 !important;
+    font-size: 14px !important;
+    line-height: 1.55 !important;
+    overflow-wrap: anywhere !important;
+  }
+
+  html body.is-waiter-floor-app .floor-table.waiter-table-card::after {
+    position: static !important;
+    margin-top: auto;
+    font-size: 12px !important;
+    line-height: 1.4 !important;
+  }
+
+  html body.is-waiter-workspace .order-card__top {
+    align-items: flex-start !important;
+  }
+
+  html body.is-waiter-workspace .order-card__top strong,
+  html body.is-waiter-workspace .order-card__top span {
+    min-width: 0;
+    line-height: 1.55;
+    overflow-wrap: anywhere;
+  }
+
+  html body.is-waiter-workspace .order-card__top span {
+    font-size: 14px !important;
+    white-space: normal;
+  }
+
+  html body.is-waiter-workspace .order-card__items {
+    font-size: 15px !important;
+    line-height: 1.75 !important;
+    overflow-wrap: anywhere;
+  }
+
+  html body.is-waiter-workspace .call-row {
+    grid-template-columns: minmax(0, 1fr) !important;
+    gap: 9px !important;
+    align-items: stretch !important;
+  }
+
+  html body.is-waiter-workspace .call-row > b {
+    width: auto !important;
+    min-height: 36px;
+    justify-self: start;
+    padding: 5px 10px;
+    font-size: 14px;
+  }
+
+  html body.is-waiter-workspace .call-row > div {
+    min-width: 0;
+    font-size: 15px;
+    line-height: 1.65;
+    overflow-wrap: anywhere;
+  }
+
+  html body.is-waiter-workspace .call-row > button {
+    width: 100%;
+    min-height: 48px;
+    height: auto;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+}
+
+/* Operational mobile controls stay comfortably tappable; dense cashier lists
+   scroll instead of compressing the controls and labels. */
+@media (max-width: 620px) {
+  .role-toast {
+    right: 12px;
+    bottom: calc(72px + env(safe-area-inset-bottom, 0px));
+    left: 12px;
+    max-width: none;
+  }
+}
+@media (max-width: 620px) and (min-height: 501px) {
+  .is-pos-station .pos-toolbar label,
+  .is-pos-station .pos-toolbar > button { min-height: 44px; }
+  .is-pos-station .pos-menu-path { flex-basis: 44px; min-height: 44px; }
+  .is-pos-station .pos-menu-path > button { min-height: 44px; font-size: 12px; }
+  .is-pos-station .pos-product-card__customize { width: 44px; height: 44px; font-size: 14px; }
+  .is-pos-station .pos-check__tabs button { min-height: 44px; }
+  .is-pos-station .pos-ghost,
+  .is-pos-station .pos-pay,
+  .is-pos-station .pos-send { min-height: 44px; }
+}
+
+/* Final 320-430px waiter ordering pass; deliberately isolated from POS and KDS. */
+@media (max-width: 430px) {
+  html body.is-waiter-floor-app.is-waiter-terminal .wt-menu-screen .wt-menu-stage .wt-items-list {
+    display: grid !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+    grid-template-columns: minmax(0, 1fr) !important;
+    grid-auto-rows: minmax(104px, auto) !important;
+    gap: 8px !important;
+    padding: 8px 8px max(16px, env(safe-area-inset-bottom)) !important;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  html body.is-waiter-floor-app.is-waiter-terminal .wt-menu-screen .wt-menu-stage .wt-items-list .wt-item-card {
+    display: grid !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    min-height: 104px !important;
+    height: auto !important;
+    box-sizing: border-box !important;
+    grid-template-columns: 76px minmax(0, 1fr) !important;
+    grid-template-rows: minmax(76px, auto) !important;
+    align-items: center !important;
+    gap: 8px !important;
+    padding: 8px !important;
+    overflow: visible !important;
+  }
+
+  html body.is-waiter-floor-app.is-waiter-terminal .wt-menu-screen .wt-menu-stage .wt-item-card__visual {
+    grid-column: 1 !important;
+    grid-row: 1 !important;
+    width: 76px !important;
+    height: 76px !important;
+    min-height: 76px !important;
+  }
+
+  html body.is-waiter-floor-app.is-waiter-terminal .wt-menu-screen .wt-menu-stage .wt-item-card__info {
+    grid-column: 2 !important;
+    grid-row: 1 !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    padding: 4px 4px 4px 58px !important;
+    overflow: visible !important;
+  }
+
+  html body.is-waiter-floor-app.is-waiter-terminal .wt-menu-screen .wt-menu-stage .wt-item-card__info strong,
+  html body.is-waiter-floor-app.is-waiter-terminal .wt-menu-screen .wt-menu-stage .wt-item-card__info > span:not(.wt-stock-badge),
+  html body.is-waiter-floor-app.is-waiter-terminal .wt-menu-screen .wt-menu-stage .wt-item-card__info .wt-stock-badge {
+    display: block !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    overflow: visible !important;
+    text-overflow: clip !important;
+    white-space: normal !important;
+    overflow-wrap: anywhere !important;
+    word-break: normal !important;
+  }
+
+  html body.is-waiter-floor-app.is-waiter-terminal .wt-menu-screen .wt-menu-stage .wt-item-card__info strong {
+    font-size: 16px !important;
+    line-height: 1.5 !important;
+    -webkit-line-clamp: unset !important;
+  }
+
+  html body.is-waiter-floor-app.is-waiter-terminal .wt-menu-screen .wt-menu-stage .wt-item-card__info > span:not(.wt-stock-badge) {
+    font-size: 14px !important;
+    line-height: 1.5 !important;
+  }
+
+  html body.is-waiter-floor-app.is-waiter-terminal .wt-menu-screen .wt-menu-stage .wt-item-card__info .wt-stock-badge {
+    font-size: 12px !important;
+    line-height: 1.45 !important;
+  }
+
+  html body.is-waiter-floor-app.is-waiter-terminal .wt-menu-screen .wt-menu-stage .wt-item-card .wt-item-row__add-btn {
+    top: 50% !important;
+    right: auto !important;
+    bottom: auto !important;
+    left: 8px !important;
+    width: 48px !important;
+    min-width: 48px !important;
+    height: 48px !important;
+    min-height: 48px !important;
+    transform: translateY(-50%) !important;
+  }
+
+  html body.is-waiter-floor-app.is-waiter-terminal .wt-tabs .wt-tab,
+  html body.is-waiter-floor-app.is-waiter-terminal .wt-item-dialog .wt-seat-chip,
+  html body.is-waiter-floor-app.is-waiter-terminal .wt-item-dialog #drawer-dec-qty,
+  html body.is-waiter-floor-app.is-waiter-terminal .wt-item-dialog #drawer-inc-qty,
+  html body.is-waiter-floor-app.is-waiter-terminal .wt-item-dialog #drawer-add-to-check,
+  html body.is-waiter-floor-app.is-waiter-terminal .wt-check-actions button,
+  html body.is-waiter-floor-app.is-waiter-terminal .wt-summary-bar__buttons .wt-send-btn,
+  html body.is-waiter-floor-app.is-waiter-terminal .wt-summary-bar__buttons .wt-pay-btn,
+  html body.is-waiter-floor-app.is-waiter-terminal .wt-summary-bar__buttons .wt-serve-btn,
+  html body.is-waiter-floor-app.is-waiter-terminal .wt-fire-btn {
+    min-width: 48px !important;
+    min-height: 48px !important;
+    height: auto !important;
+    white-space: normal !important;
+    overflow-wrap: anywhere !important;
+    line-height: 1.45 !important;
+  }
+
+  html body.is-waiter-floor-app.is-waiter-terminal .wt-item-dialog .wt-seat-chip {
+    font-size: 14px !important;
+  }
+}
+
+@media (max-width: 360px) {
+  html body.is-waiter-floor-app.is-waiter-terminal .wt-menu-screen .wt-menu-stage .wt-items-list .wt-item-card {
+    grid-template-columns: 64px minmax(0, 1fr) !important;
+    grid-template-rows: minmax(64px, auto) !important;
+    gap: 6px !important;
+    padding: 7px !important;
+  }
+
+  html body.is-waiter-floor-app.is-waiter-terminal .wt-menu-screen .wt-menu-stage .wt-item-card__visual {
+    width: 64px !important;
+    height: 64px !important;
+    min-height: 64px !important;
+  }
+
+  html body.is-waiter-floor-app.is-waiter-terminal .wt-menu-screen .wt-menu-stage .wt-item-card__info {
+    padding-left: 56px !important;
+  }
 }

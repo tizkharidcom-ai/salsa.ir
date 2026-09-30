@@ -4,21 +4,29 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="color-scheme" content="light dark">
-  <meta id="meta-theme-color" name="theme-color" content="#f8fafc">
+  <meta id="meta-theme-color" name="theme-color" content="#0B0B0D">
   <meta name="westo-client-origin" content="http://localhost:4180">
-  <title>NEEM GODMODE — مرکز کنترل عملیاتی پلتفرم (Production)</title>
+  <title>SALSA GODMODE — مرکز مدیریت پلتفرم (سیستم‌عامل رستوران)</title>
+  <link rel="icon" type="image/png" href="assets/images/salsa-favicon.png">
+  <link rel="shortcut icon" href="assets/images/favicon.ico">
   <link rel="preload" href="assets/fonts/Vazirmatn-Variable.woff2" as="font" type="font/woff2" crossorigin>
-  <link rel="preload" href="css/tokens.css?v=1.2.2-operator-clarity" as="style">
-  <link rel="preload" href="css/prototype.css?v=1.6.0-simplified-control" as="style">
-  <link rel="stylesheet" href="css/tokens.css?v=1.2.2-operator-clarity">
-  <link rel="stylesheet" href="css/prototype.css?v=1.6.0-simplified-control">
-  <link rel="stylesheet" href="css/godmode-workspace.css?v=2.7.2-quiet-surfaces">
-  <link rel="stylesheet" href="css/gm02-dashboard.css?v=1.0.0">
-  <link rel="stylesheet" href="css/shadcn-godmode.css?v=1.2.1-theme-control">
+  <link rel="preload" href="css/tokens.css?v=salsa-brand-v2-nocache" as="style">
+  <link rel="preload" href="css/apple-design.css?v=salsa-brand-v2-nocache" as="style">
+  <link rel="stylesheet" href="css/tokens.css?v=salsa-brand-v2-nocache">
+  <link rel="stylesheet" href="css/prototype.css?v=salsa-brand-v2-nocache">
+  <link rel="stylesheet" href="css/godmode-workspace.css?v=salsa-brand-v2-nocache">
+  <link rel="stylesheet" href="css/gm02-dashboard.css?v=salsa-brand-v2-nocache">
+  <link rel="stylesheet" href="css/shadcn-godmode.css?v=salsa-brand-v2-nocache">
+  <link rel="stylesheet" href="css/apple-design.css?v=salsa-brand-v2-nocache">
   <script>
     (function () {
       try {
-        var pref = localStorage.getItem('neem_theme') || 'light';
+        var salsaBrandVer = 'salsa-v2-fresh';
+        if (localStorage.getItem('salsa_brand_cache_ver') !== salsaBrandVer) {
+          localStorage.setItem('salsa_brand_cache_ver', salsaBrandVer);
+          localStorage.setItem('salsa_theme', 'dark');
+        }
+        var pref = localStorage.getItem('salsa_theme') || 'dark';
         var resolved = pref;
         if (pref === 'system') {
           resolved = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
@@ -44,9 +52,9 @@
     <div class="prototype-banner" id="prototype-banner" role="region" aria-label="نوار منشأ داده و وضعیت سامانه">
       <div class="prototype-banner-copy">
         <span class="prototype-banner-dot" aria-hidden="true" style="background: var(--color-warning, #f59e0b);"></span>
-        <span class="badge badge-provenance-local"><span class="status-dot dot-amber"></span> پیش‌نمایش محلی</span>
-        <strong>نمونه رابط کاربری GODMODE</strong>
-        <span class="prototype-banner-detail">داده‌ها ساختگی و ایزوله‌اند؛ اتصال عملیاتی و آمادگی تولید در این محیط تأیید نمی‌شود.</span>
+        <span class="badge badge-provenance-local"><span class="status-dot dot-amber"></span> پیش‌نمایش ایزوله · غیرعملیاتی</span>
+        <strong>مرکز مدیریت SALSA GODMODE</strong>
+        <span class="prototype-banner-detail">این نسخه از داده‌های ساختگی استفاده می‌کند و به API یا پایگاه‌دادهٔ عملیاتی متصل نیست.</span>
       </div>
     </div>
 
@@ -55,31 +63,26 @@
         <button class="mobile-menu-btn" id="mobile-menu-btn" onclick="window.GMApp.toggleSidebar()" aria-label="منوی ناوبری اصلی" aria-expanded="false" aria-controls="app-sidebar">
           ☰
         </button>
-        <div class="brand-logo">
-          <div class="brand-badge">N</div>
+        <div class="brand-logo" onclick="location.hash='#home'" style="cursor: pointer;" title="سالسا؛ سیستم‌عامل رستوران‌های مدرن">
+          <div class="brand-badge" aria-label="لوگوی رسمی سالسا"></div>
           <div>
-            <div class="brand-name">مرکز کنترل NEEM</div>
-            <div class="brand-subtitle">GODMODE · CONTROL PLANE</div>
+            <div class="brand-name">مرکز کنترل SALSA</div>
+            <div class="brand-subtitle">سیستم‌عامل رستوران · Restaurant OS</div>
           </div>
         </div>
 
         <!-- Global Command & Quick Switcher Trigger -->
         <button class="header-command-trigger" id="header-command-trigger" onclick="window.GMApp ? window.GMApp.openCommandPalette() : null" aria-label="جست‌وجوی سراسری و پالت دستورات (کلید میانبر: کنترل + K یا اسلش)" aria-haspopup="dialog">
           <span class="command-trigger-icon" aria-hidden="true"></span>
-          <span class="command-trigger-text">جست‌وجو یا اجرای اقدام…</span>
+          <span class="command-trigger-text">جست‌وجوی مشتری، فاکتور، درخواست پشتیبانی، دامنه یا اقدام…</span>
           <kbd class="command-trigger-kbd"><abbr title="Command">⌘</abbr>K</kbd>
         </button>
 
       <div class="header-right">
-        <span class="badge badge-success header-env-badge" style="font-size: 11px;">
-          <span class="status-dot dot-green"></span>
-          عملیاتی (Production)
+        <span class="badge badge-warning header-env-badge" id="header-env-badge">
+          <span class="status-dot dot-amber"></span>
+          پیش‌نمایش محلی
         </span>
-        <!-- Standard Workflows Hierarchy Hub Trigger Button -->
-        <button class="workflow-hub-btn btn btn-ghost btn-xs" id="btn-workflow-hub" onclick="window.GMWorkflows ? window.GMWorkflows.openHierarchyModal() : null" aria-label="سلسله‌مراتب و نقشه فرایندهای استاندارد پلتفرم" title="نقشه فرایندهای استاندارد پلتفرم" aria-haspopup="dialog">
-          <span class="workflow-btn-icon" aria-hidden="true">🧭</span>
-          <span class="workflow-btn-label">فرایندها</span>
-        </button>
         <!-- Theme Switcher Trigger Modal Button -->
         <button class="theme-modal-btn btn btn-ghost btn-xs" id="btn-theme-modal" onclick="window.GMApp ? window.GMApp.openThemeModal() : null" aria-label="تنظیم پوسته و تم (روشن / تیره)" title="تغییر پوسته (روشن / تیره)" aria-haspopup="dialog">
           <span class="theme-btn-icon" id="header-theme-icon" aria-hidden="true">🌓</span>
@@ -94,17 +97,11 @@
           </span>
           <span class="activity-badge-count" id="activity-badge-count" style="display: none;">۰</span>
         </button>
-        <!-- Modular Monolith Kernel Health Monitor Trigger -->
-        <button class="kernel-health-btn btn btn-ghost btn-xs" id="btn-kernel-health" onclick="window.GMApp ? window.GMApp.openKernelHealthDrawer() : null" aria-label="پایش سلامت مونولیت ماژولار و وضعیت ۲۸ ماژول" title="پایش سلامت مونولیت ماژولار (۲۸ ماژول)" aria-haspopup="dialog">
-          <span class="kernel-btn-icon" aria-hidden="true">⚡</span>
-          <span class="kernel-btn-label">ماژولار</span>
-          <span class="badge badge-xs badge-success" id="kernel-health-badge" style="margin-right: 4px; font-size: 10px;">۲۸/۲۸</span>
-        </button>
-        <div class="header-user-chip">
-          <span class="header-user-avatar" aria-hidden="true">ن</span>
+        <div class="header-user-chip" id="header-user-chip" onclick="location.hash='#login'" title="ورود به امنیت حساب مدیر">
+          <span class="header-user-avatar" aria-hidden="true">م</span>
           <div class="header-user-copy">
-            <div class="header-user-name">ناظر پلتفرم</div>
-            <div class="user-subtitle">دسترسی مدیریت ارشد پلتفرم</div>
+            <div class="header-user-name">مدیر پلتفرم</div>
+            <div class="user-subtitle">دسترسی مدیر ارشد</div>
           </div>
         </div>
       </div>
@@ -113,105 +110,56 @@
     <!-- Sidebar Navigation (GODMODE.MD §20.4) -->
     <aside class="app-sidebar" id="app-sidebar" aria-label="منوی ناوبری سامانه">
       <div class="mobile-sidebar-header">
-          <div class="brand-logo">
-          <div class="brand-badge">N</div>
+          <div class="brand-logo" onclick="location.hash='#home'" style="cursor: pointer;">
+          <div class="brand-badge" aria-label="لوگوی رسمی سالسا"></div>
           <div>
-            <div class="brand-name" style="font-size: 12px;">مرکز مدیریت NEEM</div>
-            <div style="font-size: 9px; color: var(--color-slate-400); font-family: var(--font-mono);">GODMODE · PRODUCTION FLEET</div>
+            <div class="brand-name" style="font-size: 12px;">مرکز مدیریت SALSA</div>
+            <div style="font-size: 9px; color: var(--salsa-warm-gray, #8D8F94); font-family: var(--font-mono);">SALSA GODMODE · RESTAURANT OS</div>
           </div>
         </div>
         <button class="mobile-close-btn" onclick="window.GMApp.toggleSidebar()" aria-label="بستن منوی ناوبری">✕</button>
       </div>
 
       <div class="sidebar-header-row">
-        <span class="nav-system-label">مرکز مدیریت NEEM</span>
+        <span class="nav-system-label">مرکز مدیریت SALSA</span>
         <button id="sidebar-collapse-toggle" class="btn-sidebar-collapse" onclick="window.GMApp ? window.GMApp.toggleSidebarCollapse() : null" title="جمع‌کردن / بازکردن منو (۷۲px / ۲۶۴px)" aria-label="تغییر اندازه سایدبار">
           <span class="collapse-icon">⮂</span>
         </button>
       </div>
 
       <div class="nav-controlplane-separator">
-        <span>حوزه‌های عملیاتی کنترل‌پلن</span>
+        <span>بخش‌های مدیریت پلتفرم</span>
       </div>
 
-      <!-- Primary operator navigation. Customer work starts at the registry and stays in its dossier. -->
+      <!-- Primary operator navigation: exactly 5 top-level destinations (superadmin.md §3) -->
       <div class="sidebar-nav-groups gm-primary-nav" id="sidebar-nav-groups">
-        <div class="nav-group" data-nav-group="overview">
-          <button type="button" class="nav-group-title" data-nav-group-toggle="overview" aria-expanded="true" aria-label="بخش خانه و کارهای فوری">
-            <span class="nav-group-heading"><span class="nav-group-name">خانه</span><span class="nav-group-purpose">وضعیت و کارهای نیازمند اقدام</span></span><span class="nav-group-chevron" aria-hidden="true">⌄</span>
-          </button>
-          <div class="nav-subgroup-label">نمای کلی</div>
-          <a href="#overview" class="nav-item" data-module="overview" title="مرکز کنترل امروز">
-            <span class="nav-title"><span class="nav-icon" aria-hidden="true">⌂</span><span>مرکز کنترل امروز</span></span>
-          </a>
-          <a href="#operations" class="nav-item" data-module="overview" title="رخدادها و هشدارهای نیازمند رسیدگی">
-            <span class="nav-title"><span class="nav-icon" aria-hidden="true">!</span><span>رخدادها و هشدارها</span></span>
-          </a>
-          <a href="#jobs" class="nav-item" data-module="overview" title="صف کارها و اجراهای پس‌زمینه">
-            <span class="nav-title"><span class="nav-icon" aria-hidden="true">↻</span><span>صف کارها</span></span>
+        <div class="nav-group is-active-group" data-nav-group="home">
+          <a href="#home" class="nav-item active active-nav" title="مرکز کارهای فوری، صندوق اقدام و سلامت کلی">
+            <span class="nav-title"><span class="nav-icon" aria-hidden="true">🏠</span><span>خانه</span></span>
           </a>
         </div>
 
-        <div class="nav-group" data-nav-group="customers">
-          <button type="button" class="nav-group-title" data-nav-group-toggle="customers" aria-expanded="false" aria-label="بخش مشتریان و مجموعه‌ها">
-            <span class="nav-group-heading"><span class="nav-group-name">مشتریان</span><span class="nav-group-purpose">مجموعه‌ها، راه‌اندازی و پرونده</span></span><span class="nav-group-chevron" aria-hidden="true">⌄</span>
-          </button>
-          <div class="nav-subgroup-label">فهرست و پرونده مشتری</div>
-          <a href="#customers" class="nav-item" data-module="customers" title="فهرست و وضعیت همه مجموعه‌ها">
-            <span class="nav-title"><span class="nav-icon" aria-hidden="true">▦</span><span>همه مجموعه‌ها</span></span>
-            <span class="nav-badge" id="sidebar-tenants-count">۱ فعال</span>
+        <div class="nav-group" data-nav-group="restaurants">
+          <a href="#restaurants" class="nav-item" title="مدیریت مجموعه‌ها، پرونده ۷ تب و ایجاد سریع">
+            <span class="nav-title"><span class="nav-icon" aria-hidden="true">🍽</span><span>رستوران‌ها</span></span>
           </a>
         </div>
 
-        <div class="nav-group" data-nav-group="security">
-          <button type="button" class="nav-group-title" data-nav-group-toggle="security" aria-expanded="false" aria-label="بخش هویت و دسترسی">
-            <span class="nav-group-heading"><span class="nav-group-name">هویت و دسترسی</span><span class="nav-group-purpose">امنیت حساب و نشست‌های راهبر</span></span><span class="nav-group-chevron" aria-hidden="true">⌄</span>
-          </button>
-          <div class="nav-subgroup-label">امنیت پلتفرم</div>
-          <a href="#login" class="nav-item" data-module="security" title="امنیت حساب و نشست">
-            <span class="nav-title"><span class="nav-icon" aria-hidden="true">⌾</span><span>امنیت حساب و نشست‌ها</span></span>
+        <div class="nav-group" data-nav-group="commercial">
+          <a href="#commercial" class="nav-item" title="کاتالوگ ماژول‌ها، پلن‌ها، قیمت‌گذاری و استثنائات مالی">
+            <span class="nav-title"><span class="nav-icon" aria-hidden="true">💼</span><span>بازرگانی</span></span>
           </a>
         </div>
 
-        <div class="nav-group" data-nav-group="billing">
-          <button type="button" class="nav-group-title" data-nav-group-toggle="billing" aria-expanded="false" aria-label="بخش محصول و درآمد">
-            <span class="nav-group-heading"><span class="nav-group-name">محصول و درآمد</span><span class="nav-group-purpose">امکانات، پلن‌ها و وصول</span></span><span class="nav-group-chevron" aria-hidden="true">⌄</span>
-          </button>
-          <div class="nav-subgroup-label">محصول و صورتحساب</div>
-          <a href="#catalog" class="nav-item" data-module="billing" title="کاتالوگ امکانات پلتفرم">
-            <span class="nav-title"><span class="nav-icon" aria-hidden="true">▤</span><span>کاتالوگ امکانات</span></span>
-          </a>
-          <a href="#plans" class="nav-item" data-module="billing" title="پلن‌ها و تعرفه‌ها">
-            <span class="nav-title"><span class="nav-icon" aria-hidden="true">▣</span><span>پلن‌ها و تعرفه‌ها</span></span>
+        <div class="nav-group" data-nav-group="operations">
+          <a href="#operations" class="nav-item" title="مانیتورینگ بلادرنگ، استقرارها، سلامت پورت‌ها و صف کارها">
+            <span class="nav-title"><span class="nav-icon" aria-hidden="true">⚡</span><span>عملیات پلتفرم</span></span>
           </a>
         </div>
 
-        <div class="nav-group" data-nav-group="infrastructure">
-          <button type="button" class="nav-group-title" data-nav-group-toggle="infrastructure" aria-expanded="false" aria-label="بخش پایداری و امنیت">
-            <span class="nav-group-heading"><span class="nav-group-name">پایداری و امنیت</span><span class="nav-group-purpose">سلامت، دسترسی و بازیابی</span></span><span class="nav-group-chevron" aria-hidden="true">⌄</span>
-          </button>
-          <div class="nav-subgroup-label">سلامت و تداوم</div>
-          <a href="#infrastructure" class="nav-item" data-module="infrastructure" title="زیرساخت و اتصال سرویس‌ها">
-            <span class="nav-title"><span class="nav-icon" aria-hidden="true">⬡</span><span>زیرساخت و سلامت</span></span>
-          </a>
-          <a href="#releases" class="nav-item" data-module="infrastructure" title="انتشار و بازگشت نسخه">
-            <span class="nav-title"><span class="nav-icon" aria-hidden="true">⇄</span><span>انتشار و بازگشت نسخه</span></span>
-          </a>
-          <a href="#automations" class="nav-item" data-module="infrastructure" title="خودکارسازی و قوانین">
-            <span class="nav-title"><span class="nav-icon" aria-hidden="true">↯</span><span>خودکارسازی</span></span>
-          </a>
-        </div>
-
-        <div class="nav-group" data-nav-group="platform">
-          <button type="button" class="nav-group-title" data-nav-group-toggle="platform" aria-expanded="false" aria-label="بخش تنظیمات پلتفرم">
-            <span class="nav-group-heading"><span class="nav-group-name">تنظیمات</span><span class="nav-group-purpose">تیم، قوانین و ابزارهای پیشرفته</span></span><span class="nav-group-chevron" aria-hidden="true">⌄</span>
-          </button>
-          <div class="nav-subgroup-label">پیکربندی و تیم</div>
-          <a href="#team" class="nav-item" data-module="platform" title="تیم راهبری و تنظیمات کلان">
-            <span class="nav-title"><span class="nav-icon" aria-hidden="true">⚙</span><span>تیم و تنظیمات</span></span>
-          </a>
-          <a href="#audit" class="nav-item" data-module="platform" title="ردپای ممیزی پلتفرم">
-            <span class="nav-title"><span class="nav-icon" aria-hidden="true">≣</span><span>ردپای ممیزی</span></span>
+        <div class="nav-group" data-nav-group="settings">
+          <a href="#settings" class="nav-item" title="تیم سالسا، امنیت، ممیزی و کاتالوگ سخت‌افزار">
+            <span class="nav-title"><span class="nav-icon" aria-hidden="true">⚙</span><span>تنظیمات</span></span>
           </a>
         </div>
       </div>
@@ -303,12 +251,12 @@
 
   <!-- Scripts: Store, Views, Router, App (Deferred Non-Blocking Loading) -->
   <script defer src="js/contracts.js?v=1.4.3-short-routes"></script>
-  <script defer src="js/store.js?v=2.7.0-audit-channel"></script>
+  <script defer src="js/store.js?v=2.8.0-mock-provenance"></script>
   <script defer src="js/views/gm01-login.js?v=2.5.1-global-context"></script>
   <script defer src="js/views/gm02-overview.js?v=1.8.2-global-context"></script>
   <script defer src="js/views/gm03-tenants.js?v=3.3.0-escaped-cells"></script>
   <script defer src="js/views/gm04-tenant-detail.js?v=3.7.0-escaped-jumps"></script>
-  <script defer src="js/views/gm05-tenant-new.js?v=3.3.0-escaped-wizard"></script>
+  <script defer src="js/views/gm05-tenant-new.js?v=3.4.0-production-disclosure"></script>
   <script defer src="js/views/gm06-provisioning.js?v=3.2.0-escaped-jumps"></script>
   <script defer src="js/views/gm08-features.js?v=2.6.0-global-context"></script>
   <script defer src="js/views/gm09-tenant-features.js?v=3.2.0-escaped-jumps"></script>
@@ -331,6 +279,7 @@
   <script defer src="js/views/gm26-audit.js?v=2.6.0-delegated-actions"></script>
   <script defer src="js/views/gm27-team.js?v=2.5.0-platform-workspace"></script>
   <script defer src="js/views/gm28-portal.js?v=3.3.0-escaped-jumps"></script>
+  <script defer src="js/views/gm29-printers.js?v=1.0.0"></script>
   <!-- Modular Monolith Components & Workspaces -->
   <script defer src="js/kernel/event-bus.js?v=1.0.0"></script>
   <script defer src="js/kernel/kernel.js?v=1.0.0"></script>
@@ -341,11 +290,48 @@
   <script defer src="js/components/command-palette.js?v=1.8.0-origin-links"></script>
   <script defer src="js/components/form-utils.js?v=1.6.0"></script>
   <script defer src="js/components/activity-ledger.js?v=1.6.1-global-context"></script>
-  <script defer src="js/components/provenance-banner.js?v=1.7.0-global-context"></script>
+  <script defer src="js/components/provenance-banner.js?v=1.8.0-mock-only"></script>
   <script defer src="js/workspaces/index.js?v=1.7.0-customer-flows"></script>
   <script defer src="js/workflow-hierarchy.js?v=1.6.3-global-context"></script>
   <script defer src="js/router.js?v=1.6.4-short-routes"></script>
-  <script defer src="js/app.js?v=1.9.0-origin-links"></script>
+  <script defer src="js/app.js?v=2.0.0-honest-provenance"></script>
+
+  <!-- God Mode v2 Modular Architecture (superadmin.md) -->
+  <script defer src="js/godmode/app/registry.js"></script>
+  <script defer src="js/godmode/app/app-mode.js"></script>
+  <script defer src="js/godmode/app/permissions.js"></script>
+  <script defer src="js/godmode/api/control-plane-client.js"></script>
+  <script defer src="js/godmode/domain/restaurants/repository.js"></script>
+  <script defer src="js/godmode/domain/entitlements/repository.js"></script>
+  <script defer src="js/godmode/domain/operations/repository.js"></script>
+  <script defer src="js/godmode/domain/commercial/repository.js"></script>
+  <script defer src="js/godmode/domain/support/repository.js"></script>
+  <script defer src="js/godmode/components/status-badge.js"></script>
+  <script defer src="js/godmode/components/source-state.js"></script>
+  <script defer src="js/godmode/components/restaurant-context-header.js"></script>
+  <script defer src="js/godmode/components/confirm-dialog.js"></script>
+  <script defer src="js/godmode/components/app-shell.js?v=1.0.1-mock-only"></script>
+  <script defer src="js/godmode/app/router.js"></script>
+  <script defer src="js/godmode/pages/home/home.js"></script>
+  <script defer src="js/godmode/pages/restaurants/list.js"></script>
+  <script defer src="js/godmode/pages/restaurants/create.js"></script>
+  <script defer src="js/godmode/pages/restaurants/workspace/shell.js"></script>
+  <script defer src="js/godmode/pages/restaurants/workspace/overview.js"></script>
+  <script defer src="js/godmode/pages/restaurants/workspace/subscription.js"></script>
+  <script defer src="js/godmode/pages/restaurants/workspace/people.js"></script>
+  <script defer src="js/godmode/pages/restaurants/workspace/hardware.js"></script>
+  <script defer src="js/godmode/pages/restaurants/workspace/channels.js"></script>
+  <script defer src="js/godmode/pages/restaurants/workspace/reliability.js"></script>
+  <script defer src="js/godmode/pages/restaurants/workspace/activity.js"></script>
+  <script defer src="js/godmode/pages/commercial/commercial.js"></script>
+  <script defer src="js/godmode/pages/operations/operations.js"></script>
+  <script defer src="js/godmode/pages/settings/settings.js"></script>
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      if (window.GodModeAppShell) window.GodModeAppShell.init();
+      if (window.GodModeRouter) window.GodModeRouter.init();
+    });
+  </script>
 
 </body>
 </html>

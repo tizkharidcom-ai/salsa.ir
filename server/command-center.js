@@ -21,14 +21,20 @@ const ROLE_CAPABILITIES = Object.freeze({
     'orders.view',
     'orders.create',
     'orders.manage',
+    'orders.course.manage',
+    'orders.split',
+    'orders.move_table',
     'payments.manage',
+    'payments.collect',
     'cash.manage',
     'tables.view',
+    'tables.manage',
     'service.manage',
     'kitchen.view',
     'kitchen.manage',
     'reservations.view',
     'reservations.manage',
+    'reservations.receive',
     'menu.view',
     'menu.manage',
     'inventory.view',
@@ -43,6 +49,7 @@ const ROLE_CAPABILITIES = Object.freeze({
     'content.manage',
     'role.preview',
     'finance.view',
+    'finance.export',
     'finance.events.manage',
     'finance.journal.create',
     'finance.journal.post',
@@ -53,18 +60,35 @@ const ROLE_CAPABILITIES = Object.freeze({
     'finance.period.close',
     'finance.period.reopen',
     'finance.settings.manage',
+    'payments.refund.request',
+    // Granular PII / staff / settings caps (NEEM TPEL)
+    'pii.view',
+    'staff.view',
+    'staff.manage',
+    'settings.manage',
+    'audit.view',
+    'menu.price.update',
+    'pii.view',
+    'customers.phone.masked',
+    'customers.directory.manage',
+    'messaging.send',
+    'messaging.settings.manage',
   ],
   accountant: [
     'command.view',
     'finance.view',
+    'finance.export',
     'finance.events.manage',
     'finance.journal.create',
     'finance.reconcile',
     'finance.payables.manage',
     'finance.reports.view',
     'finance.period.close',
+    'payments.refund.request',
     'inventory.view',
     'reports.view',
+    // accountants need audit trail visibility but NOT PII or staff management
+    'audit.view',
   ],
   cashier: [
     'command.view',
@@ -73,24 +97,38 @@ const ROLE_CAPABILITIES = Object.freeze({
     'orders.create',
     'orders.manage',
     'payments.manage',
+    'payments.collect',
+    'payments.refund.request',
     'cash.manage',
     'reservations.view',
     'reservations.manage',
+    'reservations.receive',
     'delivery.view',
     'delivery.manage',
     'tables.view',
+    // cashier can see staff list (e.g. for shift assignment) but cannot manage
+    'staff.view',
   ],
   waiter: [
     'ops.view',
     'orders.view',
     'orders.create',
+    'orders.course.manage',
+    'orders.split',
+    'orders.move_table',
+    'payments.collect',
     'tables.view',
     'service.manage',
     'reservations.view',
+    'reservations.receive',
   ],
   kitchen: ['ops.view', 'kitchen.view', 'kitchen.manage', 'inventory.view', 'inventory.operations', 'inventory.receiving'],
-  guest: [],
+  // Authenticated customer accounts keep a separate own_records surface.
+  // These are not staff permissions and must never grant tenant/branch data.
+  guest: ['profile.self.manage', 'wallet.self.view', 'wallet.topup', 'loyalty.self.view', 'orders.self.pay', 'campaigns.self.claim'],
 });
+
+for (const capabilities of Object.values(ROLE_CAPABILITIES)) Object.freeze(capabilities);
 
 const ROLE_CAPABILITY_SETS = Object.freeze(
   Object.fromEntries(
@@ -99,17 +137,44 @@ const ROLE_CAPABILITY_SETS = Object.freeze(
 );
 
 const FULFILLMENTS = Object.freeze(['dine_in', 'pickup', 'delivery']);
-const PAYMENT_STATUSES = Object.freeze(['unpaid', 'partial', 'pending', 'paid', 'failed', 'cancelled', 'refunded']);
-const PRE_KITCHEN_EDIT_STATUSES = new Set(['pay_at_cashier', 'awaiting_confirmation', 'sent_to_kitchen', 'paid']);
+const PAYMENT_STATUSES = Object.freeze(['unpaid', 'partial', 'pending', 'paid', 'failed', 'cancelled', 'refunded', 'unknown']);
+const DELIVERY_ACCEPTANCE_ACTOR_ROLES = new Set(['owner', 'manager', 'cashier']);
+const DELIVERY_KITCHEN_STATUSES = new Set(['sent_to_kitchen', 'preparing', 'ready', 'dispatched', 'delivered']);
+const PRE_KITCHEN_EDIT_STATUSES = new Set(['pay_at_cashier', 'awaiting_confirmation', 'sent_to_kitchen']);
+const KITCHEN_ELIGIBLE_PAYMENT_STATUSES = new Set(['unpaid', 'partial', 'failed', 'paid']);
+const SETTLEABLE_ORDER_STATUSES = new Set([
+  'pay_at_cashier', 'awaiting_confirmation', 'sent_to_kitchen', 'preparing', 'ready', 'done',
+  'picked_up', 'delivered',
+]);
 
 function canEditOrderBeforeKitchen(order) {
   if (!order || order.startedAt || order.paymentMethod === 'online') return false;
+  if (['partial', 'pending', 'paid', 'refunded', 'unknown'].includes(paymentStatusFor(order))) return false;
+  const received = Math.max(
+    Number(order.amountPaid) || 0,
+    (Array.isArray(order.partialPayments) ? order.partialPayments : [])
+      .reduce((sum, payment) => sum + Math.max(0, Number(payment?.amount) || 0), 0),
+  );
+  if (received > 0) return false;
   return PRE_KITCHEN_EDIT_STATUSES.has(String(order.status || ''));
+}
+
+function canSettleOrder(order) {
+  if (!order || !SETTLEABLE_ORDER_STATUSES.has(String(order.status || ''))) return false;
+  // An outstanding gateway attempt or unreconciled/reversed payment cannot
+  // safely accept another tender. Partial and failed attempts remain payable.
+  if (['paid', 'pending', 'refunded', 'unknown'].includes(paymentStatusFor(order))) return false;
+  const fulfillment = String(order.fulfillment || '').toLowerCase();
+  if (order.status === 'delivered' && fulfillment !== 'delivery') return false;
+  if (order.status === 'picked_up' && fulfillment !== 'pickup') return false;
+  if (order.status === 'done' && fulfillment !== 'dine_in') return false;
+  return true;
 }
 
 function normalizeRole(role, adminPhones = [], phone = '') {
   if (Array.isArray(adminPhones) && adminPhones.includes(phone)) return 'owner';
-  const value = String(role || '').trim().toLowerCase();
+  if (typeof role !== 'string') return 'guest';
+  const value = role.trim().toLowerCase();
   if (value === 'admin') return 'owner';
   if (Object.prototype.hasOwnProperty.call(ROLE_CAPABILITIES, value)) return value;
   return 'guest';
@@ -121,7 +186,7 @@ function capabilitiesFor(user, settings = {}) {
 }
 
 function branchScopeForUser(user, { adminPhones = [], role = null } = {}) {
-  const effective = role || normalizeRole(user?.role, adminPhones, user?.phone || '');
+  const effective = normalizeRole(role || user?.role, adminPhones, user?.phone || '');
   if (effective === 'owner') return null;
   const hasExplicitList = Array.isArray(user?.allowedBranchIds) || Array.isArray(user?.branchIds);
   const raw = Array.isArray(user?.allowedBranchIds)
@@ -129,12 +194,15 @@ function branchScopeForUser(user, { adminPhones = [], role = null } = {}) {
     : Array.isArray(user?.branchIds)
       ? user.branchIds
       : user?.branchId == null || user.branchId === '' ? null : [user.branchId];
-  if (raw === null) return null;
+  // An omitted branch assignment is not an implicit all-branch grant. Only
+  // owners are global; staff must receive an explicit branch scope.
+  if (raw === null) return [];
   const branchIds = [...new Set(raw.map(Number).filter((value) => Number.isSafeInteger(value) && value > 0))];
   return hasExplicitList || branchIds.length ? branchIds : [];
 }
 
 function can(user, capability, settings = {}) {
+  if (!user || typeof user !== 'object' || Array.isArray(user)) return false;
   const role = normalizeRole(user?.role, settings.adminPhones || [], user?.phone || '');
   const capabilities = ROLE_CAPABILITY_SETS[role] || ROLE_CAPABILITY_SETS.guest;
   return capabilities.has('*') || capabilities.has(capability);
@@ -172,8 +240,8 @@ function normalizeFulfillment(value, { tableNo = '' } = {}) {
 
 function paymentStatusFor(order) {
   if (PAYMENT_STATUSES.includes(order?.paymentStatus)) return order.paymentStatus;
-  if (order?.status === 'paid' || order?.status === 'preparing' || order?.status === 'ready' || order?.status === 'done') return 'paid';
   if (order?.status === 'pending_online') return 'pending';
+  if (['paid', 'sent_to_kitchen', 'preparing', 'ready', 'dispatched', 'picked_up', 'delivered', 'done', 'cancelled'].includes(String(order?.status || ''))) return 'unknown';
   return 'unpaid';
 }
 
@@ -183,24 +251,130 @@ function initialOrderStatus({ paymentMethod = 'cashier', fulfillment = 'dine_in'
   return 'pay_at_cashier';
 }
 
+function hasAcceptedDelivery(order) {
+  if (normalizeFulfillment(order?.fulfillment, { tableNo: order?.tableNo }) !== 'delivery') return true;
+  const acceptance = order?.deliveryAcceptance;
+  const acceptedAt = isValidDeliveryAcceptanceTimestamp(acceptance?.acceptedAt)
+    ? Date.parse(acceptance.acceptedAt)
+    : NaN;
+  const acceptedBy = acceptance?.acceptedBy;
+  return acceptance?.status === 'accepted'
+    && acceptance.source === 'restaurant'
+    && Number.isFinite(acceptedAt)
+    && acceptedAt > 0
+    && acceptedAt <= Date.now()
+    && typeof acceptance.reference === 'string'
+    && /^[A-Za-z0-9][A-Za-z0-9._:-]{7,159}$/.test(acceptance.reference)
+    && typeof acceptedBy?.phone === 'string'
+    && acceptedBy.phone.trim().length > 0
+    && acceptedBy.phone.trim().length <= 64
+    && DELIVERY_ACCEPTANCE_ACTOR_ROLES.has(String(acceptedBy.role || '').trim().toLowerCase())
+    && deliveryAcceptancePrecedesKitchen(order, acceptedAt);
+}
+
+function isValidDeliveryAcceptanceTimestamp(value) {
+  if (typeof value !== 'string') return false;
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})$/u.exec(value);
+  if (!match || !Number.isFinite(Date.parse(value))) return false;
+  const [, yearText, monthText, dayText, hourText, minuteText, secondText] = match;
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const day = Number(dayText);
+  const hour = Number(hourText);
+  const minute = Number(minuteText);
+  const second = Number(secondText);
+  const leapYear = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const daysInMonth = [31, leapYear ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  return month >= 1 && month <= 12 && day >= 1 && day <= daysInMonth[month - 1]
+    && hour <= 23 && minute <= 59 && second <= 59;
+}
+
+function deliveryAcceptancePrecedesKitchen(order, acceptedAt) {
+  if (!Number.isFinite(acceptedAt)) return false;
+  const handoffEvents = (Array.isArray(order?.statusHistory) ? order.statusHistory : [])
+    .filter((entry) => DELIVERY_KITCHEN_STATUSES.has(String(entry?.status || '').trim().toLowerCase()));
+  const startTimes = [];
+  for (const event of handoffEvents) {
+    const at = isValidDeliveryAcceptanceTimestamp(event?.at) ? Date.parse(event.at) : NaN;
+    if (!Number.isFinite(at) || at <= 0 || at > Date.now()) return false;
+    startTimes.push(at);
+  }
+  if (order?.startedAt != null && order.startedAt !== '') {
+    const startedAt = isValidDeliveryAcceptanceTimestamp(order.startedAt) ? Date.parse(order.startedAt) : NaN;
+    if (!Number.isFinite(startedAt) || startedAt <= 0 || startedAt > Date.now()) return false;
+    startTimes.push(startedAt);
+  }
+  const currentStatus = String(order?.status || '').trim().toLowerCase();
+  if (DELIVERY_KITCHEN_STATUSES.has(currentStatus)
+    && !handoffEvents.some((event) => String(event?.status || '').trim().toLowerCase() === currentStatus)
+    && !order?.startedAt) {
+    const statusAt = isValidDeliveryAcceptanceTimestamp(order.statusAt) ? Date.parse(order.statusAt) : NaN;
+    if (!Number.isFinite(statusAt) || statusAt <= 0 || statusAt > Date.now()) return false;
+    startTimes.push(statusAt);
+  }
+  return startTimes.every((at) => acceptedAt <= at);
+}
+
+function nextOrderStatusAfterPayment(order) {
+  if (!order || paymentStatusFor(order) !== 'paid') return null;
+  const status = String(order.status || '');
+  const fulfillment = normalizeFulfillment(order.fulfillment, { tableNo: order.tableNo });
+  if (fulfillment === 'delivery') {
+    if (['pending_online', 'awaiting_confirmation', 'pay_at_cashier'].includes(status)) {
+      if (hasAcceptedDelivery(order)) return 'sent_to_kitchen';
+      return status === 'pending_online' ? 'awaiting_confirmation' : null;
+    }
+    return null;
+  }
+  return ['pending_online', 'awaiting_confirmation', 'pay_at_cashier'].includes(status) ? 'paid' : null;
+}
+
+function nextOrderStatusAfterDeliveryAcceptance(order) {
+  if (!order || normalizeFulfillment(order.fulfillment, { tableNo: order.tableNo }) !== 'delivery') return null;
+  if (!hasAcceptedDelivery(order) || !KITCHEN_ELIGIBLE_PAYMENT_STATUSES.has(paymentStatusFor(order))) return null;
+  return ['pending_online', 'awaiting_confirmation', 'pay_at_cashier', 'paid'].includes(String(order.status || ''))
+    ? 'sent_to_kitchen'
+    : null;
+}
+
 function allowedOrderTransitions(order) {
   const status = String(order?.status || 'pending_online');
   const fulfillment = normalizeFulfillment(order?.fulfillment, { tableNo: order?.tableNo });
   const payment = paymentStatusFor(order);
+  const canMarkPaid = payment === 'paid';
+  const acceptedDelivery = hasAcceptedDelivery(order);
+  const deliveryNextAfterPayment = nextOrderStatusAfterPayment(order);
+  const deliveryNextAfterAcceptance = nextOrderStatusAfterDeliveryAcceptance(order);
   const map = {
-    pending_online: payment === 'paid' ? ['paid', 'cancelled'] : ['cancelled'],
-    awaiting_confirmation: ['paid', 'cancelled'],
-    pay_at_cashier: ['paid', 'cancelled'],
-    sent_to_kitchen: ['preparing', 'cancelled'],
-    paid: ['preparing', 'cancelled'],
-    preparing: ['ready', 'cancelled'],
+    pending_online: fulfillment === 'delivery'
+      ? [...new Set([deliveryNextAfterPayment, deliveryNextAfterAcceptance, 'cancelled'].filter(Boolean))]
+      : payment === 'paid' ? ['paid', 'cancelled'] : ['cancelled'],
+    // `paid` is a financial state, not a status-only operator action. The
+    // status endpoints also validate settlement; keep this helper's contract
+    // aligned so unpaid/partial orders never advertise the transition.
+    awaiting_confirmation: fulfillment === 'delivery'
+      ? [...new Set([deliveryNextAfterPayment, deliveryNextAfterAcceptance, 'cancelled'].filter(Boolean))]
+      : canMarkPaid ? ['paid', 'cancelled'] : ['cancelled'],
+    pay_at_cashier: fulfillment === 'delivery'
+      ? [...new Set([deliveryNextAfterPayment, deliveryNextAfterAcceptance, 'cancelled'].filter(Boolean))]
+      : canMarkPaid ? ['paid', 'sent_to_kitchen', 'cancelled'] : ['sent_to_kitchen', 'cancelled'],
+    sent_to_kitchen: fulfillment === 'delivery' && !acceptedDelivery ? ['cancelled'] : ['preparing', 'cancelled'],
+    paid: fulfillment === 'delivery'
+      ? acceptedDelivery ? ['sent_to_kitchen', 'preparing', 'cancelled'] : ['cancelled']
+      : canMarkPaid ? ['preparing', 'cancelled'] : ['cancelled'],
+    preparing: fulfillment === 'delivery' && !acceptedDelivery ? ['cancelled'] : ['ready', 'cancelled'],
     ready:
-      fulfillment === 'delivery'
+      fulfillment === 'delivery' && !acceptedDelivery
+        ? ['cancelled']
+        : fulfillment === 'delivery'
         ? ['dispatched', 'cancelled']
         : fulfillment === 'pickup'
           ? ['picked_up', 'cancelled']
           : ['done', 'cancelled'],
-    dispatched: ['delivered', 'cancelled'],
+    // Dispatch is a delivery-only handoff. Corrupt/legacy records with a
+    // different fulfillment may still be cancelled, but cannot be marked
+    // delivered through this state machine.
+    dispatched: fulfillment === 'delivery' && acceptedDelivery ? ['delivered', 'cancelled'] : ['cancelled'],
     picked_up: [],
     delivered: [],
     done: [],
@@ -210,12 +384,18 @@ function allowedOrderTransitions(order) {
 }
 
 function canTransitionOrder(order, nextStatus) {
-  return allowedOrderTransitions(order).includes(String(nextStatus || ''));
+  const next = String(nextStatus || '');
+  const fulfillment = normalizeFulfillment(order?.fulfillment, { tableNo: order?.tableNo });
+  if (fulfillment === 'delivery' && DELIVERY_KITCHEN_STATUSES.has(next) && !hasAcceptedDelivery(order)) return false;
+  return allowedOrderTransitions(order).includes(next);
 }
 
 function quoteFulfillment({ fulfillment, subtotal, zone, branchId } = {}) {
   const kind = normalizeFulfillment(fulfillment);
-  const amount = Math.max(0, Number(subtotal) || 0);
+  const amount = parseNonnegativeSafeInteger(subtotal);
+  if (amount === null) {
+    return { ok: false, code: 'order_amount_invalid', message: 'مبلغ سفارش معتبر نیست' };
+  }
   if (kind !== 'delivery') {
     return {
       ok: true,
@@ -229,7 +409,10 @@ function quoteFulfillment({ fulfillment, subtotal, zone, branchId } = {}) {
   if (!zone || zone.active === false || (branchId && Number(zone.branchId) !== Number(branchId))) {
     return { ok: false, code: 'delivery_zone_unavailable', message: 'محدودهٔ ارسال انتخاب‌شده فعال نیست' };
   }
-  const minimum = Math.max(0, Number(zone.minOrder) || 0);
+  const minimum = zone.minOrder == null ? 0 : parseNonnegativeSafeInteger(zone.minOrder);
+  if (minimum === null) {
+    return { ok: false, code: 'delivery_zone_invalid', message: 'تنظیمات محدودهٔ ارسال معتبر نیست' };
+  }
   if (amount < minimum) {
     return {
       ok: false,
@@ -238,7 +421,13 @@ function quoteFulfillment({ fulfillment, subtotal, zone, branchId } = {}) {
       minimum,
     };
   }
-  const deliveryFee = Math.max(0, Number(zone.fee) || 0);
+  const deliveryFee = parseNonnegativeSafeInteger(zone.fee);
+  if (deliveryFee === null) {
+    return { ok: false, code: 'delivery_fee_invalid', message: 'هزینهٔ ارسال معتبر نیست' };
+  }
+  if (!Number.isSafeInteger(amount + deliveryFee)) {
+    return { ok: false, code: 'order_amount_unsafe', message: 'مبلغ سفارش از محدودهٔ مجاز بیشتر است' };
+  }
   return {
     ok: true,
     fulfillment: kind,
@@ -253,6 +442,13 @@ function quoteFulfillment({ fulfillment, subtotal, zone, branchId } = {}) {
     },
     etaMinutes: Math.max(0, Number(zone.etaMinutes) || 0),
   };
+}
+
+function parseNonnegativeSafeInteger(value) {
+  if (typeof value === 'number') return Number.isSafeInteger(value) && value >= 0 ? value : null;
+  if (typeof value !== 'string' || !/^\d+$/u.test(value)) return null;
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : null;
 }
 
 function nextId(items) {
@@ -387,6 +583,40 @@ function createEventHub({ heartbeatMs = 25000 } = {}) {
   };
 }
 
+function isOwnerActor(db, user) {
+  if (!user) return false;
+  const adminPhones = Array.isArray(db?.settings?.adminPhones)
+    ? db.settings.adminPhones.map(String)
+    : [];
+  const normalized = normalizeRole(user.role, adminPhones, user.phone || '');
+  return normalized === 'owner';
+}
+
+function assertStaffMutationBoundary(db, actorOrReq, target, { allowSelf = false } = {}) {
+  const actor = (actorOrReq && actorOrReq.user) ? actorOrReq.user : actorOrReq;
+  const actorIsOwner = isOwnerActor(db, actor);
+  const targetIsOwner = isOwnerActor(db, target);
+  if (targetIsOwner && !actorIsOwner) {
+    const error = new Error('حساب مالک فقط توسط مالک قابل مدیریت است.');
+    error.code = 'staff_owner_protected';
+    error.status = 403;
+    throw error;
+  }
+  const targetRole = String(target?.role || '').toLowerCase();
+  if (!actorIsOwner && targetRole === 'manager') {
+    const error = new Error('حساب مدیر فقط توسط مالک قابل مدیریت است.');
+    error.code = 'staff_manager_protected';
+    error.status = 403;
+    throw error;
+  }
+  if (!allowSelf && actor?.phone && target?.phone && String(actor.phone) === String(target.phone)) {
+    const error = new Error('کاربر جاری را نمی‌توان از مسیر مدیریت کارکنان حذف یا مسدود کرد.');
+    error.code = 'staff_self_protected';
+    error.status = 400;
+    throw error;
+  }
+}
+
 module.exports = {
   ROLE_CAPABILITIES,
   FULFILLMENTS,
@@ -400,11 +630,17 @@ module.exports = {
   normalizeFulfillment,
   paymentStatusFor,
   initialOrderStatus,
+  hasAcceptedDelivery,
+  nextOrderStatusAfterPayment,
+  nextOrderStatusAfterDeliveryAcceptance,
   allowedOrderTransitions,
   canTransitionOrder,
   canEditOrderBeforeKitchen,
+  canSettleOrder,
   quoteFulfillment,
   nextId,
   createAuditEntry,
   createEventHub,
+  isOwnerActor,
+  assertStaffMutationBoundary,
 };

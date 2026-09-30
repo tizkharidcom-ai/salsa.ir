@@ -7,9 +7,9 @@ const GMProvenance = {
     return `
       <div class="prototype-banner-copy">
         <span class="prototype-banner-dot" aria-hidden="true" style="background: var(--color-warning, #f59e0b);"></span>
-        <span class="badge badge-provenance-local"><span class="status-dot dot-amber"></span> پیش‌نمایش محلی</span>
-        <strong>نمونه رابط کاربری GODMODE</strong>
-        <span class="prototype-banner-detail">داده‌ها ساختگی و ایزوله‌اند؛ اتصال عملیاتی و آمادگی تولید در این محیط تأیید نمی‌شود.</span>
+        <span class="badge badge-provenance-local"><span class="status-dot dot-amber"></span> پیش‌نمایش ایزوله · غیرعملیاتی</span>
+        <strong>مرکز مدیریت SALSA GODMODE</strong>
+        <span class="prototype-banner-detail">این نسخه از داده‌های ساختگی استفاده می‌کند و به API یا پایگاه‌دادهٔ عملیاتی متصل نیست.</span>
       </div>
     `;
   },
@@ -19,21 +19,13 @@ const GMProvenance = {
     if (!banner) return;
     banner.style.removeProperty('background');
     banner.style.removeProperty('border-bottom');
-    banner.innerHTML = `
-      <div class="prototype-banner-copy">
-        <span class="prototype-banner-dot" aria-hidden="true" style="background: var(--color-warning, #f59e0b);"></span>
-        <span class="badge badge-provenance-local"><span class="status-dot dot-amber"></span> پیش‌نمایش محلی</span>
-        <strong>نمونه رابط کاربری GODMODE</strong>
-        <span class="prototype-banner-detail">داده‌ها ساختگی و ایزوله‌اند؛ اتصال عملیاتی و آمادگی تولید در این محیط تأیید نمی‌شود.</span>
-      </div>
-    `;
+    banner.innerHTML = this.renderBanner();
   },
 
   checkLiveBridge() {
     if (window.GMApp && typeof window.GMApp.showToast === 'function') {
-      window.GMApp.showToast('اتصال عملیاتی از پروتوتایپ مجاز نیست. برای مسیر امن، کنترل‌پلن تولید را پیکربندی کنید.', 'warning', 4000);
+      window.GMApp.showToast('اتصال به هستهٔ عملیاتی در این پیش‌نمایش برقرار نیست.', 'warning', 4000);
     }
-    window.location.hash = '#gm-24-infrastructure';
   }
 };
 

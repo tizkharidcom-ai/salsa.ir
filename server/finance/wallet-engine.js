@@ -145,7 +145,7 @@ function appendWalletLedger(db, entry) {
   return ledgerItem;
 }
 
-function topupWallet(db, { phone, amountToman, packageId = null, paymentMethod = 'online', reference = null, actor = 'customer' }) {
+function topupWallet(db, { phone, amountToman, packageId = null, paymentMethod = 'online', reference = null, actor = 'customer', bonusToman }) {
   const amount = Math.max(0, Math.round(Number(amountToman) || 0));
   if (!amount || !phone) {
     throw Object.assign(new Error('مبلغ شارژ و شماره موبایل الزامی است.'), { code: 'wallet_topup_invalid' });
@@ -157,7 +157,13 @@ function topupWallet(db, { phone, amountToman, packageId = null, paymentMethod =
   }
 
   const packages = getWalletPackages(db);
-  const bonusInfo = calculateTopupBonus(amount, packages);
+  const bonusInfo = bonusToman === undefined ? calculateTopupBonus(amount, packages) : {
+    bonusToman: Number(bonusToman), bonusPct: Number(bonusToman) * 100 / amount,
+    totalCreditToman: amount + Number(bonusToman),
+  };
+  if (!Number.isSafeInteger(bonusInfo.bonusToman) || bonusInfo.bonusToman < 0 || !Number.isSafeInteger(bonusInfo.totalCreditToman)) {
+    throw Object.assign(new Error('پاداش شارژ تأییدشده معتبر نیست.'), { code: 'wallet_bonus_invalid' });
+  }
   const totalCredit = bonusInfo.totalCreditToman;
 
   user.walletBalanceToman = (user.walletBalanceToman || 0) + totalCredit;
@@ -180,7 +186,7 @@ function topupWallet(db, { phone, amountToman, packageId = null, paymentMethod =
       delta: bonusInfo.bonusToman,
       balance: user.walletBalanceToman,
       type: 'bonus',
-      description: `اعتبار هدیه و بونوس شارژ (${bonusInfo.bonusPct}٪)`,
+      description: `اعتبار هدیه شارژ (${bonusInfo.bonusPct}٪)`,
       meta: { packageId, baseTopupId: topupEntry.id, bonusPct: bonusInfo.bonusPct },
     });
   }
@@ -275,7 +281,7 @@ function awardWalletCashback(db, { phone, amountToman, orderId, cashbackPct = 3,
     balance: user.walletBalanceToman,
     type: 'cashback',
     orderId,
-    description: `کش‌بک و پاداش نقدی سفارش (${cashbackPct}٪)`,
+    description: `پاداش نقدی سفارش (${cashbackPct}٪)`,
     meta: { orderId, cashbackPct, actor },
   });
 

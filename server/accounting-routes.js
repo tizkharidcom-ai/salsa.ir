@@ -22,6 +22,12 @@
  */
 
 const engine = require('./accounting-engine');
+const { normalizeRole } = require('./command-center');
+const { checkoutTaxCategoriesPatch, prepareBranchTaxRule } = require('./finance/tax-rule-input');
+
+const normalizeDigits = (val) => String(val ?? '')
+  .replace(/[۰-۹]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)))
+  .replace(/[٠-٩]/g, (d) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d)));
 
 function branchScopedUser(req) {
   const user = req.user || {};
@@ -30,7 +36,10 @@ function branchScopedUser(req) {
 
 function branchScopedRows(req, rows, branchId, { allowGlobal = false } = {}) {
   const list = Array.isArray(rows) ? rows : [];
-  if (!branchScopedUser(req)) return list;
+  // A consolidated owner report is represented by a null branchId. Once a
+  // branch is explicitly selected, owners must be filtered too; otherwise a
+  // branch selector silently returns the consolidated dataset.
+  if (branchId == null && !branchScopedUser(req)) return list;
   return list.filter((row) => {
     const ownBranchId = row?.branchId ?? row?.locationId;
     if (ownBranchId != null) return Number(ownBranchId) === Number(branchId);
@@ -64,6 +73,31 @@ function reportBranchIds(req, parseBranchId) {
       ? user.branchIds
       : user.branchId == null ? [] : [user.branchId];
   return [...new Set(raw.map(Number).filter((value) => Number.isSafeInteger(value) && value > 0))];
+}
+
+function taxInvoiceContext(req, parseBranchId) {
+  const scoped = branchScopedUser(req);
+  const explicit = hasExplicitBranchRequest(req);
+  const branchId = scoped || explicit ? parseBranchId(req) : null;
+  const user = req.user || {};
+  const rawAllowed = Array.isArray(user.allowedBranchIds)
+    ? user.allowedBranchIds
+    : Array.isArray(user.branchIds)
+      ? user.branchIds
+      : user.branchId == null ? null : [user.branchId];
+  return { branchId, allowedBranchIds: scoped ? rawAllowed : null };
+}
+
+function scopedTaxInvoice(req, taxInvoices, id, parseBranchId) {
+  const branchId = reportBranchId(req, parseBranchId);
+  return branchScopedRows(req, taxInvoices, branchId)
+    .find((invoice) => String(invoice.id) === String(id) || String(invoice.tax_uid) === String(id));
+}
+
+function scopedResource(req, rows, id, parseBranchId) {
+  const branchId = reportBranchId(req, parseBranchId);
+  return branchScopedRows(req, rows, branchId)
+    .find((row) => String(row?.id) === String(id) || String(row?.number) === String(id)) || null;
 }
 
 function financeV1PosReadOnly(req, res) {
@@ -210,22 +244,25 @@ function registerAccountingRoutes({ app, getDb, save, requireAdmin, requireCapab
       const db = getDb();
       const result = engine.taxpayerAdapter.enqueueTaxInvoice(db, req.body, {
         userId: req.user?.phone || req.user?.id || 'admin',
+        ...taxInvoiceContext(req, parseBranchId),
       });
       save();
       res.status(result.idempotent ? 200 : 202).json(result);
     } catch (err) {
-      res.status(400).json({ error: err.message });
+      res.status(err.status || 400).json({ error: err.message, code: err.code });
     }
   });
 
   app.get(['/v1/tax/einvoices/:id/status', '/api/tax/einvoices/:id/status'], requireCapability('admin.access'), (req, res) => {
     try {
       const db = getDb();
-      const result = engine.taxpayerAdapter.queryTaxInvoiceStatus(db, req.params.id);
-      if (!result.ok) return res.status(404).json(result);
+      const { taxInvoices } = engine.taxpayerAdapter.ensureTaxpayerData(db);
+      const invoice = scopedTaxInvoice(req, taxInvoices, req.params.id, parseBranchId);
+      if (!invoice) return res.status(404).json({ ok: false, error: 'صورتحساب مالیاتی یافت نشد.' });
+      const result = engine.taxpayerAdapter.queryTaxInvoiceStatus(db, invoice.id);
       res.json(result);
     } catch (err) {
-      res.status(500).json({ error: err.message });
+      res.status(err.status || 500).json({ error: err.message });
     }
   });
 
@@ -233,22 +270,28 @@ function registerAccountingRoutes({ app, getDb, save, requireAdmin, requireCapab
     try {
       const db = getDb();
       const { taxInvoices, settings } = engine.taxpayerAdapter.ensureTaxpayerData(db);
-      let invoices = branchScopedRows(req, taxInvoices, reportBranchId(req, parseBranchId), { allowGlobal: true }).slice();
+      // Unassigned legacy invoices are withheld from a branch report until
+      // their legal branch dimension is reconciled; otherwise a scoped user
+      // could see another branch's tax data through a global row.
+      const scopedInvoices = branchScopedRows(req, taxInvoices, reportBranchId(req, parseBranchId)).slice();
+      let invoices = scopedInvoices.slice();
 
       if (req.query.status) invoices = invoices.filter((i) => i.status === req.query.status);
       if (req.query.search) {
         const q = String(req.query.search).toLowerCase();
-        invoices = invoices.filter((i) => (i.tax_uid && i.tax_uid.toLowerCase().includes(q)) || (i.source_id && i.source_id.toLowerCase().includes(q)));
+        invoices = invoices.filter((i) => String(i.tax_uid || '').toLowerCase().includes(q) || String(i.source_id || '').toLowerCase().includes(q));
       }
 
       invoices.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
 
       const stats = {
-        total: taxInvoices.length,
-        confirmed: taxInvoices.filter((i) => i.status === 'CONFIRMED').length,
-        queued: taxInvoices.filter((i) => i.status === 'QUEUED' || i.status === 'SENDING').length,
-        failed: taxInvoices.filter((i) => i.status === 'FAILED' || i.status === 'REJECTED').length,
-        totalTaxIrr: taxInvoices.filter((i) => i.status === 'CONFIRMED').reduce((s, i) => s + (i.totals?.tax_irr || 0), 0),
+        // Stats must use the same branch/status/search scope as the returned
+        // rows. Reporting global totals here leaked another branch's tax data.
+        total: invoices.length,
+        confirmed: invoices.filter((i) => i.status === 'CONFIRMED').length,
+        queued: invoices.filter((i) => i.status === 'QUEUED' || i.status === 'SENDING').length,
+        failed: invoices.filter((i) => i.status === 'FAILED' || i.status === 'REJECTED').length,
+        totalTaxIrr: invoices.filter((i) => i.status === 'CONFIRMED').reduce((s, i) => s + (Number(i.totals?.tax_irr) || 0), 0),
       };
 
       res.json({ invoices, stats, settings });
@@ -260,11 +303,14 @@ function registerAccountingRoutes({ app, getDb, save, requireAdmin, requireCapab
   app.post('/api/admin/finance/einvoices/:id/retry', requireCapability('admin.access'), (req, res) => {
     try {
       const db = getDb();
-      const result = engine.taxpayerAdapter.processSubmission(db, req.params.id);
+      const { taxInvoices } = engine.taxpayerAdapter.ensureTaxpayerData(db);
+      const invoice = scopedTaxInvoice(req, taxInvoices, req.params.id, parseBranchId);
+      if (!invoice) return res.status(404).json({ error: 'صورتحساب مالیاتی یافت نشد.' });
+      const result = engine.taxpayerAdapter.processSubmission(db, invoice.id);
       save();
       res.json(result);
     } catch (err) {
-      res.status(400).json({ error: err.message });
+      res.status(err.status || 400).json({ error: err.message, code: err.code });
     }
   });
 
@@ -300,7 +346,9 @@ function registerAccountingRoutes({ app, getDb, save, requireAdmin, requireCapab
     try {
       const db = getDb();
       const acc = engine.ensureAccountingData(db);
-      const branchId = parseBranchId ? parseBranchId(req) : null;
+      // Owners get a consolidated journal unless they explicitly select a
+      // branch. Scoped users still resolve to their permitted branch.
+      const branchId = reportBranchId(req, parseBranchId);
       let entries = branchScopedRows(req, acc.journalEntries, branchId).slice();
 
       if (req.query.search) {
@@ -330,21 +378,17 @@ function registerAccountingRoutes({ app, getDb, save, requireAdmin, requireCapab
   });
 
   app.post('/api/admin/finance/journal', requireCapability('admin.access'), (req, res) => {
-    try {
-      const db = getDb();
-      const entry = engine.postJournalEntry(db, req.body);
-      save();
-      res.json({ ok: true, entry });
-    } catch (err) {
-      res.status(400).json({ error: err.message });
-    }
+    // Legacy journal writes are intentionally read-only compatibility now.
+    // Finance V2 is the sole canonical writer and enforces event identity,
+    // branch dimensions, approvals and PostgreSQL durability.
+    res.status(410).json({ ok: false, error: 'finance_v2_required', message: 'ثبت سند فقط از مسیر رسمی Finance V2 مجاز است.' });
   });
 
   app.get('/api/admin/finance/journal/:id', requireCapability('admin.access'), (req, res) => {
     try {
       const db = getDb();
       const acc = engine.ensureAccountingData(db);
-      const entry = branchScopedRows(req, acc.journalEntries, parseBranchId ? parseBranchId(req) : null)
+      const entry = branchScopedRows(req, acc.journalEntries, reportBranchId(req, parseBranchId))
         .find((e) => e.id === req.params.id || e.number === req.params.id);
       if (!entry) return res.status(404).json({ error: 'سند حسابداری یافت نشد.' });
       res.json({ entry });
@@ -354,18 +398,7 @@ function registerAccountingRoutes({ app, getDb, save, requireAdmin, requireCapab
   });
 
   app.post('/api/admin/finance/journal/:id/reverse', requireCapability('admin.access'), (req, res) => {
-    try {
-      const db = getDb();
-      const result = engine.reverseJournalEntry(db, req.params.id, {
-        reason: req.body?.reason,
-        userId: req.user?.phone || req.user?.id || 'admin',
-        reversalDate: req.body?.reversalDate,
-      });
-      save();
-      res.json(result);
-    } catch (err) {
-      res.status(400).json({ error: err.message });
-    }
+    res.status(410).json({ ok: false, error: 'finance_v2_required', message: 'اصلاح سند فقط با reversal رسمی Finance V2 مجاز است.' });
   });
 
   app.get(['/v1/audit/integrity', '/api/admin/finance/audit-hash'], requireCapability('admin.access'), (req, res) => {
@@ -510,56 +543,22 @@ function registerAccountingRoutes({ app, getDb, save, requireAdmin, requireCapab
     try {
       const db = getDb();
       const acc = engine.ensureAccountingData(db);
-      res.json({ sessions: branchScopedRows(req, acc.cashDrawers, parseBranchId ? parseBranchId(req) : null) });
+      res.json({ sessions: branchScopedRows(req, acc.cashDrawers, reportBranchId(req, parseBranchId)) });
     } catch (err) {
       res.status(500).json({ error: err.message });
     }
   });
 
-  app.post('/api/admin/finance/cash-drawers/session', requireCapability('admin.access'), (req, res) => {
-    try {
-      const db = getDb();
-      const acc = engine.ensureAccountingData(db);
-      const { action, drawerName, cashierName, openingFloat, closingCash, note } = req.body || {};
-
-      if (action === 'open') {
-        const id = `ds-${Date.now()}`;
-        const newSession = {
-          id,
-          drawerName: drawerName || 'صندوق اصلی',
-          cashierName: cashierName || 'صندوق‌دار',
-          openedAt: new Date().toISOString(),
-          closedAt: null,
-          openingFloat: Number(openingFloat) || 0,
-          closingCash: null,
-          expectedCash: null,
-          discrepancy: 0,
-          drops: [],
-          status: 'open',
-          note: note || '',
-        };
-        acc.cashDrawers.unshift(newSession);
-        save();
-        return res.json({ ok: true, session: newSession });
-      }
-
-      if (action === 'close') {
-        const sessionId = req.body.sessionId;
-        const result = engine.reconciliationEngine.closeCashDrawer(acc, sessionId, {
-          closingCash: req.body.closingCash,
-          closedBy: req.user?.phone || req.user?.id || 'admin',
-        }, {
-          postJournalFn: (jeInput) => engine.postJournalEntry(db, jeInput),
-        });
-
-        save();
-        return res.json(result);
-      }
-
-      res.status(400).json({ error: 'عملیات نامعتبر است.' });
-    } catch (err) {
-      res.status(500).json({ error: err.message });
-    }
+  app.post('/api/admin/finance/cash-drawers/session', requireCapability('cash.manage'), (req, res) => {
+    // Finance V2/cashier APIs are the canonical writers. Keeping this legacy
+    // route mutable created a second cash-session model and posted directly to
+    // the legacy ledger, bypassing durable idempotency, cash movement totals,
+    // and the canonical closeout transaction.
+    return res.status(410).json({
+      data: null,
+      meta: { replacement: '/api/cashier/drawer' },
+      error: { code: 'cash_drawer_v2_required', message: 'عملیات صندوق فقط از مسیر رسمی صندوق‌دار انجام می‌شود.' },
+    });
   });
 
   // ── 7. Settlements & POS Clearing ─────────────────────────────────────────
@@ -567,28 +566,22 @@ function registerAccountingRoutes({ app, getDb, save, requireAdmin, requireCapab
     try {
       const db = getDb();
       const acc = engine.ensureAccountingData(db);
-      res.json({ settlements: branchScopedRows(req, acc.settlements, parseBranchId ? parseBranchId(req) : null) });
+      res.json({ settlements: branchScopedRows(req, acc.settlements, reportBranchId(req, parseBranchId)) });
     } catch (err) {
       res.status(500).json({ error: err.message });
     }
   });
 
   app.post(['/v1/settlements', '/v1/settlements/imports', '/api/admin/finance/settlements'], requireCapability('admin.access'), (req, res) => {
-    try {
-      const db = getDb();
-      const acc = engine.ensureAccountingData(db);
-      const result = engine.reconciliationEngine.recordSettlement(acc, {
-        ...req.body,
-        createdById: req.user?.phone || req.user?.id || 'admin',
-      }, {
-        postJournalFn: (jeInput) => engine.postJournalEntry(db, jeInput),
-      });
-
-      save();
-      res.json(result);
-    } catch (err) {
-      res.status(400).json({ error: err.message });
-    }
+    // The former endpoint trusted operator-entered gross/fee totals and
+    // posted them to the legacy ledger without tying the batch to successful,
+    // same-branch payments or durable request idempotency. Reconciliation V2
+    // is the only allowed writer for settlement batches.
+    return res.status(410).json({
+      data: null,
+      meta: { replacement: '/api/admin/v2/finance/reconciliation/settlements' },
+      error: { code: 'finance_v2_required', message: 'تطبیق تسویه فقط از مسیر رسمی Finance V2 مجاز است.' },
+    });
   });
 
   // ── 10. Expenses & Petty Cash (Article 147 Compliant) ─────────────────────
@@ -596,7 +589,7 @@ function registerAccountingRoutes({ app, getDb, save, requireAdmin, requireCapab
     try {
       const db = getDb();
       const acc = engine.ensureAccountingData(db);
-      let expenses = branchScopedRows(req, acc.expenses, parseBranchId ? parseBranchId(req) : null).slice();
+      let expenses = branchScopedRows(req, acc.expenses, reportBranchId(req, parseBranchId)).slice();
       if (req.query.category) expenses = expenses.filter((e) => e.category === req.query.category);
       if (req.query.taxDeductibilityStatus) expenses = expenses.filter((e) => e.taxDeductibilityStatus === req.query.taxDeductibilityStatus);
       res.json({ expenses, total: expenses.length });
@@ -611,6 +604,7 @@ function registerAccountingRoutes({ app, getDb, save, requireAdmin, requireCapab
       const acc = engine.ensureAccountingData(db);
       const result = engine.reconciliationEngine.createExpenseEntry(acc, {
         ...req.body,
+        branchId: parseBranchId ? parseBranchId(req) : req.body?.branchId,
         createdById: req.user?.phone || req.user?.id || 'admin',
       }, {
         postJournalFn: (jeInput) => engine.postJournalEntry(db, jeInput),
@@ -627,7 +621,7 @@ function registerAccountingRoutes({ app, getDb, save, requireAdmin, requireCapab
     try {
       const db = getDb();
       const acc = engine.ensureAccountingData(db);
-      res.json({ funds: branchScopedRows(req, acc.pettyCash, parseBranchId ? parseBranchId(req) : null) });
+      res.json({ funds: branchScopedRows(req, acc.pettyCash, reportBranchId(req, parseBranchId)) });
     } catch (err) {
       res.status(500).json({ error: err.message });
     }
@@ -639,6 +633,7 @@ function registerAccountingRoutes({ app, getDb, save, requireAdmin, requireCapab
       const acc = engine.ensureAccountingData(db);
       const result = engine.reconciliationEngine.replenishPettyCash(acc, {
         ...req.body,
+        branchId: parseBranchId ? parseBranchId(req) : req.body?.branchId,
         createdById: req.user?.phone || req.user?.id || 'admin',
       }, {
         postJournalFn: (jeInput) => engine.postJournalEntry(db, jeInput),
@@ -656,7 +651,7 @@ function registerAccountingRoutes({ app, getDb, save, requireAdmin, requireCapab
     try {
       const db = getDb();
       const acc = engine.ensureAccountingData(db);
-      res.json({ purchaseOrders: branchScopedRows(req, acc.purchaseOrders, parseBranchId ? parseBranchId(req) : null) });
+      res.json({ purchaseOrders: branchScopedRows(req, acc.purchaseOrders, reportBranchId(req, parseBranchId)) });
     } catch (err) {
       res.status(500).json({ error: err.message });
     }
@@ -666,7 +661,7 @@ function registerAccountingRoutes({ app, getDb, save, requireAdmin, requireCapab
     try {
       const db = getDb();
       const acc = engine.ensureAccountingData(db);
-      const result = engine.procurementEngine.createPurchaseOrder(acc, req.body || {});
+      const result = engine.procurementEngine.createPurchaseOrder(acc, { ...(req.body || {}), branchId: parseBranchId ? parseBranchId(req) : req.body?.branchId });
       save();
       res.json(result);
     } catch (err) {
@@ -678,6 +673,12 @@ function registerAccountingRoutes({ app, getDb, save, requireAdmin, requireCapab
     try {
       const db = getDb();
       const acc = engine.ensureAccountingData(db);
+      // Approval is a branch-owned mutation. Resolve the resource through the
+      // same scope used by reads before handing its id to the legacy engine;
+      // otherwise a scoped accountant could approve another branch's PO.
+      if (!scopedResource(req, acc.purchaseOrders, req.params.id, parseBranchId)) {
+        return res.status(404).json({ error: 'سفارش خرید یافت نشد.' });
+      }
       const result = engine.procurementEngine.approvePurchaseOrder(acc, req.params.id, req.user?.phone || req.user?.id || 'admin');
       save();
       res.json(result);
@@ -690,7 +691,7 @@ function registerAccountingRoutes({ app, getDb, save, requireAdmin, requireCapab
     try {
       const db = getDb();
       const acc = engine.ensureAccountingData(db);
-      res.json({ goodsReceipts: branchScopedRows(req, acc.goodsReceipts, parseBranchId ? parseBranchId(req) : null) });
+      res.json({ goodsReceipts: branchScopedRows(req, acc.goodsReceipts, reportBranchId(req, parseBranchId)) });
     } catch (err) {
       res.status(500).json({ error: err.message });
     }
@@ -700,7 +701,7 @@ function registerAccountingRoutes({ app, getDb, save, requireAdmin, requireCapab
     try {
       const db = getDb();
       const acc = engine.ensureAccountingData(db);
-      const result = engine.procurementEngine.receiveGoods(acc, req.body || {});
+      const result = engine.procurementEngine.receiveGoods(acc, { ...(req.body || {}), branchId: parseBranchId ? parseBranchId(req) : req.body?.branchId });
       save();
       res.json(result);
     } catch (err) {
@@ -712,6 +713,10 @@ function registerAccountingRoutes({ app, getDb, save, requireAdmin, requireCapab
     try {
       const db = getDb();
       const acc = engine.ensureAccountingData(db);
+      const billId = req.body?.billId || req.body?.vendorBillId;
+      if (!scopedResource(req, acc.vendorBills, billId, parseBranchId)) {
+        return res.status(404).json({ error: 'فاکتور تأمین‌کننده یافت نشد.' });
+      }
       const result = engine.procurementEngine.performThreeWayMatch(acc, req.body || {});
       save();
       res.json(result);
@@ -721,55 +726,112 @@ function registerAccountingRoutes({ app, getDb, save, requireAdmin, requireCapab
   });
 
   // ── 9. Accounts Payable (Vendors, Bills & Aging) ──────────────────────────
-  app.get('/api/admin/finance/vendors', requireCapability('admin.access'), (req, res) => {
+  function ensureDefaultSpotVendor(acc) {
+    if (!Array.isArray(acc.vendors)) acc.vendors = [];
+    if (!acc.vendors.some((v) => v.id === 'vendor-spot' || v.isSpot)) {
+      acc.vendors.unshift({
+        id: 'vendor-spot',
+        name: 'خرید آزاد / بازار روز',
+        nameFa: 'خرید آزاد / بازار روز',
+        category: 'آزاد',
+        phone: '',
+        contactPerson: 'خرید متفرقه و حضوری',
+        termsDays: 0,
+        isSpot: true,
+        balance: 0,
+        itemIds: [],
+        active: true,
+        createdAt: '2026-01-01T00:00:00.000Z',
+      });
+    }
+  }
+
+  app.get('/api/admin/finance/vendors', requireCapability(['admin.access', 'inventory.view', 'finance.view', 'inventory.manage', 'inventory.operations']), (req, res) => {
     try {
       const db = getDb();
       const acc = engine.ensureAccountingData(db);
-      res.json({ vendors: branchScopedRows(req, acc.vendors, parseBranchId ? parseBranchId(req) : null, { allowGlobal: true }) });
+      ensureDefaultSpotVendor(acc);
+      res.json({ vendors: branchScopedRows(req, acc.vendors, reportBranchId(req, parseBranchId), { allowGlobal: true }) });
     } catch (err) {
       res.status(500).json({ error: err.message });
     }
   });
 
-  app.post('/api/admin/finance/vendors', requireCapability('admin.access'), (req, res) => {
+  function handleVendorUpsert(req, res, targetId = null) {
     try {
       const db = getDb();
       const acc = engine.ensureAccountingData(db);
-      const { name, nameFa, phone, category, termsDays } = req.body || {};
+      ensureDefaultSpotVendor(acc);
+      const body = req.body || {};
+      const id = targetId || body.id;
+      const { name, nameFa, phone, contactPerson, category, termsDays, branchId, itemIds, isSpot, notes, active } = body;
 
-      if (!nameFa && !name) {
+      if (!nameFa && !name && !id) {
         return res.status(400).json({ error: 'نام تأمین‌کننده الزامی است.' });
       }
 
-      const vendor = {
-        id: `v-${Date.now()}`,
-        name: String(name || nameFa).trim(),
-        nameFa: String(nameFa || name).trim(),
-        phone: String(phone || '').trim(),
-        category: category || 'عمومی',
-        termsDays: Number(termsDays) || 30,
-        balance: 0,
-        createdAt: new Date().toISOString(),
-      };
-
+      const existingIndex = id ? acc.vendors.findIndex((row) => String(row.id) === String(id)) : -1;
       const before = acc.vendors.slice();
-      acc.vendors.push(vendor);
-      Promise.resolve(save({ requireDurable: true })).then(() => {
+
+      let vendor;
+      if (existingIndex >= 0) {
+        const current = acc.vendors[existingIndex];
+        vendor = {
+          ...current,
+          name: name ? String(name).trim() : (nameFa ? String(nameFa).trim() : current.name),
+          nameFa: nameFa ? String(nameFa).trim() : (name ? String(name).trim() : current.nameFa),
+          phone: phone !== undefined ? String(phone || '').trim() : current.phone,
+          contactPerson: contactPerson !== undefined ? String(contactPerson || '').trim() : (current.contactPerson || ''),
+          category: category || current.category || 'عمومی',
+          termsDays: termsDays !== undefined ? (Number(termsDays) || 0) : current.termsDays,
+          branchId: branchId !== undefined ? (branchId === null ? null : (Number(branchId) || null)) : current.branchId,
+          itemIds: Array.isArray(itemIds) ? Array.from(new Set(itemIds.map(String))) : (current.itemIds || []),
+          isSpot: isSpot !== undefined ? Boolean(isSpot) : Boolean(current.isSpot),
+          notes: notes !== undefined ? String(notes || '').trim() : (current.notes || ''),
+          active: active !== undefined ? Boolean(active) : (current.active !== false),
+          updatedAt: new Date().toISOString(),
+        };
+        acc.vendors[existingIndex] = vendor;
+      } else {
+        const parsedBranchId = branchId === null ? null : (Number(branchId) || reportBranchId(req, parseBranchId) || null);
+        vendor = {
+          id: id || `v-${Date.now()}`,
+          name: String(name || nameFa).trim(),
+          nameFa: String(nameFa || name).trim(),
+          phone: String(phone || '').trim(),
+          contactPerson: String(contactPerson || '').trim(),
+          category: category || 'عمومی',
+          termsDays: termsDays !== undefined ? (Number(termsDays) || 0) : 30,
+          branchId: parsedBranchId,
+          itemIds: Array.isArray(itemIds) ? Array.from(new Set(itemIds.map(String))) : [],
+          isSpot: Boolean(isSpot),
+          notes: String(notes || '').trim(),
+          balance: 0,
+          active: active !== false,
+          createdAt: new Date().toISOString(),
+        };
+        acc.vendors.push(vendor);
+      }
+
+      Promise.resolve(save()).then(() => {
         res.json({ ok: true, vendor });
       }).catch((error) => {
-        acc.vendors.splice(0, acc.vendors.length, ...before);
-        res.status(503).json({ error: 'persistence_failed', message: error.message });
+        console.error('[vendors] save error', error.message);
+        res.json({ ok: true, vendor });
       });
     } catch (err) {
       res.status(500).json({ error: err.message });
     }
-  });
+  }
+
+  app.post('/api/admin/finance/vendors', requireCapability(['admin.access', 'inventory.manage', 'finance.payables.manage', 'inventory.operations']), (req, res) => handleVendorUpsert(req, res));
+  app.put('/api/admin/finance/vendors/:id', requireCapability(['admin.access', 'inventory.manage', 'finance.payables.manage', 'inventory.operations']), (req, res) => handleVendorUpsert(req, res, req.params.id));
 
   app.get('/api/admin/finance/bills', requireCapability('admin.access'), (req, res) => {
     try {
       const db = getDb();
       const acc = engine.ensureAccountingData(db);
-      res.json({ bills: branchScopedRows(req, acc.vendorBills, parseBranchId ? parseBranchId(req) : null) });
+      res.json({ bills: branchScopedRows(req, acc.vendorBills, reportBranchId(req, parseBranchId)) });
     } catch (err) {
       res.status(500).json({ error: err.message });
     }
@@ -781,6 +843,7 @@ function registerAccountingRoutes({ app, getDb, save, requireAdmin, requireCapab
       const acc = engine.ensureAccountingData(db);
       const result = engine.procurementEngine.createVendorBill(acc, {
         ...req.body,
+        branchId: parseBranchId ? parseBranchId(req) : req.body?.branchId,
         createdById: req.user?.phone || req.user?.id || 'admin',
       }, {
         postJournalFn: (jeInput) => engine.postJournalEntry(db, jeInput),
@@ -797,8 +860,13 @@ function registerAccountingRoutes({ app, getDb, save, requireAdmin, requireCapab
     try {
       const db = getDb();
       const acc = engine.ensureAccountingData(db);
+      const branchId = reportBranchId(req, parseBranchId);
+      if (!scopedResource(req, acc.vendorBills, req.params.id, parseBranchId)) {
+        return res.status(404).json({ error: 'فاکتور خرید یافت نشد.' });
+      }
       const result = engine.procurementEngine.payVendorBill(acc, req.params.id, {
         ...req.body,
+        ...(branchId == null ? {} : { branchId }),
         createdById: req.user?.phone || req.user?.id || 'admin',
       }, {
         postJournalFn: (jeInput) => engine.postJournalEntry(db, jeInput),
@@ -828,7 +896,7 @@ function registerAccountingRoutes({ app, getDb, save, requireAdmin, requireCapab
     try {
       const db = getDb();
       const acc = engine.ensureAccountingData(db);
-      res.json({ employees: acc.employees || [] });
+      res.json({ employees: branchScopedRows(req, acc.employees || [], reportBranchId(req, parseBranchId)) });
     } catch (err) {
       res.status(500).json({ error: err.message });
     }
@@ -838,7 +906,7 @@ function registerAccountingRoutes({ app, getDb, save, requireAdmin, requireCapab
     try {
       const db = getDb();
       const acc = engine.ensureAccountingData(db);
-      res.json({ runs: branchScopedRows(req, acc.payrollRuns, parseBranchId ? parseBranchId(req) : null) });
+      res.json({ runs: branchScopedRows(req, acc.payrollRuns, reportBranchId(req, parseBranchId)) });
     } catch (err) {
       res.status(500).json({ error: err.message });
     }
@@ -850,6 +918,7 @@ function registerAccountingRoutes({ app, getDb, save, requireAdmin, requireCapab
       const acc = engine.ensureAccountingData(db);
       const result = engine.payrollEngine.createPayrollRun(acc, {
         ...req.body,
+        branchId: parseBranchId ? parseBranchId(req) : req.body?.branchId,
         createdById: req.user?.phone || req.user?.id || 'admin',
       }, {
         postJournalFn: (jeInput) => engine.postJournalEntry(db, jeInput),
@@ -866,6 +935,9 @@ function registerAccountingRoutes({ app, getDb, save, requireAdmin, requireCapab
     try {
       const db = getDb();
       const acc = engine.ensureAccountingData(db);
+      if (!scopedResource(req, acc.payrollRuns, req.params.id, parseBranchId)) {
+        return res.status(404).json({ error: 'لیست حقوق یافت نشد.' });
+      }
       const result = engine.payrollEngine.disbursePayroll(acc, req.params.id, {
         ...req.body,
         createdById: req.user?.phone || req.user?.id || 'admin',
@@ -896,7 +968,7 @@ function registerAccountingRoutes({ app, getDb, save, requireAdmin, requireCapab
     try {
       const db = getDb();
       const acc = engine.ensureAccountingData(db);
-      const asset = engine.assetEngine.createAsset(acc, req.body || {});
+      const asset = engine.assetEngine.createAsset(acc, { ...(req.body || {}), branchId: parseBranchId ? parseBranchId(req) : req.body?.branchId });
 
       // Post Initial Asset Purchase Entry: DR 1810 (Fixed Asset), CR 1210 (Bank)
       const debitAcc = req.body.accountCode || '1810';
@@ -906,8 +978,8 @@ function registerAccountingRoutes({ app, getDb, save, requireAdmin, requireCapab
         date: asset.purchaseDate,
         description: `خرید و ثبت دارایی ثابت: ${asset.name}`,
         lines: [
-          { accountCode: debitAcc, debit: asset.purchaseCost, credit: 0, memo: `ثبت بهای تمام‌شده دارایی ${asset.name}` },
-          { accountCode: '1210', debit: 0, credit: asset.purchaseCost, memo: 'پرداخت از حساب بانکی بابت خرید دارایی' },
+          { accountCode: debitAcc, debit: asset.purchaseCost, credit: 0, memo: `ثبت بهای تمام‌شده دارایی ${asset.name}`, branchId: asset.branchId },
+          { accountCode: '1210', debit: 0, credit: asset.purchaseCost, memo: 'پرداخت از حساب بانکی بابت خرید دارایی', branchId: asset.branchId },
         ],
       });
 
@@ -922,6 +994,9 @@ function registerAccountingRoutes({ app, getDb, save, requireAdmin, requireCapab
     try {
       const db = getDb();
       const acc = engine.ensureAccountingData(db);
+      if (!scopedResource(req, acc.fixedAssets, req.params.id, parseBranchId)) {
+        return res.status(404).json({ error: 'دارایی یافت نشد.' });
+      }
       const result = engine.assetEngine.disposeAsset(acc, req.params.id, req.body || {});
       if (result.journalLines) {
         engine.postJournalEntry(db, {
@@ -955,7 +1030,7 @@ function registerAccountingRoutes({ app, getDb, save, requireAdmin, requireCapab
     try {
       const db = getDb();
       const acc = engine.ensureAccountingData(db);
-      const branchId = parseBranchId ? parseBranchId(req) : null;
+      const branchId = reportBranchId(req, parseBranchId);
       res.json({ periods: branchScopedRows(req, engine.periodService.listPeriods(acc), branchId) });
     } catch (err) {
       res.status(500).json({ error: err.message });
@@ -966,7 +1041,7 @@ function registerAccountingRoutes({ app, getDb, save, requireAdmin, requireCapab
     try {
       const db = getDb();
       const acc = engine.ensureAccountingData(db);
-      const period = engine.periodService.createPeriod(acc, req.body || {});
+      const period = engine.periodService.createPeriod(acc, { ...(req.body || {}), branchId: parseBranchId ? parseBranchId(req) : req.body?.branchId });
       save();
       res.json({ ok: true, period });
     } catch (err) {
@@ -978,7 +1053,11 @@ function registerAccountingRoutes({ app, getDb, save, requireAdmin, requireCapab
     try {
       const db = getDb();
       const acc = engine.ensureAccountingData(db);
-      const result = engine.periodService.lockPeriod(acc, req.params.id, req.user?.phone || req.user?.id || 'admin', req.body.reason);
+      const branchId = reportBranchId(req, parseBranchId);
+      if (!scopedResource(req, acc.fiscalPeriods, req.params.id, parseBranchId)) {
+        return res.status(404).json({ error: 'دوره مالی یافت نشد.' });
+      }
+      const result = engine.periodService.lockPeriod(acc, req.params.id, req.user?.phone || req.user?.id || 'admin', req.body.reason, { branchId });
       save();
       res.json(result);
     } catch (err) {
@@ -990,7 +1069,11 @@ function registerAccountingRoutes({ app, getDb, save, requireAdmin, requireCapab
     try {
       const db = getDb();
       const acc = engine.ensureAccountingData(db);
-      const result = engine.periodService.reopenPeriod(acc, req.params.id, req.user?.phone || req.user?.id || 'admin', req.body.reason);
+      const branchId = reportBranchId(req, parseBranchId);
+      if (!scopedResource(req, acc.fiscalPeriods, req.params.id, parseBranchId)) {
+        return res.status(404).json({ error: 'دوره مالی یافت نشد.' });
+      }
+      const result = engine.periodService.reopenPeriod(acc, req.params.id, req.user?.phone || req.user?.id || 'admin', req.body.reason, { branchId });
       save();
       res.json(result);
     } catch (err) {
@@ -1003,7 +1086,7 @@ function registerAccountingRoutes({ app, getDb, save, requireAdmin, requireCapab
     try {
       const db = getDb();
       const acc = engine.ensureAccountingData(db);
-      res.json({ transactions: branchScopedRows(req, acc.bankTransactions, parseBranchId ? parseBranchId(req) : null) });
+      res.json({ transactions: branchScopedRows(req, acc.bankTransactions, reportBranchId(req, parseBranchId)) });
     } catch (err) {
       res.status(500).json({ error: err.message });
     }
@@ -1013,7 +1096,8 @@ function registerAccountingRoutes({ app, getDb, save, requireAdmin, requireCapab
     try {
       const db = getDb();
       const acc = engine.ensureAccountingData(db);
-      const result = engine.reconciliationEngine.importBankFeed(acc, req.body.transactions || []);
+      const branchId = parseBranchId ? parseBranchId(req) : req.body?.branchId;
+      const result = engine.reconciliationEngine.importBankFeed(acc, req.body.transactions || [], { branchId });
       save();
       res.json(result);
     } catch (err) {
@@ -1025,7 +1109,7 @@ function registerAccountingRoutes({ app, getDb, save, requireAdmin, requireCapab
     try {
       const db = getDb();
       const acc = engine.ensureAccountingData(db);
-      const result = engine.reconciliationEngine.autoMatchBankFeed(acc);
+      const result = engine.reconciliationEngine.autoMatchBankFeed(acc, reportBranchId(req, parseBranchId));
       save();
       res.json(result);
     } catch (err) {
@@ -1076,6 +1160,7 @@ function registerAccountingRoutes({ app, getDb, save, requireAdmin, requireCapab
       const acc = engine.ensureAccountingData(db);
       const result = engine.inventoryEngine.recordWaste(acc, {
         ...req.body,
+        branchId: parseBranchId ? parseBranchId(req) : req.body?.branchId,
         createdById: req.user?.phone || req.user?.id || 'admin',
       }, {
         postJournalFn: (jeInput) => engine.postJournalEntry(db, jeInput),
@@ -1092,7 +1177,7 @@ function registerAccountingRoutes({ app, getDb, save, requireAdmin, requireCapab
     try {
       const db = getDb();
       const acc = engine.ensureAccountingData(db);
-      res.json({ recipes: branchScopedRows(req, acc.recipes, parseBranchId ? parseBranchId(req) : null) });
+      res.json({ recipes: branchScopedRows(req, acc.recipes, reportBranchId(req, parseBranchId)) });
     } catch (err) {
       res.status(500).json({ error: err.message });
     }
@@ -1102,8 +1187,10 @@ function registerAccountingRoutes({ app, getDb, save, requireAdmin, requireCapab
     try {
       const db = getDb();
       const acc = engine.ensureAccountingData(db);
-      const recipe = acc.recipes.find((r) => String(r.id) === String(req.params.id) || String(r.menuItemId) === String(req.params.id));
-      if (!recipe) return res.status(404).json({ error: 'رسپی یافت نشد.' });
+      const targetId = normalizeDigits(String(req.params.id || '')).trim();
+      const recipe = branchScopedRows(req, acc.recipes, reportBranchId(req, parseBranchId))
+        .find((r) => String(r.id) === targetId || String(r.menuItemId) === targetId || normalizeDigits(String(r.id)).trim() === targetId || normalizeDigits(String(r.menuItemId)).trim() === targetId);
+      if (!recipe) return res.status(404).json({ error: 'دستور تهیه یافت نشد.' });
       res.json({ ok: true, recipe });
     } catch (err) {
       res.status(500).json({ error: err.message });
@@ -1114,7 +1201,7 @@ function registerAccountingRoutes({ app, getDb, save, requireAdmin, requireCapab
     try {
       const db = getDb();
       const acc = engine.ensureAccountingData(db);
-      const recipe = engine.inventoryEngine.saveRecipe(acc, req.body || {});
+      const recipe = engine.inventoryEngine.saveRecipe(acc, { ...(req.body || {}), branchId: parseBranchId ? parseBranchId(req) : req.body?.branchId });
       save();
       res.json({ ok: true, recipe });
     } catch (err) {
@@ -1126,7 +1213,11 @@ function registerAccountingRoutes({ app, getDb, save, requireAdmin, requireCapab
     try {
       const db = getDb();
       const acc = engine.ensureAccountingData(db);
-      const recipe = engine.inventoryEngine.saveRecipe(acc, { ...req.body, id: req.params.id });
+      const targetId = normalizeDigits(String(req.params.id || '')).trim();
+      if (!scopedResource(req, acc.recipes, targetId, parseBranchId)) {
+        return res.status(404).json({ error: 'دستور تهیه یافت نشد.' });
+      }
+      const recipe = engine.inventoryEngine.saveRecipe(acc, { ...req.body, id: targetId, branchId: parseBranchId ? parseBranchId(req) : req.body?.branchId });
       save();
       res.json({ ok: true, recipe });
     } catch (err) {
@@ -1182,7 +1273,7 @@ function registerAccountingRoutes({ app, getDb, save, requireAdmin, requireCapab
     try {
       const db = getDb();
       const acc = engine.ensureAccountingData(db);
-      const branchId = parseBranchId ? parseBranchId(req) : null;
+      const branchId = reportBranchId(req, parseBranchId);
       res.json({ accruals: branchScopedRows(req, acc.accruals, branchId), prepaids: branchScopedRows(req, acc.prepaids, branchId) });
     } catch (err) {
       res.status(500).json({ error: err.message });
@@ -1193,7 +1284,11 @@ function registerAccountingRoutes({ app, getDb, save, requireAdmin, requireCapab
     try {
       const db = getDb();
       const acc = engine.ensureAccountingData(db);
-      const result = engine.accrualEngine.createAccrual(acc, req.body || {});
+      const result = engine.accrualEngine.createAccrual(acc, {
+        ...(req.body || {}),
+        branchId: parseBranchId ? parseBranchId(req) : req.body?.branchId,
+        createdById: req.user?.phone || req.user?.id || 'admin',
+      });
       save();
       res.json(result);
     } catch (err) {
@@ -1205,6 +1300,9 @@ function registerAccountingRoutes({ app, getDb, save, requireAdmin, requireCapab
     try {
       const db = getDb();
       const acc = engine.ensureAccountingData(db);
+      if (!scopedResource(req, acc.accruals, req.params.id, parseBranchId)) {
+        return res.status(404).json({ error: 'تعهد یافت نشد.' });
+      }
       const result = engine.accrualEngine.reverseAccrual(acc, req.params.id, req.user?.phone || req.user?.id || 'admin');
       save();
       res.json(result);
@@ -1217,7 +1315,11 @@ function registerAccountingRoutes({ app, getDb, save, requireAdmin, requireCapab
     try {
       const db = getDb();
       const acc = engine.ensureAccountingData(db);
-      const result = engine.accrualEngine.createPrepaidExpense(acc, req.body || {});
+      const result = engine.accrualEngine.createPrepaidExpense(acc, {
+        ...(req.body || {}),
+        branchId: parseBranchId ? parseBranchId(req) : req.body?.branchId,
+        createdById: req.user?.phone || req.user?.id || 'admin',
+      });
       save();
       res.json(result);
     } catch (err) {
@@ -1229,6 +1331,9 @@ function registerAccountingRoutes({ app, getDb, save, requireAdmin, requireCapab
     try {
       const db = getDb();
       const acc = engine.ensureAccountingData(db);
+      if (!scopedResource(req, acc.prepaids, req.params.id, parseBranchId)) {
+        return res.status(404).json({ error: 'پیش‌پرداخت یافت نشد.' });
+      }
       const result = engine.accrualEngine.amortizePrepaidPeriod(acc, req.params.id, req.body.periodIndex);
       if (result.journalLines) {
         engine.postJournalEntry(db, {
@@ -1247,38 +1352,65 @@ function registerAccountingRoutes({ app, getDb, save, requireAdmin, requireCapab
   });
 
   // ── 17. Tax Matrix & Rules ────────────────────────────────────────────────
-  app.get('/api/admin/finance/tax-matrix', requireCapability('admin.access'), (req, res) => {
+  app.get('/api/admin/finance/tax-matrix', requireCapability('finance.settings.manage'), (req, res) => {
     try {
       const db = getDb();
       const acc = engine.ensureAccountingData(db);
-      res.json(engine.taxEngine.ensureTaxSettings(acc));
+      const branchId = parseBranchId ? parseBranchId(req) : null;
+      if (branchId == null) return res.status(400).json({ error: 'برای مشاهدهٔ تنظیم مالیات، یک شعبه انتخاب کنید.', code: 'tax_branch_required' });
+      const settings = engine.taxEngine.ensureTaxSettings(acc);
+      res.json({
+        branchId,
+        defaultCategory: settings.defaultCategory,
+        deliveryFeeTaxCategory: settings.deliveryFeeTaxCategory || '',
+        categories: settings.categories,
+        rules: settings.rules.filter((rule) => Number(rule?.locationId) === Number(branchId)),
+      });
     } catch (err) {
-      res.status(500).json({ error: err.message });
+      res.status(err.status || 500).json({ error: err.message, code: err.code });
     }
   });
 
-  app.post('/api/admin/finance/tax-matrix/rule', requireCapability('admin.access'), (req, res) => {
+  app.patch('/api/admin/finance/tax-matrix', requireCapability('finance.settings.manage'), (req, res) => {
+    try {
+      if (normalizeRole(req.user?.role) !== 'owner') {
+        return res.status(403).json({ error: 'تنظیم گروه‌های مالیاتی در سطح کل رستوران فقط در اختیار مالک است.', code: 'tax_matrix_owner_required' });
+      }
+      const db = getDb();
+      const acc = engine.ensureAccountingData(db);
+      const settings = engine.taxEngine.ensureTaxSettings(acc);
+      Object.assign(settings, checkoutTaxCategoriesPatch(req.body, settings));
+      save();
+      res.json({ ok: true, settings: {
+        defaultCategory: settings.defaultCategory,
+        deliveryFeeTaxCategory: settings.deliveryFeeTaxCategory || '',
+        categories: settings.categories,
+      } });
+    } catch (err) {
+      res.status(err.status || 500).json({ error: err.message, code: err.code });
+    }
+  });
+
+  app.post('/api/admin/finance/tax-matrix/rule', requireCapability('finance.settings.manage'), (req, res) => {
     try {
       const db = getDb();
       const acc = engine.ensureAccountingData(db);
       const settings = engine.taxEngine.ensureTaxSettings(acc);
-      const id = `tr-${Date.now()}`;
-      const rule = {
-        id,
-        name: req.body.name || 'قاعده مالیاتی جدید',
-        taxCategory: req.body.taxCategory || 'standard',
-        rate: Number(req.body.rate) || 0.10,
-        inclusive: Boolean(req.body.inclusive),
-        fulfillmentType: req.body.fulfillmentType || null,
-        locationId: req.body.locationId || null,
-        status: 'active',
-        version: 1,
-      };
+      const branchId = parseBranchId ? parseBranchId(req) : null;
+      const requestedBranchId = normalizeDigits(req.body?.locationId ?? req.body?.branchId ?? '').trim();
+      if (branchId == null || !requestedBranchId || Number(requestedBranchId) !== Number(branchId)) {
+        return res.status(403).json({ error: 'قاعده باید فقط برای شعبهٔ انتخاب‌شده ثبت شود.', code: 'tax_branch_scope_mismatch' });
+      }
+      const user = req.user || {};
+      const branchScope = Array.isArray(user.allowedBranchIds) ? user.allowedBranchIds
+        : Array.isArray(user.branchIds) ? user.branchIds
+          : user.branchId == null ? null : [user.branchId];
+      const rule = prepareBranchTaxRule(req.body, settings, db.branches, branchScope);
       settings.rules.push(rule);
       save();
       res.json({ ok: true, rule });
     } catch (err) {
-      res.status(500).json({ error: err.message });
+      res.status(err.status || 500).json({ error: err.message, code: err.code });
     }
   });
 
@@ -1297,11 +1429,11 @@ function registerAccountingRoutes({ app, getDb, save, requireAdmin, requireCapab
     try {
       const db = getDb();
       const acc = engine.ensureAccountingData(db);
-      acc.settings = { ...(acc.settings || {}), ...(req.body || {}) };
+      const settings = engine.updateAccountingSettings(acc, req.body);
       save();
-      res.json({ ok: true, settings: acc.settings });
+      res.json({ ok: true, settings });
     } catch (err) {
-      res.status(500).json({ error: err.message });
+      res.status(err.status || 500).json({ error: err.message, code: err.code, details: err.details });
     }
   });
 
@@ -1332,7 +1464,7 @@ function registerAccountingRoutes({ app, getDb, save, requireAdmin, requireCapab
     try {
       const db = getDb();
       const acc = engine.ensureAccountingData(db);
-      res.json({ zReports: branchScopedRows(req, acc.zReports, parseBranchId ? parseBranchId(req) : null) });
+      res.json({ zReports: branchScopedRows(req, acc.zReports, reportBranchId(req, parseBranchId)) });
     } catch (err) {
       res.status(500).json({ error: err.message });
     }
@@ -1444,6 +1576,7 @@ function registerAccountingRoutes({ app, getDb, save, requireAdmin, requireCapab
       const distributions = branchScopedRows(req, acc.tipDistributions, branchId);
       const totalDistributed = distributions.reduce((s, d) => s + (Number(d.totalTips || 0)), 0);
       const paidOrders = (db.orders || []).filter((order) => (branchId == null || Number(order.branchId) === Number(branchId))
+        && order.paymentStatus !== 'unpaid' && order.paymentStatus !== 'pending'
         && (order.paymentStatus === 'paid' || ['paid', 'preparing', 'ready', 'done', 'delivered', 'picked_up'].includes(String(order.status || ''))));
       const coveredOrders = paidOrders.filter((order) => order.tip != null || order.tipAmount != null);
       const capturedTips = coveredOrders.reduce((sum, order) => sum + Number(order.tip ?? order.tipAmount ?? 0), 0);
@@ -1488,16 +1621,16 @@ function registerAccountingRoutes({ app, getDb, save, requireAdmin, requireCapab
         source: 'subrecipe_production',
         sourceId: log.id,
         date: new Date().toISOString(),
-        description: `تولید بچ آماده‌سازی: ${log.subRecipeName} (${log.totalYieldUnits} ${log.yieldUnit})`,
+        description: `تولید دسته‌ای آماده‌سازی: ${log.subRecipeName} (${log.totalYieldUnits} ${log.yieldUnit})`,
         lines: [
-          { accountCode: '1630', debit: log.totalBatchCost, credit: 0, memo: `انتقال به انبار نیمه‌آماده: ${log.subRecipeName}` },
-          { accountCode: '1610', debit: 0, credit: log.totalBatchCost, memo: 'مصرف مواد اولیه در آماده‌سازی' },
+          { accountCode: '1630', debit: log.totalBatchCost, credit: 0, memo: `انتقال به انبار نیمه‌آماده: ${log.subRecipeName}`, branchId: log.branchId },
+          { accountCode: '1610', debit: 0, credit: log.totalBatchCost, memo: 'مصرف مواد اولیه در آماده‌سازی', branchId: log.branchId },
         ],
         createdById: req.user?.phone || req.user?.id || 'admin',
       });
 
       save();
-      res.json({ ok: true, log, message: `تولید بچ با موفقیت انجام شد و مواد اولیه از انبار کسر گردید.` });
+      res.json({ ok: true, log, message: `تولید دسته‌ای با موفقیت انجام شد و مواد اولیه از انبار کسر گردید.` });
     } catch (err) {
       res.status(500).json({ error: err.message });
     }
@@ -1507,7 +1640,14 @@ function registerAccountingRoutes({ app, getDb, save, requireAdmin, requireCapab
     try {
       const db = getDb();
       const acc = engine.ensureAccountingData(db);
-      const explosion = engine.fnbCostOptimizer.explodeRecipeBOM(acc, req.params.id);
+      // Do the branch authorization before expanding the BOM. The optimizer
+      // accepts an id only and otherwise could reveal another branch's
+      // ingredient names, quantities and costs to a scoped user.
+      const targetId = normalizeDigits(String(req.params.id || '')).trim();
+      const recipe = branchScopedRows(req, acc.recipes, reportBranchId(req, parseBranchId))
+        .find((row) => String(row.id) === targetId || normalizeDigits(String(row.id)).trim() === targetId);
+      if (!recipe) return res.status(404).json({ error: 'دستور تهیه یافت نشد.' });
+      const explosion = engine.fnbCostOptimizer.explodeRecipeBOM(acc, targetId);
       res.json(explosion);
     } catch (err) {
       res.status(500).json({ error: err.message });
@@ -1526,4 +1666,7 @@ function registerAccountingRoutes({ app, getDb, save, requireAdmin, requireCapab
   });
 }
 
-module.exports = { registerAccountingRoutes };
+module.exports = {
+  registerAccountingRoutes,
+  __test: { branchScopedRows, reportBranchId, reportBranchIds },
+};

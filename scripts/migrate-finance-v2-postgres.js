@@ -6,6 +6,7 @@ const path = require('path');
 const { Pool } = require('pg');
 
 const MIGRATION_PATTERN = /^(?:00[2-9]|0[1-9]\d|[1-9]\d{2})_.*\.sql$/;
+const REQUIRED_OPERATIONAL_RELATIONS = ['unified_branches', 'unified_orders'];
 
 function discoverMigrations(migrationsDir = path.join(__dirname, '..', 'server', 'migrations')) {
   return fs.readdirSync(migrationsDir)
@@ -62,6 +63,52 @@ async function readAppliedMigrations(client) {
   return result.rows || [];
 }
 
+function migrationBody(sql) {
+  const source = String(sql || '').replace(/^\uFEFF/, '');
+  if (!/^\s*BEGIN\s*;\s*/i.test(source) || !/\s*COMMIT\s*;\s*$/i.test(source)) {
+    const error = new Error('Every finance migration must be wrapped by a single BEGIN/COMMIT pair.');
+    error.code = 'finance_migration_transaction_wrapper_invalid';
+    throw error;
+  }
+  const body = source.replace(/^\s*BEGIN\s*;\s*/i, '').replace(/\s*COMMIT\s*;\s*$/i, '').trim();
+  if (!body) {
+    const error = new Error('A finance migration cannot have an empty transaction body.');
+    error.code = 'finance_migration_transaction_body_empty';
+    throw error;
+  }
+  return `${body}\n`;
+}
+
+function requireBackupReference(value = process.env.WESTO_FINANCE_BACKUP_REFERENCE) {
+  const reference = String(value || '').trim();
+  if (!reference) {
+    const error = new Error('A verified database backup reference is required before applying a pending Finance V2 migration.');
+    error.code = 'finance_backup_reference_required';
+    throw error;
+  }
+  if (reference.length > 512) {
+    const error = new Error('The database backup reference is too long.');
+    error.code = 'finance_backup_reference_invalid';
+    throw error;
+  }
+  return reference;
+}
+
+async function assertOperationalSchema(client) {
+  const result = await client.query(`SELECT
+    to_regclass('public.unified_branches') AS unified_branches,
+    to_regclass('public.unified_orders') AS unified_orders`);
+  const row = result.rows?.[0] || {};
+  const missing = REQUIRED_OPERATIONAL_RELATIONS.filter((relation) => !row[relation]);
+  if (missing.length) {
+    const error = new Error(`Unified operational schema is required before Finance V2 migrations: ${missing.join(', ')}`);
+    error.code = 'finance_operational_schema_required';
+    error.details = { missing };
+    throw error;
+  }
+  return { available: true, relations: REQUIRED_OPERATIONAL_RELATIONS.slice() };
+}
+
 async function planMigrations(pool, migrations) {
   const client = await pool.connect();
   try {
@@ -77,18 +124,12 @@ async function planMigrations(pool, migrations) {
   }
 }
 
-async function applyMigrations(pool, migrations) {
+async function applyMigrations(pool, migrations, { backupReference = process.env.WESTO_FINANCE_BACKUP_REFERENCE } = {}) {
   const client = await pool.connect();
   const results = [];
   try {
     await client.query("SELECT pg_advisory_lock(hashtext('westo:finance-v2-schema-migrations'))");
-    await client.query(`CREATE TABLE IF NOT EXISTS finance_schema_migrations (
-      version TEXT PRIMARY KEY,
-      filename TEXT NOT NULL UNIQUE,
-      checksum_sha256 TEXT NOT NULL CHECK (checksum_sha256 ~ '^[0-9a-f]{64}$'),
-      execution_ms INTEGER NOT NULL CHECK (execution_ms >= 0),
-      applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
-    )`);
+    await assertOperationalSchema(client);
     const existing = await readAppliedMigrations(client);
     const plan = buildMigrationPlan(migrations, existing);
     const drift = plan.find((row) => ['checksum_mismatch', 'unknown_applied'].includes(row.status));
@@ -100,22 +141,45 @@ async function applyMigrations(pool, migrations) {
       error.migration = drift.filename;
       throw error;
     }
+    const pendingMigrations = plan.filter((row) => row.status === 'pending');
+    const verifiedBackupReference = pendingMigrations.length ? requireBackupReference(backupReference) : null;
+    const bodies = new Map(pendingMigrations.map((migration) => [migration.version, migrationBody(migration.sql)]));
+    if (pendingMigrations.length) {
+      await client.query(`CREATE TABLE IF NOT EXISTS finance_schema_migrations (
+        version TEXT PRIMARY KEY,
+        filename TEXT NOT NULL UNIQUE,
+        checksum_sha256 TEXT NOT NULL CHECK (checksum_sha256 ~ '^[0-9a-f]{64}$'),
+        execution_ms INTEGER NOT NULL CHECK (execution_ms >= 0),
+        backup_reference TEXT,
+        applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      )`);
+      await client.query('ALTER TABLE finance_schema_migrations ADD COLUMN IF NOT EXISTS backup_reference TEXT');
+    }
     for (const migration of plan) {
       if (migration.status === 'applied') {
         results.push({ version: migration.version, filename: migration.filename, status: 'skipped_applied', checksumSha256: migration.checksumSha256 });
         continue;
       }
       const started = Date.now();
-      await client.query(migration.sql);
-      const executionMs = Math.max(0, Date.now() - started);
-      await client.query(`INSERT INTO finance_schema_migrations(version,filename,checksum_sha256,execution_ms)
-        VALUES($1,$2,$3,$4)`, [migration.version, migration.filename, migration.checksumSha256, executionMs]);
-      results.push({ version: migration.version, filename: migration.filename, status: 'applied', checksumSha256: migration.checksumSha256, executionMs });
+      // Older files carry their own transaction markers for direct inspection.
+      // The runner strips only those outer markers and owns the transaction so
+      // the schema change and its checksum ledger row commit together.
+      await client.query('BEGIN');
+      try {
+        await client.query(bodies.get(migration.version));
+        const executionMs = Math.max(0, Date.now() - started);
+        await client.query(`INSERT INTO finance_schema_migrations(version,filename,checksum_sha256,execution_ms,backup_reference)
+          VALUES($1,$2,$3,$4,$5)`, [migration.version, migration.filename, migration.checksumSha256, executionMs, verifiedBackupReference]);
+        await client.query('COMMIT');
+        results.push({ version: migration.version, filename: migration.filename, status: 'applied', checksumSha256: migration.checksumSha256, executionMs, backupReference: verifiedBackupReference });
+      } catch (error) {
+        await client.query('ROLLBACK').catch(() => {});
+        throw error;
+      }
     }
     return results;
   } catch (error) {
-    // A migration file owns its BEGIN/COMMIT block. If it failed mid-file,
-    // clear the aborted transaction before releasing the session-level lock.
+    // Clear any aborted transaction before releasing the session-level lock.
     await client.query('ROLLBACK').catch(() => {});
     throw error;
   } finally {
@@ -172,4 +236,7 @@ if (require.main === module) {
   });
 }
 
-module.exports = { MIGRATION_PATTERN, discoverMigrations, buildMigrationPlan, readAppliedMigrations, planMigrations, applyMigrations, main };
+module.exports = {
+  MIGRATION_PATTERN, REQUIRED_OPERATIONAL_RELATIONS, discoverMigrations, buildMigrationPlan,
+  readAppliedMigrations, migrationBody, requireBackupReference, assertOperationalSchema, planMigrations, applyMigrations, main,
+};

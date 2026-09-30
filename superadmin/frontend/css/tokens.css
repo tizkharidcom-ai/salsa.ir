@@ -1,0 +1,411 @@
+/**
+ * prototype/css/tokens.css
+ * 
+ * SALSA GODMODE Design Tokens & Core Variables.
+ * Persian RTL Native, Ultra-Crisp Dark Palette, Local Variable Typography.
+ */
+
+@font-face {
+  font-family: 'Vazirmatn';
+  src: url('../assets/fonts/Vazirmatn-Variable.woff2') format('woff2-variations'),
+       url('../assets/fonts/Vazirmatn-Variable.woff2') format('woff2');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'GeistMono';
+  src: url('../assets/fonts/GeistMono.woff2') format('woff2');
+  font-weight: 400 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  /* ==========================================================================
+     SALSA Official Brand Tokens (Brand Book v1.2 / 2026)
+     ========================================================================== */
+  --salsa-charcoal: #0B0B0D;          /* 70% Dark ground & canvas */
+  --salsa-graphite: #18191C;          /* Secondary dark, surfaces, cards, sidebar */
+  --salsa-graphite-elevated: #232529; /* Elevated modals, hover states */
+  --salsa-ivory: #F4F0E8;             /* 15% Text, high-contrast badges, light surfaces */
+  --salsa-red: #E6292A;               /* 10% Primary brand accent (Chili Red) */
+  --salsa-red-hover: #D32021;
+  --salsa-red-subtle: rgba(230, 41, 42, 0.12);
+  --salsa-red-glow: 0 0 16px rgba(230, 41, 42, 0.35);
+  --salsa-green: #4F8A34;             /* 5% Supporting accent (Leaf Green) */
+  --salsa-green-hover: #43772C;
+  --salsa-green-subtle: rgba(79, 138, 52, 0.14);
+  --salsa-warm-gray: #8D8F94;         /* Warm Gray: muted text, subtle borders */
+
+  /* Salsa System Palette */
+  --apple-blue: #E6292A;                /* Brand Accent (Salsa Chili Red) */
+  --apple-blue-hover: #D32021;
+  --apple-blue-subtle: rgba(230, 41, 42, 0.08);
+  --apple-green: #4F8A34;               /* Salsa Leaf Green */
+  --apple-green-subtle: rgba(79, 138, 52, 0.12);
+  --apple-orange: #f59e0b;              /* Status Orange */
+  --apple-orange-subtle: rgba(245, 158, 11, 0.12);
+  --apple-red: #E6292A;                 /* Salsa Chili Red */
+  --apple-red-subtle: rgba(230, 41, 42, 0.12);
+  --apple-purple: #af52de;              /* Purple */
+  --apple-teal: #4F8A34;                /* Leaf Green */
+  --apple-indigo: #8D8F94;              /* Warm Gray */
+
+  /* Neutral Scale */
+  --apple-gray-1: #8D8F94;
+  --apple-gray-2: #aeaeb2;
+  --apple-gray-3: #c7c7cc;
+  --apple-gray-4: #d1d1d6;
+  --apple-gray-5: #e5e5ea;
+  --apple-gray-6: #f4f0e8;
+
+  /* Dynamic Materials & Translucent Glass (Light Mode) */
+  --apple-canvas: #f8f6f0;              /* Warm Ivory-tinted canvas */
+  --apple-surface: rgba(255, 255, 255, 0.88);
+  --apple-surface-elevated: #ffffff;
+  --apple-surface-hover: rgba(0, 0, 0, 0.04);
+  --apple-glass-ultra-thin: rgba(255, 255, 255, 0.5);
+  --apple-glass-thin: rgba(255, 255, 255, 0.7);
+  --apple-glass-regular: rgba(255, 255, 255, 0.84);
+  --apple-glass-thick: rgba(255, 255, 255, 0.94);
+  --apple-blur-regular: blur(24px) saturate(190%);
+  --apple-blur-modal: blur(32px) saturate(200%);
+  --apple-bevel-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.7);
+
+  /* Spring & Motion Curves */
+  --apple-spring-response: 0.36s;
+  --apple-spring-damping: 1.0;
+  --apple-ease: cubic-bezier(0.16, 1, 0.3, 1);
+  --apple-ease-spring: cubic-bezier(0.25, 1, 0.35, 1);
+  --apple-ease-bounce: cubic-bezier(0.34, 1.45, 0.64, 1);
+  --apple-press-feedback: scale(0.97);
+
+  /* Surface Hierarchy Aliases */
+  --bg-canvas: var(--apple-canvas);
+  --bg-subtle: #f4f0e8;
+  --bg-surface: #ffffff;
+  --bg-surface-elevated: #ffffff;
+  --bg-surface-hover: rgba(0, 0, 0, 0.035);
+  --bg-surface-subtle: #fbf9f5;
+  --bg-surface-subtle-hover: #f0ece3;
+  --bg-glass: var(--apple-glass-regular);
+  --bg-glass-card: var(--apple-glass-thin);
+
+  /* Typography & Content Colors */
+  --text-primary: #0B0B0D;              /* Salsa Charcoal */
+  --text-secondary: #5F6166;            /* Neutral dark-medium */
+  --text-tertiary: #8D8F94;             /* Salsa Warm Gray */
+  --text-inverse: #F4F0E8;
+
+  /* Accent & Action Colors */
+  --accent-cyan: #E6292A;               /* Salsa Chili Red */
+  --accent-cyan-hover: #D32021;
+  --accent-cyan-subtle: rgba(230, 41, 42, 0.1);
+  --accent-blue: #E6292A;
+  --accent-blue-hover: #D32021;
+
+  /* State Colors */
+  --state-success: #4F8A34;             /* Salsa Leaf Green */
+  --state-success-subtle: rgba(79, 138, 52, 0.12);
+  --state-warning: #f59e0b;
+  --state-warning-subtle: rgba(245, 158, 11, 0.12);
+  --state-danger: #E6292A;              /* Salsa Chili Red */
+  --state-danger-subtle: rgba(230, 41, 42, 0.12);
+  --state-info: #E6292A;
+  --state-info-subtle: rgba(230, 41, 42, 0.08);
+  --state-neutral: #8D8F94;
+  --state-neutral-subtle: #f4f0e8;
+
+  /* Telemetry Lifecycle Variables */
+  --status-live: #4F8A34;               /* Salsa Leaf Green */
+  --status-live-subtle: rgba(79, 138, 52, 0.12);
+  --status-live-border: rgba(79, 138, 52, 0.4);
+  --status-stale: #f59e0b;
+  --status-stale-subtle: rgba(245, 158, 11, 0.12);
+  --status-stale-border: rgba(245, 158, 11, 0.4);
+  --status-loading: #E6292A;
+  --status-loading-subtle: rgba(230, 41, 42, 0.12);
+  --status-loading-border: rgba(230, 41, 42, 0.4);
+  --status-empty: #8D8F94;
+  --status-empty-subtle: #f4f0e8;
+  --status-empty-border: #d1d1d6;
+  --status-failed: #E6292A;
+  --status-failed-subtle: rgba(230, 41, 42, 0.12);
+  --status-failed-border: rgba(230, 41, 42, 0.4);
+
+  /* Telemetry Dimension Tokens (WCAG AA) */
+  --telemetry-completeness: #E6292A;
+  --telemetry-freshness: #4F8A34;
+  --telemetry-validity: #4F8A34;
+  --telemetry-consistency: #8D8F94;
+
+  /* Neutral Gray System */
+  --gray-25: #fcfcfd;
+  --gray-50: #fbfbfd;
+  --gray-100: #f4f0e8;
+  --gray-200: #e5e5ea;
+  --gray-300: #d1d1d6;
+  --gray-400: #aeaeb2;
+  --gray-500: #8D8F94;
+  --gray-600: #6e6e73;
+  --gray-700: #48484a;
+  --gray-800: #18191C;
+  --gray-900: #0B0B0D;
+
+  /* Focus Rings (Salsa Chili Red Glow) */
+  --focus-ring: 0 0 0 3.5px rgba(230, 41, 42, 0.3);
+  --focus-ring-error: 0 0 0 3.5px rgba(230, 41, 42, 0.35);
+
+  /* Borders & Dividers */
+  --border-subtle: #f0ece3;
+  --border-default: #e2ddd4;
+  --border-focus: #E6292A;
+  --border-success: #a7f3d0;
+  --border-danger: #fecdd3;
+  --border-warning: #fde68a;
+
+  /* Compatibility Aliases */
+  --color-slate-200: #e2ddd4;
+  --color-slate-300: #cbd5e1;
+  --color-slate-400: #8D8F94;
+  --color-slate-500: #64748b;
+  --color-primary-400: #F03A3B;
+  --color-primary-500: #E6292A;
+  --color-primary-600: #D32021;
+  --color-success: #4F8A34;
+  --color-warning: #d97706;
+  --color-danger: #E6292A;
+  --color-info: #E6292A;
+  --color-border: #e2ddd4;
+  --color-surface-card: #ffffff;
+  --color-surface-ground: #f8f6f0;
+
+  /* Typography Scale */
+  --font-sans: 'Vazirmatn', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'GeistMono', 'Vazirmatn', monospace;
+  
+  --font-size-xs: 0.75rem;    /* 12px */
+  --font-size-sm: 0.844rem;   /* 13.5px */
+  --font-size-base: 0.938rem; /* 15px */
+  --font-size-md: 1.063rem;   /* 17px */
+  --font-size-lg: 1.25rem;    /* 20px */
+  --font-size-xl: 1.5rem;     /* 24px */
+  --font-size-2xl: 1.875rem;  /* 30px */
+
+  /* Spacing Scale (4/8 rhythm) */
+  --spacing-1: 0.25rem;
+  --spacing-2: 0.5rem;
+  --spacing-3: 0.75rem;
+  --spacing-4: 1rem;
+  --spacing-5: 1.25rem;
+  --spacing-6: 1.5rem;
+  --spacing-8: 2rem;
+  --spacing-10: 2.5rem;
+  --spacing-12: 3rem;
+  
+  /* Apple Squircle Continuous Curvature Radii (iOS / macOS HIG Superellipse) */
+  --radius-xs: 6px;           /* iOS micro-tags & checkboxes */
+  --radius-sm: 8px;           /* Sub-cards & compact chips */
+  --radius-md: 12px;          /* Inputs, selects, and standard buttons */
+  --radius-lg: 16px;          /* Inner panels & compact cards */
+  --radius-xl: 20px;          /* Primary cards & stat widgets */
+  --radius-2xl: 26px;         /* Modals, sheets & dialogs */
+  --radius-full: 9999px;      /* Pill capsules */
+
+  /* Dedicated Component Squircle Tokens */
+  --radius-squircle-checkbox: 6px;
+  --radius-squircle-input: 12px;
+  --radius-squircle-button: 12px;
+  --radius-squircle-card: 18px;
+  --radius-squircle-modal: 24px;
+  --radius-squircle-drawer: 24px;
+  --radius-squircle-badge: 9999px;
+
+  /* Elevation Shadows (Restrained 1-2px Untitled UI Micro-Shadows) */
+  --shadow-xs: 0 1px 2px rgba(16, 24, 40, 0.05);
+  --shadow-sm: 0 1px 3px rgba(16, 24, 40, 0.06), 0 1px 2px rgba(16, 24, 40, 0.04);
+  --shadow-md: 0 4px 8px -2px rgba(16, 24, 40, 0.08), 0 2px 4px -2px rgba(16, 24, 40, 0.04);
+  --shadow-lg: 0 12px 16px -4px rgba(16, 24, 40, 0.08), 0 4px 6px -2px rgba(16, 24, 40, 0.03);
+  --shadow-glow: 0 0 0 4px rgba(2, 132, 199, 0.12);
+  --shadow-glow-rose: 0 0 0 4px rgba(225, 29, 72, 0.12);
+
+  /* Transitions */
+  --transition-fast: 140ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-normal: 200ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-smooth: 280ms cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* Layout Dimensions (GODMODE.MD §20.2) */
+  --sidebar-width: 264px;
+  --sidebar-collapsed-width: 72px;
+  --drawer-width: clamp(560px, 45vw, 720px);
+
+  /* Z-Index Layers */
+  --z-header: 40;
+  --z-sidebar: 50;
+  --z-drawer: 80;
+  --z-modal-backdrop: 90;
+  --z-modal: 100;
+  --z-toast: 110;
+}
+
+/* ==========================================================================
+   Preserved Dark Theme Variables (Standardized High-Contrast Dark Palette)
+   ========================================================================== */
+[data-theme="dark"] {
+  /* Salsa Materials & Translucent Glass (Dark Mode: Charcoal #0B0B0D & Graphite #151619) */
+  --apple-canvas: #0B0B0D;              /* Salsa Charcoal: 70% Ground */
+  --apple-surface: rgba(21, 22, 25, 0.94); /* Salsa Graphite */
+  --apple-surface-elevated: #1F2126;    /* Elevated Surfaces & Modals */
+  --apple-surface-hover: rgba(244, 240, 232, 0.07);
+  --apple-glass-ultra-thin: rgba(21, 22, 25, 0.5);
+  --apple-glass-thin: rgba(21, 22, 25, 0.75);
+  --apple-glass-regular: rgba(21, 22, 25, 0.9);
+  --apple-glass-thick: rgba(21, 22, 25, 0.96);
+  --apple-bevel-highlight: inset 0 1px 0 rgba(244, 240, 232, 0.08);
+
+  --bg-canvas: #0B0B0D;                 /* Salsa Charcoal */
+  --bg-subtle: #151619;                 /* Salsa Graphite */
+  --bg-surface: #151619;
+  --bg-surface-elevated: #1F2126;
+  --bg-surface-hover: #282A30;
+  --bg-surface-subtle: rgba(244, 240, 232, 0.04);
+  --bg-surface-subtle-hover: rgba(244, 240, 232, 0.08);
+  --bg-glass: var(--apple-glass-regular);
+  --bg-glass-card: var(--apple-glass-thin);
+
+  --text-primary: #F4F0E8;              /* Salsa Ivory: 15% Text & High Contrast (~14.8:1) */
+  --text-secondary: #C8CBD0;            /* Crisp Light Silver: ~9.2:1 Contrast (WCAG AAA) */
+  --text-tertiary: #9DA1A9;             /* Readable Warm Gray: ~6.1:1 Contrast (WCAG AA) */
+  --text-inverse: #0B0B0D;
+
+  --accent-cyan: #E6292A;               /* Salsa Chili Red (10% Accent) */
+  --accent-cyan-hover: #F03A3B;
+  --accent-cyan-subtle: rgba(230, 41, 42, 0.16);
+  --accent-blue: #E6292A;
+  --accent-blue-hover: #F03A3B;
+
+  --state-success: #4F8A34;             /* Salsa Leaf Green (5% Accent) */
+  --state-success-subtle: rgba(79, 138, 52, 0.18);
+  --state-warning: #f59e0b;
+  --state-warning-subtle: rgba(245, 158, 11, 0.18);
+  --state-danger: #E6292A;              /* Salsa Chili Red */
+  --state-danger-subtle: rgba(230, 41, 42, 0.18);
+  --state-info: #E6292A;
+  --state-info-subtle: rgba(230, 41, 42, 0.18);
+  --state-neutral: #9DA1A9;
+  --state-neutral-subtle: #1F2126;
+
+  /* 5-State Telemetry Lifecycle Variables (Dark Mode) */
+  --status-live: #4F8A34;               /* Salsa Leaf Green */
+  --status-live-subtle: rgba(79, 138, 52, 0.18);
+  --status-live-border: rgba(79, 138, 52, 0.4);
+  --status-stale: #f59e0b;
+  --status-stale-subtle: rgba(245, 158, 11, 0.18);
+  --status-stale-border: rgba(245, 158, 11, 0.4);
+  --status-loading: #E6292A;
+  --status-loading-subtle: rgba(230, 41, 42, 0.18);
+  --status-loading-border: rgba(230, 41, 42, 0.4);
+  --status-empty: #9DA1A9;
+  --status-empty-subtle: rgba(157, 161, 169, 0.18);
+  --status-empty-border: rgba(157, 161, 169, 0.4);
+  --status-failed: #E6292A;
+  --status-failed-subtle: rgba(230, 41, 42, 0.18);
+  --status-failed-border: rgba(230, 41, 42, 0.4);
+
+  /* 4-Dimensional Telemetry Dimension Tokens (Dark Mode) */
+  --telemetry-completeness: #E6292A;
+  --telemetry-freshness: #4F8A34;
+  --telemetry-validity: #4F8A34;
+  --telemetry-consistency: #9DA1A9;
+
+  /* Salsa Neutral Scale (Dark Mode) */
+  --gray-25: #0B0B0D;
+  --gray-50: #101114;
+  --gray-100: #151619;
+  --gray-200: #1F2126;
+  --gray-300: #282A30;
+  --gray-400: #72767E;
+  --gray-500: #9DA1A9;
+  --gray-600: #C8CBD0;
+  --gray-700: #E2E4E8;
+  --gray-800: #EFEFEF;
+  --gray-900: #F4F0E8;
+
+  /* Focus Rings (Dark Mode: Salsa Chili Red) */
+  --focus-ring: 0 0 0 4px rgba(230, 41, 42, 0.4);
+  --focus-ring-error: 0 0 0 4px rgba(230, 41, 42, 0.5);
+
+  --border-subtle: rgba(244, 240, 232, 0.08);
+  --border-default: rgba(244, 240, 232, 0.13);
+  --border: rgba(244, 240, 232, 0.13);
+  --border-strong: rgba(244, 240, 232, 0.24);
+  --border-focus: #E6292A;
+
+  --color-slate-200: #E2E4E8;
+  --color-slate-300: #C8CBD0;
+  --color-slate-400: #9DA1A9;
+  --color-slate-500: #72767E;
+  --color-border: rgba(244, 240, 232, 0.13);
+  --color-surface-card: #151619;
+  --color-surface-ground: #0B0B0D;
+
+  --shadow-sm: 0 1px 3px 0 rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 4px 14px -2px rgba(0, 0, 0, 0.55);
+  --shadow-lg: 0 14px 32px -4px rgba(0, 0, 0, 0.7);
+}
+
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body {
+  width: 100%;
+  min-height: 100vh;
+  background-color: var(--bg-canvas);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 16px;
+  line-height: 1.6;
+  direction: rtl;
+  text-align: right;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+button, input, select, textarea {
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+}
+
+/* Scrollbar Styling */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: var(--bg-canvas);
+}
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: var(--radius-full);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+[data-theme="dark"] ::-webkit-scrollbar-track {
+  background: #0B0B0D;
+}
+[data-theme="dark"] ::-webkit-scrollbar-thumb {
+  background: rgba(244, 240, 232, 0.18);
+  border-radius: var(--radius-full);
+}
+[data-theme="dark"] ::-webkit-scrollbar-thumb:hover {
+  background: rgba(244, 240, 232, 0.32);
+}
+

@@ -127,10 +127,33 @@ function writeBundle(outRel, sources) {
   };
 }
 
+const requestedBundles = process.argv.slice(2);
+const bundleEntries = Object.entries(bundles);
+const unknownBundles = requestedBundles.filter((file) => !Object.hasOwn(bundles, file));
+if (unknownBundles.length) {
+  throw new Error(`Unknown smart bundle(s): ${unknownBundles.join(', ')}`);
+}
+const selectedEntries = requestedBundles.length
+  ? bundleEntries.filter(([outRel]) => requestedBundles.includes(outRel))
+  : bundleEntries;
+const generatedBundles = selectedEntries.map(([outRel, sources]) => writeBundle(outRel, sources));
+let manifestBundles = generatedBundles;
+if (requestedBundles.length) {
+  let previousBundles = [];
+  try {
+    const previous = JSON.parse(read('smart-load-bundles.json'));
+    if (previous.schema === 'westo-smart-load-bundles-v1' && Array.isArray(previous.bundles)) {
+      previousBundles = previous.bundles;
+    }
+  } catch (_) {}
+  const updatedByFile = new Map(generatedBundles.map((item) => [item.file, item]));
+  manifestBundles = bundleEntries.map(([outRel]) => updatedByFile.get(outRel)
+    || previousBundles.find((item) => item.file === outRel)).filter(Boolean);
+}
 const manifest = {
   schema: 'westo-smart-load-bundles-v1',
   generatedAt: new Date().toISOString(),
-  bundles: Object.entries(bundles).map(([outRel, sources]) => writeBundle(outRel, sources)),
+  bundles: manifestBundles,
 };
 
 fs.writeFileSync(path.join(ROOT, 'smart-load-bundles.json'), JSON.stringify(manifest, null, 2) + '\n');

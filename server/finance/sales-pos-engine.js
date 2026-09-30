@@ -672,7 +672,7 @@ function generateZReport(db, input = {}, opts = {}) {
   const dayOrders = orders.filter((o) => {
     const oDate = (o.createdAt || o.paidAt || '').slice(0, 10);
     const oBranch = Number(o.branchId || 1);
-    const paid = o.paymentStatus === 'paid' || ['paid', 'preparing', 'ready', 'done', 'delivered', 'picked_up'].includes(String(o.status || ''));
+    const paid = o.paymentStatus !== 'unpaid' && o.paymentStatus !== 'pending' && (o.paymentStatus === 'paid' || ['paid', 'preparing', 'ready', 'done', 'delivered', 'picked_up'].includes(String(o.status || '')));
     return paid && oDate === businessDate && (oBranch === branchId || !branchId);
   });
 
@@ -725,9 +725,10 @@ function generateZReport(db, input = {}, opts = {}) {
 
   if (postFn && totalGrossSales > 0 && dataQuality.status === 'verified') {
     const lines = [
-      { accountCode: '1110', debit: actualCashCounted, credit: 0, memo: `صندوق نقدی پایان شیفت ${zNumber}`, branchId },
-      { accountCode: '1320', debit: posCardSales, credit: 0, memo: `تسویه کارتخوان‌های سالن ${zNumber}`, branchId },
-      { accountCode: '1310', debit: onlineSales + snappFoodSales, credit: 0, memo: `درگاه آنلاین و بیرون‌بر ${zNumber}`, branchId },
+      ...(actualCashCounted > 0 ? [{ accountCode: '1110', debit: actualCashCounted, credit: 0, memo: `صندوق نقدی پایان شیفت ${zNumber}`, branchId }] : []),
+      ...(posCardSales > 0 ? [{ accountCode: '1320', debit: posCardSales, credit: 0, memo: `تسویه کارتخوان‌های سالن ${zNumber}`, branchId }] : []),
+      ...(onlineSales > 0 ? [{ accountCode: '1310', debit: onlineSales, credit: 0, memo: `درگاه آنلاین ${zNumber}`, branchId }] : []),
+      ...(snappFoodSales > 0 ? [{ accountCode: '1410', debit: snappFoodSales, credit: 0, memo: `مطالبات اسنپ‌فود ${zNumber}`, branchId }] : []),
       ...(cashVariance != null && cashVariance < 0 ? [{ accountCode: '5500', debit: Math.abs(cashVariance), credit: 0, memo: `کسری صندوق ${zNumber}`, branchId }] : []),
       { accountCode: '4110', debit: 0, credit: Math.round(totalNetSales * 0.65), memo: `فروش غذا ${zNumber}`, branchId },
       { accountCode: '4210', debit: 0, credit: Math.round(totalNetSales * 0.35), memo: `فروش بار و نوشیدنی ${zNumber}`, branchId },
@@ -792,6 +793,7 @@ function calculateRestaurantKPIs(db, opts = {}) {
   const branchId = opts.branchId ? Number(opts.branchId) : null;
   const orders = Array.isArray(db.orders) ? db.orders : [];
   const validOrders = orders.filter((o) => (!branchId || Number(o.branchId) === branchId)
+    && o.paymentStatus !== 'unpaid' && o.paymentStatus !== 'pending'
     && (o.paymentStatus === 'paid' || ['paid', 'preparing', 'ready', 'done', 'delivered', 'picked_up'].includes(String(o.status || ''))));
 
   const totalRevenue = validOrders.reduce((sum, o) => sum + Number(o.total || 0), 0);

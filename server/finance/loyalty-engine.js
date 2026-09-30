@@ -61,24 +61,93 @@ function getLoyaltyTiers(db) {
   return DEFAULT_LOYALTY_TIERS.map((t) => ({ ...t }));
 }
 
+function normalizeLoyaltyTiers(rawTiers) {
+  const fail = (code, message) => {
+    const error = new Error(message);
+    error.code = code;
+    throw error;
+  };
+  if (!Array.isArray(rawTiers) || rawTiers.length < 1) {
+    fail('tiers_array_required', 'حداقل یک سطح وفاداری لازم است.');
+  }
+  if (rawTiers.length > 20) fail('tiers_limit_exceeded', 'حداکثر ۲۰ سطح وفاداری می‌توانید تعریف کنید.');
+
+  const ids = new Set();
+  const names = new Set();
+  const tiers = rawTiers.map((raw, index) => {
+    const item = raw && typeof raw === 'object' ? raw : {};
+    const id = String(item.id || `tier-${index + 1}`).trim();
+    const name = String(item.name || '').trim().replace(/\s+/g, ' ');
+    if (!/^[a-zA-Z0-9_-]{1,48}$/.test(id)) fail('invalid_tier_id', `شناسهٔ سطح ${index + 1} معتبر نیست.`);
+    if (ids.has(id)) fail('duplicate_tier_id', 'شناسهٔ سطح‌ها باید یکتا باشد.');
+    ids.add(id);
+    if (!name || Array.from(name).length > 40) fail('invalid_tier_name', `نام سطح ${index + 1} باید بین ۱ تا ۴۰ نویسه باشد.`);
+    const nameKey = name.normalize('NFKC').toLowerCase();
+    if (names.has(nameKey)) fail('duplicate_tier_name', 'نام سطح‌ها نباید تکراری باشد.');
+    names.add(nameKey);
+
+    const number = (key, fallback, { integer = false, min = 0, max = Number.MAX_SAFE_INTEGER } = {}) => {
+      const value = item[key] == null || item[key] === '' ? fallback : Number(item[key]);
+      if (!Number.isFinite(value) || value < min || value > max) {
+        fail(`invalid_${key}`, `مقدار «${key}» در سطح «${name}» معتبر نیست.`);
+      }
+      const normalized = integer ? Math.round(value) : value;
+      if (!Number.isSafeInteger(normalized) && integer) fail(`invalid_${key}`, `مقدار «${key}» بیش از حد بزرگ است.`);
+      return normalized;
+    };
+
+    const minPoints = number('minPoints', 0, { integer: true, max: 1_000_000_000 });
+    const minSpendToman = number('minSpendToman', 0, { integer: true, max: 1_000_000_000_000 });
+    const multiplier = number('multiplier', 1, { min: 1, max: 10 });
+    const discountPct = number('discountPct', 0, { min: 0, max: 50 });
+    const color = String(item.color || '#a855f7').trim();
+    if (!/^#[0-9a-fA-F]{6}$/.test(color)) fail('invalid_tier_color', `رنگ سطح «${name}» معتبر نیست.`);
+    const badgeIcon = Array.from(String(item.badgeIcon || '🥉').trim()).slice(0, 6).join('');
+    if (!badgeIcon) fail('invalid_tier_badge', `برای سطح «${name}» یک نشان انتخاب کنید.`);
+    const rawPerks = Array.isArray(item.perks) ? item.perks : [];
+    if (rawPerks.length > 8) fail('tier_perks_limit_exceeded', `برای سطح «${name}» حداکثر ۸ مزیت وارد کنید.`);
+    const perks = rawPerks.map((perk) => String(perk).trim().slice(0, 120)).filter(Boolean);
+
+    return { id, name, minPoints, minSpendToman, multiplier, discountPct, color, badgeIcon, perks };
+  });
+
+  if (tiers[0].minPoints !== 0 || tiers[0].minSpendToman !== 0) {
+    fail('base_tier_threshold_required', 'شرط سطح پایه باید صفر امتیاز و صفر تومان باشد.');
+  }
+  for (let index = 1; index < tiers.length; index += 1) {
+    const previous = tiers[index - 1];
+    const current = tiers[index];
+    if (current.minPoints < previous.minPoints || current.minSpendToman < previous.minSpendToman) {
+      fail('tier_thresholds_out_of_order', 'حداقل امتیاز و خرید باید از سطح پایه به سطح‌های بالاتر افزایشی باشد.');
+    }
+    if (current.minPoints === previous.minPoints && current.minSpendToman === previous.minSpendToman) {
+      fail('duplicate_tier_thresholds', 'هر سطح باید دست‌کم یک شرط ورود متفاوت از سطح قبلی داشته باشد.');
+    }
+    if (previous.minPoints > 0 && current.minPoints === previous.minPoints) {
+      fail('tier_points_threshold_not_increasing', 'حداقل امتیاز سطح‌های بالاتر باید بیشتر باشد.');
+    }
+    if (previous.minSpendToman > 0 && current.minSpendToman === previous.minSpendToman) {
+      fail('tier_spend_threshold_not_increasing', 'حداقل خرید سطح‌های بالاتر باید بیشتر باشد.');
+    }
+  }
+  return tiers;
+}
+
 function resolveCustomerTier(db, userOrData) {
   const tiers = getLoyaltyTiers(db);
   const points = Math.max(0, Math.round(Number(userOrData?.points) || 0));
   const totalSpend = Math.max(0, Math.round(Number(userOrData?.totalSpendToman ?? userOrData?.totalSpentToman ?? userOrData?.totalSpend ?? userOrData?.total) || 0));
 
-  // Sort tiers from highest threshold to lowest
-  const sorted = [...tiers].sort((a, b) => (b.minPoints || 0) - (a.minPoints || 0));
+  // Tier order is the configured progression from base to highest.
+  let currentTier = tiers[0] || DEFAULT_LOYALTY_TIERS[0];
 
-  let currentTier = sorted[sorted.length - 1] || DEFAULT_LOYALTY_TIERS[0];
-
-  for (const tier of sorted) {
+  for (const tier of tiers) {
     const hasPointThreshold = Number(tier.minPoints || 0) > 0;
     const hasSpendThreshold = Number(tier.minSpendToman || 0) > 0;
     const pointsMet = hasPointThreshold && points >= tier.minPoints;
     const spendMet = hasSpendThreshold && totalSpend >= tier.minSpendToman;
     if (pointsMet || spendMet) {
       currentTier = tier;
-      break;
     }
   }
 
@@ -126,7 +195,7 @@ function calculateOrderLoyaltyDiscount(subtotalToman, tier) {
 function calculateOrderPointsEarned(db, orderTotalToman, tier) {
   if (!db?.loyalty?.enabled) return 0;
   const total = Math.max(0, Math.round(Number(orderTotalToman) || 0));
-  const baseRate = Number(db?.loyalty?.pointsPerToman) || 0.01;
+  const baseRate = Math.max(0, Number(db?.loyalty?.pointsPerToman ?? 0.01) || 0);
   const multiplier = Number(tier?.multiplier) || 1.0;
   return Math.max(0, Math.floor(total * baseRate * multiplier));
 }
@@ -164,7 +233,7 @@ function calculateOrderDiscounts(db, { subtotalToman = 0, phone = '', user = nul
   const tierDiscountToman = calculateOrderLoyaltyDiscount(subtotal, resolved.tier);
 
   // 2. Points Redemption Discount
-  const redeemVal = Math.max(0, Math.round(Number(db?.loyalty?.redeemValue) || 1000));
+  const redeemVal = db?.loyalty?.enabled ? Math.max(0, Math.round(Number(db?.loyalty?.redeemValue ?? 1000) || 0)) : 0;
   const availablePoints = Math.max(0, Math.round(Number(customer?.points) || 0));
   const maxRedeemablePoints = redeemVal > 0 ? Math.min(availablePoints, Math.floor(subtotal / redeemVal)) : 0;
   const requestedPoints = Math.max(0, Math.round(Number(redeemPoints) || 0));
@@ -193,6 +262,7 @@ function calculateOrderDiscounts(db, { subtotalToman = 0, phone = '', user = nul
 module.exports = {
   DEFAULT_LOYALTY_TIERS,
   getLoyaltyTiers,
+  normalizeLoyaltyTiers,
   resolveCustomerTier,
   calculateOrderLoyaltyDiscount,
   calculateOrderPointsEarned,

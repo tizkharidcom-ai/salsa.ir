@@ -222,14 +222,14 @@ function recordSettlement(acc, settlementInput, opts = {}) {
       accountCode: '1210', // Operating Bank Account
       debit: netAmount,
       credit: 0,
-      memo: `واریز تسویه حساب ${provider} (بچ ${batchNumber})`,
+      memo: `واریز تسویه حساب ${provider} (دسته ${batchNumber})`,
       branchId,
     },
     ...(feeAmount > 0 ? [{
       accountCode: '6710', // Bank & PSP Commission Fees
       debit: feeAmount,
       credit: 0,
-      memo: `کارمزد بانکی تسویه ${provider} (بچ ${batchNumber})`,
+      memo: `کارمزد بانکی تسویه ${provider} (دسته ${batchNumber})`,
       branchId,
     }] : []),
     {
@@ -247,7 +247,7 @@ function recordSettlement(acc, settlementInput, opts = {}) {
       source: 'settlement',
       sourceId: id,
       date,
-      description: `تسویه حساب ${provider} (بچ شماره ${batchNumber})`,
+      description: `تسویه حساب ${provider} (دسته شماره ${batchNumber})`,
       lines: journalLines,
       createdById: settlementInput.createdById || 'admin',
     });
@@ -372,12 +372,23 @@ function closeCashDrawer(acc, sessionId, closeInput, opts = {}) {
 /**
  * Imports raw bank statement feed transactions.
  */
-function importBankFeed(acc, transactions = []) {
+function importBankFeed(acc, transactions = [], options = {}) {
   ensureReconciliation(acc);
+  const scopedBranchId = options?.branchId == null || options.branchId === '' ? null : Number(options.branchId);
   let importedCount = 0;
   for (const t of transactions) {
     const txnId = t.id || `btx-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-    if (acc.bankTransactions.some((ex) => ex.id === txnId || (ex.reference && ex.reference === t.reference))) continue;
+    const bankAccountId = t.bankAccountId || '1210';
+    const reference = String(t.reference || '').slice(0, 100);
+    const branchId = scopedBranchId ?? (t.branchId == null || t.branchId === '' ? null : Number(t.branchId));
+    const duplicate = acc.bankTransactions.some((ex) => {
+      if (ex.id === txnId) return true;
+      if (!reference || String(ex.reference || '') !== reference) return false;
+      const existingBranchId = ex.branchId == null || ex.branchId === '' ? null : Number(ex.branchId);
+      return existingBranchId === branchId
+        && String(ex.bankAccountId || '1210') === String(bankAccountId);
+    });
+    if (duplicate) continue;
 
     acc.bankTransactions.push({
       id: txnId,
@@ -386,10 +397,11 @@ function importBankFeed(acc, transactions = []) {
       debit: toIRR(t.debit || 0), // deposit into bank
       credit: toIRR(t.credit || 0), // withdrawal from bank
       balance: toIRR(t.balance || 0),
-      reference: String(t.reference || '').slice(0, 100),
+      reference,
       status: 'unmatched', // unmatched | matched | reconciled
       matchedJournalId: null,
-      bankAccountId: t.bankAccountId || '1210',
+      bankAccountId,
+      branchId,
       createdAt: new Date().toISOString(),
     });
     importedCount++;
@@ -400,10 +412,27 @@ function importBankFeed(acc, transactions = []) {
 /**
  * Performs heuristic multi-criteria auto-matching on bank feed transactions.
  */
-function autoMatchBankFeed(acc) {
+function autoMatchBankFeed(acc, branchId = null) {
   ensureReconciliation(acc);
-  const unmatchedTxns = acc.bankTransactions.filter((t) => t.status === 'unmatched');
-  const journalEntries = (acc.journalEntries || []).filter((j) => j.status === 'posted');
+  const scopedBranchId = branchId == null || branchId === '' ? null : Number(branchId);
+  const branchOf = (row) => {
+    const headerBranch = row?.branchId == null || row.branchId === '' ? null : Number(row.branchId);
+    if (headerBranch != null && (!Number.isSafeInteger(headerBranch) || headerBranch <= 0)) return undefined;
+    const lineBranches = [...new Set((Array.isArray(row?.lines) ? row.lines : [])
+      .map((line) => line?.branchId == null || line.branchId === '' ? null : Number(line.branchId)))];
+    if (lineBranches.some((id) => id != null && (!Number.isSafeInteger(id) || id <= 0))) return undefined;
+    const assignedLineBranches = lineBranches.filter((id) => id != null);
+    if (assignedLineBranches.length > 1) return undefined;
+    const lineBranch = assignedLineBranches[0] ?? null;
+    if (headerBranch != null && lineBranch != null && headerBranch !== lineBranch) return undefined;
+    return headerBranch ?? lineBranch;
+  };
+  const inScope = (row) => {
+    const rowBranch = branchOf(row);
+    return rowBranch !== undefined && (scopedBranchId == null || rowBranch === scopedBranchId);
+  };
+  const unmatchedTxns = acc.bankTransactions.filter((t) => t.status === 'unmatched' && inScope(t));
+  const journalEntries = (acc.journalEntries || []).filter((j) => j.status === 'posted' && inScope(j));
   const matchedJournalIds = new Set(
     acc.bankTransactions
       .filter((t) => (t.status === 'matched' || t.status === 'reconciled') && t.matchedJournalId)
@@ -412,24 +441,43 @@ function autoMatchBankFeed(acc) {
   let matchedCount = 0;
 
   for (const txn of unmatchedTxns) {
-    const netBank = txn.debit > 0 ? txn.debit : -txn.credit;
+    const txnDebit = Number(txn.debit);
+    const txnCredit = Number(txn.credit);
+    if (!Number.isSafeInteger(txnDebit) || !Number.isSafeInteger(txnCredit)
+      || txnDebit < 0 || txnCredit < 0 || (txnDebit > 0) === (txnCredit > 0)) continue;
+    const txnBranch = branchOf(txn);
+    // Unattributed records cannot be safely auto-matched in a multi-branch
+    // ledger; leave them for an operator to resolve explicitly.
+    if (txnBranch == null || txnBranch === undefined) continue;
+    const netBank = txnDebit - txnCredit;
 
     // Matching criteria: close date (+/- 3 days), matching net flow on bank/clearing account, and not previously matched
     const txDate = new Date(txn.date).getTime();
-    const candidate = journalEntries.find((j) => {
+    if (!Number.isFinite(txDate)) continue;
+    const candidates = journalEntries.filter((j) => {
       if (matchedJournalIds.has(j.id)) return false;
+      // Amount/date heuristics are not enough for multi-branch books. A match
+      // must stay inside one known branch, including when this is a global run.
+      if (txnBranch !== branchOf(j)) return false;
       const jDate = new Date(j.date).getTime();
-      if (Math.abs(txDate - jDate) > 3 * 24 * 3600 * 1000) return false;
+      if (!Number.isFinite(jDate) || Math.abs(txDate - jDate) > 3 * 24 * 3600 * 1000) return false;
 
       return (j.lines || []).some((l) => {
         if (l.accountCode === txn.bankAccountId || l.accountCode === '1210' || l.accountCode === '1310' || l.accountCode === '1320') {
-          const lNet = l.debit > 0 ? l.debit : -l.credit;
-          return lNet === netBank;
+          const debit = Number(l.debit);
+          const credit = Number(l.credit);
+          if (!Number.isSafeInteger(debit) || !Number.isSafeInteger(credit)
+            || debit < 0 || credit < 0 || (debit > 0 && credit > 0) || (debit === 0 && credit === 0)) return false;
+          return debit - credit === netBank;
         }
         return false;
       });
     });
 
+    // A heuristic match is safe only when exactly one available posted
+    // journal satisfies all evidence. Do not choose by array order.
+    if (candidates.length !== 1) continue;
+    const candidate = candidates[0];
     if (candidate) {
       txn.status = 'matched';
       txn.matchedJournalId = candidate.id;
@@ -439,7 +487,12 @@ function autoMatchBankFeed(acc) {
     }
   }
 
-  return { ok: true, matchedCount, remainingUnmatched: acc.bankTransactions.filter((t) => t.status === 'unmatched').length };
+  return {
+    ok: true,
+    matchedCount,
+    remainingUnmatched: acc.bankTransactions.filter((t) => t.status === 'unmatched'
+      && (scopedBranchId == null || inScope(t))).length,
+  };
 }
 
 function reconcileTransaction(acc, txnId, journalId) {

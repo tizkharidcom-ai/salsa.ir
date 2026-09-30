@@ -27,17 +27,17 @@
   </script>
   <link rel="icon" type="image/png" sizes="32x32" href="assets/images/6a1d9bb2854e5557fe84e7d1_westo-fav-dark.png" />
   <link rel="stylesheet" href="css/westo-glass.css?v=glassAction1" />
-  <link rel="stylesheet" href="css/panel.css?v=logic9" />
+  <link rel="stylesheet" href="css/panel.css?v=kds-cancellation-lane-v1" />
   <link rel="stylesheet" href="css/admin-command-center-v2.css?v=adminUx2" />
-  <link rel="stylesheet" href="css/admin-operations-v3.css?v=adminOps4" />
+  <link rel="stylesheet" href="css/admin-operations-v3.css?v=adminOps7-order-actions" />
   <link rel="stylesheet" href="css/admin-professional-v4.css?v=adminPro4" />
   <link rel="stylesheet" href="css/admin-qr.css?v=qrStudio1" />
   <link rel="stylesheet" href="css/admin-finance-tokens.css?v=financeTokens-phase7-reports" />
-  <link rel="stylesheet" href="css/admin-accounting.css?v=finance-v2-20260901-phase10-reopen" />
-  <link rel="stylesheet" href="css/admin-break-even-chart.css?v=break-even-chart4-dashboard" />
+  <link rel="stylesheet" href="css/admin-accounting.css?v=finance-v2-tax-setup-v1-20260924" />
+  <link rel="stylesheet" href="css/admin-break-even-chart.css?v=loyalty-achievements-20260928-r2" />
   <link rel="stylesheet" href="css/admin-inventory-v2.css?v=inventoryV2-20260903-vendors-multiselect" />
   <link rel="stylesheet" href="css/admin-users-roles.css?v=usersRoles1" />
-  <link rel="stylesheet" href="css/waiter-floor-plan.css?v=adminFloor1&canvas-legend-v2" />
+  <link rel="stylesheet" href="css/waiter-floor-plan.css?v=adminFloor6-zone-membership-sync&floor-chair-layout-v5&floor-more-menu-fit-20260928" />
   <link rel="stylesheet" href="css/shamsi-datepicker.css?v=shamsi2-20260825" />
   <script src="js/shamsi-core.js?v=shamsi2-20260829"></script>
   <script src="js/shamsi-datepicker.js?v=shamsi2-20260825"></script>
@@ -46,20 +46,25 @@
   <script src="js/admin/modules/core/registry.js?v=adminModules2" defer></script>
   <script src="js/admin/modules/catalog/menu-module.js?v=adminModules3-inventory" defer></script>
   <script src="js/admin/modules/insights/reports-module.js?v=adminModules2" defer></script>
+  <script src="js/admin/modules/insights/dashboard-view.js?v=dashboardV4-toggle-accessibility" defer></script>
   <script src="js/admin/modules/operations/operations-module.js?v=adminModules2" defer></script>
   <script src="js/admin/modules/finance/finance-module.js?v=adminModules2" defer></script>
   <script src="js/admin/modules/finance/finance-ui-model.js?v=financeUiModel-phase8-cache1"></script>
   <script src="js/admin/modules/inventory/inventory-module.js?v=inventoryV2-20260903-vendors-multiselect" defer></script>
   <script src="js/admin/modules/content/content-module.js?v=adminModules2" defer></script>
   <script src="js/admin/modules/settings/settings-module.js?v=adminModules3-dashboard" defer></script>
-  <script src="js/admin/floor-studio.js?v=floor-studio-v1-refactor" defer></script>
-  <script src="js/admin.js?v=adminVitality20260904-menu-workspace-preferences-ux3&canvas-legend-v3" defer></script>
+  <script src="js/floor-chair-layout.js?v=floor-chair-layout-v15" defer></script>
+  <script src="js/admin/floor-studio.js?v=floor-map-editor-pan-labels-20260928&floor-chair-layout-v6&floor-more-menu-fit-20260928" defer></script>
+  <script src="js/admin.js?v=accounting-apple-20260930-r6" defer></script>
   <script src="js/admin-professional-v4.js?v=adminVitality5-header-clean1" defer></script>
   <script src="js/admin/modules/finance/break-even-chart.js?v=break-even-chart4-dashboard"></script>
-  <script src="js/admin-accounting.js?v=finance-v2-20260902-receiving-handoff"></script>
+  <script src="js/admin/modules/finance/accounting-experience.js?v=accounting-apple-20260930-r6"></script>
+  <script src="js/admin-accounting.js?v=accounting-apple-20260930-r6"></script>
   <link rel="stylesheet" href="css/vazir-system.css?v=font1" />
   <link rel="stylesheet" href="css/design-logic-v13.css?v=logic13r1" />
   <link rel="stylesheet" href="css/admin-vitality-v5.css?v=adminVitality24-menu-editor-ux5" />
+  <link rel="stylesheet" href="css/admin-floor-simple.css?v=floor-map-pan-upright-labels-20260928" />
+  <link rel="stylesheet" href="css/admin-accounting-experience.css?v=accounting-apple-20260930-r6" />
   <script src="js/design-logic-v13.js?v=logic13r1" defer></script>
 </head>
 <body class="panel-body admin-pro admin-app">
@@ -142,6 +147,9 @@
           <span class="sr-only">شعبه</span>
           <select id="branch-select" class="branch-select" aria-label="انتخاب شعبه"></select>
         </label>
+        <button type="button" class="admin-shortcuts-trigger-btn" id="admin-shortcuts-btn" aria-label="راهنمای کلیدهای میانبر (؟)" title="راهنمای کلیدهای میانبر (؟)">
+          <span aria-hidden="true">⌨️</span>
+        </button>
         <div class="admin-notif-menu" id="admin-notif-menu">
           <button type="button" class="admin-notif-chip" id="admin-notif-btn" aria-haspopup="dialog" aria-expanded="false" aria-controls="admin-notif-dropdown" aria-label="مرکز بررسی‌ها و تأییدیه‌های مدیر" title="بررسی‌ها و تأییدیه‌های مدیر">
             <svg class="admin-notif-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -199,6 +207,61 @@
       </main>
     </div>
   </div>
+
+  <dialog class="admin-shortcuts-modal" id="admin-shortcuts-modal" aria-label="راهنمای کلیدهای میانبر مرکز فرمان" aria-modal="true">
+    <div class="admin-shortcuts-sheet">
+      <header class="admin-shortcuts-header">
+        <div class="admin-shortcuts-title-wrap">
+          <span style="font-size: 1.25rem;" aria-hidden="true">⌨️</span>
+          <strong>راهنمای کلیدهای میانبر مرکز فرمان</strong>
+        </div>
+        <button type="button" class="admin-shortcuts-close" id="admin-shortcuts-close" aria-label="بستن پنجره">✕</button>
+      </header>
+      <div class="admin-shortcuts-body">
+        <div class="admin-shortcuts-grid">
+          <div class="admin-shortcuts-card">
+            <h4>ناوبری سریع بخش‌ها (Alt + کلید)</h4>
+            <ul>
+              <li><span>پیشخوان زنده (Dashboard)</span><span><kbd class="admin-kbd">Alt + 1</kbd> یا <kbd class="admin-kbd">Alt + D</kbd></span></li>
+              <li><span>سفارش‌ها (Orders)</span><span><kbd class="admin-kbd">Alt + 2</kbd> یا <kbd class="admin-kbd">Alt + O</kbd></span></li>
+              <li><span>مدیریت منو (Menu)</span><span><kbd class="admin-kbd">Alt + 3</kbd> یا <kbd class="admin-kbd">Alt + M</kbd></span></li>
+              <li><span>سالن و چیدمان میزها (Floor Plan)</span><span><kbd class="admin-kbd">Alt + 4</kbd> یا <kbd class="admin-kbd">Alt + T</kbd></span></li>
+              <li><span>انبارداری و مواد اولیه (Inventory)</span><span><kbd class="admin-kbd">Alt + 5</kbd> یا <kbd class="admin-kbd">Alt + I</kbd></span></li>
+              <li><span>حسابداری و امور مالی (Finance)</span><span><kbd class="admin-kbd">Alt + 6</kbd> یا <kbd class="admin-kbd">Alt + F</kbd></span></li>
+              <li><span>باشگاه مشتریان (CRM)</span><span><kbd class="admin-kbd">Alt + 7</kbd> یا <kbd class="admin-kbd">Alt + C</kbd></span></li>
+              <li><span>رزروهای سالن (Reservations)</span><span><kbd class="admin-kbd">Alt + 8</kbd> یا <kbd class="admin-kbd">Alt + R</kbd></span></li>
+              <li><span>نمایشگر آشپزخانه (KDS)</span><span><kbd class="admin-kbd">Alt + 9</kbd> یا <kbd class="admin-kbd">Alt + K</kbd></span></li>
+              <li><span>تنظیمات سیستم (Settings)</span><span><kbd class="admin-kbd">Alt + 0</kbd> یا <kbd class="admin-kbd">Alt + S</kbd></span></li>
+            </ul>
+          </div>
+          <div class="admin-shortcuts-card">
+            <h4>پیمایش متوالی (فشردن G و کلید بعدی)</h4>
+            <ul>
+              <li><span>انتقال به پیشخوان زنده</span><span><kbd class="admin-kbd">G</kbd> سپس <kbd class="admin-kbd">D</kbd></span></li>
+              <li><span>انتقال به سفارش‌ها</span><span><kbd class="admin-kbd">G</kbd> سپس <kbd class="admin-kbd">O</kbd></span></li>
+              <li><span>انتقال به منو</span><span><kbd class="admin-kbd">G</kbd> سپس <kbd class="admin-kbd">M</kbd></span></li>
+              <li><span>انتقال به سالن و میزها</span><span><kbd class="admin-kbd">G</kbd> سپس <kbd class="admin-kbd">T</kbd></span></li>
+              <li><span>انتقال به انبارداری</span><span><kbd class="admin-kbd">G</kbd> سپس <kbd class="admin-kbd">I</kbd></span></li>
+              <li><span>انتقال به حسابداری</span><span><kbd class="admin-kbd">G</kbd> سپس <kbd class="admin-kbd">F</kbd></span></li>
+              <li><span>انتقال به باشگاه مشتریان</span><span><kbd class="admin-kbd">G</kbd> سپس <kbd class="admin-kbd">C</kbd></span></li>
+              <li><span>انتقال به رزرواسیون</span><span><kbd class="admin-kbd">G</kbd> سپس <kbd class="admin-kbd">R</kbd></span></li>
+              <li><span>انتقال به آشپزخانه</span><span><kbd class="admin-kbd">G</kbd> سپس <kbd class="admin-kbd">K</kbd></span></li>
+              <li><span>انتقال به تنظیمات</span><span><kbd class="admin-kbd">G</kbd> سپس <kbd class="admin-kbd">S</kbd></span></li>
+            </ul>
+          </div>
+          <div class="admin-shortcuts-card">
+            <h4>عمومی و جریان کار</h4>
+            <ul>
+              <li><span>پالت فرامین و جستجو</span><kbd class="admin-kbd">Ctrl/Cmd + K</kbd></li>
+              <li><span>بستن پنجره‌ها و منوها</span><kbd class="admin-kbd">Escape</kbd></li>
+              <li><span>راهنمای کلیدهای میانبر</span><kbd class="admin-kbd">?</kbd></li>
+              <li><span>حالت تمرکز و ساعات اوج کار</span><kbd class="admin-kbd">F</kbd></li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+  </dialog>
 
   <dialog class="admin-role-preview" id="admin-role-preview" aria-label="مشاهده پنل نقش‌ها">
     <form method="dialog" class="admin-role-preview__sheet">

@@ -1,12 +1,12 @@
 {
   "schema": "westo-smart-load-bundles-v1",
-  "generatedAt": "2026-08-30T18:11:51.648Z",
+  "generatedAt": "2026-09-24T18:34:19.241Z",
   "bundles": [
     {
       "file": "css/westo-critical.smart.css",
-      "bytes": 620354,
+      "bytes": 645188,
       "gzipEstimate": null,
-      "sha256": "3c5e48cf2c6e9f4cb2a7d06519293582c80024ab340218487da84acefdf80729",
+      "sha256": "a768c6355fb6bf6e888ab60571579cacb7e119d09ed0349cce5de6bd86c66b96",
       "sources": [
         "css/mobile-forms.css",
         "css/westo.webflow.shared.min.css",
@@ -31,9 +31,9 @@
     },
     {
       "file": "js/westo-foundation.smart.js",
-      "bytes": 169422,
+      "bytes": 177844,
       "gzipEstimate": null,
-      "sha256": "4d2d4e61efe1ea9ad14fd2dc8b0378ab8187a126aa0098938496f3d9ef8dfae2",
+      "sha256": "7f84930b359af923d81ca03a5d253869b38cfb8da8156347282dd7cd62e91aa7",
       "sources": [
         "js/persian-format.js",
         "js/i18n.js",
@@ -72,9 +72,9 @@
     },
     {
       "file": "js/westo-menu.smart.js",
-      "bytes": 232958,
+      "bytes": 340331,
       "gzipEstimate": null,
-      "sha256": "003d519c0904ce379d2f2386c066c524f7883f9a5ed5496446f7f7447bc03762",
+      "sha256": "603a2f4a7a998f4cff4296a348a0f0b3f7e8b943127873cf083d564faa9335db",
       "sources": [
         "js/buttons.js",
         "js/table-cart.js"
@@ -92,9 +92,9 @@
     },
     {
       "file": "js/westo-app.smart.js",
-      "bytes": 659733,
+      "bytes": 775528,
       "gzipEstimate": null,
-      "sha256": "8a9af661676e0bcd2e851f578cd74a213e35a625d184cb51b0acdcf8938d1f3e",
+      "sha256": "3d90d100061737af879ceaed5590bd3d18521b611c79b50cd13f9c114b55dd30",
       "sources": [
         "js/persian-format.js",
         "js/i18n.js",

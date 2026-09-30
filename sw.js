@@ -3,7 +3,10 @@
 
 // Keep this in lockstep with the critical entrypoint cache key. A new release
 // creates a fresh shell cache and activation removes every older WESTO cache.
-const RELEASE = 'release14uf1d28-webp-only';
+// Keep the service-worker shell on the same release key as index.html. A
+// mismatch here can combine an old cached shell with a new critical CSS/JS
+// bundle and leave the public menu rendered as unstyled HTML.
+const RELEASE = 'release14uf1d31-order-staged-quote';
 const CACHE = `westo-pwa-${RELEASE}`;
 const CORE = [
   '/',

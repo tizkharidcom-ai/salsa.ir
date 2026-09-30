@@ -917,6 +917,465 @@ body.admin-app :is(button,a,input,textarea,select,summary,[tabindex]):focus-visi
 .vital-task-row { min-height: 2.15rem; display: flex; align-items: center; gap: 0.55rem; color: var(--v-ink); font-size: 0.64rem; }
 .vital-task-row i { width: 0.95rem; height: 0.95rem; border: 1px solid color-mix(in srgb,var(--v-green) 58%,var(--v-line)); border-radius: 50%; background: color-mix(in srgb,var(--v-green) 12%,var(--v-panel)); box-shadow: inset 0 0 0 0.22rem var(--v-panel); }
 
+/* --- Westo Dashboard V2 Ergonomic Extensions --- */
+.vital-eyebrow-row {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+}
+.vital-sync-pulse {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.2rem 0.55rem;
+  background: color-mix(in srgb, var(--v-green) 10%, var(--v-panel));
+  border: 1px solid color-mix(in srgb, var(--v-green) 25%, var(--v-line));
+  border-radius: 999px;
+  font-size: 0.65rem;
+  color: var(--v-ink);
+}
+.vital-pulse-dot {
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 50%;
+  background: var(--v-green);
+  box-shadow: 0 0 0 0 rgba(102, 195, 70, 0.7);
+  animation: vitalPulse 2s infinite;
+}
+@keyframes vitalPulse {
+  0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(102, 195, 70, 0.7); }
+  70% { transform: scale(1); box-shadow: 0 0 0 6px rgba(102, 195, 70, 0); }
+  100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(102, 195, 70, 0); }
+}
+.vital-sync-time {
+  color: var(--v-muted);
+  font-size: 0.6rem;
+  border-inline-start: 1px solid var(--v-line);
+  padding-inline-start: 0.4rem;
+}
+.vital-controls-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.25rem 0.35rem;
+  background: var(--v-panel);
+  border: 1px solid var(--v-line);
+  border-radius: 999px;
+}
+.vital-icon-btn {
+  width: 2.1rem;
+  height: 2.1rem;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--v-ink);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.vital-icon-btn:hover {
+  background: var(--v-panel-soft);
+  color: var(--p-accent);
+}
+.vital-icon-btn.active {
+  background: color-mix(in srgb, var(--v-blue) 14%, var(--v-panel));
+  color: var(--v-blue);
+  border-color: color-mix(in srgb, var(--v-blue) 35%, var(--v-line));
+}
+.vital-icon-btn.is-paused {
+  background: color-mix(in srgb, var(--v-orange) 14%, var(--v-panel));
+  color: var(--v-orange);
+}
+.vital-icon-btn.spinning svg {
+  animation: vitalSpin 0.7s linear infinite;
+}
+@keyframes vitalSpin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* Zen / Rush Mode */
+.vital-zen-banner {
+  display: none;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1.1rem;
+  background: color-mix(in srgb, var(--v-blue) 12%, var(--v-panel));
+  border: 1px solid color-mix(in srgb, var(--v-blue) 35%, var(--v-line));
+  border-radius: var(--v-radius-lg);
+  color: var(--v-ink);
+}
+.vital-zen-info {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  font-size: 0.8rem;
+}
+.vital-dashboard.is-zen-mode .vital-zen-banner {
+  display: flex;
+}
+.vital-dashboard.is-zen-mode .vital-detail-grid,
+.vital-dashboard.is-zen-mode .vital-overview-card {
+  display: none !important;
+}
+.vital-dashboard.is-zen-mode .vital-kpi-grid {
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1.1rem;
+}
+.vital-dashboard.is-zen-mode .vital-kpi {
+  min-height: 11rem;
+  padding: 1.4rem;
+}
+.vital-dashboard.is-zen-mode .vital-kpi strong {
+  font-size: clamp(2rem, 3.5vw, 2.8rem);
+}
+.vital-dashboard.is-zen-mode .vital-live-panel {
+  min-height: 28rem;
+}
+.vital-dashboard.is-zen-mode .vital-live-list button {
+  min-height: 4.2rem;
+  font-size: 0.85rem;
+}
+
+/* Smart Shift Briefing Card */
+.vital-briefing-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.85rem 1.15rem;
+  border-radius: var(--v-radius-lg);
+  border: 1px solid var(--v-line);
+  background: var(--v-panel);
+  box-shadow: var(--v-shadow);
+}
+.vital-briefing-card.tone-success {
+  background: linear-gradient(135deg, color-mix(in srgb, var(--v-green) 8%, var(--v-panel)), var(--v-panel));
+  border-color: color-mix(in srgb, var(--v-green) 30%, var(--v-line));
+}
+.vital-briefing-card.tone-warning {
+  background: linear-gradient(135deg, color-mix(in srgb, var(--v-orange) 8%, var(--v-panel)), var(--v-panel));
+  border-color: color-mix(in srgb, var(--v-orange) 30%, var(--v-line));
+}
+.vital-briefing-card.tone-info {
+  background: linear-gradient(135deg, color-mix(in srgb, var(--v-blue) 8%, var(--v-panel)), var(--v-panel));
+  border-color: color-mix(in srgb, var(--v-blue) 30%, var(--v-line));
+}
+.vital-briefing-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--v-ink);
+  white-space: nowrap;
+}
+.vital-briefing-content {
+  flex: 1;
+  min-width: 0;
+}
+.vital-briefing-content strong {
+  display: block;
+  font-size: 0.78rem;
+  color: var(--v-ink);
+}
+.vital-briefing-content p {
+  margin: 0.15rem 0 0;
+  font-size: 0.68rem;
+  color: var(--v-muted);
+}
+
+/* KPI Badges & Trends */
+.vital-kpi-trend {
+  position: absolute;
+  top: 1rem;
+  left: 4.4rem;
+  font-size: 0.62rem;
+  padding: 0.18rem 0.45rem;
+  border-radius: 999px;
+  background: #eaf7e7;
+  color: #166534;
+  font-weight: 600;
+}
+.vital-kpi-trend.is-up { background: #eaf7e7; color: #166534; }
+.vital-kpi-badge {
+  position: absolute;
+  top: 1rem;
+  left: 4.4rem;
+  font-size: 0.62rem;
+  padding: 0.18rem 0.45rem;
+  border-radius: 999px;
+  background: var(--v-panel-soft);
+  color: var(--v-muted);
+  border: 1px solid var(--v-line);
+}
+.vital-kpi-alert-dot {
+  position: absolute;
+  top: 1rem;
+  left: 4.4rem;
+  width: 1.5rem;
+  height: 1.5rem;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: #ef5f70;
+  color: #fff;
+  font-size: 0.72rem;
+  font-weight: 800;
+  animation: vitalPulseRed 1.8s infinite;
+}
+@keyframes vitalPulseRed {
+  0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(239, 95, 112, 0.7); }
+  70% { transform: scale(1.05); box-shadow: 0 0 0 6px rgba(239, 95, 112, 0); }
+  100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(239, 95, 112, 0); }
+}
+
+/* Actionable Alerts */
+.vital-alert-card {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 0.65rem;
+  align-items: center;
+  padding: 0.6rem 0.7rem;
+  border: 1px solid var(--v-line);
+  border-radius: 0.85rem;
+  background: var(--v-panel);
+}
+.vital-alert-card.is-danger {
+  border-color: color-mix(in srgb, var(--v-red) 32%, var(--v-line));
+  background: color-mix(in srgb, var(--v-red) 4%, var(--v-panel));
+}
+.vital-alert-card.is-warning {
+  border-color: color-mix(in srgb, var(--v-orange) 32%, var(--v-line));
+  background: color-mix(in srgb, var(--v-orange) 4%, var(--v-panel));
+}
+.vital-alert-text b { font-size: 0.7rem; color: var(--v-ink); }
+.vital-alert-text small { color: var(--v-muted); font-size: 0.6rem; display: block; }
+.vital-alert-actions { display: flex; align-items: center; gap: 0.35rem; }
+
+/* Selling Card Rows with Rank */
+.vital-selling-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 0.65rem;
+  align-items: center;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--v-line);
+}
+.vital-selling-row:last-child { border-bottom: 0; }
+.vital-selling-name-block b { display: block; font-size: 0.74rem; color: var(--v-ink); }
+.vital-selling-name-block small { font-size: 0.6rem; color: var(--v-muted); }
+.vital-selling-rev { font-size: 0.72rem; color: var(--v-ink); }
+
+/* Chart Footer Metrics */
+.vital-chart-footer-metrics {
+  display: flex;
+  gap: 0.6rem;
+  margin-top: 0.75rem;
+}
+.metric-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.35rem 0.65rem;
+  background: var(--v-panel-soft);
+  border: 1px solid var(--v-line);
+  border-radius: 999px;
+  font-size: 0.65rem;
+  color: var(--v-muted);
+}
+.metric-pill strong { color: var(--v-ink); }
+.metric-pill .text-green { color: var(--v-green); }
+
+/* Command Palette Dialog */
+.admin-command-palette {
+  padding: 0;
+  border: 0;
+  border-radius: var(--v-radius-xl);
+  background: transparent;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.35);
+  max-width: 38rem;
+  width: 90vw;
+}
+.admin-command-palette::backdrop {
+  background: rgba(15, 23, 42, 0.65);
+  backdrop-filter: blur(6px);
+}
+.cmd-palette-card {
+  background: var(--v-panel);
+  border: 1px solid var(--v-line-strong);
+  border-radius: var(--v-radius-xl);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.cmd-palette-input-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--v-line);
+}
+.cmd-palette-input-wrap input {
+  flex: 1;
+  border: 0;
+  outline: none;
+  font-family: inherit;
+  font-size: 0.95rem;
+  color: var(--v-ink);
+  background: transparent;
+}
+.cmd-palette-kbd {
+  font-size: 0.65rem;
+  padding: 0.2rem 0.45rem;
+  border-radius: 6px;
+  border: 1px solid var(--v-line);
+  background: var(--v-panel-soft);
+  color: var(--v-muted);
+}
+.cmd-palette-results {
+  max-height: 22rem;
+  overflow-y: auto;
+  padding: 0.5rem;
+  display: grid;
+  gap: 0.25rem;
+}
+.cmd-palette-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.65rem 0.85rem;
+  border-radius: var(--v-radius-md);
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+.cmd-palette-item.selected,
+.cmd-palette-item:hover {
+  background: color-mix(in srgb, var(--v-blue) 10%, var(--v-panel-soft));
+}
+.cmd-palette-item-icon {
+  width: 2rem;
+  height: 2rem;
+  display: grid;
+  place-items: center;
+  border-radius: 0.6rem;
+  background: var(--v-panel-soft);
+  font-size: 0.95rem;
+}
+.cmd-palette-item-info {
+  flex: 1;
+  min-width: 0;
+}
+.cmd-palette-item-info strong {
+  display: block;
+  font-size: 0.8rem;
+  color: var(--v-ink);
+}
+.cmd-palette-item-info small {
+  font-size: 0.65rem;
+  color: var(--v-muted);
+}
+.cmd-palette-item-cat {
+  font-size: 0.62rem;
+  padding: 0.2rem 0.45rem;
+  border-radius: 999px;
+  background: var(--v-panel-soft);
+  color: var(--v-muted);
+}
+.cmd-palette-empty {
+  padding: 2rem;
+  text-align: center;
+  color: var(--v-muted);
+  font-size: 0.8rem;
+}
+.cmd-palette-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.65rem 1.15rem;
+  background: var(--v-panel-soft);
+  border-top: 1px solid var(--v-line);
+  font-size: 0.65rem;
+  color: var(--v-muted);
+}
+.cmd-palette-hints {
+  display: flex;
+  gap: 0.8rem;
+}
+.cmd-palette-hints kbd {
+  font-size: 0.6rem;
+  padding: 0.1rem 0.35rem;
+  border: 1px solid var(--v-line);
+  border-radius: 4px;
+  background: var(--v-panel);
+}
+
+/* Shortcuts Dialog */
+.admin-shortcuts-dialog {
+  padding: 0;
+  border: 0;
+  border-radius: var(--v-radius-xl);
+  background: transparent;
+  max-width: 32rem;
+  width: 90vw;
+}
+.admin-shortcuts-dialog::backdrop {
+  background: rgba(15, 23, 42, 0.65);
+  backdrop-filter: blur(6px);
+}
+.shortcuts-card {
+  background: var(--v-panel);
+  border: 1px solid var(--v-line-strong);
+  border-radius: var(--v-radius-xl);
+  padding: 1.25rem;
+  display: grid;
+  gap: 1rem;
+}
+.shortcuts-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+.shortcuts-header h3 { margin: 0; font-size: 1.05rem; }
+.shortcuts-header p { margin: 0.2rem 0 0; font-size: 0.72rem; color: var(--v-muted); }
+.shortcuts-close {
+  background: transparent;
+  border: 0;
+  font-size: 1.1rem;
+  cursor: pointer;
+  color: var(--v-muted);
+}
+.shortcuts-grid {
+  display: grid;
+  gap: 0.5rem;
+}
+.shortcut-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.5rem 0.75rem;
+  background: var(--v-panel-soft);
+  border-radius: var(--v-radius-md);
+  font-size: 0.75rem;
+}
+.shortcut-row kbd {
+  display: inline-block;
+  min-width: 1.4rem;
+  padding: 0.15rem 0.4rem;
+  border-radius: 6px;
+  border: 1px solid var(--v-line-strong);
+  background: var(--v-panel);
+  font-family: 'Westo Geist Mono', monospace;
+  font-size: 0.72rem;
+  text-align: center;
+}
+.shortcuts-footer {
+  display: flex;
+  justify-content: flex-end;
+}
+
 /* Responsive behavior */
 @media (max-width: 1360px) {
   .vital-dashboard-layout { grid-template-columns: 1fr; }
@@ -1955,3 +2414,146 @@ body.admin-app .menu-preferences-toolbar b { color: var(--v-cyan); font-size: .9
   body.admin-app .menu-editor-card--display .chip-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   body.admin-app .menu-preference-group { padding: .8rem; }
 }
+
+/* Admin Shortcuts Button, Modal & Typography Ergonomics */
+body.admin-app .admin-shortcuts-trigger-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.15rem;
+  height: 2.15rem;
+  border-radius: var(--v-radius-sm);
+  border: 1px solid var(--v-line);
+  background: var(--v-panel);
+  color: var(--v-ink);
+  font-size: 0.92rem;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  margin-inline-end: 0.5rem;
+}
+body.admin-app .admin-shortcuts-trigger-btn:hover {
+  background: var(--v-panel-soft);
+  border-color: var(--v-line-strong);
+  transform: translateY(-1px);
+}
+
+body.admin-app .admin-shortcuts-modal {
+  border: none;
+  background: transparent;
+  padding: 0;
+  max-width: 840px;
+  width: 92vw;
+  border-radius: var(--v-radius-xl);
+  box-shadow: 0 1.5rem 4rem rgba(0, 0, 0, 0.28);
+}
+body.admin-app .admin-shortcuts-modal::backdrop {
+  background: rgba(15, 23, 42, 0.65);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+body.admin-app .admin-shortcuts-sheet {
+  background: var(--v-panel);
+  color: var(--v-ink);
+  border: 1px solid var(--v-line);
+  border-radius: var(--v-radius-xl);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+body.admin-app .admin-shortcuts-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1.1rem 1.4rem;
+  border-bottom: 1px solid var(--v-line);
+  background: var(--v-panel-soft);
+}
+body.admin-app .admin-shortcuts-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 1rem;
+}
+body.admin-app .admin-shortcuts-close {
+  background: transparent;
+  border: none;
+  font-size: 1.1rem;
+  cursor: pointer;
+  color: var(--v-muted);
+  width: 2rem;
+  height: 2rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--v-radius-sm);
+  transition: all 0.15s ease;
+}
+body.admin-app .admin-shortcuts-close:hover {
+  background: rgba(0, 0, 0, 0.06);
+  color: var(--v-ink);
+}
+body.admin-app .admin-shortcuts-body {
+  padding: 1.4rem;
+  max-height: 75vh;
+  overflow-y: auto;
+}
+body.admin-app .admin-shortcuts-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1.1rem;
+}
+@media (max-width: 860px) {
+  body.admin-app .admin-shortcuts-grid {
+    grid-template-columns: 1fr;
+  }
+}
+body.admin-app .admin-shortcuts-card {
+  background: var(--v-panel-soft);
+  border: 1px solid var(--v-line);
+  border-radius: var(--v-radius-lg);
+  padding: 1rem;
+}
+body.admin-app .admin-shortcuts-card h4 {
+  font-size: 0.85rem;
+  font-weight: 700;
+  margin: 0 0 0.75rem 0;
+  padding-bottom: 0.4rem;
+  border-bottom: 1px solid var(--v-line);
+  color: var(--v-ink);
+}
+body.admin-app .admin-shortcuts-card ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+body.admin-app .admin-shortcuts-card li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-size: 0.78rem;
+  color: var(--v-muted);
+}
+body.admin-app .admin-shortcuts-card li span {
+  color: var(--v-ink);
+  font-weight: 500;
+}
+body.admin-app .admin-kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.18rem 0.45rem;
+  font-family: 'Westo Geist Mono', monospace;
+  font-size: 0.72rem;
+  font-weight: 600;
+  border-radius: var(--v-radius-xs);
+  background: var(--v-panel);
+  border: 1px solid var(--v-line-strong);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+  color: var(--v-ink);
+  white-space: nowrap;
+}
+

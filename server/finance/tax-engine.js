@@ -122,98 +122,60 @@ function scopeMatches(rule, fulfillmentType, locationId) {
   return true;
 }
 
+const DEFAULT_TAX_CATEGORIES = Object.freeze([
+  {
+    code: 'standard_1405',
+    name: 'استاندارد رستورانی (نیازمند نرخ مؤثر تأییدشده)',
+    nameFa: 'مالیات بر ارزش افزوده استاندارد',
+    exempt: false,
+    effectiveFrom: '2026-03-21',
+    effectiveTo: null,
+    legalSource: null,
+  },
+  {
+    code: 'standard_historical_9',
+    name: 'استاندارد سنواتی (نیازمند نرخ مؤثر تأییدشده)',
+    nameFa: 'مالیات بر ارزش افزوده سنواتی',
+    exempt: false,
+    effectiveFrom: '2022-01-01',
+    effectiveTo: '2026-03-20',
+    legalSource: null,
+  },
+  {
+    code: 'exempt_staple',
+    name: 'معاف از مالیات (ماده ۹ ق.م.ا)',
+    nameFa: 'کالاهای اساسی و فرآوری‌نشده معاف',
+    defaultRate: 0.0,
+    exempt: true,
+    effectiveFrom: '2022-01-01',
+    effectiveTo: null,
+    legalSource: 'ماده ۹ قانون دائمی مالیات بر ارزش افزوده',
+  },
+]);
+
+// Tax rates are tenant/legal configuration, not source-code defaults. A
+// missing effective rule must stop posting rather than silently calculate a
+// stale or unreviewed rate.
+const DEFAULT_TAX_RULES = Object.freeze([]);
+const UNVERIFIED_LEGACY_RULE_IDS = new Set(['tr-1405-std', 'tr-1400-std', 'tr-exempt']);
+const UNVERIFIED_LEGACY_RULE_CODES = new Set(['VAT_STD_1405', 'VAT_STD_1400', 'VAT_EXEMPT']);
+
 /**
- * Initializes and ensures default effective-dated tax categories and rules.
+ * Initializes the category catalogue without inventing legal tax rates.
  */
 function ensureTaxSettings(acc) {
   if (!acc || typeof acc !== 'object') throw taxError('tax_settings_invalid', 'ساختار تنظیمات مالیاتی معتبر نیست.');
   if (!acc.taxSettings || typeof acc.taxSettings !== 'object') {
     acc.taxSettings = {
       defaultCategory: 'standard_1405',
-      categories: [
-        {
-          code: 'standard_1405',
-          name: 'استاندارد رستورانی (۱۰٪ سال ۱۴۰۵)',
-          nameFa: 'مالیات بر ارزش افزوده استاندارد ۱۰٪',
-          defaultRate: 0.10,
-          exempt: false,
-          effectiveFrom: '2026-03-21',
-          effectiveTo: null,
-          legalSource: 'قانون بودجه سال ۱۴۰۵ کل کشور - افزایش نرخ مالیات بر ارزش افزوده به ۱۰٪',
-        },
-        {
-          code: 'standard_historical_9',
-          name: 'استاندارد سنواتی (۹٪)',
-          nameFa: 'مالیات بر ارزش افزوده سنواتی ۹٪',
-          defaultRate: 0.09,
-          exempt: false,
-          effectiveFrom: '2022-01-01',
-          effectiveTo: '2026-03-20',
-          legalSource: 'قانون دائمی مالیات بر ارزش افزوده مصوب ۱۴۰۰',
-        },
-        {
-          code: 'exempt_staple',
-          name: 'معاف از مالیات (ماده ۹ ق.م.ا)',
-          nameFa: 'کالاهای اساسی و فرآوری‌نشده معاف',
-          defaultRate: 0.0,
-          exempt: true,
-          effectiveFrom: '2022-01-01',
-          effectiveTo: null,
-          legalSource: 'ماده ۹ قانون دائمی مالیات بر ارزش افزوده',
-        },
-      ],
-      rules: [
-        {
-          id: 'tr-1405-std',
-          code: 'VAT_STD_1405',
-          name: 'نرخ پایه ارزش افزوده سال ۱۴۰۵',
-          taxCategory: 'standard_1405',
-          rate: 0.10,
-          inclusive: false,
-          recoverability: 'RECOVERABLE', // for B2B input tax
-          effectiveFrom: '2026-03-21',
-          effectiveTo: null,
-          legalSource: 'قانون بودجه سال ۱۴۰۵',
-          version: 2,
-          status: 'active',
-        },
-        {
-          id: 'tr-1400-std',
-          code: 'VAT_STD_1400',
-          name: 'نرخ پایه ارزش افزوده سنواتی ۹٪',
-          taxCategory: 'standard_historical_9',
-          rate: 0.09,
-          inclusive: false,
-          recoverability: 'RECOVERABLE',
-          effectiveFrom: '2022-01-01',
-          effectiveTo: '2026-03-20',
-          legalSource: 'قانون مالیات بر ارزش افزوده ۱۴۰۰',
-          version: 1,
-          status: 'archived',
-        },
-        {
-          id: 'tr-exempt',
-          code: 'VAT_EXEMPT',
-          name: 'معافیت مواد خام اساسی',
-          taxCategory: 'exempt_staple',
-          rate: 0.0,
-          inclusive: false,
-          recoverability: 'NON_RECOVERABLE',
-          effectiveFrom: '2022-01-01',
-          effectiveTo: null,
-          legalSource: 'ماده ۹ قانون مالیات بر ارزش افزوده',
-          version: 1,
-          status: 'active',
-        },
-      ],
+      categories: DEFAULT_TAX_CATEGORIES.map(c => ({ ...c })),
+      rules: DEFAULT_TAX_RULES.map(r => ({ ...r })),
     };
   } else {
-    if (!Array.isArray(acc.taxSettings.categories)) {
-      acc.taxSettings.categories = [];
+    if (!Array.isArray(acc.taxSettings.categories) || acc.taxSettings.categories.length === 0) {
+      acc.taxSettings.categories = DEFAULT_TAX_CATEGORIES.map(c => ({ ...c }));
     }
-    if (!Array.isArray(acc.taxSettings.rules)) {
-      acc.taxSettings.rules = [];
-    }
+    if (!Array.isArray(acc.taxSettings.rules)) acc.taxSettings.rules = [];
     if (!acc.taxSettings.defaultCategory) acc.taxSettings.defaultCategory = 'standard_1405';
   }
   return acc.taxSettings;
@@ -238,7 +200,15 @@ function resolveTaxRule(taxSettings, opts = {}) {
   // because the historical rule is archived.
   const activeEffective = (settings.rules || []).filter((r) => {
     const status = r.status == null ? 'active' : String(r.status).trim().toLowerCase();
-    return ['active', 'archived'].includes(status) && isEffective(r);
+    const isLegacyGeneratedDefault = UNVERIFIED_LEGACY_RULE_IDS.has(String(r.id || ''))
+      || UNVERIFIED_LEGACY_RULE_CODES.has(String(r.code || ''));
+    const hasLegalIdentity = (typeof r.id === 'string' || Number.isSafeInteger(r.id))
+      && String(r.id ?? '').trim()
+      && typeof r.code === 'string' && r.code.trim()
+      && Number.isSafeInteger(Number(r.version)) && Number(r.version) > 0
+      && typeof r.legalSource === 'string' && r.legalSource.trim();
+    return !isLegacyGeneratedDefault && hasLegalIdentity
+      && ['active', 'archived'].includes(status) && isEffective(r);
   });
   const rules = activeEffective.filter((r) => {
     if (r.taxCategory !== taxCategory && r.code !== taxCategory) return false;
@@ -286,7 +256,11 @@ function resolveTaxRule(taxSettings, opts = {}) {
  * Enforces rule: Taxable Base = (Gross Price * Quantity) - Eligible Discounts.
  */
 function calculateTax(taxSettings, items = [], opts = {}) {
-  const settings = taxSettings && typeof taxSettings === 'object' ? taxSettings : ensureTaxSettings({});
+  const rawSettings = (taxSettings && typeof taxSettings === 'object' && taxSettings.taxSettings)
+    ? taxSettings.taxSettings
+    : (taxSettings && typeof taxSettings === 'object' ? taxSettings : {});
+  const container = { taxSettings: { ...rawSettings } };
+  const settings = ensureTaxSettings(container);
   const {
     date = new Date(),
     fulfillmentType = null,
@@ -298,7 +272,7 @@ function calculateTax(taxSettings, items = [], opts = {}) {
   const globalDiscountIrr = nonNegativeMoney(globalDiscount, 'tax_global_discount_invalid', 'تخفیف کلی');
   const prepared = sourceItems.map((item) => {
     const line = item && typeof item === 'object' ? item : {};
-    const quantity = positiveQuantity(line.quantity ?? line.qty);
+    const quantity = positiveQuantity(line.quantity ?? line.qty ?? line.count);
     const unitPrice = nonNegativeMoney(line.unitPrice ?? line.unit_price_irr ?? line.price ?? 0, 'tax_amount_invalid', 'قیمت واحد');
     const grossAmount = unitPrice * quantity;
     safeTotal(grossAmount, 'tax_gross_unsafe');

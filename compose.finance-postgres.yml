@@ -1,0 +1,48 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: westo-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${WESTO_POSTGRES_DB:-westo}
+      POSTGRES_USER: ${WESTO_POSTGRES_USER:-westo_app}
+      POSTGRES_PASSWORD: ${WESTO_POSTGRES_PASSWORD:?WESTO_POSTGRES_PASSWORD must be set in .env.local}
+    ports:
+      - "127.0.0.1:${WESTO_POSTGRES_PORT:-5433}:5432"
+    shm_size: 256mb
+    command:
+      - "postgres"
+      - "-c"
+      - "shared_buffers=256MB"
+      - "-c"
+      - "work_mem=16MB"
+      - "-c"
+      - "maintenance_work_mem=64MB"
+      - "-c"
+      - "effective_cache_size=768MB"
+      - "-c"
+      - "wal_buffers=16MB"
+      - "-c"
+      - "checkpoint_completion_target=0.9"
+      - "-c"
+      - "checkpoint_timeout=15min"
+      - "-c"
+      - "random_page_cost=1.1"
+      - "-c"
+      - "effective_io_concurrency=200"
+      - "-c"
+      - "max_connections=100"
+      - "-c"
+      - "log_min_duration_statement=1000"
+    volumes:
+      - westo-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+volumes:
+  westo-postgres-data:
+    name: westo-postgres-data

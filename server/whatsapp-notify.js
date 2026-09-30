@@ -5,9 +5,16 @@ const MIN_WEBHOOK_TIMEOUT_MS = 500;
 const MAX_WEBHOOK_TIMEOUT_MS = 10000;
 const MAX_LOG_ENTRIES = 200;
 const { formatNumber } = require('./finance/money');
+const { foreignRuntimeAllowed } = require('./salsa/provider-policy');
+
+function normalizeDigits(val) {
+  return String(val ?? '')
+    .replace(/[۰-۹]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)))
+    .replace(/[٠-٩]/g, (d) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d)));
+}
 
 function toWaDigits(phone) {
-  let d = String(phone || '').replace(/\D/g, '');
+  let d = normalizeDigits(phone).replace(/\D/g, '');
   if (d.startsWith('00')) d = d.slice(2);
   if (d.startsWith('0') && d.length === 11) d = `98${d.slice(1)}`;
   if (d.length === 10 && d.startsWith('9')) d = `98${d}`;
@@ -56,7 +63,8 @@ function buildReservationMessage(res, ctx = {}) {
 function resolveNotifyPhone(db, branchId) {
   const s = db.whatsappNotify || {};
   if (s.phone) return s.phone;
-  const branch = (db.branches || []).find((b) => b.id === Number(branchId));
+  const cleanBranchId = Number(normalizeDigits(branchId).replace(/\D/g, ''));
+  const branch = (db.branches || []).find((b) => b.id === cleanBranchId);
   if (branch?.whatsapp) return branch.whatsapp;
   if (db.restaurant?.whatsapp) return db.restaurant.whatsapp;
   return db.restaurant?.phone || '';
@@ -154,6 +162,11 @@ async function notifyOrderWhatsApp(db, order) {
   if (settings.enabled === false || settings.onOrder === false) {
     return { skipped: true };
   }
+  // wa.me is a foreign hosted runtime. In an Iranian-only production cell,
+  // notifications must use the configured local provider webhook instead.
+  if (!foreignRuntimeAllowed() && !String(process.env.WHATSAPP_WEBHOOK_URL || '').trim()) {
+    return { skipped: true, reason: 'foreign_runtime_blocked' };
+  }
 
   const branch = branchFor(db, order.branchId);
   const text = buildOrderMessage(order, {
@@ -162,7 +175,7 @@ async function notifyOrderWhatsApp(db, order) {
   });
   const phone = resolveNotifyPhone(db, order.branchId);
   const digits = toWaDigits(phone);
-  const url = waMeUrl(digits, text);
+  const url = foreignRuntimeAllowed() ? waMeUrl(digits, text) : null;
   const webhookAt = new Date().toISOString();
 
   const webhook = await pushWebhook({
@@ -192,6 +205,9 @@ async function notifyReservationWhatsApp(db, reservation) {
   if (settings.enabled === false || settings.onReservation === false) {
     return { skipped: true };
   }
+  if (!foreignRuntimeAllowed() && !String(process.env.WHATSAPP_WEBHOOK_URL || '').trim()) {
+    return { skipped: true, reason: 'foreign_runtime_blocked' };
+  }
 
   const branch = branchFor(db, reservation.branchId);
   const text = buildReservationMessage(reservation, {
@@ -200,7 +216,7 @@ async function notifyReservationWhatsApp(db, reservation) {
   });
   const phone = resolveNotifyPhone(db, reservation.branchId);
   const digits = toWaDigits(phone);
-  const url = waMeUrl(digits, text);
+  const url = foreignRuntimeAllowed() ? waMeUrl(digits, text) : null;
   const webhookAt = new Date().toISOString();
 
   const webhook = await pushWebhook({

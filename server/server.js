@@ -1,5 +1,6 @@
 /* Westo server: static site + OTP auth + admin/content API (JSON file storage). */
-if (!process.env.NEEM_CONTROL_ALLOW_EPHEMERAL_DEV) {
+if (!process.env.SALSA_CONTROL_ALLOW_EPHEMERAL_DEV && !process.env.NEEM_CONTROL_ALLOW_EPHEMERAL_DEV) {
+  process.env.SALSA_CONTROL_ALLOW_EPHEMERAL_DEV = 'true';
   process.env.NEEM_CONTROL_ALLOW_EPHEMERAL_DEV = 'true';
 }
 const crypto = require('crypto');
@@ -18,10 +19,15 @@ const {
   can: hasCapability,
   roleLabel,
   normalizeFulfillment,
+  FULFILLMENTS,
   paymentStatusFor,
   initialOrderStatus,
+  hasAcceptedDelivery,
+  nextOrderStatusAfterPayment,
+  nextOrderStatusAfterDeliveryAcceptance,
   canTransitionOrder,
   canEditOrderBeforeKitchen,
+  canSettleOrder,
   allowedOrderTransitions,
   quoteFulfillment,
   nextId,
@@ -31,17 +37,59 @@ const {
   assertStaffMutationBoundary,
 } = require('./command-center');
 const { createPostgresStateStore } = require('./postgres-state');
-const { translationEngine } = require('./neem/provider-policy');
-const { registerAdminV2Routes } = require('./admin-v2');
+const { createCheckoutQuoteToken, verifyCheckoutQuoteToken } = require('./checkout-quote');
+const { publicCheckoutOrderView } = require('./public-checkout-order');
+const { customerOrderProgress } = require('./customer-order-progress');
+const { paymentProviderPublicStatus } = require('./payment-provider-status');
+const { createSessionToken, readSessionToken, sessionTokenMatchesTenant } = require('./session-token');
+const { normalizeSettlementReference, settlementReferenceIdentity } = require('./settlement-reference');
+const { resolveSettlementAmounts } = require('./settlement-amounts');
+const { menuItemBelongsToBranch } = require('./menu-branch-scope');
+const {
+  menuAvailabilityOverride,
+  menuItemAvailableForBranch,
+  setMenuAvailabilityOverride,
+} = require('./menu-availability');
+const { createSettlementInFlightKey } = require('./settlement-in-flight-key');
+const { resolveAuditTenantId } = require('./audit-tenant-scope');
+const { paymentAttemptTransition, orderPaymentStatusForAttempt } = require('./payment-attempt-transitions');
+const { isOtpDemoMode } = require('./otp-policy');
+const {
+  highestAssignedSeat,
+  validateCoversForItems,
+  validateOrderLineInput,
+  validateWaiterOrderAdd,
+  validateWaiterKitchenSend,
+  validateWaiterCourseFire,
+  validateWaiterSettlementTiming,
+  validateWaiterOrderEdit,
+  validateDeliveryAcceptance,
+  isKitchenOrderPaymentEligible,
+} = require('./waiter-order-invariants');
+const { retainOperationalOrders, mergeActionableOrders } = require('./operational-order-retention');
+const { normalizeOrderHistoryCursor, historyPageSize, paginateCachedClosedOrders } = require('./order-history');
+const { orderCancellationGuard, receivedAmount, shouldReleaseOrderInventory } = require('./order-cancellation-guard');
+const { orderSplitLifecycleGuard } = require('./order-split-policy');
+const { prepareKitchenQueue } = require('./kitchen-queue');
+const { getOrderAging } = require('./operational-order-aging');
+const { translationEngine } = require('./salsa/provider-policy');
+const {
+  registerAdminV2Routes,
+  adminOrderDto,
+  operationalOrderDto,
+  adminPaymentDto,
+} = require('./admin-v2');
 const financeV2 = require('./finance-v2');
 const {
-  defaultModifierGroupsForItem,
-  normalizeModifierGroups,
   effectiveModifierGroupsForItem,
+  validateModifierGroupDefinitions,
+  calculateModifierLinePrice,
 } = require('./menu-modifiers');
 const accountingEngine = require('./accounting-engine');
+const { buildCheckoutTaxSnapshot } = require('./checkout-tax');
 const { registerAccountingRoutes } = require('./accounting-routes');
 const loyaltyEngine = require('./finance/loyalty-engine');
+const loyaltyAchievements = require('./finance/loyalty-achievements');
 const walletEngine = require('./finance/wallet-engine');
 const campaignsEngine = require('./finance/campaigns-engine');
 const smsEngine = require('./finance/sms-engine');
@@ -54,7 +102,7 @@ const {
   resolveNotifyPhone,
   toWaDigits,
 } = require('./whatsapp-notify');
-const { createNeemBridge } = require('./neem-bridge');
+const { createSalsaBridge, createNeemBridge } = require('./salsa-bridge');
 const {
   DEFAULT_PRINTER_CONFIG,
   ensurePrintingData,
@@ -67,33 +115,62 @@ const {
   testPrinter,
 } = require('./network-printer');
 const waitlist = require('./waitlist');
-const { AsyncLocalStorage } = require('node:async_hooks');
 const {
   loadTenantConfig,
   tenantHostMiddleware,
   publicTenantContext,
-  resolveTenantSlugFromRequest,
   normalizeTenantId,
-} = require('./neem/tenant-config');
-const { TenantRegistry } = require('./neem/tenant-registry');
+} = require('./salsa/tenant-config');
+const { TenantRegistry } = require('./salsa/tenant-registry');
+const { legacyTenantPersistenceError } = require('./salsa/tenant-persistence-policy');
+const {
+  hasControlPlaneBridgeCredential,
+  isTrustedLocalControlPlaneOrigin,
+} = require('./control-plane-bridge-auth');
+const { createSettlementPersistenceGate } = require('./settlement-persistence-gate');
+const { runtimeReadiness } = require('./runtime-readiness');
 const {
   CANONICAL_FEATURES,
   resolveFeatureForRoute,
   isFeatureEnabledForTenant,
   getFeatureInfo,
-} = require('./neem/canonical-features');
+} = require('./salsa/canonical-features');
 const {
+  createSalsaPrincipalMiddleware,
   createNeemPrincipalMiddleware,
   requireCapabilityEnforced,
   requireAnyCapabilityEnforced,
+  salsaRouteAwarePolicyMiddleware,
   neemRouteAwarePolicyMiddleware,
   isOwnerOnlySettingsCategory,
   assertTenantBoundary,
-} = require('./neem/westo-policy-enforcement');
-const { lookupCapability, lookupPolicyCapability } = require('./neem/route-capability-map');
+} = require('./salsa/westo-policy-enforcement');
+const { lookupCapability, lookupPolicyCapability } = require('./salsa/route-capability-map');
+const {
+  tenantStorage,
+  createTenantContext,
+} = require('./salsa/tenant-context');
+const { TenantResolver } = require('./salsa/tenant-resolver');
+const {
+  ControlDataAccess,
+  TenantConnectionManager,
+} = require('./salsa/data-access');
+const { tenantMenuRepository } = require('./salsa/tenant-menu-repository');
 
 const ROOT = path.join(__dirname, '..');
 const DB_PATH = process.env.WESTO_DB_PATH || path.join(__dirname, 'data', 'db.json');
+// These legacy platform operator identities must authenticate through the
+// platform control plane, never as restaurant owners in a tenant session.
+const PLATFORM_ONLY_PHONE_IDENTITIES = new Set(['09120000000']); // [DEV] removed 09374333028
+
+function isPlatformOnlyIdentity(userOrPhone) {
+  const phone = typeof userOrPhone === 'string' || typeof userOrPhone === 'number'
+    ? String(userOrPhone)
+    : String(userOrPhone?.phone || '');
+  const normalizedPhone = normalizeDigits(phone).trim();
+  return Boolean(userOrPhone?.principalType === 'platform_admin'
+    || PLATFORM_ONLY_PHONE_IDENTITIES.has(normalizedPhone));
+}
 const DEFAULT_JSON_DB_PATH = path.join(__dirname, 'data', 'db.json');
 // Capture test-runtime identity once. Individual tests intentionally toggle
 // NODE_ENV to exercise production fail-closed branches; persistence guards
@@ -275,16 +352,13 @@ function migrateDb(data) {
   if (!data.settings || typeof data.settings !== 'object') {
     data.settings = seed.settings || {};
   }
-  if (!Array.isArray(data.settings.adminPhones)) {
-    data.settings.adminPhones = ['09374333028'];
-  } else if (!data.settings.adminPhones.includes('09374333028')) {
-    data.settings.adminPhones.unshift('09374333028');
-  }
-  const superAdmin = (data.users || []).find((u) => u.phone === '09374333028');
-  if (superAdmin) {
-    superAdmin.role = 'owner';
-    if (!superAdmin.name) superAdmin.name = 'ساسان راد';
-  }
+  if (!Array.isArray(data.settings.adminPhones)) data.settings.adminPhones = [];
+  data.settings.adminPhones = data.settings.adminPhones
+    .map((phone) => normalizeDigits(String(phone || '')).trim())
+    .filter(Boolean); // [TEMPORARILY REMOVED platform filter FOR DEV]
+  // for (const user of Array.isArray(data.users) ? data.users : []) {
+  //   if (isPlatformOnlyIdentity(user)) user.role = 'guest';
+  // }
   if (!Array.isArray(data.menuItems)) data.menuItems = seed.menuItems;
   if (!Array.isArray(data.orders)) data.orders = [];
   // Migrate to the full Jan Majnoon-based menu (categories + items).
@@ -398,8 +472,11 @@ function migrateDb(data) {
     };
   }
   if (!Array.isArray(data.loyaltyLedger)) data.loyaltyLedger = [];
-  if (!data.neemIntegration || typeof data.neemIntegration !== 'object') {
-    data.neemIntegration = {
+  if (!data.salsaIntegration && data.neemIntegration) {
+    data.salsaIntegration = data.neemIntegration;
+  }
+  if (!data.salsaIntegration || typeof data.salsaIntegration !== 'object') {
+    data.salsaIntegration = {
       enabled: true,
       endpoint: '',
       outbox: [],
@@ -409,10 +486,11 @@ function migrateDb(data) {
       mode: 'outbox',
     };
   }
-  if (!Array.isArray(data.neemIntegration.outbox)) data.neemIntegration.outbox = [];
-  data.neemIntegration.tenantId = TENANT_CONFIG.tenantId;
-  data.neemIntegration.schemaVersion = 1;
-  data.neemIntegration.mode = 'outbox';
+  if (!Array.isArray(data.salsaIntegration.outbox)) data.salsaIntegration.outbox = [];
+  data.salsaIntegration.tenantId = TENANT_CONFIG.tenantId;
+  data.salsaIntegration.schemaVersion = 1;
+  data.salsaIntegration.mode = 'outbox';
+  data.neemIntegration = data.salsaIntegration;
   data.tenantIdentity = {
     tenantId: TENANT_CONFIG.tenantId,
     tenantSlug: TENANT_CONFIG.tenantSlug,
@@ -747,18 +825,81 @@ function migrateDb(data) {
 }
 const defaultDb = loadDb();
 const tenantRegistry = new TenantRegistry(defaultDb, DB_PATH);
-const tenantStorage = new AsyncLocalStorage();
+const TENANT_INFRASTRUCTURE_ENABLED = TENANT_CONFIG.multiTenant
+  || (process.env.SALSA_TENANT_CONTEXT_MODE || process.env.NEEM_TENANT_CONTEXT_MODE) === 'control-db';
+
+let runtimeControlDataAccess = null;
+let closeRuntimeControlDatabase = async () => {};
+if (TENANT_INFRASTRUCTURE_ENABLED && (process.env.SALSA_CONTROL_DATABASE_URL || process.env.NEEM_CONTROL_DATABASE_URL)) {
+  const controlDatabase = require('./salsa/control-plane/db/database');
+  runtimeControlDataAccess = new ControlDataAccess({ pool: controlDatabase.getDatabase() });
+  closeRuntimeControlDatabase = controlDatabase.closeDatabase;
+}
+
+const tenantResolver = new TenantResolver({
+  controlDataAccess: runtimeControlDataAccess,
+  baseDomain: process.env.SALSA_PLATFORM_BASE_DOMAIN || process.env.NEEM_PLATFORM_BASE_DOMAIN || 'salsa.ir',
+  defaultTenant: TENANT_CONFIG.tenantId,
+  defaultHosts: TENANT_CONFIG.hosts,
+  localHostTenant: TENANT_CONFIG.tenantId,
+  allowLocalDevelopment: process.env.NODE_ENV !== 'production',
+  trustForwardedHost: (process.env.SALSA_TRUST_PROXY || process.env.NEEM_TRUST_PROXY) === 'true',
+  logger: console,
+});
+const tenantConnectionManager = new TenantConnectionManager({
+  baseUrl: process.env.SALSA_TENANT_DB_POSTGRES_URL || process.env.NEEM_TENANT_DB_POSTGRES_URL,
+  logger: console,
+});
+
+function multiTenantHostMiddleware(req, res, next) {
+  const rawHost = String(req.headers['x-forwarded-host'] || req.headers.host || '');
+  const tenantId = tenantRegistry.resolveTenantIdForHost(rawHost, {
+    defaultTenantId: TENANT_CONFIG.tenantId,
+    defaultHosts: TENANT_CONFIG.hosts,
+  });
+
+  // A public host is never allowed to create a tenant merely by being
+  // requested. Tenant provisioning is an authenticated control-plane action.
+  if (!tenantId) {
+    return res.status(404).json({
+      ok: false,
+      error: 'unknown_tenant_host',
+      message: 'این دامنه به هیچ رستوران فعال در پلتفرم متصل نیست.',
+    });
+  }
+
+  const tenantDb = tenantRegistry.getTenantDb(tenantId);
+  if (!tenantDb) {
+    return res.status(404).json({
+      ok: false,
+      error: 'tenant_storage_not_registered',
+      message: 'ذخیره‌سازی این tenant ثبت نشده است.',
+    });
+  }
+  const identity = tenantDb.tenantIdentity || {};
+  req.tenant = {
+    ...TENANT_CONFIG,
+    tenantId,
+    tenantSlug: identity.tenantSlug || tenantId,
+    displayName: identity.displayName || tenantDb.restaurant?.name || tenantId,
+    canonicalDomain: identity.canonicalDomain || `${tenantId}.salsa.ir`,
+  };
+  req.tenantHostMatched = true;
+  req.tenantSlug = req.tenant.tenantSlug;
+  req.tenantId = tenantId;
+  next();
+}
 
 const db = new Proxy(defaultDb, {
-  get(target, prop, receiver) {
+  get(target, prop) {
     const store = tenantStorage.getStore();
     const current = (store && store.db) ? store.db : target;
-    return Reflect.get(current, prop, receiver);
+    return Reflect.get(current, prop);
   },
-  set(target, prop, value, receiver) {
+  set(target, prop, value) {
     const store = tenantStorage.getStore();
     const current = (store && store.db) ? store.db : target;
-    return Reflect.set(current, prop, value, receiver);
+    return Reflect.set(current, prop, value);
   },
   has(target, prop) {
     const store = tenantStorage.getStore();
@@ -786,6 +927,7 @@ const stateStore = createPostgresStateStore({
     || TENANT_CONFIG.requireMetadata,
 });
 const eventHub = createEventHub();
+const settlementPersistenceGate = createSettlementPersistenceGate();
 let saveTimer = null;
 let saveWaiters = [];
 
@@ -819,8 +961,23 @@ function save(opts = {}) {
   if (opts.rebuildProducts || opts.bumpMenu) bumpMenuRevision(currentDb);
 
   if (currentTenantId !== 'westo') {
-    tenantRegistry.saveTenantDb(currentTenantId);
-    return Promise.resolve(true);
+    const persistenceError = legacyTenantPersistenceError({ tenantId: currentTenantId });
+    if (persistenceError) {
+      return opts.requireDurable ? Promise.reject(persistenceError) : Promise.resolve(false);
+    }
+    try {
+      const persisted = tenantRegistry.saveTenantDb(currentTenantId, { requireDurable: opts.requireDurable === true });
+      if (opts.requireDurable && persisted !== true) {
+        throw Object.assign(new Error('Tenant state was not persisted.'), { code: 'tenant_persistence_failed', status: 503 });
+      }
+      return Promise.resolve(persisted !== false);
+    } catch (error) {
+      if (!opts.requireDurable) return Promise.resolve(false);
+      return Promise.reject(Object.assign(error, {
+        code: error.code || 'tenant_persistence_failed',
+        status: error.status || 503,
+      }));
+    }
   }
 
   const waiter = new Promise((resolve, reject) => {
@@ -832,7 +989,9 @@ function save(opts = {}) {
     const batch = saveWaiters;
     saveWaiters = [];
     let persistenceError = null;
+    let persistenceAttempted = false;
     if (shouldWriteJsonState()) {
+      persistenceAttempted = true;
       try {
         const encoded = JSON.stringify(db, null, 2);
         const tmpPath = `${DB_PATH}.${process.pid}.tmp`;
@@ -844,12 +1003,26 @@ function save(opts = {}) {
       }
     }
     if (stateStore.enabled) {
+      persistenceAttempted = true;
       try {
-        await stateStore.write(db);
+        const persisted = await stateStore.write(db);
+        if (persisted !== true) {
+          throw Object.assign(new Error('PostgreSQL state store did not confirm a durable write.'), {
+            code: 'persistence_unconfirmed',
+            status: 503,
+          });
+        }
       } catch (error) {
         persistenceError = error;
+        settlementPersistenceGate.recordFailure(error);
         console.error('[postgres] unable to persist state', error.message);
       }
+    }
+    if (!persistenceAttempted) {
+      persistenceError = Object.assign(new Error('No durable persistence backend is available.'), {
+        code: 'persistence_unavailable',
+        status: 503,
+      });
     }
     for (const pending of batch) {
       if (persistenceError && pending.requireDurable) pending.reject(Object.assign(persistenceError, { code: persistenceError.code || 'finance_persistence_failed', status: persistenceError.status || 503 }));
@@ -863,9 +1036,29 @@ function save(opts = {}) {
 // together. Keep a bounded rollback image so a failed durable write or a
 // finance invariant cannot leave an in-memory paid order without its ledger.
 const FINANCE_MUTATION_STATE_KEYS = Object.freeze([
-  'financeV2', 'accounting', 'orders', 'cashSessions', 'paymentAttempts', 'auditLog',
-  'users', 'walletLedger', 'walletTopupRequests', 'loyaltyLedger', 'referrals', 'campaignLog', 'smsLog', 'menuItems', 'menuComplements', 'checkoutIdempotency',
+  'financeV2', 'accounting', 'orders', 'cashSessions', 'staffShifts', 'paymentAttempts', 'auditLog',
+  'users', 'walletLedger', 'walletTopupRequests', 'loyaltyLedger', 'loyaltyAchievementAwards', 'referrals', 'campaignLog', 'smsLog', 'menuItems', 'menuComplements', 'checkoutIdempotency',
+  'menuAvailabilityOverrides', 'menuRevision', 'waiterCalls',
 ]);
+const settlementInFlight = new Map();
+function persistedOrderBranchId(order) {
+  const value = order?.branchId;
+  if (typeof value === 'number') return Number.isSafeInteger(value) && value > 0 ? value : null;
+  if (typeof value !== 'string') return null;
+  const normalized = normalizeDigits(value).trim();
+  if (!/^\d+$/u.test(normalized)) return null;
+  const branchId = Number(normalized);
+  return Number.isSafeInteger(branchId) && branchId > 0 ? branchId : null;
+}
+
+function settlementLockKey(req, order, idempotencyKey, branchId = order?.branchId) {
+  return createSettlementInFlightKey({
+    tenantId: req?.tenantId || req?.tenantContext?.tenantId || req?.tenant?.tenantId,
+    branchId,
+    orderId: order?.id,
+    idempotencyKey,
+  });
+}
 
 function snapshotFinanceMutationState() {
   return Object.fromEntries(FINANCE_MUTATION_STATE_KEYS.map((key) => [
@@ -883,11 +1076,128 @@ function restoreFinanceMutationState(snapshot) {
   }
 }
 
-async function persistFinanceMutation(snapshot) {
+async function persistFinanceMutation(snapshot, options = {}) {
+  try {
+    await save({ ...options, requireDurable: true });
+  } catch (error) {
+    restoreFinanceMutationState(snapshot);
+    // A JSON recovery snapshot may have been written before a later durable
+    // backend failed. Persist the restored image as well so a failed order
+    // commit cannot survive a restart through that secondary snapshot.
+    try {
+      await save({ ...options, requireDurable: true });
+    } catch (rollbackError) {
+      console.error('[persistence] rollback snapshot write failed', rollbackError?.message || rollbackError);
+    }
+    throw error;
+  }
+}
+
+const adminConfigMutationQueues = new Map();
+const branchOrderMutationQueues = new Map();
+const orderMutationQueues = new Map();
+const checkoutOrderMutationQueues = new Map();
+
+async function serializeOrderMutation(req, branchId, orderId, operation) {
+  const tenantId = String(
+    tenantStorage.getStore()?.tenantId
+      || req?.tenantId
+      || req?.tenantContext?.tenantId
+      || req?.tenant?.tenantId
+      || TENANT_CONFIG.tenantId
+      || 'westo',
+  );
+  const branch = Number(branchId);
+  const id = Number(orderId);
+  if (!tenantId || !Number.isSafeInteger(branch) || branch <= 0
+      || !Number.isSafeInteger(id) || id <= 0 || typeof operation !== 'function') {
+    throw Object.assign(new Error('Order mutation identity is invalid.'), {
+      code: 'order_mutation_identity_invalid', status: 409,
+    });
+  }
+  const key = JSON.stringify([tenantId, branch, id]);
+  const previous = orderMutationQueues.get(key) || Promise.resolve();
+  const current = previous.catch(() => {}).then(operation);
+  orderMutationQueues.set(key, current);
+  try {
+    return await current;
+  } finally {
+    if (orderMutationQueues.get(key) === current) orderMutationQueues.delete(key);
+  }
+}
+
+async function serializeBranchOrderMutation(order, operation) {
+  const tenantId = tenantStorage.getStore()?.tenantId || TENANT_CONFIG.tenantId || 'westo';
+  // Serialize snapshot-backed order commits within a branch. This also keeps
+  // acceptance idempotency references unique across different order ids.
+  const key = `${tenantId}:${Number(order?.branchId)}`;
+  const previous = branchOrderMutationQueues.get(key) || Promise.resolve();
+  const current = previous.catch(() => {}).then(operation);
+  branchOrderMutationQueues.set(key, current);
+  try {
+    return await current;
+  } finally {
+    if (branchOrderMutationQueues.get(key) === current) branchOrderMutationQueues.delete(key);
+  }
+}
+
+async function serializeCheckoutOrderMutation(tenantId, idempotencyKey, operation) {
+  const key = JSON.stringify([String(tenantId || 'westo'), String(idempotencyKey || '')]);
+  const previous = checkoutOrderMutationQueues.get(key) || Promise.resolve();
+  const current = previous.catch(() => {}).then(operation);
+  checkoutOrderMutationQueues.set(key, current);
+  try {
+    return await current;
+  } finally {
+    if (checkoutOrderMutationQueues.get(key) === current) checkoutOrderMutationQueues.delete(key);
+  }
+}
+
+function serializeOrderMutationRoute(handler) {
+  return (req, res, next) => {
+    const targetId = Number(normalizeDigits(String(req.params?.id || '')).replace(/\D/g, ''));
+    const order = (db.orders || []).find((item) => Number(item.id) === targetId);
+    if (!order) return handler(req, res, next);
+    return serializeBranchOrderMutation(order, () => handler(req, res, next)).catch((error) => {
+      if (res.headersSent) return undefined;
+      return res.status(error.status || 503).json({ error: error.code || 'order_mutation_failed', message: error.message });
+    });
+  };
+}
+
+function serializePaymentOrderMutationRoute(handler) {
+  return (req, res, next) => {
+    const paymentId = Number(normalizeDigits(String(req.params?.id || req.body?.paymentAttemptId || '')).replace(/\D/g, ''));
+    const payment = (db.paymentAttempts || []).find((item) => Number(item.id) === paymentId);
+    const order = payment && (db.orders || []).find((item) => Number(item.id) === Number(payment.orderId));
+    if (!order) return handler(req, res, next);
+    return serializeBranchOrderMutation(order, () => handler(req, res, next)).catch((error) => {
+      if (res.headersSent) return undefined;
+      return res.status(error.status || 503).json({ error: error.code || 'payment_order_mutation_failed', message: error.message });
+    });
+  };
+}
+
+async function serializeAdminConfigMutation(branchId, operation) {
+  const tenantId = tenantStorage.getStore()?.tenantId || TENANT_CONFIG.tenantId || 'westo';
+  const key = `${tenantId}:${Number(branchId)}`;
+  const previous = adminConfigMutationQueues.get(key) || Promise.resolve();
+  const current = previous.catch(() => {}).then(operation);
+  adminConfigMutationQueues.set(key, current);
+  try {
+    return await current;
+  } finally {
+    if (adminConfigMutationQueues.get(key) === current) adminConfigMutationQueues.delete(key);
+  }
+}
+
+async function persistAdminConfigMutation(rollback) {
   try {
     await save({ requireDurable: true });
   } catch (error) {
-    restoreFinanceMutationState(snapshot);
+    try { rollback?.(); } catch (rollbackError) {
+      console.error('[admin-config] rollback failed', rollbackError?.message || rollbackError);
+    }
     throw error;
   }
 }
@@ -896,12 +1206,13 @@ if (db.menuComplementsV1Pending) {
   delete db.menuComplementsV1Pending;
   save({ bumpMenu: true });
 }
-const neemBridge = createNeemBridge({
+const salsaBridge = createSalsaBridge({
   getDb: () => db,
   persist: () => save(),
   logger: console,
   tenantConfig: TENANT_CONFIG,
 });
+const neemBridge = salsaBridge;
 // Keep derived products in sync with current menu
 rebuildProductsFromMenu();
 if (!stateStore.enabled) save(); // persist migrations if any
@@ -951,6 +1262,10 @@ function defaultHoursTemplate() {
 
 function defaultBranch() {
   return (db.branches || []).find((b) => b.active !== false) || (db.branches || [])[0] || null;
+}
+
+function tableBranchId(table) {
+  return Number(table?.branchId) || Number(defaultBranch()?.id) || 1;
 }
 
 function resolveBranch(q) {
@@ -1054,31 +1369,18 @@ function normalizeDayparts(list) {
   return next.length ? next : ['all'];
 }
 
-function sign(value) {
-  return crypto.createHmac('sha256', SECRET).update(value).digest('base64url');
+function makeToken(phone, tenantId = TENANT_CONFIG.tenantId) {
+  return createSessionToken({
+    phone,
+    tenantId: normalizeTenantId(tenantId || TENANT_CONFIG.tenantId),
+  }, SECRET);
 }
-function makeToken(phone) {
-  const payload = Buffer.from(JSON.stringify({ phone, ts: Date.now() })).toString('base64url');
-  return `${payload}.${sign(payload)}`;
-}
-function parseToken(token) {
-  if (!token || typeof token !== 'string') return null;
-  const dotIndex = token.indexOf('.');
-  if (dotIndex === -1) return null;
-  const payload = token.slice(0, dotIndex);
-  const sig = token.slice(dotIndex + 1);
-  if (!payload || !sig) return null;
-  try {
-    const expectedSig = sign(payload);
-    const expectedBuf = Buffer.from(expectedSig);
-    const actualBuf = Buffer.from(sig);
-    if (expectedBuf.length !== actualBuf.length || !crypto.timingSafeEqual(expectedBuf, actualBuf)) return null;
-    const parsed = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
-    return parsed;
-  } catch {
-    return null;
-  }
+function parseToken(token, expectedTenantId) {
+  const parsed = readSessionToken(token, SECRET);
+  if (!parsed || !sessionTokenMatchesTenant(parsed, expectedTenantId, {
+    requireTenantClaim: TENANT_INFRASTRUCTURE_ENABLED,
+  })) return null;
+  return parsed;
 }
 function getCookie(req, name) {
   if (!req || !req.headers || !req.headers.cookie || !name) return null;
@@ -1115,17 +1417,37 @@ function getSessionToken(req) {
 
 function currentUser(req) {
   const token = getSessionToken(req);
-  const data = parseToken(token);
+  const tenantId = normalizeTenantId(
+    req?.tenantId || req?.tenant?.tenantSlug || req?.tenant?.tenantId || db.tenantIdentity?.tenantId || TENANT_CONFIG.tenantId,
+  );
+  const data = parseToken(token, tenantId);
   if (!data || !Number.isFinite(Number(data.ts)) || Date.now() - Number(data.ts) > SESSION_TTL_MS) return null;
   const user = db.users.find((u) => u.phone === data.phone);
-  if (!user || user.blocked) return null;
+  if (!user || user.blocked || isPlatformOnlyIdentity(user)) return null;
   return user;
 }
 function effectiveRole(user) {
-  return normalizeRole(user?.role, db.settings?.adminPhones || [], user?.phone || '');
+  if (isPlatformOnlyIdentity(user)) return 'guest';
+  const adminPhones = Array.isArray(db.settings?.adminPhones) ? db.settings.adminPhones : [];
+  return normalizeRole(user?.role, adminPhones, user?.phone || '');
 }
 function userCan(user, capability) {
-  return !!user && hasCapability(user, capability, db.settings || {});
+  if (isPlatformOnlyIdentity(user)) return false;
+  const adminPhones = Array.isArray(db.settings?.adminPhones) ? db.settings.adminPhones : [];
+  const settings = { ...(db.settings || {}), adminPhones };
+  return !!user && hasCapability(user, capability, settings);
+}
+function operationalOrderResponse(order, user) {
+  return operationalOrderDto(order, {
+    includePii: userCan(user, 'pii.view'),
+    includePaymentReferences: userCan(user, 'payments.manage'),
+    includeDeliveryReason: userCan(user, 'delivery.manage'),
+  });
+}
+function operationalPaymentResponse(payment, user) {
+  return adminPaymentDto(payment, {
+    includePaymentReferences: userCan(user, 'payments.manage'),
+  });
 }
 function requireAuth(req, res, next) {
   const user = currentUser(req);
@@ -1245,6 +1567,8 @@ function publicUser(u) {
     defaultAddress: addresses.find((a) => a.isDefault) || addresses[0] || null,
     avatar: u.avatar || '',
     preferences: Array.isArray(u.preferences) ? u.preferences : [],
+    tags: Array.isArray(u.tags) ? u.tags : [],
+    vipNote: u.vipNote || '',
     notes: u.notes || '',
     createdAt: u.createdAt,
     lastLoginAt: u.lastLoginAt,
@@ -1258,7 +1582,7 @@ function publishOperationalEvent(type, payload = {}, permission = 'ops.view') {
   eventHub.publish(type, { ...payload, revision: db.commandCenter.eventRevision }, permission);
 }
 
-function recordAudit(req, action, targetType, targetId, meta = {}, branchId = null) {
+function recordAudit(req, action, targetType, targetId, meta = {}, branchId = null, options = {}) {
   if (req) req.auditRecorded = true;
   const entry = createAuditEntry({
     actor: req?.user || null,
@@ -1268,14 +1592,19 @@ function recordAudit(req, action, targetType, targetId, meta = {}, branchId = nu
     branchId,
     meta,
   });
-  entry.tenantId = TENANT_CONFIG.tenantId;
+  entry.tenantId = resolveAuditTenantId(req, tenantStorage.getStore()?.tenantId, TENANT_CONFIG.tenantId);
   db.auditLog = Array.isArray(db.auditLog) ? db.auditLog : [];
   db.auditLog.unshift(entry);
   db.auditLog = db.auditLog.slice(0, 5000);
-  if (stateStore.enabled) {
+  if (stateStore.enabled && options.deferAppend !== true) {
     stateStore.appendAudit(entry).catch((error) => console.error('[postgres] unable to append audit event', error.message));
   }
   return entry;
+}
+
+function appendAuditAfterCommit(entry) {
+  if (!entry || !stateStore.enabled) return;
+  stateStore.appendAudit(entry).catch((error) => console.error('[postgres] unable to append audit event', error.message));
 }
 
 function awardLoyaltyPoints(phone, points, reason, meta = {}) {
@@ -1321,7 +1650,7 @@ function pointsForOrderTotal(total, phone) {
 // ---- OTP & Cybersecurity Hardening ------------------------------------
 const otps = new Map(); // phone -> { code, expiresAt, attempts, requestedAt }
 const otpRequestTimestamps = new Map(); // phone -> lastRequestedEpochMs
-const OTP_COOLDOWN_MS = Number(process.env.OTP_COOLDOWN_MS) || 60000;
+const OTP_COOLDOWN_MS = Number(process.env.OTP_COOLDOWN_MS) || 0; // [TEMPORARILY 0 FOR DEV] was 60000
 const MAX_OTP_ATTEMPTS = 5;
 const PHONE_RE = /^09\d{9}$/;
 
@@ -1353,7 +1682,23 @@ function phonesMatch(p1, p2) {
 // entitlement that is authoritative outside the WESTO JSON snapshot.
 const PUBLIC_ORDER_RATE_WINDOW_MS = 60 * 1000;
 const PUBLIC_ORDER_RATE_LIMIT = 30;
+const PUBLIC_CHECKOUT_RECOVERY_RATE_LIMIT = 10;
+const ORDER_IDEMPOTENCY_KEY_RE = /^[A-Za-z0-9][A-Za-z0-9._:-]{7,159}$/;
 const publicOrderRateBuckets = new Map();
+const publicCheckoutRecoveryRateBuckets = new Map();
+
+function normalizeCheckoutReceiptCode(value) {
+  const compact = String(value || '').trim().replace(/[\s-]/g, '').toLowerCase();
+  return /^[a-f0-9]{32}$/.test(compact) ? compact : '';
+}
+
+function checkoutReceiptIndexKey(value) {
+  const code = normalizeCheckoutReceiptCode(value);
+  if (!code) return '';
+  return crypto.createHmac('sha256', SECRET)
+    .update(`westo:guest-checkout-receipt:v1:${code}`)
+    .digest('hex');
+}
 
 function publicMutationClientKey(req) {
   const ip = String(req.ip || req.socket?.remoteAddress || 'unknown').trim();
@@ -1371,12 +1716,18 @@ function hasActiveLocalEntitlement(featureKey) {
 }
 
 function productionPaymentProviderReady() {
-  if (process.env.NODE_ENV !== 'production') return true;
-  const provider = db.paymentProvider || {};
-  return Boolean(provider.enabled !== false
-    && String(provider.mode || '').toLowerCase() !== 'sandbox'
-    && String(provider.provider || '').trim()
-    && String(provider.provider || '').toLowerCase() !== 'sandbox');
+  const configuredMode = String(db.paymentProvider?.mode || 'sandbox').trim().toLowerCase();
+  const configuredProvider = String(db.paymentProvider?.provider || 'sandbox').trim().toLowerCase();
+  if (db.paymentProvider?.enabled === false || configuredMode === 'disabled') return false;
+  if (process.env.NODE_ENV !== 'production') {
+    // This checkout implements only its local sandbox flow. A configured live
+    // provider is not usable until a real create-and-verify adapter exists.
+    return configuredMode === 'sandbox' && configuredProvider === 'sandbox';
+  }
+  // A provider name/mode in the local settings is not evidence that a real
+  // order-payment adapter can create and verify a bank transaction. Keep the
+  // production path closed until a provider adapter is wired and verified.
+  return false;
 }
 
 function guardPublicOrderMutation(req, res, featureKey) {
@@ -1401,7 +1752,7 @@ function guardPublicOrderMutation(req, res, featureKey) {
 
   if (process.env.NODE_ENV !== 'production') return true;
   const idempotencyKey = String(req.get('Idempotency-Key') || req.body?.idempotencyKey || '').trim();
-  if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{7,159}$/.test(idempotencyKey)) {
+  if (!ORDER_IDEMPOTENCY_KEY_RE.test(idempotencyKey)) {
     res.status(400).json({ error: 'idempotency_key_required', message: 'برای ثبت سفارش تولیدی، Idempotency-Key معتبر الزامی است.' });
     return false;
   }
@@ -1410,6 +1761,27 @@ function guardPublicOrderMutation(req, res, featureKey) {
     return false;
   }
   return true;
+}
+
+function guardPublicCheckoutRecovery(req, res, next) {
+  const now = Date.now();
+  const key = publicMutationClientKey(req);
+  const existing = publicCheckoutRecoveryRateBuckets.get(key);
+  const bucket = existing && now - existing.startedAt < PUBLIC_ORDER_RATE_WINDOW_MS
+    ? existing
+    : { startedAt: now, count: 0 };
+  bucket.count += 1;
+  publicCheckoutRecoveryRateBuckets.set(key, bucket);
+  if (publicCheckoutRecoveryRateBuckets.size > 5000) {
+    for (const [clientKey, candidate] of publicCheckoutRecoveryRateBuckets) {
+      if (now - candidate.startedAt >= PUBLIC_ORDER_RATE_WINDOW_MS) publicCheckoutRecoveryRateBuckets.delete(clientKey);
+    }
+  }
+  if (bucket.count > PUBLIC_CHECKOUT_RECOVERY_RATE_LIMIT) {
+    res.setHeader('Retry-After', '60');
+    return res.status(429).json({ error: 'public_order_rate_limited', retryAfterSec: 60 });
+  }
+  return next();
 }
 
 function publicOrderMutationGuard(featureKey) {
@@ -1427,39 +1799,118 @@ function sandboxPaymentGuard(req, res, next) {
 // ---- app ----------------------------------------------------------------
 const app = express();
 app.disable('x-powered-by');
-app.use(tenantHostMiddleware(TENANT_CONFIG, { logger: console }));
+const fixedTenantHostMiddleware = tenantHostMiddleware(TENANT_CONFIG, { logger: console });
 app.use((req, res, next) => {
-  const tenantSlug = resolveTenantSlugFromRequest(req);
-  req.tenantSlug = tenantSlug;
-  req.tenantId = tenantSlug;
-  const tenantDb = tenantRegistry.getTenantDb(tenantSlug);
-  req.tenantDb = tenantDb;
+  if (!TENANT_INFRASTRUCTURE_ENABLED) {
+    return fixedTenantHostMiddleware(req, res, () => {
+      const tenantId = normalizeTenantId(req.tenant?.tenantSlug || req.tenant?.tenantId);
+      const persistenceError = legacyTenantPersistenceError({ tenantId });
+      if (persistenceError) {
+        return res.status(persistenceError.status).json({ ok: false, error: persistenceError.code, message: persistenceError.message });
+      }
+      const tenantDb = tenantRegistry.getTenantDb(tenantId);
+      if (!tenantId || !tenantDb) {
+        return res.status(404).json({ ok: false, error: 'tenant_not_registered' });
+      }
+      const context = createTenantContext({
+        tenantId,
+        tenantSlug: tenantId,
+        domain: req.headers.host,
+        databaseName: `tenant_${tenantId.replace(/-/g, '_')}`,
+        databaseProvider: 'legacy-json',
+        cellId: TENANT_CONFIG.cellId,
+        release: TENANT_CONFIG.release,
+        source: 'fixed-local-tenant',
+      });
+      req.tenantContext = context;
+      req.tenantId = context.tenantId;
+      req.tenantSlug = context.tenantSlug;
+      req.tenantDb = tenantDb;
+      req.tenantDataAccess = null;
+      return tenantStorage.run({ ...context, db: tenantDb, tenantDataAccess: null }, next);
+    });
+  }
 
-  tenantStorage.run({ tenantId: tenantSlug, db: tenantDb }, () => {
-    next();
+  // New boundary mode is fail-closed: no Control DB means no tenant request.
+  const controlAccess = runtimeControlDataAccess || tenantResolver.controlDataAccess;
+  if (!controlAccess) {
+    return res.status(503).json({
+      ok: false,
+      error: 'tenant_control_database_unavailable',
+      message: 'Control DB برای تشخیص tenant تنظیم نشده است.',
+    });
+  }
+
+  return tenantResolver.middleware()(req, res, () => {
+    const context = req.tenantContext;
+    const persistenceError = legacyTenantPersistenceError({ tenantId: context?.tenantId });
+    if (persistenceError) {
+      return res.status(persistenceError.status).json({ ok: false, error: persistenceError.code, message: persistenceError.message });
+    }
+    let legacyDb = tenantRegistry.getTenantDb(context.tenantId);
+    if (!legacyDb) {
+      legacyDb = tenantRegistry.provisionTenant(context.tenantId, {
+        name: context.tenantSlug,
+        domain: context.domain,
+        cellId: context.cellId,
+      });
+    }
+    const tenantDb = legacyDb;
+    req.tenant = {
+      ...TENANT_CONFIG,
+      tenantId: context.tenantId,
+      tenantSlug: context.tenantSlug,
+      canonicalDomain: context.domain || TENANT_CONFIG.canonicalDomain,
+      cellId: context.cellId || TENANT_CONFIG.cellId,
+      release: context.release || TENANT_CONFIG.release,
+    };
+    req.tenantId = context.tenantId;
+    req.tenantSlug = context.tenantSlug;
+    req.tenantDb = tenantDb;
+    req.tenantDataAccess = tenantConnectionManager.forContext(context);
+    return tenantStorage.run({
+      ...context,
+      db: tenantDb,
+      tenantDataAccess: req.tenantDataAccess,
+      controlDataAccess: controlAccess,
+    }, next);
   });
 });
-// ── NEEM Tenant Policy Enforcement Layer ───────────────────────────────────
-// Attaches req.neemPrincipal on every request (non-blocking).
+app.use((req, res, next) => {
+  if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) return next();
+  const readiness = settlementPersistenceGate.check({
+    postgresEnabled: stateStore.enabled,
+    postgresRequired: stateStore.required,
+  });
+  if (readiness.ok) return next();
+  return res.status(readiness.status).json({
+    ok: false,
+    error: readiness.code,
+    message: readiness.message,
+    persistenceError: settlementPersistenceGate.uncertainty()?.code,
+  });
+});
+// ── SALSA Tenant Policy Enforcement Layer ───────────────────────────────────
+// Attaches req.salsaPrincipal & req.neemPrincipal on every request (non-blocking).
 // Resolve WESTO's signed session before the route-aware policy layer so an
 // authenticated operator is not evaluated as the anonymous guest.
-app.use(createNeemPrincipalMiddleware({ resolveUser: currentUser }));
-// Shadow-evaluates (or enforces, depending on NEEM_POLICY_MODE) policy for
+app.use(createSalsaPrincipalMiddleware({ resolveUser: currentUser }));
+// Shadow-evaluates (or enforces, depending on SALSA_POLICY_MODE / NEEM_POLICY_MODE) policy for
 // all routes listed in the route-capability-map. In shadow mode this never
 // blocks; in enforce mode it returns 403 on DENY.
-app.use(neemRouteAwarePolicyMiddleware());
-// NEEM God Mode dynamic feature entitlement gate
+app.use(salsaRouteAwarePolicyMiddleware());
+// SALSA God Mode dynamic feature entitlement gate
 app.use((req, res, next) => {
   const isFinance = req.path.startsWith('/api/admin/finance') || req.path.startsWith('/api/admin/v2/finance');
   if (isFinance) {
-    const entitlements = db.featureEntitlements || db.neemEntitlements;
+    const entitlements = db.salsaEntitlements || db.featureEntitlements || db.neemEntitlements;
     const financeGrant = entitlements && entitlements['finance.workspace'];
     if (financeGrant && (financeGrant.active === false || financeGrant.status === 'disabled')) {
       return res.status(403).json({
         ok: false,
         error: 'feature_disabled',
         featureKey: 'finance.workspace',
-        message: 'بخش حسابداری و امور مالی توسط کنترل‌پلن NEEM برای این مشتری غیرفعال شده است.'
+        message: 'بخش حسابداری و امور مالی توسط کنترل‌پلن SALSA برای این مشتری غیرفعال شده است.'
       });
     }
   }
@@ -1474,7 +1925,7 @@ app.use((req, res, next) => {
         ok: false,
         error: 'feature_disabled',
         featureKey,
-        message: `قابلیت «${info.nameFa || featureKey}» توسط کنترل‌پلن NEEM برای این مشتری غیرفعال شده است.`
+        message: `قابلیت «${info.nameFa || featureKey}» توسط کنترل‌پلن SALSA برای این مشتری غیرفعال شده است.`
       });
     }
   }
@@ -1526,9 +1977,17 @@ app.use((req, res, next) => {
 });
 app.use((req, res, next) => {
   if (!['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) return next();
-  if (!/^\/api\/(?:admin|kitchen)\b/.test(req.path) && !/^\/api\/(?:content|menu|faq(?:-|\/|$)|v2\/orders(?:\/|$)|auth\/(?:logout|profile)$)/.test(req.path)) return next();
+  if (!req.path.startsWith('/api/')) return next();
   const origin = String(req.headers.origin || '');
-  if (!origin) return next(); // non-browser clients/tests
+  const hasSessionCookie = Boolean(getCookie(req, 'westo_session'));
+  const fetchSite = String(req.headers['sec-fetch-site'] || '').toLowerCase();
+  if (hasSessionCookie && !origin) {
+    return res.status(403).json({ error: 'same_origin_required', requestId: req.requestId });
+  }
+  if (hasSessionCookie && fetchSite === 'cross-site') {
+    return res.status(403).json({ error: 'cross_origin_write_blocked', requestId: req.requestId });
+  }
+  if (!origin) return next(); // server-to-server integrations and non-cookie clients
   let originHost = '';
   try { originHost = new URL(origin).host; } catch (_) { return res.status(403).json({ error: 'cross_origin_write_blocked', requestId: req.requestId }); }
   if (originHost !== String(req.get('host') || '')) {
@@ -1588,6 +2047,7 @@ function commandCenterPayload(branchId = null) {
     .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt))
     .slice(0, 32)
     .map((order) => ({
+      ...getOrderAging(order, now),
       id: order.id,
       branchId: order.branchId,
       status: order.status,
@@ -1597,7 +2057,6 @@ function commandCenterPayload(branchId = null) {
       customerName: order.name || 'مهمان',
       total: order.total,
       createdAt: order.createdAt,
-      ageMinutes: Math.max(0, Math.floor((now - new Date(order.createdAt).getTime()) / 60000)),
       items: (order.items || []).map((line) => ({ name: line.name, qty: line.qty })),
     }));
   const legacyLowStock = (db.menuItems || [])
@@ -1615,7 +2074,10 @@ function commandCenterPayload(branchId = null) {
   const activeReservations = reservations.filter((item) => item.date === today && !['cancelled', 'no_show'].includes(item.status));
   const tableCapacity = tables.reduce((sum, table) => sum + (Number(table.seats) || 0), 0);
   const usedCapacity = activeReservations.reduce((sum, item) => sum + (Number(item.partySize) || 0), 0);
-  const delayed = queue.filter((item) => item.ageMinutes >= 20 && !['ready', 'dispatched'].includes(item.status));
+  const delayed = queue.filter((item) => item.attentionType === 'kitchen');
+  const paymentAttention = queue.filter((item) => item.attentionType === 'payment');
+  const handoffAttention = queue.filter((item) => item.attentionType === 'handoff');
+  const kitchenQueue = queue.filter((item) => ['sent_to_kitchen', 'paid', 'preparing'].includes(item.status)).length;
   return {
     generatedAt: new Date().toISOString(),
     revision: Number(db.commandCenter?.eventRevision || 0),
@@ -1623,6 +2085,9 @@ function commandCenterPayload(branchId = null) {
     summary: {
       queue: queue.length,
       delayed: delayed.length,
+      kitchenQueue,
+      paymentAttention: paymentAttention.length,
+      handoffAttention: handoffAttention.length,
       lowStock: lowStock.length,
       reservationsToday: activeReservations.length,
       pendingPayments: paymentAttempts.filter((item) => item.status === 'pending').length + queue.filter((item) => item.paymentStatus === 'pending').length,
@@ -1630,6 +2095,8 @@ function commandCenterPayload(branchId = null) {
     },
     queue,
     delayed,
+    paymentAttention,
+    handoffAttention,
     lowStock,
     reservations: activeReservations.slice(0, 12),
     payments: paymentAttempts.filter((item) => ['pending', 'failed'].includes(item.status)).slice(0, 12),
@@ -1673,15 +2140,54 @@ function activeCashSession(user, branchId) {
 }
 
 function cashSessionTotals(session) {
-  const movements = Array.isArray(session?.movements) ? session.movements : [];
-  const signed = movements.reduce((sum, movement) => sum + Number(movement.amount || 0), 0);
+  const opening = parseCashDrawerAmount(session?.openingAmount, { allowZero: true });
+  if (opening == null) return null;
+  const movements = session?.movements === undefined ? [] : session.movements;
+  if (!Array.isArray(movements)) return null;
+  let signed = 0;
+  let sales = 0;
+  let payIn = 0;
+  let payOut = 0;
+  let refunds = 0;
+  const addSafe = (current, amount) => {
+    const next = current + amount;
+    return Number.isSafeInteger(next) ? next : null;
+  };
+  for (const movement of movements) {
+    if (!movement || typeof movement !== 'object' || Array.isArray(movement)) return null;
+    const rawAmount = movement.amount;
+    const normalized = typeof rawAmount === 'string' ? normalizeDigits(rawAmount).trim() : rawAmount;
+    if ((typeof normalized !== 'number' && (typeof normalized !== 'string' || !/^[+-]?\d+$/u.test(normalized)))
+      || !Number.isSafeInteger(Number(normalized)) || Number(normalized) === 0) return null;
+    const amount = Number(normalized);
+    signed = addSafe(signed, amount);
+    if (signed == null) return null;
+    if (movement.type === 'sale') {
+      if (amount < 0) return null;
+      sales = addSafe(sales, amount);
+      if (sales == null) return null;
+    } else if (movement.type === 'pay_in') {
+      if (amount < 0) return null;
+      payIn = addSafe(payIn, amount);
+      if (payIn == null) return null;
+    } else if (movement.type === 'pay_out') {
+      if (amount > 0) return null;
+      payOut = addSafe(payOut, Math.abs(amount));
+      if (payOut == null) return null;
+    } else if (movement.type === 'refund') {
+      refunds = addSafe(refunds, Math.abs(amount));
+      if (refunds == null) return null;
+    }
+  }
+  const expected = addSafe(opening, signed);
+  if (expected == null) return null;
   return {
-    opening: Number(session?.openingAmount || 0),
-    sales: movements.filter((item) => item.type === 'sale').reduce((sum, item) => sum + Number(item.amount || 0), 0),
-    payIn: movements.filter((item) => item.type === 'pay_in').reduce((sum, item) => sum + Number(item.amount || 0), 0),
-    payOut: Math.abs(movements.filter((item) => item.type === 'pay_out').reduce((sum, item) => sum + Number(item.amount || 0), 0)),
-    refunds: Math.abs(movements.filter((item) => item.type === 'refund').reduce((sum, item) => sum + Number(item.amount || 0), 0)),
-    expected: Number(session?.openingAmount || 0) + signed,
+    opening,
+    sales,
+    payIn,
+    payOut,
+    refunds,
+    expected,
   };
 }
 
@@ -1718,10 +2224,11 @@ app.get('/api/staff/session/:workspace', requireCommandCenterAccess, (req, res) 
   });
 });
 
-app.post('/api/staff/shifts/open', requireCapability('ops.view'), (req, res) => {
+app.post('/api/staff/shifts/open', requireCapability('ops.view'), async (req, res) => {
   const branchId = parseBranchId(req) || defaultBranch()?.id || 1;
   const existing = activeStaffShift(req.user, branchId);
   if (existing) return res.json({ ok: true, idempotent: true, shift: existing });
+  const snapshot = snapshotFinanceMutationState();
   const shift = {
     id: nextId(db.staffShifts),
     phone: req.user.phone,
@@ -1732,99 +2239,289 @@ app.post('/api/staff/shifts/open', requireCapability('ops.view'), (req, res) => 
   };
   db.staffShifts.unshift(shift);
   recordAudit(req, 'shift.opened', 'shift', shift.id, {}, branchId);
-  save();
-  res.status(201).json({ ok: true, shift });
+  try {
+    await persistFinanceMutation(snapshot);
+    res.status(201).json({ ok: true, shift });
+  } catch (error) {
+    return res.status(error.status || 503).json({ error: error.code || 'shift_persistence_failed' });
+  }
 });
 
-app.post('/api/staff/shifts/close', requireCapability('ops.view'), (req, res) => {
+app.post('/api/staff/shifts/close', requireCapability('ops.view'), async (req, res) => {
   const branchId = parseBranchId(req) || defaultBranch()?.id || 1;
-  const shift = activeStaffShift(req.user, branchId);
-  if (!shift) return res.status(409).json({ error: 'shift_not_open' });
-  if (activeCashSession(req.user, branchId)) return res.status(409).json({ error: 'cash_drawer_still_open' });
-  shift.closedAt = new Date().toISOString();
-  recordAudit(req, 'shift.closed', 'shift', shift.id, {}, branchId);
-  save();
-  res.json({ ok: true, shift });
+  return withCashDrawerMutationLock(cashDrawerMutationQueueKey(req, branchId), async () => {
+    const shift = activeStaffShift(req.user, branchId);
+    if (!shift) return res.status(409).json({ error: 'shift_not_open' });
+    if (activeCashSession(req.user, branchId)) return res.status(409).json({ error: 'cash_drawer_still_open' });
+    const snapshot = snapshotFinanceMutationState();
+    shift.closedAt = new Date().toISOString();
+    recordAudit(req, 'shift.closed', 'shift', shift.id, {}, branchId);
+    try {
+      await persistFinanceMutation(snapshot);
+      return res.json({ ok: true, shift });
+    } catch (error) {
+      return res.status(error.status || 503).json({ error: error.code || 'shift_persistence_failed' });
+    }
+  });
 });
+
+// Cash drawer inputs are whole Toman amounts. Reject malformed values instead
+// of silently coercing them to zero, and keep retries tied to a durable key.
+function parseCashDrawerAmount(value, { allowZero = false } = {}) {
+  if (typeof value === 'number') {
+    return Number.isSafeInteger(value) && value >= (allowZero ? 0 : 1) ? value : null;
+  }
+  const normalized = normalizeDigits(String(value ?? '').trim());
+  if (!normalized || !/^(?:\d+|\d{1,3}(?:[,٬]\d{3})+)$/.test(normalized)) return null;
+  const amount = Number(normalized.replace(/[٬,]/g, ''));
+  return Number.isSafeInteger(amount) && amount >= (allowZero ? 0 : 1) ? amount : null;
+}
+
+function normalizeCashDrawerIdempotencyKey(headerValue, bodyValue) {
+  const header = String(headerValue || '').trim();
+  const body = String(bodyValue || '').trim();
+  if (header && body && header !== body) return { error: 'cash_movement_idempotency_invalid' };
+  const key = header || body;
+  if (!key) return { error: 'cash_movement_idempotency_required' };
+  if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{7,159}$/.test(key)) return { error: 'cash_movement_idempotency_invalid' };
+  return { key };
+}
+
+function cashDrawerMovementFingerprint({ tenantId, branchId, sessionId, phone, type, amount, note }) {
+  const request = JSON.stringify({
+    tenantId: String(tenantId || ''), branchId: Number(branchId), sessionId: String(sessionId),
+    phone: String(phone || ''), type: String(type), amount: Number(amount), note: String(note || ''),
+  });
+  return crypto.createHash('sha256').update(request).digest('hex');
+}
+
+function cashDrawerOpenRetry(session, openingAmount) {
+  if (!session) return { kind: 'new' };
+  return Number.isSafeInteger(Number(session.openingAmount))
+    && Number(session.openingAmount) === Number(openingAmount)
+    ? { kind: 'duplicate', session }
+    : { kind: 'conflict', session };
+}
+
+function findCashDrawerMovementRetry(session, key, fingerprint) {
+  const movement = (Array.isArray(session?.movements) ? session.movements : [])
+    .find((item) => item?.idempotencyKey === key);
+  if (!movement) return { kind: 'new' };
+  return movement.requestFingerprint === fingerprint
+    ? { kind: 'duplicate', movement }
+    : { kind: 'conflict', movement };
+}
+
+function cashDrawerPayOutExceedsAvailable(totals, amount) {
+  return !Number.isSafeInteger(totals?.expected)
+    || !Number.isSafeInteger(amount)
+    || amount <= 0
+    || amount > totals.expected;
+}
+
+const cashDrawerMutationQueues = new Map();
+function cashDrawerMutationQueueKey(req, branchId) {
+  const tenantId = String(req?.tenantId || '').trim();
+  const branch = Number(branchId);
+  const phone = String(req?.user?.phone || '').trim();
+  if (!tenantId || !Number.isSafeInteger(branch) || branch <= 0 || !phone) {
+    throw Object.assign(new Error('Cash drawer mutation identity is invalid.'), {
+      code: 'cash_drawer_lock_identity_invalid', status: 409,
+    });
+  }
+  return `${tenantId}:${branch}:${phone}`;
+}
+
+async function withCashDrawerMutationLock(key, task) {
+  const previous = cashDrawerMutationQueues.get(key) || Promise.resolve();
+  let release;
+  const current = new Promise((resolve) => { release = resolve; });
+  cashDrawerMutationQueues.set(key, current);
+  await previous.catch(() => {});
+  try {
+    return await task();
+  } finally {
+    release();
+    if (cashDrawerMutationQueues.get(key) === current) cashDrawerMutationQueues.delete(key);
+  }
+}
+
+async function withCashDrawerSettlementLock(req, orderId, operation) {
+  const tender = String(req?.body?.tender || 'cash');
+  const order = (db.orders || []).find((item) => Number(item.id) === Number(orderId));
+  const branchId = persistedOrderBranchId(order);
+  if (!order || branchId == null || tender !== 'cash') return operation();
+  return withCashDrawerMutationLock(cashDrawerMutationQueueKey(req, branchId), operation);
+}
 
 app.get('/api/cashier/drawer', requireCapability('cash.manage'), (req, res) => {
   const branchId = parseBranchId(req) || defaultBranch()?.id || 1;
-  const session = activeCashSession(req.user, branchId);
-  res.json({ session, totals: session ? cashSessionTotals(session) : null });
+  return withCashDrawerMutationLock(cashDrawerMutationQueueKey(req, branchId), async () => {
+    const session = activeCashSession(req.user, branchId);
+    const totals = session ? cashSessionTotals(session) : null;
+    if (session && !totals) return res.status(409).json({ error: 'cash_drawer_ledger_invalid', message: 'سابقهٔ صندوق قابل جمع‌بندی نیست؛ پیش از ادامه آن را تطبیق دهید.' });
+    return res.json({ session, totals });
+  });
 });
 
 app.post('/api/cashier/drawer/open', requireCapability('cash.manage'), async (req, res) => {
   const branchId = parseBranchId(req) || defaultBranch()?.id || 1;
-  const existing = activeCashSession(req.user, branchId);
-  if (existing) return res.json({ ok: true, idempotent: true, session: existing, totals: cashSessionTotals(existing) });
-  const snapshot = snapshotFinanceMutationState();
-  const openingAmount = Math.max(0, Math.round(Number(req.body?.openingAmount) || 0));
-  const session = {
-    id: nextId(db.cashSessions),
-    phone: req.user.phone,
-    branchId,
-    openingAmount,
-    openedAt: new Date().toISOString(),
-    closedAt: null,
-    movements: [],
-  };
-  try {
-    db.cashSessions.unshift(session);
-    recordAudit(req, 'cash_drawer.opened', 'cash_session', session.id, { openingAmount }, branchId);
-    await persistFinanceMutation(snapshot);
-    res.status(201).json({ ok: true, session, totals: cashSessionTotals(session) });
-  } catch (error) {
-    restoreFinanceMutationState(snapshot);
-    return res.status(error.status || 503).json({ error: error.code || error.message });
-  }
+  const openingAmount = parseCashDrawerAmount(req.body?.openingAmount, { allowZero: true });
+  if (openingAmount == null) return res.status(400).json({ error: 'cash_amount_invalid' });
+  const queueKey = cashDrawerMutationQueueKey(req, branchId);
+  return withCashDrawerMutationLock(queueKey, async () => {
+    if (!activeStaffShift(req.user, branchId)) {
+      return res.status(409).json({ error: 'staff_shift_not_open' });
+    }
+    const existing = activeCashSession(req.user, branchId);
+    const retry = cashDrawerOpenRetry(existing, openingAmount);
+    if (retry.kind === 'conflict') {
+      return res.status(409).json({ error: 'cash_drawer_opening_conflict', session: retry.session });
+    }
+    if (retry.kind === 'duplicate') {
+      const totals = cashSessionTotals(retry.session);
+      if (!totals) return res.status(409).json({ error: 'cash_drawer_ledger_invalid' });
+      return res.json({ ok: true, idempotent: true, session: retry.session, totals });
+    }
+    const snapshot = snapshotFinanceMutationState();
+    const session = {
+      id: nextId(db.cashSessions),
+      phone: req.user.phone,
+      branchId,
+      openingAmount,
+      openedAt: new Date().toISOString(),
+      closedAt: null,
+      movements: [],
+    };
+    try {
+      db.cashSessions.unshift(session);
+      recordAudit(req, 'cash_drawer.opened', 'cash_session', session.id, { openingAmount }, branchId);
+      await persistFinanceMutation(snapshot);
+      return res.status(201).json({ ok: true, session, totals: cashSessionTotals(session) });
+    } catch (error) {
+      restoreFinanceMutationState(snapshot);
+      return res.status(error.status || 503).json({ error: error.code || error.message });
+    }
+  });
 });
 
 app.post('/api/cashier/drawer/movements', requireCapability('cash.manage'), async (req, res) => {
   const branchId = parseBranchId(req) || defaultBranch()?.id || 1;
-  const session = activeCashSession(req.user, branchId);
-  if (!session) return res.status(409).json({ error: 'cash_drawer_not_open' });
   const type = String(req.body?.type || '');
   if (!['pay_in', 'pay_out'].includes(type)) return res.status(400).json({ error: 'cash_movement_invalid' });
-  const rawAmount = Math.max(1, Math.round(Number(req.body?.amount) || 0));
-  const snapshot = snapshotFinanceMutationState();
-  const movement = {
-    id: nextId(session.movements),
-    type,
-    amount: type === 'pay_out' ? -rawAmount : rawAmount,
-    note: String(req.body?.note || '').trim().slice(0, 160),
-    at: new Date().toISOString(),
-    by: req.user.phone,
-  };
-  try {
-    session.movements.unshift(movement);
-    recordAudit(req, `cash_drawer.${type}`, 'cash_session', session.id, { amount: movement.amount, note: movement.note }, branchId);
-    const financeResult = financeV2.captureCashMovement(db, session, movement, { actor: req.user.phone });
-    await persistFinanceMutation(snapshot);
-    res.status(201).json({ ok: true, movement, session, totals: cashSessionTotals(session), finance: financeResult });
-  } catch (error) {
-    restoreFinanceMutationState(snapshot);
-    return res.status(error.status || 503).json({ error: error.code || error.message });
-  }
+  const rawAmount = parseCashDrawerAmount(req.body?.amount);
+  if (rawAmount == null) return res.status(400).json({ error: 'cash_movement_amount_invalid' });
+  const idempotency = normalizeCashDrawerIdempotencyKey(req.get('Idempotency-Key'), req.body?.idempotencyKey);
+  if (idempotency.error) return res.status(400).json({ error: idempotency.error });
+  const note = String(req.body?.note || '').trim().slice(0, 160);
+  const queueKey = cashDrawerMutationQueueKey(req, branchId);
+  return withCashDrawerMutationLock(queueKey, async () => {
+    const session = activeCashSession(req.user, branchId);
+    if (!session) return res.status(409).json({ error: 'cash_drawer_not_open' });
+    const currentTotals = cashSessionTotals(session);
+    if (!currentTotals) return res.status(409).json({ error: 'cash_drawer_ledger_invalid', message: 'سابقهٔ صندوق معتبر نیست؛ تغییر جدید ثبت نشد.' });
+    const amount = type === 'pay_out' ? -rawAmount : rawAmount;
+    const requestFingerprint = cashDrawerMovementFingerprint({
+      tenantId: req.tenantId, branchId, sessionId: session.id, phone: req.user.phone, type, amount, note,
+    });
+    const retry = findCashDrawerMovementRetry(session, idempotency.key, requestFingerprint);
+    if (retry.kind === 'conflict') return res.status(409).json({ error: 'cash_movement_idempotency_conflict' });
+    if (retry.kind === 'duplicate') {
+      return res.json({
+        ok: true, idempotent: true, movement: retry.movement, session, totals: currentTotals,
+      });
+    }
+
+    if (type === 'pay_out' && cashDrawerPayOutExceedsAvailable(currentTotals, rawAmount)) {
+      return res.status(409).json({
+        error: 'cash_drawer_insufficient_funds',
+        available: Math.max(0, currentTotals.expected),
+        requested: rawAmount,
+        message: 'مبلغ خروج از وجه نقد قابل‌برداشت صندوق بیشتر است؛ مبلغ را کاهش دهید یا ورود نقدی ثبت کنید.',
+      });
+    }
+
+    const projectedTotals = cashSessionTotals({
+      ...session,
+      movements: [{ type, amount }, ...(Array.isArray(session.movements) ? session.movements : [])],
+    });
+    if (!projectedTotals) return res.status(409).json({ error: 'cash_drawer_ledger_invalid', message: 'جمع صندوق از محدودهٔ معتبر خارج می‌شود؛ تغییر ثبت نشد.' });
+
+    const snapshot = snapshotFinanceMutationState();
+    const movement = {
+      id: nextId(session.movements), type, amount, note,
+      idempotencyKey: idempotency.key, requestFingerprint,
+      at: new Date().toISOString(), by: req.user.phone,
+    };
+    try {
+      session.movements.unshift(movement);
+      recordAudit(req, `cash_drawer.${type}`, 'cash_session', session.id, { amount: movement.amount, note: movement.note }, branchId);
+      const financeResult = financeV2.captureCashMovement(db, session, movement, { actor: req.user.phone });
+      if (financeResult?.event) {
+        movement.financeEventId = financeResult.event.id;
+        movement.financeStatus = financeResult.event.status;
+        movement.financeErrorCode = financeResult.event.error?.code || null;
+      }
+      await persistFinanceMutation(snapshot);
+      return res.status(201).json({ ok: true, movement, session, totals: cashSessionTotals(session), finance: financeResult });
+    } catch (error) {
+      restoreFinanceMutationState(snapshot);
+      return res.status(error.status || 503).json({ error: error.code || error.message });
+    }
+  });
 });
 
 app.post('/api/cashier/drawer/close', requireCapability('cash.manage'), async (req, res) => {
   const branchId = parseBranchId(req) || defaultBranch()?.id || 1;
-  const session = activeCashSession(req.user, branchId);
-  if (!session) return res.status(409).json({ error: 'cash_drawer_not_open' });
-  const totals = cashSessionTotals(session);
-  const snapshot = snapshotFinanceMutationState();
-  session.countedAmount = Math.max(0, Math.round(Number(req.body?.countedAmount) || 0));
-  session.variance = session.countedAmount - totals.expected;
-  session.closedAt = new Date().toISOString();
-  recordAudit(req, 'cash_drawer.closed', 'cash_session', session.id, { countedAmount: session.countedAmount, variance: session.variance }, branchId);
-  try {
-    const financeResult = financeV2.captureCashClose(db, session, { actor: req.user.phone });
-    await persistFinanceMutation(snapshot);
-    res.json({ ok: true, session, totals: { ...totals, counted: session.countedAmount, variance: session.variance }, finance: financeResult });
-  } catch (error) {
-    restoreFinanceMutationState(snapshot);
-    return res.status(error.status || 503).json({ error: error.code || error.message });
-  }
+  const countedAmount = parseCashDrawerAmount(req.body?.countedAmount, { allowZero: true });
+  if (countedAmount == null) return res.status(400).json({ error: 'cash_counted_amount_invalid' });
+  const queueKey = cashDrawerMutationQueueKey(req, branchId);
+  return withCashDrawerMutationLock(queueKey, async () => {
+    const session = activeCashSession(req.user, branchId);
+    const requestedSessionId = String(req.body?.sessionId || '').trim();
+    if (session && requestedSessionId && String(session.id) !== requestedSessionId) {
+      return res.status(409).json({ error: 'cash_drawer_session_changed' });
+    }
+    const closedSession = session || (requestedSessionId
+      ? (db.cashSessions || []).find((item) => String(item.id) === requestedSessionId
+        && String(item.phone) === String(req.user.phone)
+        && Number(item.branchId) === Number(branchId)
+        && item.closedAt)
+      : null);
+    if (!closedSession) return res.status(409).json({ error: 'cash_drawer_not_open' });
+    const requestFingerprint = cashDrawerMovementFingerprint({
+      tenantId: req.tenantId, branchId, sessionId: closedSession.id,
+      phone: req.user.phone, type: 'close', amount: countedAmount, note: '',
+    });
+    if (closedSession.closeRequestFingerprint) {
+      if (closedSession.closeRequestFingerprint !== requestFingerprint) {
+        return res.status(409).json({ error: 'cash_drawer_close_idempotency_conflict' });
+      }
+      const closedTotals = cashSessionTotals(closedSession);
+      if (!closedTotals) return res.status(409).json({ error: 'cash_drawer_ledger_invalid' });
+      return res.json({
+        ok: true, idempotent: true, session: closedSession,
+        totals: { ...closedTotals, counted: closedSession.countedAmount, variance: closedSession.variance },
+      });
+    }
+    if (!session) return res.status(409).json({ error: 'cash_drawer_not_open' });
+    const totals = cashSessionTotals(session);
+    if (!totals) return res.status(409).json({ error: 'cash_drawer_ledger_invalid', message: 'سابقهٔ صندوق معتبر نیست؛ بستن صندوق انجام نشد.' });
+    const snapshot = snapshotFinanceMutationState();
+    session.countedAmount = countedAmount;
+    session.variance = session.countedAmount - totals.expected;
+    session.closedAt = new Date().toISOString();
+    session.closeRequestFingerprint = requestFingerprint;
+    recordAudit(req, 'cash_drawer.closed', 'cash_session', session.id, { countedAmount: session.countedAmount, variance: session.variance }, branchId);
+    try {
+      const financeResult = financeV2.captureCashClose(db, session, { actor: req.user.phone });
+      await persistFinanceMutation(snapshot);
+      return res.json({ ok: true, session, totals: { ...totals, counted: session.countedAmount, variance: session.variance }, finance: financeResult });
+    } catch (error) {
+      restoreFinanceMutationState(snapshot);
+      return res.status(error.status || 503).json({ error: error.code || error.message });
+    }
+  });
 });
 
 registerAdminV2Routes({
@@ -1834,9 +2531,12 @@ registerAdminV2Routes({
   requireCapability,
   requireAdmin,
   parseBranchId,
+  requestBranchValue,
+  effectiveRole,
   normalizeDigits,
   phoneRe: PHONE_RE,
   recordAudit,
+  appendAudit: appendAuditAfterCommit,
 });
 
 financeV2.registerFinanceV2Routes({
@@ -1885,27 +2585,70 @@ registerAccountingRoutes({
 });
 
 app.get('/api/tenant/context', (req, res) => {
-  res.json({ ok: true, tenant: publicTenantContext(TENANT_CONFIG) });
+  const identity = db.tenantIdentity || {};
+  res.json({
+    ok: true,
+    tenant: publicTenantContext({
+      ...TENANT_CONFIG,
+      tenantId: req.tenantId || identity.tenantId || TENANT_CONFIG.tenantId,
+      tenantSlug: req.tenantSlug || identity.tenantSlug || TENANT_CONFIG.tenantSlug,
+      displayName: identity.displayName || db.restaurant?.name || TENANT_CONFIG.displayName,
+      canonicalDomain: identity.canonicalDomain || TENANT_CONFIG.canonicalDomain,
+    }),
+  });
 });
 
-// NEEM remains a separate operations application so its React runtime and
+// SALSA remains a separate operations application so its React runtime and
 // finance database can never interfere with the public 3D menu runtime.
-app.get('/api/admin/neem-integration', requireCapability('admin.access'), (req, res) => {
-  res.json({ ok: true, integration: neemBridge.status() });
-});
+const handleIntegrationStatus = (req, res) => {
+  res.json({ ok: true, integration: salsaBridge.status() });
+};
+const handleIntegrationRetry = (req, res) => {
+  salsaBridge.retry();
+  res.json({ ok: true, integration: salsaBridge.status() });
+};
+const handleIntegrationBackfill = (req, res) => {
+  const queued = salsaBridge.queueBackfill();
+  res.json({ ok: true, queued, integration: salsaBridge.status() });
+};
 
-app.post('/api/admin/neem-integration/retry', requireCapability('admin.access'), (req, res) => {
-  neemBridge.retry();
-  res.json({ ok: true, integration: neemBridge.status() });
-});
-
-app.post('/api/admin/neem-integration/backfill', requireCapability('admin.access'), (req, res) => {
-  const queued = neemBridge.queueBackfill();
-  res.json({ ok: true, queued, integration: neemBridge.status() });
-});
-
-// Dynamic Feature Control from NEEM God Mode & Health Check
 app.use((req, res, next) => {
+  if (req.url && req.url.startsWith('/api/admin/salsa-integration')) {
+    req.url = req.url.replace('/api/admin/salsa-integration', '/api/admin/neem-integration');
+  }
+  next();
+});
+
+app.get('/api/admin/neem-integration', requireCapability('admin.access'), handleIntegrationStatus);
+app.post('/api/admin/neem-integration/retry', requireCapability('admin.access'), handleIntegrationRetry);
+app.post('/api/admin/neem-integration/backfill', requireCapability('admin.access'), handleIntegrationBackfill);
+
+// Dynamic Feature Control from SALSA God Mode & Health Check
+app.use((req, res, next) => {
+  if (req.path === '/api/ready' && ['GET', 'HEAD'].includes(req.method)) {
+    void (async () => {
+      const databasePing = await stateStore.ping();
+      const readiness = runtimeReadiness({
+        nodeEnv: process.env.NODE_ENV,
+        postgresEnabled: stateStore.enabled,
+        postgresRequired: stateStore.required,
+        databasePing,
+        financeStatus: stateStore.financeStatus(),
+        settlementGate: settlementPersistenceGate.check({
+          postgresEnabled: stateStore.enabled,
+          postgresRequired: stateStore.required,
+        }),
+      });
+      return res.status(readiness.ok ? 200 : 503).json({
+        ...readiness,
+        app: 'WESTO',
+        version: '1.2.0',
+        timestamp: new Date().toISOString(),
+      });
+    })().catch(next);
+    return;
+  }
+
   if (req.path === '/api/health') {
     const origin = String(req.headers.origin || '');
     if (origin) {
@@ -1922,7 +2665,7 @@ app.use((req, res, next) => {
       app: 'WESTO',
       version: '1.2.0',
       port: PORT,
-      database: process.env.DATABASE_URL ? 'connected (postgresql:5433)' : 'memory',
+      database: stateStore.enabled ? 'postgresql-configured' : 'memory-fallback',
       timestamp: new Date().toISOString()
     });
   }
@@ -1932,14 +2675,73 @@ app.use((req, res, next) => {
     if (origin && (origin.includes(':3050') || origin.includes(':3061') || origin.includes('localhost') || origin.includes('127.0.0.1'))) {
       res.setHeader('Access-Control-Allow-Origin', origin);
       res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Request-Id, Authorization, X-Neem-Control-Secret, X-Tenant-Id, X-Tenant-Slug');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Request-Id, Authorization, X-Salsa-Control-Secret, X-Neem-Control-Secret, X-Tenant-Id, X-Tenant-Slug');
     }
   };
 
-  if (req.path === '/api/admin/features' && req.method === 'GET') {
+  if (req.path === '/api/admin/live-summary' && req.method === 'OPTIONS') {
     applyAdminCors();
-    const targetTenant = req.query.tenantId || req.tenantSlug || 'westo';
+    return res.sendStatus(204);
+  }
+
+  if (req.path === '/api/admin/live-summary' && req.method === 'GET') {
+    applyAdminCors();
+    const hasBridgeCredential = hasControlPlaneBridgeCredential(req);
+    if (!hasBridgeCredential && !isTrustedLocalControlPlaneOrigin(req)) {
+      return res.status(401).json({ ok: false, error: 'control_plane_bridge_required' });
+    }
+    const requestTenant = normalizeTenantId(req.tenantContext?.tenantId || req.tenantSlug || TENANT_CONFIG.tenantId);
+    const targetTenant = normalizeTenantId(req.query.tenantId || requestTenant);
+    if (!targetTenant) return res.status(400).json({ ok: false, error: 'tenant_id_invalid' });
+    if (targetTenant !== requestTenant && !hasBridgeCredential && !isTrustedLocalControlPlaneOrigin(req)) {
+      return res.status(403).json({ ok: false, error: 'tenant_scope_denied' });
+    }
     const targetDb = tenantRegistry.getTenantDb(targetTenant);
+    if (!targetDb) {
+      return res.status(404).json({ ok: false, error: 'tenant_not_registered' });
+    }
+    const orders = Array.isArray(targetDb.orders) ? targetDb.orders : [];
+    const totalRevenue = orders.reduce((sum, o) => sum + Number(o.total || 0), 0);
+    const users = (Array.isArray(targetDb.users) ? targetDb.users : []).map(u => ({
+      id: u.id,
+      name: u.name || 'پرسنل مجموعه',
+      phone: u.phone || '',
+      role: u.role || 'staff',
+      active: u.active !== false
+    }));
+    return res.json({
+      ok: true,
+      tenantId: targetTenant,
+      name: targetDb.restaurant?.name || 'کافه رستوران وستو',
+      status: 'active',
+      menuItemsCount: (targetDb.menuItems || []).length,
+      categoriesCount: (targetDb.menuCategories || []).length,
+      ordersCount: orders.length,
+      tablesCount: (targetDb.tables || []).length,
+      branchesCount: (targetDb.branches || []).length || 1,
+      usersCount: users.length,
+      users,
+      totalRevenue,
+      devicesCount: 4,
+      features: targetDb.featureEntitlements || {},
+      printers: targetDb.settings?.printers || [],
+      lastBackup: new Date().toISOString(),
+      timestamp: new Date().toISOString()
+    });
+  }
+
+  if ((req.path === '/api/admin/features' || req.path === '/api/features' || req.path === '/api/admin/features/current') && req.method === 'GET') {
+    applyAdminCors();
+    const hasBridgeCredential = hasControlPlaneBridgeCredential(req);
+    const localControlPlane = isTrustedLocalControlPlaneOrigin(req);
+    const requestTenant = normalizeTenantId(req.tenantContext?.tenantId || req.tenantSlug || TENANT_CONFIG.tenantId);
+    const targetTenant = normalizeTenantId(req.query.tenantId || requestTenant);
+    if (!targetTenant) return res.status(400).json({ ok: false, error: 'tenant_id_invalid' });
+    if (targetTenant !== requestTenant && !hasBridgeCredential && !localControlPlane) {
+      return res.status(403).json({ ok: false, error: 'tenant_scope_denied' });
+    }
+    const targetDb = tenantRegistry.getTenantDb(targetTenant);
+    if (!targetDb) return res.status(404).json({ ok: false, error: 'tenant_not_registered' });
     return res.json({
       ok: true,
       tenantId: targetTenant,
@@ -1954,48 +2756,65 @@ app.use((req, res, next) => {
 
   if (req.path === '/api/admin/features/toggle' && req.method === 'POST') {
     applyAdminCors();
-
-    const origin = String(req.headers.origin || '');
-    const originHost = (() => { try { return new URL(origin).host; } catch (_) { return ''; } })();
-    const isFromNeemPlatform = originHost.includes(':3050') || originHost.includes(':3061');
-
-    const user = currentUser(req);
-    const authHeader = String(req.headers.authorization || '');
-    const controlSecret = String(req.headers['x-neem-control-secret'] || '');
-    const expectedSecret = process.env.NEEM_CONTROL_SECRET || SECRET;
-    const isControlSecretValid = controlSecret && expectedSecret && controlSecret === expectedSecret;
-    const isBearerSecretValid = authHeader && expectedSecret && authHeader.trim() === `Bearer ${expectedSecret}`;
-    const isAdminUser = Boolean(user && (user.role === 'admin' || user.role === 'owner' || (db.settings?.adminPhones || []).includes(user.phone)));
-
-    if (!isAdminUser && !isControlSecretValid && !isBearerSecretValid && !isFromNeemPlatform) {
+    const hasBridgeCredential = hasControlPlaneBridgeCredential(req);
+    const localControlPlane = isTrustedLocalControlPlaneOrigin(req);
+    if (!hasBridgeCredential && !localControlPlane) {
       return res.status(401).json({
         ok: false,
-        error: 'unauthorized',
-        message: 'تغییر وضعیت قابلیت‌ها در کاتالوگ نیازمند احراز هویت مدیریتی معتبر است.'
+        error: 'control_plane_bridge_required',
+        message: 'تغییر قابلیت‌ها فقط از مسیر احراز‌شدهٔ کنترل پلتفرم انجام می‌شود.'
       });
     }
 
-    const { featureKey, enabled, tenantId } = req.body || {};
-    if (!featureKey) {
+    const { featureKey, featureKeys, enabled, tenantId } = req.body || {};
+    const requestedKeys = Array.isArray(featureKeys) && featureKeys.length
+      ? [...new Set(featureKeys)]
+      : (featureKey ? [featureKey] : []);
+    if (!requestedKeys.length) {
       return res.status(400).json({ ok: false, error: 'featureKey_required' });
     }
+    if (requestedKeys.length > CANONICAL_FEATURES.length || requestedKeys.some(key => typeof key !== 'string')) {
+      return res.status(400).json({ ok: false, error: 'invalid_feature_keys' });
+    }
+    const canonicalKeys = new Set(CANONICAL_FEATURES.map(feature => feature.key));
+    const unknownKeys = requestedKeys.filter(key => !canonicalKeys.has(key));
+    if (unknownKeys.length) {
+      return res.status(422).json({ ok: false, error: 'unknown_feature_keys', featureKeys: unknownKeys });
+    }
 
-    const targetTenant = tenantId || req.tenantSlug || 'westo';
+    const requestTenant = normalizeTenantId(req.tenantContext?.tenantId || req.tenantSlug || TENANT_CONFIG.tenantId);
+    const targetTenant = normalizeTenantId(tenantId || requestTenant);
+    if (!targetTenant) return res.status(400).json({ ok: false, error: 'tenant_id_invalid' });
+    if (targetTenant !== requestTenant && !hasBridgeCredential && !localControlPlane) {
+      return res.status(403).json({ ok: false, error: 'tenant_scope_denied' });
+    }
+    const persistenceError = legacyTenantPersistenceError({ tenantId: targetTenant });
+    if (persistenceError) {
+      return res.status(persistenceError.status).json({ ok: false, error: persistenceError.code, message: persistenceError.message });
+    }
     const targetDb = tenantRegistry.getTenantDb(targetTenant);
+    if (!targetDb) {
+      return res.status(404).json({ ok: false, error: 'tenant_not_registered' });
+    }
     if (!targetDb.featureEntitlements) targetDb.featureEntitlements = {};
-    targetDb.featureEntitlements[featureKey] = {
-      active: Boolean(enabled),
-      status: enabled ? 'active' : 'disabled',
-      updatedAt: new Date().toISOString()
-    };
+    const updatedAt = new Date().toISOString();
+    for (const key of requestedKeys) {
+      targetDb.featureEntitlements[key] = {
+        active: Boolean(enabled),
+        status: enabled ? 'active' : 'disabled',
+        updatedAt
+      };
+    }
     tenantRegistry.saveTenantDb(targetTenant);
 
     return res.json({
       ok: true,
       tenantId: targetTenant,
-      featureKey,
+      featureKey: requestedKeys[0],
+      featureKeys: requestedKeys,
       enabled: Boolean(enabled),
-      message: `قابلیت ${featureKey} برای مستأجر ${targetTenant} به وضعیت ${enabled ? 'فعال' : 'غیرفعال'} تغییر یافت.`
+      updatedAt,
+      message: `${requestedKeys.length} قابلیت برای مستأجر ${targetTenant} به وضعیت ${enabled ? 'فعال' : 'غیرفعال'} تغییر یافت.`
     });
   }
 
@@ -2012,36 +2831,32 @@ app.use((req, res, next) => {
 
   if (req.path === '/api/admin/tenants/provision' && req.method === 'POST') {
     applyAdminCors();
-
-    const origin = String(req.headers.origin || '');
-    const originHost = (() => { try { return new URL(origin).host; } catch (_) { return ''; } })();
-    const isFromNeemPlatform = originHost.includes(':3050') || originHost.includes(':3061');
-
-    const user = currentUser(req);
-    const authHeader = String(req.headers.authorization || '');
-    const controlSecret = String(req.headers['x-neem-control-secret'] || '');
-    const expectedSecret = process.env.NEEM_CONTROL_SECRET || SECRET;
-    const isControlSecretValid = controlSecret && expectedSecret && controlSecret === expectedSecret;
-    const isBearerSecretValid = authHeader && expectedSecret && authHeader.trim() === `Bearer ${expectedSecret}`;
-    const isAdminUser = Boolean(user && (user.role === 'admin' || user.role === 'owner' || (db.settings?.adminPhones || []).includes(user.phone)));
-
-    if (!isAdminUser && !isControlSecretValid && !isBearerSecretValid && !isFromNeemPlatform) {
+    const hasBridgeCredential = hasControlPlaneBridgeCredential(req);
+    const localControlPlane = isTrustedLocalControlPlaneOrigin(req);
+    if (!hasBridgeCredential && !localControlPlane) {
       return res.status(401).json({
         ok: false,
-        error: 'unauthorized',
-        message: 'ایجاد مستأجر جدید نیازمند احراز هویت معتبر است.'
+        error: 'control_plane_bridge_required',
+        message: 'ایجاد tenant فقط از مسیر احراز‌شدهٔ کنترل پلتفرم انجام می‌شود.'
       });
     }
 
-    const { tenantId, name, brandName, domain, enabledFeatures } = req.body || {};
+    const input = req.body || {};
+    const tenantId = normalizeTenantId(input.tenantId);
+    const { name, brandName, domain, enabledFeatures } = input;
     if (!tenantId) {
       return res.status(400).json({ ok: false, error: 'tenantId_required' });
+    }
+
+    const persistenceError = legacyTenantPersistenceError({ tenantId });
+    if (persistenceError) {
+      return res.status(persistenceError.status).json({ ok: false, error: persistenceError.code, message: persistenceError.message });
     }
 
     const cleanDb = tenantRegistry.createTenant(tenantId, {
       name: name || brandName || tenantId,
       brandName: brandName || name || tenantId,
-      domain: domain || `${tenantId}.neem.ir`,
+      domain: domain || `${tenantId}.salsa.ir`,
       enabledFeatures: Array.isArray(enabledFeatures) ? enabledFeatures : ['core.workspace', 'catalog.menu']
     });
 
@@ -2049,13 +2864,16 @@ app.use((req, res, next) => {
       ok: true,
       tenantId,
       name: cleanDb.settings?.restaurantName,
-      domain: `${tenantId}.neem.ir`,
-      message: `مستأجر خام «${tenantId}» با موفقیت ایجاد شد و آماده پیکربندی از مرکز فرماندهی NEEM است.`
+      domain: `${tenantId}.salsa.ir`,
+      message: `مستأجر خام «${tenantId}» با موفقیت ایجاد شد و آماده پیکربندی از مرکز فرماندهی SALSA است.`
     });
   }
 
   if (req.path === '/api/admin/tenants' && req.method === 'GET') {
     applyAdminCors();
+    if (!hasControlPlaneBridgeCredential(req) && !isTrustedLocalControlPlaneOrigin(req)) {
+      return res.status(401).json({ ok: false, error: 'control_plane_bridge_required' });
+    }
     const list = tenantRegistry.listTenants();
     return res.json({
       ok: true,
@@ -2067,24 +2885,25 @@ app.use((req, res, next) => {
 });
 
 app.get('/ops', requireCapability('admin.access'), (req, res) => {
-  const target = process.env.NEEM_OPS_URL || 'http://127.0.0.1:3061/console/';
+  const target = process.env.SALSA_OPS_URL || process.env.NEEM_OPS_URL || 'http://127.0.0.1:3050/#overview';
   res.redirect(302, target);
 });
 
-// Deep links keep the relevant NEEM workspace reachable from the matching
+// Deep links keep the relevant SALSA workspace reachable from the matching
 // WESTO admin section while the two runtimes remain isolated.
-const NEEM_OPERATION_VIEWS = new Set([
+const SALSA_OPERATION_VIEWS = new Set([
   'tables', 'customers', 'marketing', 'reservations', 'waiter-panel',
   'fin-overview', 'fin-sales', 'fin-cash-drawers', 'fin-settlements',
   'fin-journal', 'fin-gl', 'fin-coa', 'fin-trial-balance', 'fin-reports',
   'fin-period-close', 'fin-command-center', 'fin-expenses', 'fin-bank-feed',
   'fin-three-way-match', 'fin-tax-matrix',
 ]);
+const NEEM_OPERATION_VIEWS = SALSA_OPERATION_VIEWS;
 
 app.get('/ops/:view', requireCapability('admin.access'), (req, res) => {
   const view = String(req.params.view || '');
-  if (!NEEM_OPERATION_VIEWS.has(view)) return res.status(404).json({ error: 'unknown_neem_view' });
-  const base = (process.env.NEEM_OPS_URL || 'http://127.0.0.1:3061/console/').replace(/\/?(?:#.*)?$/, '');
+  if (!SALSA_OPERATION_VIEWS.has(view)) return res.status(404).json({ error: 'unknown_salsa_view' });
+  const base = (process.env.SALSA_OPS_URL || process.env.NEEM_OPS_URL || 'http://127.0.0.1:3050').replace(/\/?(?:#.*)?$/, '');
   res.redirect(302, `${base}/#${encodeURIComponent(view)}`);
 });
 
@@ -2137,7 +2956,7 @@ app.post('/api/auth/request-otp', (req, res) => {
   });
   otpRequestTimestamps.set(phone, now);
 
-  const demoOtp = process.env.OTP_DEMO_MODE === 'true' || process.env.NODE_ENV !== 'production';
+  const demoOtp = isOtpDemoMode(process.env);
   if (!demoOtp) {
     otps.delete(phone);
     return res.status(503).json({ error: 'ارسال OTP در محیط تولید هنوز پیکربندی نشده است' });
@@ -2172,26 +2991,43 @@ app.post('/api/auth/verify-otp', (req, res) => {
   }
   otps.delete(phone);
 
+  // [TEMPORARILY DISABLED] platform-admin login restriction
+  // if (PLATFORM_ONLY_PHONE_IDENTITIES.has(phone)
+  //     || (Array.isArray(db.users) && db.users.some((candidate) =>
+  //       normalizeDigits(String(candidate.phone || '')).trim() === phone && candidate.principalType === 'platform_admin'))) {
+  //   return res.status(403).json({ error: 'separate_platform_account_required', message: 'حساب راهبر پلتفرم با حساب مالک رستوران جداست.' });
+  // }
+
+  if (!Array.isArray(db.users)) db.users = [];
+  if (!db.settings) db.settings = { adminPhones: [] };
+  if (!Array.isArray(db.settings.adminPhones)) db.settings.adminPhones = [];
+  if (!Array.isArray(db.loginLog)) db.loginLog = [];
+
   let user = db.users.find((u) => u.phone === phone);
+  const isAdmin = Array.isArray(db.settings.adminPhones) && db.settings.adminPhones.includes(phone);
   if (!user) {
     user = {
       phone,
       name: '',
       email: '',
-      role: db.settings.adminPhones.includes(phone) ? 'admin' : 'user',
+      role: isAdmin ? 'owner' : 'user',
       points: 0,
       createdAt: new Date().toISOString(),
       blocked: false,
     };
     db.users.push(user);
-    awardLoyaltyPoints(phone, db.loyalty.welcomePoints, 'welcome');
+    if (db.loyalty && db.loyalty.welcomePoints) {
+      awardLoyaltyPoints(phone, db.loyalty.welcomePoints, 'welcome');
+    }
   }
+  // [DEV] Sync role with adminPhones on every login
+  if (isAdmin && user.role !== 'owner') user.role = 'owner';
   user.lastLoginAt = new Date().toISOString();
   db.loginLog.unshift({ phone, at: user.lastLoginAt });
   db.loginLog = db.loginLog.slice(0, 200);
   save();
   const secureCookie = req.secure || String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim() === 'https';
-  const token = makeToken(phone);
+  const token = makeToken(phone, req.tenantId || req.tenant?.tenantId || req.tenant?.tenantSlug);
   res.setHeader('Set-Cookie', `westo_session=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${Math.floor(SESSION_TTL_MS / 1000)}${secureCookie ? '; Secure' : ''}`);
   res.json({ ok: true, user: publicUser(user), token });
 });
@@ -2487,29 +3323,26 @@ app.post('/api/user/feedback', requireAuth, (req, res) => {
 });
 
 // --- content ---
-function menuCategoryTitleForItem(item) {
-  const category = (db.menuCategories || []).find((entry) => Number(entry.id) === Number(item?.categoryId));
-  return category?.title || category?.name || '';
-}
-
 // Keep the catalogue response self-contained so every consumer (public menu,
-// admin editor, waiter and cashier) sees the same dish-specific choices.  A
-// missing field receives a contextual suggestion; an explicit [] remains an
-// intentional "no preferences" configuration.
+// admin editor, waiter and cashier) sees the same explicitly configured
+// choices. Missing configuration means no modifiers; it must never synthesize
+// saleable options or prices from product names.
 function menuItemForResponse(item) {
   return {
     ...item,
-    modifierGroups: effectiveModifierGroupsForItem(item, menuCategoryTitleForItem(item)),
+    modifierGroups: effectiveModifierGroupsForItem(item),
   };
 }
 
 function publicGuestMenuPayload(query = {}) {
   let items = db.menuItems;
-  const branch = resolveBranch(query.branchId || query.branch);
+  const requestedBranch = query.branchId || query.branch;
+  const branch = requestedBranch ? resolveBranchExact(requestedBranch) : defaultBranch();
   const branchId = branch?.id || null;
+  if (branchId) items = items.filter((item) => menuItemBelongsToBranch(item, branchId));
   if (!query.all) {
     items = items.filter((m) => {
-      if (m.available === false || !itemVisibleNow(m)) return false;
+      if (!menuItemAvailableForBranch(db, m, branchId) || !itemVisibleNow(m)) return false;
       if (typeof m.stock === 'number' && m.stock <= 0) return false;
       const availability = branchId ? financeV2.menuItemAvailability(db, m.id, branchId) : null;
       if (availability?.tracked && !availability.available && db.settings?.enforceInventoryStock) return false;
@@ -2532,7 +3365,10 @@ function publicGuestMenuPayload(query = {}) {
 
   return {
     menuCategories: db.menuCategories,
-    menuItems: items.map(menuItemForResponse),
+    menuItems: items.map((item) => ({
+      ...menuItemForResponse(item),
+      available: menuItemAvailableForBranch(db, item, branchId),
+    })),
     siteCategories: activeMenuCategories(db),
     menuRevision: db.menuRevision || 0,
     allergens: ALLERGENS,
@@ -2628,8 +3464,25 @@ app.put('/api/products/:id', requireAdmin, (req, res) => {
 });
 
 // --- menu items (orderable dishes) ---
-app.get('/api/menu', (req, res) => {
-  res.json(publicGuestMenuPayload(req.query || {}));
+app.get('/api/menu', async (req, res) => {
+  try {
+    const requestedBranch = req.query?.branchId || req.query?.branch;
+    if (requestedBranch && !resolveBranchExact(requestedBranch)) {
+      return res.status(400).json({ error: 'branch_invalid', message: 'شعبهٔ انتخاب‌شده معتبر نیست.' });
+    }
+    if (tenantConnectionManager?.baseUrl && req.tenantDataAccess && req.tenantContext?.databaseProvider === 'postgres') {
+      const pgItems = await tenantMenuRepository.listMenuItems(req.tenantDataAccess);
+      db.menuItems = pgItems;
+      const pgCategories = await tenantMenuRepository.listCategories(req.tenantDataAccess);
+      if (pgCategories.length > 0) {
+        db.menuCategories = pgCategories;
+      }
+    }
+    res.json(publicGuestMenuPayload(req.query || {}));
+  } catch (err) {
+    console.error('[Menu GET Error]', err);
+    res.status(500).json({ ok: false, error: 'menu_retrieval_failed', message: 'دریافت منو موقتاً با مشکل روبه‌رو شد.' });
+  }
 });
 
 function complementRulesForMenuItem(menuItem) {
@@ -2648,7 +3501,7 @@ function staffMenuPayload(branchToken = null) {
     menuItems: (db.menuItems || []).map((item) => {
       const availability = branchId ? financeV2.menuItemAvailability(db, item.id, branchId) : null;
       const resp = menuItemForResponse(item);
-      resp.available = item.available !== false;
+      resp.available = menuItemAvailableForBranch(db, item, branchId);
       resp.inventoryTracked = Boolean(availability?.tracked);
       resp.inventoryAvailable = availability ? Boolean(availability.available) : true;
       resp.capacity = availability && Number.isFinite(availability.capacity) ? availability.capacity : null;
@@ -2907,7 +3760,7 @@ function assertVisibleCategoryCover(cat) {
 }
 
 /* Category CRUD — register before /api/menu/:id */
-app.post('/api/menu/categories', requireAdmin, (req, res) => {
+app.post('/api/menu/categories', requireAdmin, async (req, res) => {
   if (!Array.isArray(db.menuCategories)) db.menuCategories = [];
   const title = String(req.body.title || '').trim().slice(0, 80);
   if (!title) return res.status(400).json({ error: 'عنوان دسته لازم است' });
@@ -2930,6 +3783,13 @@ app.post('/api/menu/categories', requireAdmin, (req, res) => {
   const coverErr = assertVisibleCategoryCover(cat);
   if (coverErr) return res.status(400).json({ error: coverErr });
   db.menuCategories.push(cat);
+  if (tenantConnectionManager?.baseUrl && req.tenantDataAccess && req.tenantContext?.databaseProvider === 'postgres') {
+    try {
+      await tenantMenuRepository.createCategory(req.tenantDataAccess, cat);
+    } catch (err) {
+      console.warn?.('[Tenant Category Persist Warning]', err.message);
+    }
+  }
   save({ rebuildProducts: true });
   res.json({ ok: true, category: cat, menuCategories: db.menuCategories, products: db.products });
 });
@@ -2998,7 +3858,7 @@ app.delete('/api/menu/categories/:id', requireAdmin, (req, res) => {
   res.json({ ok: true, menuCategories: db.menuCategories, products: db.products });
 });
 
-app.put('/api/menu/:id', requireAdmin, (req, res) => {
+app.put('/api/menu/:id', requireAdmin, async (req, res) => {
   const targetId = Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
   const item = (db.menuItems || []).find((m) => Number(m.id) === targetId);
   if (!item) return res.status(404).json({ error: 'not found' });
@@ -3010,6 +3870,25 @@ app.put('/api/menu/:id', requireAdmin, (req, res) => {
       error: 'این غذا هم‌زمان از جای دیگری تغییر کرده — صفحه را تازه کنید',
       item,
     });
+  }
+  const hasModifierGroupInput = Object.prototype.hasOwnProperty.call(req.body || {}, 'modifierGroups');
+  let validatedModifierGroups = null;
+  if (hasModifierGroupInput) {
+    if (!Array.isArray(req.body.modifierGroups)) {
+      return res.status(400).json({
+        error: 'modifier_groups_invalid',
+        message: 'فهرست گزینه‌های کالا باید به‌صورت آرایه ارسال شود.',
+      });
+    }
+    const validation = validateModifierGroupDefinitions(req.body.modifierGroups);
+    if (!validation.ok) {
+      return res.status(400).json({
+        error: 'modifier_configuration_invalid',
+        message: 'تنظیم گزینه‌های این کالا معتبر نیست؛ گروه‌ها و قیمت گزینه‌ها را بررسی کنید.',
+        details: validation.errors,
+      });
+    }
+    validatedModifierGroups = validation.groups;
   }
   const parseNum = (v) => {
     if (v == null || v === '') return null;
@@ -3037,7 +3916,7 @@ app.put('/api/menu/:id', requireAdmin, (req, res) => {
   if (typeof req.body.available === 'boolean') item.available = req.body.available;
   if (Array.isArray(req.body.allergens)) item.allergens = normalizeAllergens(req.body.allergens);
   if (Array.isArray(req.body.dayparts)) item.dayparts = normalizeDayparts(req.body.dayparts);
-  if (Array.isArray(req.body.modifierGroups)) item.modifierGroups = normalizeModifierGroups(req.body.modifierGroups, []);
+  if (hasModifierGroupInput) item.modifierGroups = validatedModifierGroups;
   if (req.body.stock === null || req.body.stock === '') item.stock = null;
   else {
     const rawStock = parseNum(req.body.stock);
@@ -3050,12 +3929,96 @@ app.put('/api/menu/:id', requireAdmin, (req, res) => {
   if (rawLow != null && rawLow >= 0) {
     item.lowStockAt = Math.round(rawLow);
   }
+  if (Array.isArray(req.body.dietary)) {
+    item.dietary = req.body.dietary.map((t) => String(t || '').trim()).filter(Boolean).slice(0, 10);
+  }
+  const rawPrep = parseNum(req.body.prepTime ?? req.body.prepTimeMinutes);
+  if (rawPrep != null && rawPrep >= 0) {
+    item.prepTime = Math.round(rawPrep);
+  }
+  item.updatedAt = Date.now();
+  if (tenantConnectionManager?.baseUrl && req.tenantDataAccess && req.tenantContext?.databaseProvider === 'postgres') {
+    try {
+      await tenantMenuRepository.updateMenuItem(req.tenantDataAccess, targetId, item);
+    } catch (err) {
+      console.error('[Tenant Menu Update Error]', err);
+      return res.status(500).json({ ok: false, error: 'menu_persist_failed', message: err.message });
+    }
+  }
+  save({ rebuildProducts: true });
+  res.json({ ok: true, item: menuItemForResponse(item) });
+});
+
+app.patch('/api/menu/:id', requireAdmin, async (req, res) => {
+  const targetId = Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
+  const item = (db.menuItems || []).find((m) => Number(m.id) === targetId);
+  if (!item) return res.status(404).json({ error: 'not found' });
+  const parseNum = (v) => {
+    if (v == null || v === '') return null;
+    if (typeof v === 'number') return isNaN(v) ? null : v;
+    const n = Number(normalizeDigits(String(v)).replace(/[,٬_\s]/g, '').trim());
+    return isNaN(n) ? null : n;
+  };
+  if (typeof req.body.name === 'string') item.name = req.body.name.trim().slice(0, 120);
+  if (typeof req.body.desc === 'string') item.desc = req.body.desc.trim().slice(0, 500);
+  const rawPrice = parseNum(req.body.price);
+  if (rawPrice != null && rawPrice >= 0) item.price = Math.round(rawPrice);
+  if (typeof req.body.available === 'boolean') item.available = req.body.available;
+  if (Array.isArray(req.body.allergens)) item.allergens = normalizeAllergens(req.body.allergens);
+  if (Array.isArray(req.body.dietary)) item.dietary = req.body.dietary.map((t) => String(t || '').trim()).filter(Boolean).slice(0, 10);
+  const rawPrep = parseNum(req.body.prepTime ?? req.body.prepTimeMinutes);
+  if (rawPrep != null && rawPrep >= 0) item.prepTime = Math.round(rawPrep);
+  if (req.body.stock === null || req.body.stock === '') item.stock = null;
+  else {
+    const rawStock = parseNum(req.body.stock);
+    if (rawStock != null && rawStock >= 0) {
+      item.stock = Math.round(rawStock);
+      if (item.stock === 0) item.available = false;
+    }
+  }
   item.updatedAt = Date.now();
   save({ rebuildProducts: true });
   res.json({ ok: true, item: menuItemForResponse(item) });
 });
 
-app.post('/api/menu', requireAdmin, (req, res) => {
+app.post('/api/admin/menu/bulk-adjust-prices', requireAdmin, (req, res) => {
+  const categoryId = req.body.categoryId != null && req.body.categoryId !== '' ? Number(req.body.categoryId) : null;
+  const percentChange = Number(req.body.percentChange) || 0;
+  const roundToNearest = Math.max(100, Number(req.body.roundToNearest) || 1000);
+  if (!percentChange || Math.abs(percentChange) > 100) {
+    return res.status(400).json({ error: 'درصد تغییر نامعتبر است (باید بین -۱۰۰ تا ۱۰۰ باشد)' });
+  }
+  const factor = 1 + (percentChange / 100);
+  const itemsToUpdate = (db.menuItems || []).filter((m) => categoryId == null || Number(m.categoryId) === categoryId);
+  const changes = [];
+  itemsToUpdate.forEach((m) => {
+    const oldPrice = m.price || 0;
+    const newPrice = Math.max(0, Math.round((oldPrice * factor) / roundToNearest) * roundToNearest);
+    m.price = newPrice;
+    m.updatedAt = Date.now();
+    changes.push({ id: m.id, name: m.name, oldPrice, newPrice });
+  });
+  save({ rebuildProducts: true });
+  res.json({ ok: true, updatedCount: changes.length, changes });
+});
+
+app.post('/api/admin/menu/bulk-undo-prices', requireAdmin, (req, res) => {
+  const changes = Array.isArray(req.body.changes) ? req.body.changes : [];
+  if (!changes.length) return res.status(400).json({ error: 'لیست تغییرات برای بازگردانی خالی است' });
+  let restored = 0;
+  changes.forEach((c) => {
+    const item = (db.menuItems || []).find((m) => Number(m.id) === Number(c.id));
+    if (item && c.oldPrice != null) {
+      item.price = Math.max(0, Math.round(Number(c.oldPrice)));
+      item.updatedAt = Date.now();
+      restored++;
+    }
+  });
+  save({ rebuildProducts: true });
+  res.json({ ok: true, restoredCount: restored });
+});
+
+app.post('/api/menu', requireAdmin, async (req, res) => {
   const id = Math.max(0, ...(db.menuItems || []).map((m) => Number(m.id) || 0)) + 1;
   const parseNum = (v) => {
     if (v == null || v === '') return null;
@@ -3085,37 +4048,106 @@ app.post('/api/menu', requireAdmin, (req, res) => {
     dayparts: normalizeDayparts(req.body.dayparts),
     stock,
     lowStockAt: rawLow != null && rawLow >= 0 ? Math.round(rawLow) : 5,
+    prepTime: parseNum(req.body.prepTime ?? req.body.prepTimeMinutes) ?? 15,
+    dietary: Array.isArray(req.body.dietary) ? req.body.dietary.map((t) => String(t || '').trim()).filter(Boolean).slice(0, 10) : [],
   };
-  item.modifierGroups = Array.isArray(req.body.modifierGroups)
-    ? normalizeModifierGroups(req.body.modifierGroups, [])
-    : normalizeModifierGroups(defaultModifierGroupsForItem(item, menuCategoryTitleForItem(item)), []);
+  const hasModifierGroupInput = Object.prototype.hasOwnProperty.call(req.body || {}, 'modifierGroups');
+  if (hasModifierGroupInput && !Array.isArray(req.body.modifierGroups)) {
+    return res.status(400).json({
+      error: 'modifier_groups_invalid',
+      message: 'فهرست گزینه‌های کالا باید به‌صورت آرایه ارسال شود.',
+    });
+  }
+  const modifierGroupsInput = hasModifierGroupInput ? req.body.modifierGroups : [];
+  const modifierGroupValidation = validateModifierGroupDefinitions(modifierGroupsInput);
+  if (!modifierGroupValidation.ok) {
+    return res.status(400).json({
+      error: 'modifier_configuration_invalid',
+      message: 'تنظیم گزینه‌های این کالا معتبر نیست؛ گروه‌ها و قیمت گزینه‌ها را بررسی کنید.',
+      details: modifierGroupValidation.errors,
+    });
+  }
+  item.modifierGroups = modifierGroupValidation.groups;
   if (imgRaw) item.img = imgRaw;
   if (!item.name) return res.status(400).json({ error: 'نام را وارد کنید' });
+  if (tenantConnectionManager?.baseUrl && req.tenantDataAccess && req.tenantContext?.databaseProvider === 'postgres') {
+    try {
+      const persisted = await tenantMenuRepository.createMenuItem(req.tenantDataAccess, item);
+      if (persisted?.id != null) {
+        item.id = persisted.id;
+      }
+    } catch (err) {
+      console.error('[Tenant Menu Save Error]', err);
+      return res.status(500).json({ ok: false, error: 'menu_persist_failed', message: err.message });
+    }
+  }
   db.menuItems.push(item);
   save({ rebuildProducts: true });
   res.json({ ok: true, item: menuItemForResponse(item) });
 });
-app.delete('/api/menu/:id', requireAdmin, (req, res) => {
+app.delete('/api/menu/:id', requireAdmin, async (req, res) => {
   const targetId = Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
+  if (tenantConnectionManager?.baseUrl && req.tenantDataAccess && req.tenantContext?.databaseProvider === 'postgres') {
+    try {
+      await tenantMenuRepository.deleteMenuItem(req.tenantDataAccess, targetId);
+    } catch (err) {
+      console.error('[Tenant Menu Delete Error]', err);
+      return res.status(500).json({ ok: false, error: 'menu_delete_failed', message: err.message });
+    }
+  }
   db.menuItems = (db.menuItems || []).filter((m) => Number(m.id) !== targetId);
   save({ rebuildProducts: true });
   res.json({ ok: true });
 });
 
 // --- orders ---
-function orderLinesFromRequest(rawItems, { allowMenuItemIds = new Set(), allowComplementIds = new Set(), branchId = null } = {}) {
-  const items = Array.isArray(rawItems) ? rawItems : [];
+function parseOrderTomanAmount(value) {
+  if (typeof value === 'number') return Number.isSafeInteger(value) && value >= 0 ? value : null;
+  if (typeof value !== 'string') return null;
+  const normalized = normalizeDigits(value).replace(/[,_\s٬]/gu, '').trim();
+  if (!/^\d+$/u.test(normalized)) return null;
+  const amount = Number(normalized);
+  return Number.isSafeInteger(amount) && amount >= 0 ? amount : null;
+}
+
+function orderLinesFromRequest(rawItems, {
+  allowMenuItemIds = new Set(), allowComplementIds = new Set(), branchId = null,
+  excludeInventoryReservationOrderId = null,
+} = {}) {
+  if (!Array.isArray(rawItems) || !rawItems.length) {
+    return { error: 'order_items_required', code: 'order_items_required', status: 400 };
+  }
+  const items = rawItems;
   const lines = [];
   let subtotal = 0;
   const requestedMenuQty = new Map();
   const requestedComplementQty = new Map();
-  for (const line of items) {
+  for (let lineIndex = 0; lineIndex < items.length; lineIndex += 1) {
+    const line = items[lineIndex];
+    const lineShape = validateOrderLineInput(line, lineIndex);
+    if (!lineShape.ok) {
+      return {
+        error: lineShape.error,
+        code: lineShape.error,
+        status: 400,
+        message: 'تعداد، گزینه‌ها یا اطلاعات یکی از اقلام سفارش معتبر نیست؛ سبد را بازبینی کنید.',
+        index: lineShape.index,
+      };
+    }
     const menuItemId = Number(line.menuItemId || line.id);
-    const menuItem = db.menuItems.find((item) => item.id === menuItemId && (item.available !== false || allowMenuItemIds.has(menuItemId)));
-    if (!menuItem || (!allowMenuItemIds.has(menuItemId) && !itemVisibleNow(menuItem))) continue;
+    const menuItem = db.menuItems.find((item) => item.id === menuItemId
+      && (menuItemAvailableForBranch(db, item, branchId) || allowMenuItemIds.has(menuItemId)));
+    if (!menuItem || !menuItemBelongsToBranch(menuItem, branchId)
+        || (!allowMenuItemIds.has(menuItemId) && !itemVisibleNow(menuItem))) {
+      return { error: 'item_unavailable', message: 'یکی از اقلام سفارش دیگر در دسترس نیست؛ سبد را بازبینی کنید.' };
+    }
     const qty = Math.min(99, Math.max(1, Math.round(Number(line.qty || line.count) || 1)));
     const accumulatedMenuQty = (requestedMenuQty.get(menuItemId) || 0) + qty;
-    const v2Availability = branchId ? financeV2.menuItemAvailability(db, menuItem.id, branchId, accumulatedMenuQty) : null;
+    const v2Availability = branchId
+      ? financeV2.menuItemAvailability(db, menuItem.id, branchId, accumulatedMenuQty, undefined, {
+        excludeOrderId: excludeInventoryReservationOrderId,
+      })
+      : null;
     if (v2Availability?.tracked) {
       if (!v2Availability.available) {
         const shortage = v2Availability.issues?.find((issue) => issue.code === 'inventory_shortage');
@@ -3125,55 +4157,65 @@ function orderLinesFromRequest(rawItems, { allowMenuItemIds = new Set(), allowCo
       return { error: `موجودی «${menuItem.name}» کافی نیست (باقی‌مانده: ${menuItem.stock})` };
     }
     requestedMenuQty.set(menuItemId, accumulatedMenuQty);
-    const price = Math.max(0, Number(menuItem.price) || 0);
-    const modifierGroups = effectiveModifierGroupsForItem(menuItem, menuCategoryTitleForItem(menuItem));
-    const allowedModifiers = new Map();
-    for (const modifierGroup of modifierGroups) {
-      for (const option of modifierGroup.options || []) {
-        if (option.available === false) continue;
-        const canonical = {
-          id: option.id,
-          groupId: modifierGroup.id,
-          groupTitle: modifierGroup.title,
-          name: option.name,
-          price: Number(option.price || 0),
-          selection: modifierGroup.selection,
-        };
-        allowedModifiers.set(`id:${option.id}`, canonical);
-        if (!allowedModifiers.has(`name:${option.name}`)) allowedModifiers.set(`name:${option.name}`, canonical);
-      }
+    const rawModifierGroups = Array.isArray(menuItem.modifierGroups) ? menuItem.modifierGroups : [];
+    const modifierGroupValidation = validateModifierGroupDefinitions(rawModifierGroups);
+    if (!modifierGroupValidation.ok) {
+      return {
+        error: 'modifier_configuration_invalid',
+        code: 'modifier_configuration_invalid',
+        status: 409,
+        message: `گزینه‌های «${menuItem.name}» نیازمند بازبینی مدیریت منو هستند.`,
+        details: modifierGroupValidation.errors,
+      };
     }
-    const usedModifierIds = new Set();
-    const usedSingleGroups = new Set();
-    const modifiers = (Array.isArray(line.modifiers) ? line.modifiers : [])
-      .slice(0, 12)
-      .map((modifier) => {
-        const id = String(modifier?.id || '').trim();
-        const name = String(modifier?.name || modifier || '').trim().slice(0, 100);
-        return allowedModifiers.get(`id:${id}`) || allowedModifiers.get(`name:${name}`) || null;
-      })
-      .filter((modifier) => {
-        if (!modifier || usedModifierIds.has(modifier.id)) return false;
-        if (modifier.selection === 'single' && usedSingleGroups.has(modifier.groupId)) return false;
-        usedModifierIds.add(modifier.id);
-        if (modifier.selection === 'single') usedSingleGroups.add(modifier.groupId);
-        return true;
-      })
-      .map(({ selection, ...modifier }) => modifier);
-    const modifierTotal = modifiers.reduce((sum, modifier) => sum + modifier.price, 0);
-    const unitTotal = price + modifierTotal;
+    const priceResult = calculateModifierLinePrice(
+      menuItem.price,
+      qty,
+      modifierGroupValidation.groups,
+      line.modifiers,
+    );
+    if (!priceResult.ok) {
+      return {
+        error: 'modifier_selection_invalid',
+        code: 'modifier_selection_invalid',
+        status: 400,
+        message: 'گزینه‌های انتخاب‌شده معتبر نیستند یا یک انتخاب اجباری جا افتاده است؛ سبد را بازبینی کنید.',
+        details: priceResult.errors || [{ code: priceResult.error }],
+      };
+    }
+    const price = priceResult.basePrice;
+    const modifiers = priceResult.modifiers;
+    const unitTotal = priceResult.unitPrice;
     const allowedComplementIds = new Set(complementRulesForMenuItem(menuItem).flatMap((rule) => rule.complementIds || []).map(Number));
     const complementQuantities = new Map();
-    for (const entry of (Array.isArray(line.complements) ? line.complements : []).slice(0, 8)) {
+    for (const entry of (Array.isArray(line.complements) ? line.complements : [])) {
       const complementId = Number(entry?.complementId ?? entry?.id);
-      if (!allowedComplementIds.has(complementId)) continue;
-      const complementQty = Math.min(20, Math.max(1, Math.round(Number(entry?.qty) || 1)));
-      complementQuantities.set(complementId, Math.min(20, (complementQuantities.get(complementId) || 0) + complementQty));
+      if (!allowedComplementIds.has(complementId) && !allowComplementIds.has(complementId)) {
+        return {
+          error: 'complement_selection_invalid',
+          code: 'complement_selection_invalid',
+          status: 400,
+          message: 'یکی از افزودنی‌های انتخاب‌شده برای این کالا معتبر نیست.',
+          index: lineIndex,
+        };
+      }
+      const complementQty = Number(entry.qty);
+      complementQuantities.set(complementId, (complementQuantities.get(complementId) || 0) + complementQty);
     }
     const complements = [];
     for (const [complementId, complementQty] of complementQuantities) {
-      const complement = (db.menuComplements || []).find((entry) => Number(entry.id) === complementId && (entry.available !== false || allowComplementIds.has(complementId)));
-      if (!complement) continue;
+      const complement = (db.menuComplements || []).find((entry) => Number(entry.id) === complementId
+        && (allowComplementIds.has(complementId)
+          || (entry.available !== false && (entry.stock == null || Number(entry.stock) > 0))));
+      if (!complement) {
+        return {
+          error: 'complement_unavailable',
+          code: 'complement_unavailable',
+          status: 409,
+          message: 'یکی از افزودنی‌های انتخاب‌شده دیگر در دسترس نیست؛ سبد را بازبینی کنید.',
+          index: lineIndex,
+        };
+      }
       const accumulatedComplementQty = (requestedComplementQty.get(complementId) || 0) + complementQty;
       if (typeof complement.stock === 'number' && complement.stock < accumulatedComplementQty) {
         return { error: `موجودی مکمل «${complement.name}» کافی نیست (باقی‌مانده: ${complement.stock})` };
@@ -3183,6 +4225,10 @@ function orderLinesFromRequest(rawItems, { allowMenuItemIds = new Set(), allowCo
       complements.push({ id: complement.id, name: complement.name, price: complementPrice, qty: complementQty, img: complement.img || '', lineTotal: complementPrice * complementQty });
     }
     const complementTotal = complements.reduce((sum, complement) => sum + complement.lineTotal, 0);
+    const lineTotal = priceResult.lineTotal + complementTotal;
+    if (!Number.isSafeInteger(complementTotal) || !Number.isSafeInteger(lineTotal) || !Number.isSafeInteger(subtotal + lineTotal)) {
+      return { error: 'order_amount_unsafe', code: 'order_amount_unsafe', status: 400, message: 'مبلغ سفارش از محدودهٔ مجاز بیشتر است.' };
+    }
     const validCourses = ['straight_fire', 'starters', 'entrees', 'dessert'];
     const rawCourse = String(line.course || '').trim().toLowerCase();
     const course = validCourses.includes(rawCourse) ? rawCourse : 'starters';
@@ -3195,6 +4241,9 @@ function orderLinesFromRequest(rawItems, { allowMenuItemIds = new Set(), allowCo
       name: menuItem.name,
       price,
       qty,
+      ...(typeof (menuItem.taxCategory || menuItem.taxCode) === 'string' && String(menuItem.taxCategory || menuItem.taxCode).trim()
+        ? { taxCategory: String(menuItem.taxCategory || menuItem.taxCode).trim() }
+        : {}),
       modifiers,
       complements,
       note: String(line.note || '').trim().slice(0, 180),
@@ -3203,9 +4252,9 @@ function orderLinesFromRequest(rawItems, { allowMenuItemIds = new Set(), allowCo
       courseStatus,
       firedAt,
       unitTotal,
-      lineTotal: unitTotal * qty + complementTotal,
+      lineTotal,
     });
-    subtotal += unitTotal * qty + complementTotal;
+    subtotal += lineTotal;
   }
   if (!lines.length) return { error: 'هیچ محصول معتبری در سفارش نیست' };
   return { lines, subtotal };
@@ -3271,9 +4320,14 @@ function tableForBranch(tableNo, branchId) {
 function activeDineInOrderOnTable(order, tableNo, branchId) {
   if (!order || Number(order.branchId || defaultBranch()?.id || 1) !== Number(branchId)) return false;
   const fulfillment = normalizeFulfillment(order.fulfillment, { tableNo: order.tableNo });
+  const status = String(order.status || '');
+  const paymentStatus = paymentStatusFor(order);
+  const serviceComplete = ['done', 'picked_up', 'delivered'].includes(status);
+  const paymentNeedsAttention = ['unpaid', 'partial', 'pending', 'failed', 'unknown'].includes(paymentStatus);
   return fulfillment === 'dine_in'
     && tableNoBelongsToTable(order.tableNo, tableNo)
-    && !['done', 'picked_up', 'delivered', 'cancelled'].includes(String(order.status || ''));
+    && status !== 'cancelled'
+    && (!serviceComplete || paymentNeedsAttention);
 }
 
 function nextDineInCheckNo(branchId, tableNo, preferred = '') {
@@ -3290,12 +4344,38 @@ function nextDineInCheckNo(branchId, tableNo, preferred = '') {
 }
 
 function findOrderBranch(input, tableNo, fulfillment) {
-  const selected = resolveBranch(input.branchId || input.branch);
+  const requestedBranch = input.branchId || input.branch;
+  const selected = requestedBranch ? resolveBranchExact(requestedBranch) : defaultBranch();
+  if (requestedBranch && !selected) return null;
   if (fulfillment !== 'dine_in') return selected || defaultBranch();
   const cleanTable = normalizeDigits(String(tableNo || '')).trim();
   const tableKey = canonicalTableNo(cleanTable);
-  const table = (db.tables || []).find((item) => canonicalTableNo(item.id) === tableKey || canonicalTableNo(item.label) === tableKey);
-  return (table && (db.branches || []).find((branch) => Number(branch.id) === Number(table.branchId))) || selected || defaultBranch();
+  const matchingTables = (db.tables || []).filter((item) => item.active !== false
+    && (canonicalTableNo(item.id) === tableKey || canonicalTableNo(item.label) === tableKey));
+  const scopedTables = selected
+    ? matchingTables.filter((item) => Number(item.branchId) === Number(selected.id))
+    : matchingTables;
+  if (scopedTables.length !== 1) return null;
+  const table = scopedTables[0];
+  const tableBranch = (db.branches || []).find((branch) => branch.active !== false && Number(branch.id) === Number(table.branchId));
+  if (!tableBranch || (selected && Number(selected.id) !== Number(tableBranch.id))) return null;
+  return tableBranch;
+}
+
+function validateExplicitCheckoutSelections(input) {
+  if (Object.hasOwn(input || {}, 'fulfillment')) {
+    const fulfillment = typeof input.fulfillment === 'string' ? input.fulfillment.trim() : '';
+    if (!FULFILLMENTS.includes(fulfillment)) {
+      return { error: 'fulfillment_invalid', code: 'fulfillment_invalid', status: 400, message: 'روش دریافت انتخاب‌شده معتبر نیست.' };
+    }
+  }
+  if (Object.hasOwn(input || {}, 'paymentMethod')) {
+    const paymentMethod = typeof input.paymentMethod === 'string' ? input.paymentMethod.trim() : '';
+    if (!['cashier', 'online'].includes(paymentMethod)) {
+      return { error: 'payment_method_invalid', code: 'payment_method_invalid', status: 400, message: 'روش پرداخت انتخاب‌شده معتبر نیست.' };
+    }
+  }
+  return null;
 }
 
 function publicPaymentAttempt(payment) {
@@ -3322,35 +4402,315 @@ function appendOrderStatus(order, status, actor = null, meta = {}) {
   });
   if (status === 'preparing' && !order.startedAt) order.startedAt = order.statusAt;
   if (status === 'ready') order.readyAt = order.statusAt;
+  if (status === 'dispatched') order.dispatchedAt = order.statusAt;
+  if (order.fulfillment === 'delivery' && ['dispatched', 'delivered', 'cancelled'].includes(status)) {
+    order.delivery = order.delivery && typeof order.delivery === 'object' ? order.delivery : {};
+    order.delivery.dispatchStatus = status;
+    if (status === 'dispatched') order.delivery.dispatchedAt = order.delivery.dispatchedAt || order.statusAt;
+    if (status === 'delivered') {
+      order.delivery.dispatchedAt = order.delivery.dispatchedAt || order.dispatchedAt || order.statusAt;
+      order.delivery.deliveredAt = order.delivery.deliveredAt || order.statusAt;
+    }
+  }
   if (['done', 'picked_up', 'delivered'].includes(status)) order.doneAt = order.statusAt;
 }
 
-async function createCheckoutOrder(input, { requireTable = false, requirePhone = true, idempotencyKey = '', actor = null } = {}) {
-  const tableNo = normalizeDigits(String(input.tableNo || input.table || '')).trim().slice(0, 20);
-  const fulfillment = normalizeFulfillment(input.fulfillment, { tableNo });
-  const phone = normalizeDigits(input.phone || '').trim();
-  const name = String(input.name || '').trim().slice(0, 100);
-  const paymentMethod = input.paymentMethod === 'online' ? 'online' : 'cashier';
-  const normalizedKey = String(idempotencyKey || '').trim().slice(0, 160);
+function reverseCancelledOrderFinancialEffects(order, user) {
+  const reason = `لغو سفارش #${order.orderNo || order.id}`;
+  const actor = user?.phone || 'admin';
+  const orderFinanceEvents = (db.financeV2?.events || []).filter((event) =>
+    ['order.paid', 'order.cogs'].includes(event.source)
+    && String(event.sourceId) === String(order.id));
+  if (orderFinanceEvents.some((event) => Number(event.branchId) !== Number(order.branchId))) {
+    throw Object.assign(new Error('شعبهٔ رویداد مالی با شعبهٔ سفارش هم‌خوان نیست؛ لغو بدون تطبیق مالی ثبت نشد.'), {
+      code: 'order_finance_branch_mismatch',
+      status: 409,
+    });
+  }
+  const salesReversal = accountingEngine.reverseOrderSalesJournal(db, order.id, {
+    reason,
+    userId: actor,
+  });
+  const paidEvent = (db.financeV2?.events || []).find((event) => event.source === 'order.paid'
+    && String(event.sourceId) === String(order.id)
+    && event.journalEntryId);
+  const financeSalesReversal = paidEvent
+    ? financeV2.reverseEntry(db, paidEvent.journalEntryId, actor, reason)
+    : null;
+  const cogsReversal = financeV2.reverseOrderCogsAndInventory(db, order.id, actor, reason);
+  const unreversedCogsJournal = (db.financeV2?.events || [])
+    .filter((event) => event.source === 'order.cogs'
+      && String(event.sourceId) === String(order.id)
+      && event.journalEntryId)
+    .map((event) => (db.financeV2?.journalEntries || []).find((entry) => entry.id === event.journalEntryId))
+    .find((entry) => entry?.status === 'posted' && !entry.reversedById);
+  if (unreversedCogsJournal) {
+    throw Object.assign(new Error('سند بهای تمام‌شدهٔ سفارش معکوس نشد؛ لغو سفارش ثبت نشد.'), {
+      code: 'order_cogs_reversal_incomplete',
+      status: 409,
+    });
+  }
+  return { salesReversal, financeSalesReversal, cogsReversal };
+}
 
-  if (paymentMethod === 'online' && !productionPaymentProviderReady()) {
-    return { error: 'payment_provider_not_ready', code: 'payment_provider_not_ready', status: 503 };
+function checkoutIdempotencyFingerprint(input, actor = null) {
+  const canonical = (value) => {
+    if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`;
+    if (value && typeof value === 'object') {
+      return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonical(value[key])}`).join(',')}}`;
+    }
+    return JSON.stringify(value);
+  };
+  const scopedRequest = {
+    actor: actor ? { phone: String(actor.phone || ''), role: effectiveRole(actor) } : null,
+    input,
+  };
+  return crypto.createHash('sha256').update(canonical(scopedRequest)).digest('hex');
+}
+
+function checkoutQuoteIntent({ input, branch, fulfillment, lines, subtotal, deliveryFee, discount, total, phone = input.phone, taxSnapshot = null }) {
+  const tenantId = normalizeTenantId(
+    tenantStorage.getStore()?.tenantId || db.tenantIdentity?.tenantId || TENANT_CONFIG.tenantId || 'westo',
+  );
+  const quoteLines = (lines || []).map((line) => ({
+    menuItemId: Number(line.menuItemId),
+    name: String(line.name || ''),
+    price: Number(line.price) || 0,
+    qty: Number(line.qty) || 0,
+    modifiers: (line.modifiers || []).map((item) => ({ id: item.id, groupId: item.groupId, name: item.name, price: Number(item.price) || 0 })),
+    complements: (line.complements || []).map((item) => ({ id: item.id, name: item.name, price: Number(item.price) || 0, qty: Number(item.qty) || 0 })),
+    note: String(line.note || ''),
+    seat: Number(line.seat) || 0,
+    course: String(line.course || 'starters'),
+    courseStatus: String(line.courseStatus || 'fired'),
+  }));
+  return {
+    tenantId,
+    branchId: Number(branch.id),
+    fulfillment,
+    tableNo: canonicalTableNo(input.tableNo || input.table),
+    zoneId: Number(input.deliveryZoneId || input.zoneId) || null,
+    phone: normalizeDigits(phone || '').trim(),
+    paymentMethod: input.paymentMethod === 'online' ? 'online' : 'cashier',
+    items: quoteLines,
+    subtotal: Number(subtotal) || 0,
+    deliveryFee: Number(deliveryFee) || 0,
+    discount: Number(discount) || 0,
+    total: Number(total) || 0,
+    taxSnapshot,
+  };
+}
+
+function calculateCheckoutPricing({ input, actor, subtotal, deliveryFee }) {
+  const actorIsCustomer = effectiveRole(actor) === 'user';
+  const phone = normalizeDigits(input.phone || (actorIsCustomer ? actor?.phone : '') || '').trim();
+  const requestedManualDiscount = input.discount === undefined ? 0 : parseOrderTomanAmount(input.discount);
+  if (requestedManualDiscount === null) {
+    return { error: 'discount_invalid', code: 'discount_invalid', status: 400, message: 'مبلغ تخفیف باید عدد صحیح و معتبر باشد.' };
+  }
+  if (requestedManualDiscount > 0 && !userCan(actor, 'orders.manage')) {
+    return { error: 'discount_not_allowed', status: 403, message: 'اعمال تخفیف دستی فقط برای نقش مجاز امکان‌پذیر است.' };
+  }
+  if (requestedManualDiscount > subtotal) {
+    return { error: 'discount_exceeds_subtotal', code: 'discount_exceeds_subtotal', status: 400, message: 'تخفیف نمی‌تواند از جمع اقلام بیشتر باشد.' };
+  }
+
+  const actorPhone = normalizeDigits(actor?.phone || '').trim();
+  const customerUser = actorIsCustomer && phone && actorPhone === phone
+    ? (db.users || []).find((user) => normalizeDigits(user.phone || '').trim() === phone)
+    : null;
+  const discountCalc = customerUser
+    ? loyaltyEngine.calculateOrderDiscounts(db, {
+        subtotalToman: subtotal,
+        phone,
+        user: customerUser,
+        redeemPoints: 0,
+      })
+    : {
+        customerPhone: null,
+        customerName: null,
+        availablePoints: 0,
+        tier: { id: 'none', name: 'بدون عضویت', discountPct: 0, multiplier: 1 },
+        tierDiscountToman: 0,
+        tierDiscountPct: 0,
+        redeemValue: Math.max(0, Math.round(Number(db?.loyalty?.redeemValue) || 1000)),
+        maxRedeemablePoints: 0,
+        pointsRedeemed: 0,
+        pointsDiscountToman: 0,
+        totalDiscountToman: 0,
+        finalPayable: subtotal,
+      };
+  const manualDiscount = userCan(actor, 'orders.manage') ? requestedManualDiscount : 0;
+  const loyaltyDiscount = parseOrderTomanAmount(discountCalc.totalDiscountToman);
+  if (loyaltyDiscount === null || loyaltyDiscount > subtotal) {
+    return { error: 'loyalty_discount_invalid', code: 'loyalty_discount_invalid', status: 409, message: 'تخفیف وفاداری معتبر نیست؛ سفارش ثبت نشد.' };
+  }
+  const discount = Math.max(loyaltyDiscount, manualDiscount);
+  const total = subtotal + deliveryFee - discount;
+  if (!Number.isSafeInteger(total) || total < 0) {
+    return { error: 'order_amount_unsafe', code: 'order_amount_unsafe', status: 400, message: 'مبلغ سفارش از محدودهٔ مجاز بیشتر است.' };
+  }
+  return { phone, customerUser, discountCalc, discount, total };
+}
+
+function checkoutTaxForOrder({ branch, fulfillment, lines, discount, deliveryFee, total, date }) {
+  try {
+    const snapshot = buildCheckoutTaxSnapshot({
+      taxSettings: db.accounting?.taxSettings,
+      branchId: branch?.id,
+      fulfillment,
+      lines,
+      discountToman: discount,
+      deliveryFeeToman: deliveryFee,
+      date,
+    });
+    const expectedPayableIrr = Number(total) * 10;
+    if (!Number.isSafeInteger(expectedPayableIrr) || snapshot.totalPayableIrr !== expectedPayableIrr) {
+      return {
+        error: 'checkout_tax_payable_mismatch',
+        code: 'checkout_tax_payable_mismatch',
+        status: 409,
+        message: 'جمع پیش‌فاکتور با snapshot مالیاتی شعبه یکسان نیست؛ سفارش ثبت نشد.',
+      };
+    }
+    return { snapshot };
+  } catch (error) {
+    return {
+      error: error.code || 'checkout_tax_snapshot_unavailable',
+      code: error.code || 'checkout_tax_snapshot_unavailable',
+      status: error.status || 409,
+      message: error.message || 'ثبت سفارش متوقف شد؛ تصویر مالیاتی معتبر برای شعبه در دسترس نیست.',
+    };
+  }
+}
+
+async function createCheckoutOrder(input, { requireTable = false, requirePhone = true, requireQuote = false, requireName = false, idempotencyKey = '', actor = null } = {}) {
+  const tableNo = normalizeDigits(String(input.tableNo || input.table || '')).trim().slice(0, 20);
+  const selectionError = validateExplicitCheckoutSelections(input);
+  if (selectionError) return selectionError;
+  const fulfillment = normalizeFulfillment(input.fulfillment, { tableNo });
+  const phone = normalizeDigits(input.phone || (effectiveRole(actor) === 'user' ? actor?.phone : '') || '').trim();
+  const name = String(input.name || '').trim().slice(0, 100);
+  const paymentMethod = String(input.paymentMethod || 'cashier').trim() === 'online' ? 'online' : 'cashier';
+  const normalizedKey = String(idempotencyKey || '').trim();
+  if (process.env.NODE_ENV === 'production' && !normalizedKey) {
+    return { error: 'idempotency_key_required', code: 'idempotency_key_required', status: 400, message: 'برای ثبت سفارش، کلید یکتای درخواست لازم است.' };
+  }
+  if (requireName && !name) {
+    return { error: 'name_required', code: 'name_required', status: 400, message: 'نام گیرنده را وارد کنید.' };
+  }
+  if (normalizedKey && !ORDER_IDEMPOTENCY_KEY_RE.test(normalizedKey)) {
+    return { error: 'idempotency_key_invalid', code: 'idempotency_key_invalid', status: 400 };
   }
 
   if ((requireTable || fulfillment === 'dine_in') && !tableNo) return { error: 'شماره میز را وارد کنید' };
   if ((requirePhone || phone) && !PHONE_RE.test(phone)) return { error: 'شماره موبایل معتبر نیست' };
   if (!Array.isArray(input.items) || !input.items.length) return { error: 'سبد سفارش خالی است' };
-  if (normalizedKey && db.checkoutIdempotency?.[normalizedKey]) {
-    const saved = db.checkoutIdempotency[normalizedKey];
-    const order = (db.orders || []).find((item) => Number(item.id) === Number(saved.orderId));
-    const payment = (db.paymentAttempts || []).find((item) => Number(item.id) === Number(saved.paymentAttemptId));
-    if (order) return { order, payment, idempotent: true, whatsapp: null };
-  }
 
   const branch = findOrderBranch(input, tableNo, fulfillment);
-  if (!branch) return { error: 'شعبه پیدا نشد' };
+  if (!branch || branch.active === false) return { error: 'شعبه پیدا نشد' };
+  if (actor && effectiveRole(actor) !== 'user') {
+    try {
+      assertUserBranchAccess(actor, branch.id);
+    } catch (error) {
+      return { error: error.code || 'branch_access_denied', status: error.status || 403, message: error.message };
+    }
+  }
+
+  const fingerprintInput = {
+    ...input,
+    branchId: Number(branch.id),
+    fulfillment,
+    tableNo: canonicalTableNo(tableNo),
+    paymentMethod,
+    phone,
+  };
+  delete fingerprintInput.quoteToken;
+  const requestFingerprint = normalizedKey ? checkoutIdempotencyFingerprint(fingerprintInput, actor) : null;
+  if (normalizedKey && Object.hasOwn(db.checkoutIdempotency || {}, normalizedKey)) {
+    const saved = db.checkoutIdempotency[normalizedKey];
+    if (!saved || typeof saved !== 'object' || Array.isArray(saved) || typeof saved.requestFingerprint !== 'string') {
+      return { error: 'idempotency_replay_unavailable', code: 'idempotency_replay_unavailable', status: 409, message: 'اطلاعات بازیابی سفارش قبلی کامل نیست؛ برای سفارش تازه کلید جدید بسازید.' };
+    }
+    if (saved.requestFingerprint !== requestFingerprint) {
+      return { error: 'idempotency_key_conflict', code: 'idempotency_key_conflict', status: 409, message: 'این کلید قبلاً برای درخواست دیگری استفاده شده است؛ برای سفارش تازه دوباره تلاش کنید.' };
+    }
+    const order = (db.orders || []).find((item) => Number(item.id) === Number(saved.orderId));
+    if (!order) {
+      return { error: 'idempotency_replay_unavailable', code: 'idempotency_replay_unavailable', status: 409, message: 'سفارش قبلی این درخواست دیگر در دسترس نیست؛ برای ثبت سفارش تازه، کلید جدید بسازید.' };
+    }
+    if (persistedOrderBranchId(order) !== Number(branch.id)) {
+      return { error: 'idempotency_replay_unavailable', code: 'idempotency_replay_unavailable', status: 409, message: 'شعبهٔ سفارش قبلی با درخواست بازیابی هم‌خوان نیست.' };
+    }
+    const payment = saved.paymentAttemptId == null
+      ? (order.paymentMethod === 'online' ? (db.paymentAttempts || []).find((item) => Number(item.orderId) === Number(order.id)) : null)
+      : (db.paymentAttempts || []).find((item) => Number(item.id) === Number(saved.paymentAttemptId));
+    const paymentMatchesOrder = payment
+      && Number(payment.orderId) === Number(order.id)
+      && Number(payment.branchId) === Number(order.branchId)
+      && Number.isSafeInteger(Number(payment.amount))
+      && Number.isSafeInteger(Number(order.total))
+      && Number(payment.amount) === Number(order.total);
+    if ((saved.paymentAttemptId != null && (!payment
+        || !paymentMatchesOrder))
+      || (order.paymentMethod === 'online' && !paymentMatchesOrder)
+      || (order.paymentMethod !== 'online' && payment)) {
+      return { error: 'idempotency_replay_unavailable', code: 'idempotency_replay_unavailable', status: 409, message: 'وضعیت پرداخت سفارش قبلی برای بازیابی امن کامل نیست.' };
+    }
+    if (actor && effectiveRole(actor) !== 'user') {
+      try {
+        assertUserBranchAccess(actor, order.branchId);
+      } catch (error) {
+        return { error: error.code || 'branch_access_denied', status: error.status || 403, message: error.message };
+      }
+    }
+    return { order, payment, idempotent: true, whatsapp: null };
+  }
+
+  if (paymentMethod === 'online' && !productionPaymentProviderReady()) {
+    return { error: 'payment_provider_not_ready', code: 'payment_provider_not_ready', status: 503 };
+  }
   const lineResult = orderLinesFromRequest(input.items, { branchId: branch.id });
   if (lineResult.error) return lineResult;
+  if (actor && effectiveRole(actor) !== 'user') {
+    const addValidation = validateWaiterOrderAdd(input.items, {
+      canonicalLines: lineResult.lines,
+      sendToKitchen: input.sendToKitchen === true,
+    });
+    if (!addValidation.ok) {
+      const message = addValidation.error === 'course_already_served'
+        ? 'سفارش تازه نمی‌تواند قلمی با وضعیت «تحویل‌شده» داشته باشد.'
+        : addValidation.error === 'kitchen_course_empty'
+          ? 'برای ارسال سفارش، دست‌کم یک دوره باید برای آشپزخانه آماده باشد.'
+          : 'اقلام سفارش با ساختار یا قیمت معتبر منو سازگار نیستند.';
+      return {
+        error: addValidation.error,
+        code: addValidation.error,
+        status: 400,
+        message,
+        ...(addValidation.index === undefined ? {} : { index: addValidation.index }),
+      };
+    }
+  }
+  const dineInCovers = fulfillment === 'dine_in'
+    ? (input.covers === undefined ? 1 : Number(normalizeDigits(String(input.covers)).replace(/[^0-9]/g, '')))
+    : null;
+  if (fulfillment === 'dine_in') {
+  const coverValidation = validateCoversForItems(dineInCovers, lineResult.lines);
+    if (!coverValidation.ok) {
+      return {
+        error: coverValidation.error,
+        code: coverValidation.error,
+        status: 400,
+        message: coverValidation.error === 'seat_exceeds_covers'
+          ? 'تعداد مهمان نمی‌تواند از شمارهٔ صندلی تخصیص‌یافته کمتر باشد.'
+          : 'تعداد مهمان باید بین ۱ تا ۹۹ نفر باشد.',
+      };
+    }
+  }
+  if (input.sendToKitchen === true && !lineResult.lines.some((line) => line.courseStatus === 'fired')) {
+    return { error: 'kitchen_course_empty', code: 'kitchen_course_empty', status: 400, message: 'برای ارسال سفارش، دست‌کم یک مرحله باید به آشپزخانه فرستاده شود.' };
+  }
   const zoneId = Number(input.deliveryZoneId || input.zoneId) || null;
   const zone = fulfillment === 'delivery'
     ? (db.deliveryZones || []).find((item) => Number(item.id) === zoneId)
@@ -3362,10 +4722,59 @@ async function createCheckoutOrder(input, { requireTable = false, requirePhone =
     branchId: branch.id,
   });
   if (!fulfillmentQuote.ok) return { error: fulfillmentQuote.message, code: fulfillmentQuote.code, minimum: fulfillmentQuote.minimum };
+  const deliveryFee = parseOrderTomanAmount(fulfillmentQuote.deliveryFee);
+  if (deliveryFee === null) {
+    return { error: 'delivery_fee_invalid', code: 'delivery_fee_invalid', status: 409, message: 'هزینهٔ ارسال معتبر نیست؛ تنظیم محدودهٔ ارسال را بررسی کنید.' };
+  }
   const deliveryAddress = String(input.deliveryAddress || input.address || '').trim().slice(0, 300);
   if (fulfillment === 'delivery' && !deliveryAddress) return { error: 'آدرس تحویل را وارد کنید' };
 
-  // Deduct stock only after every validation and delivery quote has passed.
+  const pricing = calculateCheckoutPricing({ input: { ...input, phone }, actor, subtotal: lineResult.subtotal, deliveryFee });
+  if (pricing.error) return pricing;
+  const { customerUser, discountCalc } = pricing;
+  const orderDiscount = pricing.discount;
+  const orderTotal = pricing.total;
+  const createdAt = new Date().toISOString();
+  const checkoutTax = checkoutTaxForOrder({
+    branch,
+    fulfillment,
+    lines: lineResult.lines,
+    discount: orderDiscount,
+    deliveryFee,
+    total: orderTotal,
+    date: createdAt,
+  });
+  if (checkoutTax.error) return checkoutTax;
+  if (requireQuote) {
+    const quoteIntent = checkoutQuoteIntent({
+      input: { ...input, tableNo, fulfillment, paymentMethod }, branch, fulfillment, lines: lineResult.lines, subtotal: lineResult.subtotal,
+      deliveryFee, discount: orderDiscount, total: orderTotal, phone, taxSnapshot: checkoutTax.snapshot,
+    });
+    const verification = verifyCheckoutQuoteToken(input.quoteToken, SECRET, quoteIntent);
+    if (!verification.valid) {
+      return {
+        error: verification.reason === 'missing_or_malformed' ? 'checkout_quote_required' : 'checkout_quote_stale',
+        code: verification.reason === 'missing_or_malformed' ? 'checkout_quote_required' : 'checkout_quote_stale',
+        status: 409,
+        message: 'قیمت یا موجودی سفارش تغییر کرده است؛ مبلغ تازه را بررسی و دوباره ثبت کنید.',
+      };
+    }
+  }
+
+  const inventoryReservationSnapshot = financeV2.buildOrderInventoryReservationSnapshot(
+    db, lineResult.lines, branch.id, createdAt,
+  );
+  if (!inventoryReservationSnapshot.ok) {
+    return {
+      error: 'inventory_reservation_unavailable',
+      code: 'inventory_reservation_unavailable',
+      status: 409,
+      message: 'رزرو مواد اولیه برای این سفارش قابل ثبت نیست؛ موجودی و دستور تهیه را بررسی کنید.',
+      details: inventoryReservationSnapshot.issues,
+    };
+  }
+
+  // Deduct stock only after validating the current server-side quote.
   for (const line of lineResult.lines) {
     const menuItem = db.menuItems.find((item) => item.id === line.menuItemId);
     const usesV2 = menuItem && financeV2.menuItemUsesInventoryV2(db, menuItem.id, branch.id);
@@ -3381,30 +4790,9 @@ async function createCheckoutOrder(input, { requireTable = false, requirePhone =
       }
     }
   }
-
-  const createdAt = new Date().toISOString();
-
-  // Loyalty tier and points redemption calculation
-  const customerUser = phone ? (db.users || []).find((u) => u.phone === phone) : null;
-  const discountCalc = loyaltyEngine.calculateOrderDiscounts(db, {
-    subtotalToman: lineResult.subtotal,
-    phone,
-    user: customerUser,
-    redeemPoints: input.redeemPoints || input.pointsToRedeem || 0,
-  });
-
-  const orderDiscount = discountCalc.totalDiscountToman;
-  const orderTotal = Math.max(0, lineResult.subtotal + fulfillmentQuote.deliveryFee - orderDiscount);
   const checkNo = fulfillment === 'dine_in'
     ? nextDineInCheckNo(branch.id, tableNo, input.checkNo || tableNo)
     : '';
-
-  if (discountCalc.pointsRedeemed > 0 && customerUser) {
-    customerUser.points = Math.max(0, customerUser.points - discountCalc.pointsRedeemed);
-    awardLoyaltyPoints(customerUser.phone, -discountCalc.pointsRedeemed, 'redeem_order', {
-      discountToman: discountCalc.pointsDiscountToman,
-    });
-  }
 
   const order = {
     id: nextId(db.orders),
@@ -3415,17 +4803,20 @@ async function createCheckoutOrder(input, { requireTable = false, requirePhone =
     name,
     branchId: branch.id,
     fulfillment,
+    ...(fulfillment === 'dine_in' ? { covers: dineInCovers } : {}),
     paymentMethod,
     paymentStatus: paymentMethod === 'online' ? 'pending' : 'unpaid',
     status: initialOrderStatus({ paymentMethod, fulfillment }),
     items: lineResult.lines,
+    taxSnapshot: { ...checkoutTax.snapshot, capturedAt: createdAt },
+    inventoryReservationSnapshot,
     subtotal: lineResult.subtotal,
     discount: orderDiscount,
     tierDiscountToman: discountCalc.tierDiscountToman,
     pointsRedeemed: discountCalc.pointsRedeemed,
     pointsDiscountToman: discountCalc.pointsDiscountToman,
     loyaltyTier: discountCalc.tier?.id || 'bronze',
-    deliveryFee: fulfillmentQuote.deliveryFee,
+    deliveryFee,
     total: orderTotal,
     delivery: fulfillment === 'delivery'
       ? {
@@ -3449,7 +4840,7 @@ async function createCheckoutOrder(input, { requireTable = false, requirePhone =
   };
   db.orders = Array.isArray(db.orders) ? db.orders : [];
   db.orders.unshift(order);
-  db.orders = db.orders.slice(0, 500);
+  db.orders = retainOperationalOrders(db.orders);
 
   let payment = null;
   if (paymentMethod === 'online') {
@@ -3458,8 +4849,9 @@ async function createCheckoutOrder(input, { requireTable = false, requirePhone =
       id: nextId(db.paymentAttempts),
       orderId: order.id,
       branchId: branch.id,
-      provider: db.paymentProvider?.provider || 'sandbox',
-      mode: db.paymentProvider?.mode || 'sandbox',
+      tender: 'online',
+      provider: 'sandbox',
+      mode: 'sandbox',
       amount: order.total,
       status: 'pending',
       sandboxToken: crypto.randomBytes(18).toString('base64url'),
@@ -3470,9 +4862,10 @@ async function createCheckoutOrder(input, { requireTable = false, requirePhone =
   }
   if (normalizedKey) {
     db.checkoutIdempotency = db.checkoutIdempotency || {};
-    db.checkoutIdempotency[normalizedKey] = { orderId: order.id, paymentAttemptId: payment?.id || null, createdAt };
-    const keys = Object.keys(db.checkoutIdempotency);
-    if (keys.length > 1000) keys.slice(0, keys.length - 1000).forEach((key) => delete db.checkoutIdempotency[key]);
+    db.checkoutIdempotency[normalizedKey] = { orderId: order.id, paymentAttemptId: payment?.id || null, createdAt, requestFingerprint };
+    // Do not evict replay records by count: a delayed retry after eviction
+    // could otherwise create a second order. Production storage must move
+    // this index to a durable table with explicit retention and expired-key handling.
   }
   const auditEntry = createAuditEntry({
     actor,
@@ -3489,6 +4882,18 @@ async function createCheckoutOrder(input, { requireTable = false, requirePhone =
 }
 
 async function createAndPersistCheckoutOrder(input, options = {}, afterCreate = null) {
+  const idempotencyKey = String(options.idempotencyKey || '').trim();
+  if (!idempotencyKey) return createAndPersistCheckoutOrderOnce(input, options, afterCreate);
+  const tenantId = tenantStorage.getStore()?.tenantId
+    || options.actor?.tenantId
+    || db.tenantIdentity?.tenantId
+    || TENANT_CONFIG.tenantId
+    || 'westo';
+  return serializeCheckoutOrderMutation(tenantId, idempotencyKey,
+    () => createAndPersistCheckoutOrderOnce(input, options, afterCreate));
+}
+
+async function createAndPersistCheckoutOrderOnce(input, options = {}, afterCreate = null) {
   const snapshot = snapshotFinanceMutationState();
   let deferredCommit = null;
   let result;
@@ -3506,12 +4911,12 @@ async function createAndPersistCheckoutOrder(input, options = {}, afterCreate = 
   }
 
   // These integrations are post-commit effects. A failed persistence must
-  // never leave a live event, NEEM outbox row, or notification for a missing
+  // never leave a live event, SALSA outbox row, or notification for a missing
   // order in the durable store.
   if (!result.idempotent) {
     try {
       publishOperationalEvent('order.created', { orderId: result.order.id, branchId: result.order.branchId, status: result.order.status });
-      neemBridge.enqueueOrder(result.order, result.payment);
+      salsaBridge.enqueueOrder(result.order, result.payment);
       if (typeof deferredCommit === 'function') await deferredCommit();
       const notify = await notifyOrderWhatsApp(db, result.order);
       result.whatsapp = notify.skipped ? null : notify;
@@ -3526,34 +4931,76 @@ async function createAndPersistCheckoutOrder(input, options = {}, afterCreate = 
 
 function settlePaymentAttempt(payment, { status = 'paid', reference = '', source = 'sandbox' } = {}) {
   if (!payment) return { error: 'payment_not_found' };
-  if (!['paid', 'failed', 'cancelled', 'refunded'].includes(status)) return { error: 'payment_status_invalid' };
-  const alreadyPaid = payment.status === 'paid' && status === 'paid';
-  payment.status = status;
-  if (!alreadyPaid || reference) payment.reference = String(reference || payment.reference || '').trim().slice(0, 160);
-  if (!alreadyPaid) payment.updatedAt = new Date().toISOString();
+  status = String(status || '').trim().toLowerCase();
   const order = (db.orders || []).find((item) => Number(item.id) === Number(payment.orderId));
-  if (status === 'paid' && !order) {
-    throw Object.assign(new Error('پرداخت تأیید نشد چون سفارش متناظر یافت نشد.'), {
-      code: 'payment_order_not_found',
-      status: 409,
-    });
+  if (!order) return { error: 'payment_order_not_found', status: 409 };
+  const paymentBranchId = Number(payment.branchId);
+  const orderBranchId = Number(order.branchId);
+  if (!Number.isSafeInteger(paymentBranchId) || paymentBranchId <= 0
+    || !Number.isSafeInteger(orderBranchId) || orderBranchId <= 0
+    || paymentBranchId !== orderBranchId) {
+    return { error: 'payment_order_branch_mismatch', status: 409 };
+  }
+  const transition = paymentAttemptTransition(payment.status, status);
+  if (!transition.ok) return { error: transition.error, status: 409 };
+  const alreadyPaid = payment.status === 'paid' && status === 'paid';
+  if (alreadyPaid && reference && String(reference).trim() !== String(payment.reference || '').trim()) {
+    return { error: 'payment_reference_conflict', status: 409 };
+  }
+  if (transition.idempotent && !alreadyPaid) {
+    const existingOrder = (db.orders || []).find((item) => Number(item.id) === Number(payment.orderId));
+    return { payment, order: existingOrder || null, finance: null, idempotent: true };
+  }
+  if (!alreadyPaid) {
+    payment.status = status;
+    payment.reference = String(reference || payment.reference || '').trim().slice(0, 160);
+    payment.updatedAt = new Date().toISOString();
   }
   let financeResult = null;
   if (order) {
-    order.paymentStatus = status;
-    if (status === 'paid' && ['pending_online', 'awaiting_confirmation'].includes(order.status)) {
-      appendOrderStatus(order, 'paid', null, { paymentAttemptId: payment.id, source });
-    }
     if (status === 'paid') {
       financeResult = financeV2.captureOnlinePaidOrder(db, order, payment, { actor: `gateway:${payment.provider || source}`, occurredAt: payment.updatedAt });
-      // A gateway confirmation is not a successful financial capture until
-      // the corresponding sale journal is posted.  Finance V2 deliberately
-      // returns a blocked event (instead of throwing) when the fiscal period
-      // is closed or the sale evidence is incomplete; allowing this payment
-      // response through would leave the operational payment marked paid
-      // while the official ledger remains empty.  The caller wraps this
-      // mutation in a snapshot and will roll back the payment/order on error.
-      if (!financeResult?.journalEntry || financeResult.journalEntry.status !== 'posted') {
+      const financeState = db.financeV2 || {};
+      const expectedSourceId = `${String(order.id)}:${String(payment.id)}`;
+      const expectedAmountIrr = Number(payment.amount) * 10;
+      const receiptEvent = (financeState.events || []).find((event) => event.id === payment.financeReceiptEventId);
+      const receiptJournal = (financeState.journalEntries || []).find((entry) => entry.id === payment.financeReceiptJournalEntryId);
+      const financePayment = (financeState.payments || []).find((row) => row.id === payment.financePaymentId);
+      const matchingReceiptEvents = (financeState.events || []).filter((event) => event.source === 'order.payment_received'
+        && String(event.sourceId) === expectedSourceId);
+      const matchingReceiptJournals = (financeState.journalEntries || []).filter((entry) => entry.source === 'order.payment_received'
+        && String(entry.sourceId) === expectedSourceId);
+      const receiptPosted = Boolean(receiptEvent && receiptJournal && financePayment
+        && matchingReceiptEvents.length === 1 && matchingReceiptJournals.length === 1
+        && receiptEvent.source === 'order.payment_received'
+        && String(receiptEvent.sourceId) === expectedSourceId
+        && String(receiptEvent.payload?.paymentId) === String(payment.id)
+        && receiptEvent.payload?.tender === 'online'
+        && Number(receiptEvent.branchId) === orderBranchId
+        && Number(receiptEvent.amountIrr) === expectedAmountIrr
+        && receiptEvent.status === 'posted'
+        && receiptEvent.journalEntryId === receiptJournal.id
+        && receiptJournal.sourceEventId === receiptEvent.id
+        && receiptJournal.source === 'order.payment_received'
+        && String(receiptJournal.sourceId) === expectedSourceId
+        && Number(receiptJournal.branchId) === orderBranchId
+        && receiptJournal.status === 'posted'
+        && String(financePayment.orderId) === String(order.id)
+        && Number(financePayment.branchId) === orderBranchId
+        && financePayment.tender === 'online'
+        && Number(financePayment.amountIrr) === expectedAmountIrr
+        && financePayment.status === 'succeeded'
+        && String(financePayment.payload?.operationalPaymentId) === String(payment.id)
+        && financePayment.receiptFinanceEventId === receiptEvent.id
+        && financePayment.receiptJournalEntryId === receiptJournal.id);
+      if (!receiptPosted) {
+        throw Object.assign(new Error('پرداخت تأیید نشد چون رسید مستقل آن در دفتر مالی ثبت نشد.'), {
+          code: receiptEvent?.error?.code || 'online_payment_receipt_finance_blocked', status: 409,
+        });
+      }
+      // Partial captures are PSP-clearing receipts against customer deposits.
+      // Recognize the sale only after all accepted captures cover the order.
+      if (order.paymentStatus === 'paid' && (!financeResult?.journalEntry || financeResult.journalEntry.status !== 'posted')) {
         const captureCode = financeResult?.event?.error?.code || financeResult?.reason || 'finance_capture_blocked';
         throw Object.assign(new Error('پرداخت تأیید نشد چون سند فروش در دفتر مالی ثبت نشد.'), {
           code: captureCode,
@@ -3561,6 +5008,20 @@ function settlePaymentAttempt(payment, { status = 'paid', reference = '', source
           details: financeResult?.event?.error || null,
         });
       }
+      if (!['partial', 'paid'].includes(String(order.paymentStatus))) {
+        throw Object.assign(new Error('وضعیت تجمیعی پرداخت پس از capture معتبر نیست.'), {
+          code: 'online_payment_projection_invalid', status: 409,
+        });
+      }
+      if (order.paymentStatus === 'paid') {
+        const nextStatus = nextOrderStatusAfterPayment(order);
+        if (nextStatus && canTransitionOrder(order, nextStatus)) {
+          appendOrderStatus(order, nextStatus, null, { paymentAttemptId: payment.id, source });
+        }
+      }
+    } else if (!['paid', 'partial'].includes(String(order.paymentStatus))) {
+      // A failed/pending attempt must not erase successful partial captures.
+      order.paymentStatus = orderPaymentStatusForAttempt(status) || 'unknown';
     }
   }
   recordAudit(null, `payment.${status}`, 'payment', payment.id, { orderId: payment.orderId, source }, payment.branchId);
@@ -3579,15 +5040,18 @@ function publishPaymentCommitEffects(result, status) {
 }
 
 app.get('/api/checkout/meta', (req, res) => {
-  const branch = resolveBranch(req.query.branchId || req.query.branch);
-  const configuredPaymentMode = String(db.paymentProvider?.mode || 'sandbox').toLowerCase();
-  const sandboxAvailable = process.env.NODE_ENV !== 'production' && configuredPaymentMode === 'sandbox';
-  const paymentReady = sandboxAvailable || productionPaymentProviderReady();
+  const requestedBranch = req.query.branchId || req.query.branch;
+  const branch = requestedBranch ? resolveBranchExact(requestedBranch) : defaultBranch();
+  if (requestedBranch && !branch) return res.status(400).json({ error: 'branch_invalid', message: 'شعبهٔ انتخاب‌شده معتبر نیست.' });
+  const paymentProvider = paymentProviderPublicStatus(db.paymentProvider, {
+    nodeEnv: process.env.NODE_ENV,
+    providerReady: productionPaymentProviderReady(),
+  });
   res.json({
     payment: {
-      mode: paymentReady ? configuredPaymentMode : 'unavailable',
-      provider: paymentReady ? (db.paymentProvider?.provider || 'sandbox') : null,
-      onlineEnabled: db.paymentProvider?.enabled !== false && paymentReady,
+      mode: paymentProvider.mode,
+      provider: paymentProvider.provider,
+      onlineEnabled: paymentProvider.enabled,
     },
     branches: (db.branches || []).filter((item) => item.active !== false).map((item) => ({ id: item.id, slug: item.slug, name: item.name, address: item.address })),
     deliveryZones: (db.deliveryZones || [])
@@ -3598,139 +5062,239 @@ app.get('/api/checkout/meta', (req, res) => {
 });
 
 app.post('/api/checkout/quote', (req, res) => {
-  const lineResult = orderLinesFromRequest(req.body.items);
-  if (lineResult.error) return res.status(400).json(lineResult);
-  const fulfillment = normalizeFulfillment(req.body.fulfillment, { tableNo: req.body.tableNo });
-  const branch = findOrderBranch(req.body, String(req.body.tableNo || '').trim(), fulfillment);
+  const input = req.body || {};
+  const selectionError = validateExplicitCheckoutSelections(input);
+  if (selectionError) return res.status(selectionError.status).json(selectionError);
+  const tableNo = normalizeDigits(String(input.tableNo || input.table || '')).trim().slice(0, 20);
+  const fulfillment = normalizeFulfillment(input.fulfillment, { tableNo });
+  const branch = findOrderBranch(input, tableNo, fulfillment);
+  if (!branch || branch.active === false) return res.status(400).json({ error: 'table_or_branch_invalid', message: 'میز فعال و شعبهٔ معتبر را انتخاب کنید.' });
   const zone = fulfillment === 'delivery'
-    ? (db.deliveryZones || []).find((item) => Number(item.id) === Number(req.body.deliveryZoneId || req.body.zoneId))
+    ? (db.deliveryZones || []).find((item) => Number(item.id) === Number(input.deliveryZoneId || input.zoneId))
     : null;
+  const lineResult = orderLinesFromRequest(input.items, { branchId: branch.id });
+  if (lineResult.error) return res.status(400).json(lineResult);
   const quote = quoteFulfillment({ fulfillment, subtotal: lineResult.subtotal, zone, branchId: branch?.id });
   if (!quote.ok) return res.status(400).json(quote);
 
-  const phone = normalizeDigits(req.body?.phone || req.user?.phone || '').trim();
-  const customerUser = phone ? (db.users || []).find((u) => u.phone === phone) : null;
-  const discountCalc = loyaltyEngine.calculateOrderDiscounts(db, {
-    subtotalToman: lineResult.subtotal,
-    phone,
-    user: customerUser,
-    redeemPoints: req.body?.redeemPoints || req.body?.pointsToRedeem || 0,
+  const paymentMethod = String(input.paymentMethod || 'cashier').trim() === 'online' ? 'online' : 'cashier';
+  if (paymentMethod === 'online' && !productionPaymentProviderReady()) {
+    return res.status(503).json({ error: 'payment_provider_not_ready', message: 'پرداخت آنلاین اکنون در دسترس نیست؛ روش پرداخت دیگری انتخاب کنید.' });
+  }
+  const pricing = calculateCheckoutPricing({
+    input,
+    actor: req.user,
+    subtotal: lineResult.subtotal,
+    deliveryFee: quote.deliveryFee,
   });
+  if (pricing.error) return res.status(pricing.status || 400).json(pricing);
 
-  const finalTotal = Math.max(0, quote.total - discountCalc.totalDiscountToman);
+  const finalTotal = pricing.total;
+  const checkoutTax = checkoutTaxForOrder({
+    branch,
+    fulfillment,
+    lines: lineResult.lines,
+    discount: pricing.discount,
+    deliveryFee: quote.deliveryFee,
+    total: finalTotal,
+    date: new Date(),
+  });
+  if (checkoutTax.error) return res.status(checkoutTax.status || 409).json(checkoutTax);
+  const quoteInput = { ...input, tableNo, fulfillment, paymentMethod, phone: pricing.phone };
+  const quoteIntent = checkoutQuoteIntent({
+    input: quoteInput, branch, fulfillment, lines: lineResult.lines,
+    subtotal: lineResult.subtotal, deliveryFee: quote.deliveryFee,
+    discount: pricing.discount, total: finalTotal, phone: pricing.phone, taxSnapshot: checkoutTax.snapshot,
+  });
 
   res.json({
     ok: true,
+    quoteToken: createCheckoutQuoteToken(SECRET, quoteIntent),
+    fulfillment,
     subtotal: lineResult.subtotal,
     deliveryFee: quote.deliveryFee,
-    discount: discountCalc.totalDiscountToman,
-    tierDiscountToman: discountCalc.tierDiscountToman,
-    tier: discountCalc.tier,
-    pointsRedeemed: discountCalc.pointsRedeemed,
-    pointsDiscountToman: discountCalc.pointsDiscountToman,
-    maxRedeemablePoints: discountCalc.maxRedeemablePoints,
-    availablePoints: discountCalc.availablePoints,
+    discount: pricing.discount,
+    tierDiscountToman: pricing.discountCalc.tierDiscountToman,
+    tier: pricing.discountCalc.tier,
+    pointsRedeemed: pricing.discountCalc.pointsRedeemed,
+    pointsDiscountToman: pricing.discountCalc.pointsDiscountToman,
+    maxRedeemablePoints: pricing.discountCalc.maxRedeemablePoints,
+    availablePoints: pricing.discountCalc.availablePoints,
     total: finalTotal,
+    tax: { inclusive: true, totalTaxIrr: checkoutTax.snapshot.totalTaxIrr },
     minimum: quote.minimum,
     etaMinutes: quote.etaMinutes,
+    zone: quote.zone,
     branchId: branch?.id || null,
   });
 });
 
 app.post('/api/checkout/orders', publicOrderMutationGuard('orders.online'), async (req, res) => {
   try {
+    const rawReceiptCode = req.get('Idempotency-Key') || req.body?.idempotencyKey;
+    const receiptCode = normalizeCheckoutReceiptCode(rawReceiptCode);
+    if (!receiptCode) {
+      return res.status(400).json({ error: 'receipt_code_invalid', message: 'کد پیگیری سفارش معتبر نیست.' });
+    }
     const result = await createAndPersistCheckoutOrder(req.body || {}, {
-      idempotencyKey: req.get('Idempotency-Key') || req.body?.idempotencyKey,
+      requireQuote: true,
+      requireName: true,
+      idempotencyKey: checkoutReceiptIndexKey(receiptCode),
+      actor: req.user || null,
     });
     if (result.error) return res.status(result.status || 400).json(result);
     res.status(result.idempotent ? 200 : 201).json({
       ok: true,
       idempotent: !!result.idempotent,
-      order: result.order,
+      order: publicCheckoutOrderView(result.order),
       payment: result.payment
         ? { ...publicPaymentAttempt(result.payment), sandboxToken: result.payment.mode === 'sandbox' ? result.payment.sandboxToken : undefined }
         : null,
-      whatsapp: result.whatsapp,
+      whatsapp: null,
     });
   } catch (error) {
     return res.status(error.status || 503).json({ error: error.code || error.message });
   }
 });
 
-app.post('/api/checkout/payments/:id/sandbox-confirm', sandboxPaymentGuard, async (req, res) => {
+app.post('/api/checkout/recovery', guardPublicCheckoutRecovery, (req, res) => {
+  const receiptCode = normalizeCheckoutReceiptCode(req.body?.receiptCode);
+  if (!receiptCode) return res.status(400).json({ error: 'receipt_code_invalid' });
+  const indexKey = checkoutReceiptIndexKey(receiptCode);
+  const saved = indexKey ? db.checkoutIdempotency?.[indexKey] : null;
+  const order = saved && (db.orders || []).find((item) => Number(item.id) === Number(saved.orderId));
+  if (!order) return res.status(404).json({ error: 'receipt_not_found' });
+  const projection = publicCheckoutOrderView(order);
+  if (!projection) return res.status(404).json({ error: 'receipt_not_found' });
+  return res.json({ ok: true, order: projection });
+});
+
+app.post('/api/checkout/payments/:id/sandbox-confirm', sandboxPaymentGuard, serializePaymentOrderMutationRoute(async (req, res) => {
   const targetId = Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
   const payment = (db.paymentAttempts || []).find((item) => Number(item.id) === targetId);
   if (!payment) return res.status(404).json({ error: 'payment_not_found' });
   if (payment.mode !== 'sandbox') return res.status(409).json({ error: 'sandbox_disabled' });
   if (!req.body?.token || req.body.token !== payment.sandboxToken) return res.status(403).json({ error: 'payment_token_invalid' });
+  const status = typeof req.body?.status === 'string' ? req.body.status.trim().toLowerCase() : '';
+  if (!status) return res.status(400).json({ error: 'payment_status_required' });
+  if (!['paid', 'failed', 'cancelled', 'unknown', 'reconciliation_required'].includes(status)) {
+    return res.status(400).json({ error: 'payment_status_invalid' });
+  }
   const snapshot = snapshotFinanceMutationState();
   let result;
   try {
-    result = settlePaymentAttempt(payment, { status: 'paid', reference: `sandbox-${payment.id}`, source: 'sandbox-confirm' });
-    if (result.error) return res.status(400).json(result);
+    result = settlePaymentAttempt(payment, { status, reference: `sandbox-${payment.id}`, source: 'sandbox-confirm' });
+    if (result.error) return res.status(result.status || 400).json(result);
     await persistFinanceMutation(snapshot);
   } catch (error) {
     restoreFinanceMutationState(snapshot);
     return res.status(error.status || 503).json({ error: error.code || error.message });
   }
-  try { publishPaymentCommitEffects(result, 'paid'); } catch (error) { console.error('[payment-post-commit] integration effect failed', error?.message || error); }
-  res.json({ ok: true, idempotent: result.idempotent, payment: publicPaymentAttempt(result.payment), order: result.order });
-});
+  try { publishPaymentCommitEffects(result, status); } catch (error) { console.error('[payment-post-commit] integration effect failed', error?.message || error); }
+  res.json({ ok: true, idempotent: result.idempotent, payment: publicPaymentAttempt(result.payment), order: publicCheckoutOrderView(result.order) });
+}));
 
-app.post('/api/payments/webhook/:provider', async (req, res) => {
+app.post('/api/payments/webhook/:provider', serializePaymentOrderMutationRoute(async (req, res) => {
   const payment = (db.paymentAttempts || []).find((item) => Number(item.id) === Number(req.body?.paymentAttemptId));
   if (!payment || payment.provider !== String(req.params.provider || '')) return res.status(404).json({ error: 'payment_not_found' });
-  const secret = process.env.PAYMENT_WEBHOOK_SECRET;
-  const signature = req.get('X-Westo-Payment-Signature');
-  const validSandbox = payment.mode === 'sandbox' && req.body?.token === payment.sandboxToken;
-  if (!validSandbox && (!secret || signature !== secret)) return res.status(401).json({ error: 'webhook_unauthorized' });
+  // No production gateway adapter or provider-specific raw-body verifier is
+  // installed yet. Never let a configured shared secret or a sandbox token
+  // turn this placeholder endpoint into a production payment authority.
+  if (process.env.NODE_ENV === 'production') {
+    return res.status(503).json({ error: 'payment_webhook_provider_unavailable' });
+  }
+  if (payment.mode !== 'sandbox' || payment.provider !== 'sandbox') {
+    return res.status(503).json({ error: 'payment_webhook_provider_unavailable' });
+  }
+  if (!req.body?.token || req.body.token !== payment.sandboxToken) {
+    return res.status(401).json({ error: 'webhook_unauthorized' });
+  }
+  const status = typeof req.body?.status === 'string' ? req.body.status.trim().toLowerCase() : '';
+  if (!status) return res.status(400).json({ error: 'payment_status_required' });
+  if (!['paid', 'failed', 'cancelled', 'unknown', 'reconciliation_required'].includes(status)) {
+    return res.status(400).json({ error: 'payment_status_invalid' });
+  }
+  const callbackAmountText = normalizeDigits(String(req.body?.amount ?? '')).replace(/[٬,]/g, '').trim();
+  const callbackAmount = Number(callbackAmountText);
+  const expectedAmount = Number(payment.amount);
+  if (!Number.isSafeInteger(callbackAmount) || !Number.isSafeInteger(expectedAmount) || callbackAmount !== expectedAmount) {
+    return res.status(409).json({ error: 'payment_amount_mismatch' });
+  }
   const snapshot = snapshotFinanceMutationState();
   let result;
   try {
     result = settlePaymentAttempt(payment, {
-      status: String(req.body?.status || 'paid'),
+      status,
       reference: req.body?.reference,
       source: `webhook:${payment.provider}`,
     });
-    if (result.error) return res.status(400).json(result);
+    if (result.error) return res.status(result.status || 400).json(result);
     await persistFinanceMutation(snapshot);
   } catch (error) {
     restoreFinanceMutationState(snapshot);
     return res.status(error.status || 503).json({ error: error.code || error.message });
   }
-  try { publishPaymentCommitEffects(result, result.payment.status); } catch (error) { console.error('[payment-post-commit] integration effect failed', error?.message || error); }
-  res.json({ ok: true, idempotent: result.idempotent, payment: publicPaymentAttempt(result.payment), order: result.order });
+  try { publishPaymentCommitEffects(result, status); } catch (error) { console.error('[payment-post-commit] integration effect failed', error?.message || error); }
+  res.json({ ok: true, idempotent: result.idempotent, payment: publicPaymentAttempt(result.payment), order: publicCheckoutOrderView(result.order) });
+}));
+
+const CUSTOMER_ORDER_STATUS_LABELS = Object.freeze({
+  unknown: 'وضعیت سفارش نامشخص',
+  pending: 'در انتظار تأیید',
+  pending_online: 'در انتظار پرداخت آنلاین',
+  pending_cashier: 'در انتظار پرداخت صندوق/پیک',
+  pay_at_cashier: 'در انتظار پرداخت',
+  awaiting_confirmation: 'در انتظار تأیید رستوران',
+  prep: 'در حال آماده‌سازی',
+  preparing: 'در حال پخت و آماده‌سازی',
+  kitchen: 'در حال پخت در آشپزخانه',
+  sent_to_kitchen: 'ارسال‌شده به آشپزخانه',
+  ready: 'آماده تحویل',
+  dispatched: 'در مسیر ارسال',
+  delivering: 'در حال ارسال پیک',
+  delivered: 'تحویل داده شد',
+  picked_up: 'تحویل حضوری شد',
+  paid: 'پرداخت و تکمیل‌شده',
+  done: 'تکمیل‌شده',
+  cancelled: 'لغوشده',
+  rejected: 'رد شده',
 });
 
+function normalizeCustomerOrderStatus(status) {
+  const normalized = typeof status === 'string' ? status.trim().toLowerCase() : '';
+  return Object.hasOwn(CUSTOMER_ORDER_STATUS_LABELS, normalized) ? normalized : 'unknown';
+}
+
 function getOrderStatusFaLabel(status) {
-  const map = {
-    pending: 'در انتظار تأیید',
-    pending_online: 'در انتظار پرداخت آنلاین',
-    pending_cashier: 'در انتظار پرداخت صندوق/پیک',
-    awaiting_confirmation: 'در انتظار تأیید',
-    prep: 'در حال آماده‌سازی',
-    preparing: 'در حال پخت و آماده‌سازی',
-    kitchen: 'در حال پخت در آشپزخانه',
-    ready: 'آماده تحویل',
-    delivering: 'در حال ارسال پیک',
-    delivered: 'تحویل داده شد',
-    picked_up: 'تحویل حضوری شد',
-    paid: 'پرداخت و تکمیل‌شده',
-    done: 'تکمیل‌شده',
-    cancelled: 'لغوشده',
-    rejected: 'رد شده',
+  return CUSTOMER_ORDER_STATUS_LABELS[normalizeCustomerOrderStatus(status)];
+}
+
+function customerOrderStatusProjection(order) {
+  const progress = customerOrderProgress(order);
+  const paymentStatus = progress.paymentStatus || 'unknown';
+  let status = normalizeCustomerOrderStatus(order?.status);
+  // Legacy lifecycle rows marked "paid" without explicit payment evidence are
+  // not sufficient to tell a customer that payment succeeded.
+  if (status === 'paid' && paymentStatus !== 'paid') status = 'unknown';
+  return {
+    ...progress,
+    paymentStatus,
+    status,
+    statusLabel: getOrderStatusFaLabel(status),
   };
-  return map[String(status || '').toLowerCase()] || 'در جریان';
+}
+
+function customerOwnsHistoryOrder(order, user) {
+  // An explicit owner is authoritative. Never fall through to a matching
+  // phone when the record belongs to a different account (or is malformed).
+  // requireAuth resolves a session created only after OTP verification; phone
+  // lookup is retained solely for genuinely unowned guest-order records.
+  return loyaltyAchievements.orderBelongsToMember(order, user);
 }
 
 app.get('/api/orders/my-orders', requireAuth, (req, res) => {
-  const userPhone = String(req.user?.phone || '').trim();
   const userOrders = (db.orders || [])
-    .filter((o) => {
-      if (o.userId && req.user?.id && String(o.userId) === String(req.user.id)) return true;
-      const p = o.phone || o.userPhone || o.customerPhone || '';
-      return phonesMatch(p, userPhone);
-    })
+    .filter((o) => customerOwnsHistoryOrder(o, req.user))
     .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
 
   const tierInfo = loyaltyEngine.resolveCustomerTier(db, req.user);
@@ -3739,11 +5303,10 @@ app.get('/api/orders/my-orders', requireAuth, (req, res) => {
     const totalAmount = Number(o.total || o.finalTotal || o.subtotal || 0);
     const calculatedPoints = loyaltyEngine.calculateOrderPointsEarned(db, totalAmount, tierInfo.tier);
     return {
+      ...customerOrderStatusProjection(o),
       id: o.id,
       orderNo: o.orderNo || `W-${o.id}`,
       createdAt: o.createdAt || new Date().toISOString(),
-      status: o.status || 'paid',
-      statusLabel: getOrderStatusFaLabel(o.status),
       fulfillment: o.fulfillment || 'dine_in',
       items: Array.isArray(o.items) ? o.items.map((it) => ({
         id: it.id || it.menuItemId || it.itemId || null,
@@ -3774,15 +5337,27 @@ app.get('/api/profile/orders', requireAuth, (req, res, next) => {
 // Existing table ordering clients keep their endpoint and response shape.
 app.post('/api/orders', publicOrderMutationGuard('orders.pos'), async (req, res) => {
   try {
-    const result = await createAndPersistCheckoutOrder(req.body || {}, { requireTable: true });
+    const result = await createAndPersistCheckoutOrder(req.body || {}, {
+      requireTable: true,
+      requireQuote: true,
+      idempotencyKey: req.get('Idempotency-Key') || req.body?.idempotencyKey || '',
+      actor: req.user || null,
+    });
     if (result.error) return res.status(result.status || 400).json(result);
-    res.json({ ok: true, order: result.order, whatsapp: result.whatsapp });
+    res.json({ ok: true, order: publicCheckoutOrderView(result.order), whatsapp: null });
   } catch (error) {
     return res.status(error.status || 503).json({ error: error.code || error.message });
   }
 });
 
-app.get('/api/admin/orders', requireCapability('orders.view'), (req, res) => {
+app.get('/api/admin/orders', requireCapability('orders.view'), async (req, res) => {
+  const includePii = userCan(req.user, 'pii.view');
+  const includePaymentReferences = userCan(req.user, 'payments.manage');
+  const orderOptions = {
+    includePii,
+    includePaymentReferences,
+    includeDeliveryReason: userCan(req.user, 'delivery.manage'),
+  };
   // Owners see a consolidated queue by default. Scoped operators must never
   // fall back to the owner default branch (or receive every branch) when the
   // UI omits branchId; resolve the same effective scope used by reports.
@@ -3795,6 +5370,64 @@ app.get('/api/admin/orders', requireCapability('orders.view'), (req, res) => {
       : (defaultBranch() && allowedBranchIds.includes(Number(defaultBranch().id))
         ? defaultBranch().id
         : allowedBranchIds[0] || null);
+
+  if (String(req.query?.history || '') === 'closed') {
+    try {
+      const cursor = normalizeOrderHistoryCursor(req.query?.cursor);
+      const limit = historyPageSize(req.query?.limit);
+      const tenantId = tenantStorage.getStore()?.tenantId || TENANT_CONFIG.tenantId || 'westo';
+      if (stateStore.enabled && tenantId === 'westo') {
+        try {
+          const archive = await stateStore.listClosedOrders({ branchId, cursor, limit });
+          if (archive.available) {
+            const invalidRows = Number(archive.invalidRows) || 0;
+            return res.json({
+              orders: (archive.orders || []).map((order) => adminOrderDto(order, orderOptions)),
+              hasMore: archive.hasMore,
+              nextCursor: archive.nextCursor,
+              limit: archive.limit,
+              complete: false,
+              coverage: 'unverified',
+              source: 'postgres',
+              skippedInvalidRows: invalidRows,
+              warning: `آرشیو پایدار سفارش‌ها صفحه‌بندی شده است، اما کامل بودن سوابق پیش از مهاجرت هنوز تأیید نشده است.${invalidRows ? ` ${invalidRows.toLocaleString('fa-IR')} ردیف نامعتبر نیز نمایش داده نشد.` : ''}`,
+              serverTime: new Date().toISOString(),
+            });
+          }
+          if (stateStore.required) {
+            return res.status(503).json({
+              error: 'order_history_store_unavailable',
+              message: 'آرشیو پایدار سفارش‌ها در دسترس نیست؛ برای جلوگیری از نمایش تاریخچهٔ ناقص دوباره تلاش کنید.',
+            });
+          }
+        } catch (error) {
+          if (error.status === 400) return res.status(400).json({ error: error.code || 'order_history_cursor_invalid', message: 'نشانگر صفحهٔ تاریخچه معتبر نیست.' });
+          if (stateStore.required) {
+            console.error('[orders] durable history read failed', error);
+            return res.status(503).json({ error: 'order_history_store_unavailable', message: 'خواندن آرشیو پایدار سفارش‌ها ممکن نیست؛ دوباره تلاش کنید.' });
+          }
+          console.warn('[orders] falling back to bounded closed-order cache', error.message);
+        }
+      }
+
+      const cached = paginateCachedClosedOrders(db.orders || [], { branchId, cursor, limit });
+      const warning = tenantId !== 'westo'
+        ? 'برای این مجموعه آرشیو پایدار سفارش در این سرویس متصل نیست؛ فقط سابقهٔ موجود در حافظهٔ اخیر نمایش داده می‌شود و کامل نیست.'
+        : 'آرشیو پایدار در دسترس نیست؛ فقط سفارش‌های بستهٔ موجود در حافظهٔ اخیر نمایش داده می‌شوند و ممکن است سابقهٔ قدیمی‌تر را شامل نشوند.';
+      return res.json({
+        ...cached,
+        orders: (cached.orders || []).map((order) => adminOrderDto(order, orderOptions)),
+        complete: false,
+        coverage: 'recent-cache-only',
+        source: 'recent-cache',
+        warning,
+        serverTime: new Date().toISOString(),
+      });
+    } catch (error) {
+      return res.status(error.status || 400).json({ error: error.code || 'order_history_invalid', message: 'درخواست تاریخچهٔ سفارش معتبر نیست.' });
+    }
+  }
+
   let orders = (db.orders || []).slice();
   if (branchId != null) orders = orders.filter((o) => Number(o.branchId) === Number(branchId));
   const terminal = new Set(['picked_up', 'delivered', 'done', 'cancelled']);
@@ -3806,32 +5439,47 @@ app.get('/api/admin/orders', requireCapability('orders.view'), (req, res) => {
     const bt = new Date(b.createdAt || 0).getTime() || 0;
     return aClosed ? bt - at : at - bt; // oldest actionable first; newest archived first
   });
-  res.json({ orders, serverTime: new Date().toISOString() });
+  res.json({
+    orders: orders.map((order) => operationalOrderResponse(order, req.user)),
+    serverTime: new Date().toISOString(),
+  });
 });
 
 app.post('/api/staff/orders', requireCapability('orders.create'), async (req, res) => {
+  const idempotencyKey = String(req.get('Idempotency-Key') || req.body?.idempotencyKey || '').trim();
+  if (idempotencyKey && !ORDER_IDEMPOTENCY_KEY_RE.test(idempotencyKey)) {
+    return res.status(400).json({ error: 'idempotency_key_invalid', message: 'کلید یکتای سفارش معتبر نیست.' });
+  }
+  if (process.env.NODE_ENV === 'production' && !idempotencyKey) {
+    return res.status(400).json({ error: 'idempotency_key_required', message: 'برای ثبت سفارش، کلید یکتای درخواست لازم است.' });
+  }
   try {
     const result = await createAndPersistCheckoutOrder(req.body || {}, {
       requireTable: String(req.body?.fulfillment || 'dine_in') === 'dine_in',
       requirePhone: false,
-      idempotencyKey: req.get('Idempotency-Key') || '',
+      idempotencyKey,
       actor: req.user,
     }, async ({ order }) => {
-      if (req.body?.sendToKitchen && order.paymentMethod !== 'online' && order.status === 'pay_at_cashier') {
+      if (req.body?.sendToKitchen === true && order.paymentMethod !== 'online' && order.status === 'pay_at_cashier'
+          && canTransitionOrder(order, 'sent_to_kitchen')) {
         appendOrderStatus(order, 'sent_to_kitchen', req.user, { source: 'staff-pos', paymentStatus: order.paymentStatus });
         recordAudit(req, 'order.sent_to_kitchen', 'order', order.id, { paymentStatus: order.paymentStatus }, order.branchId);
         return () => publishOperationalEvent('order.updated', { orderId: order.id, branchId: order.branchId, status: order.status });
       }
       return null;
     });
-    if (result.error) return res.status(400).json(result);
-    res.status(201).json({ ok: true, order: result.order });
+    if (result.error) return res.status(result.status || 400).json(result);
+    res.status(result.idempotent ? 200 : 201).json({
+      ok: true,
+      idempotent: !!result.idempotent,
+      order: operationalOrderResponse(result.order, req.user),
+    });
   } catch (error) {
     return res.status(error.status || 503).json({ error: error.code || error.message });
   }
 });
 
-app.patch('/api/cashier/orders/:id', requireCapability('orders.manage'), (req, res) => {
+const handleEditOrder = async (req, res) => {
   const targetId = Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
   const order = (db.orders || []).find((item) => Number(item.id) === targetId);
   if (!order) return res.status(404).json({ error: 'not found' });
@@ -3846,15 +5494,37 @@ app.patch('/api/cashier/orders/:id', requireCapability('orders.manage'), (req, r
   if (req.body?.branchId && Number(req.body.branchId) !== Number(order.branchId)) {
     return res.status(404).json({ error: 'order_edit_branch_mismatch' });
   }
+  const receivedAmount = Math.max(
+    Number(order.amountPaid) || 0,
+    (Array.isArray(order.partialPayments) ? order.partialPayments : [])
+      .reduce((sum, payment) => sum + Math.max(0, Number(payment?.amount) || 0), 0),
+  );
+  if (order.paymentStatus === 'paid' || receivedAmount > 0) {
+    return res.status(409).json({ error: 'order_edit_after_payment_requires_adjustment', current: order.status });
+  }
   if (!canEditOrderBeforeKitchen(order)) {
     return res.status(409).json({ error: 'order_edit_locked', current: order.status, startedAt: order.startedAt || null });
   }
+  const currentDiscount = parseOrderTomanAmount(order.discount ?? 0);
+  if (currentDiscount === null) return res.status(409).json({ error: 'order_discount_state_invalid' });
+  let requestedDiscount = null;
+  if (req.body?.discount !== undefined) {
+    requestedDiscount = parseOrderTomanAmount(req.body.discount);
+    if (requestedDiscount === null) {
+      return res.status(400).json({ error: 'discount_invalid', message: 'مبلغ تخفیف باید عدد صحیح و معتبر باشد.' });
+    }
+  }
+  if (requestedDiscount !== null && requestedDiscount > currentDiscount && !userCan(req.user, 'orders.manage')) {
+    return res.status(403).json({ error: 'discount_not_allowed', message: 'اعمال یا افزایش تخفیف دستی فقط برای نقش مجاز امکان‌پذیر است.' });
+  }
 
   const snapshot = orderInventorySnapshot();
+  const mutationSnapshot = snapshotFinanceMutationState();
   const previous = {
     total: Number(order.total || 0),
     subtotal: Number(order.subtotal || 0),
     itemUnits: (order.items || []).reduce((sum, line) => sum + Number(line.qty || 0), 0),
+    covers: Number(order.covers) || 1,
   };
   const existingMenuIds = new Set((order.items || []).map((line) => Number(line.menuItemId)));
   const existingComplementIds = new Set((order.items || []).flatMap((line) => line.complements || []).map((entry) => Number(entry.id || entry.complementId)));
@@ -3866,14 +5536,75 @@ app.patch('/api/cashier/orders/:id', requireCapability('orders.manage'), (req, r
     allowMenuItemIds: existingMenuIds,
     allowComplementIds: existingComplementIds,
     branchId: order.branchId,
+    excludeInventoryReservationOrderId: order.id,
   });
   if (normalized.error) {
     restoreOrderInventorySnapshot(snapshot);
     return res.status(400).json(normalized);
   }
+  const sendToKitchen = req.body?.sendToKitchen === true;
+  const waiterValidation = sendToKitchen
+    ? validateWaiterKitchenSend(order, req.body?.items, { canonicalLines: normalized.lines })
+    : validateWaiterOrderEdit(order, req.body?.items, { canonicalLines: normalized.lines });
+  if (!waiterValidation.ok) {
+    restoreOrderInventorySnapshot(snapshot);
+    const conflictErrors = new Set([
+      'invoice_closed', 'order_edit_locked', 'order_edit_payment_locked',
+      'kitchen_send_locked', 'payment_not_confirmed',
+    ]);
+    return res.status(conflictErrors.has(waiterValidation.error) ? 409 : 400).json({
+      error: waiterValidation.error,
+      message: waiterValidation.error === 'payment_not_confirmed'
+        ? 'وضعیت پرداخت سفارش تأیید نشده است؛ ابتدا اطلاعات فاکتور را بررسی کنید.'
+        : 'اطلاعات سفارش با وضعیت فعلی فاکتور یا اقلام معتبر منو سازگار نیست؛ فاکتور را بازبینی کنید.',
+      ...(waiterValidation.index === undefined ? {} : { index: waiterValidation.index }),
+    });
+  }
+  if (sendToKitchen && !normalized.lines.some((line) => line.courseStatus === 'fired')) {
+    restoreOrderInventorySnapshot(snapshot);
+    return res.status(400).json({ error: 'kitchen_course_empty', message: 'برای ارسال سفارش، دست‌کم یک مرحله باید به آشپزخانه فرستاده شود.' });
+  }
 
-  const deliveryFee = Math.max(0, Number(order.deliveryFee) || 0);
-  const nextTotal = normalized.subtotal + deliveryFee;
+  const inventoryReservationSnapshot = financeV2.buildOrderInventoryReservationSnapshot(
+    db, normalized.lines, order.branchId, order.createdAt || new Date().toISOString(),
+  );
+  if (!inventoryReservationSnapshot.ok) {
+    restoreOrderInventorySnapshot(snapshot);
+    return res.status(409).json({
+      error: 'inventory_reservation_unavailable',
+      message: 'رزرو مواد اولیهٔ سفارش قابل به‌روزرسانی نیست؛ موجودی و دستور تهیه را بررسی کنید.',
+      details: inventoryReservationSnapshot.issues,
+    });
+  }
+
+  const rawCovers = req.body?.covers === undefined
+    ? Math.max(Number(order.covers) || 1, highestAssignedSeat(order.items))
+    : Number(normalizeDigits(String(req.body.covers)).replace(/[^0-9]/g, ''));
+  const coverValidation = validateCoversForItems(rawCovers, normalized.lines);
+  if (!coverValidation.ok && coverValidation.error === 'covers_invalid') {
+    restoreOrderInventorySnapshot(snapshot);
+    return res.status(400).json({ error: 'covers_invalid', message: 'تعداد مهمان باید بین ۱ تا ۹۹ نفر باشد.' });
+  }
+  if (!coverValidation.ok) {
+    restoreOrderInventorySnapshot(snapshot);
+    return res.status(400).json({ error: 'seat_exceeds_covers', message: 'تعداد مهمان نمی‌تواند از شمارهٔ صندلی تخصیص‌یافته کمتر باشد.' });
+  }
+
+  const deliveryFee = parseOrderTomanAmount(order.deliveryFee ?? 0);
+  if (deliveryFee === null) {
+    restoreOrderInventorySnapshot(snapshot);
+    return res.status(409).json({ error: 'order_delivery_fee_invalid' });
+  }
+  const discount = requestedDiscount === null ? Math.min(normalized.subtotal, currentDiscount) : requestedDiscount;
+  if (discount > normalized.subtotal) {
+    restoreOrderInventorySnapshot(snapshot);
+    return res.status(400).json({ error: 'discount_exceeds_subtotal', message: 'تخفیف نمی‌تواند از جمع اقلام بیشتر باشد.' });
+  }
+  const nextTotal = normalized.subtotal + deliveryFee - discount;
+  if (!Number.isSafeInteger(nextTotal) || nextTotal < 0) {
+    restoreOrderInventorySnapshot(snapshot);
+    return res.status(400).json({ error: 'order_amount_unsafe' });
+  }
   const amountPaid = Math.max(0, Number(order.amountPaid || (order.paymentStatus === 'paid' ? order.total : 0)) || 0);
   if (nextTotal < amountPaid) {
     restoreOrderInventorySnapshot(snapshot);
@@ -3889,8 +5620,11 @@ app.patch('/api/cashier/orders/:id', requireCapability('orders.manage'), (req, r
 
   adjustOrderInventory(normalized.lines, -1, order.branchId);
   order.items = normalized.lines;
+  order.inventoryReservationSnapshot = inventoryReservationSnapshot;
   order.subtotal = normalized.subtotal;
+  order.discount = discount;
   order.total = nextTotal;
+  order.covers = rawCovers;
   order.amountPaid = amountPaid;
   order.paymentStatus = amountPaid >= nextTotal && nextTotal > 0 ? 'paid' : amountPaid > 0 ? 'partial' : (order.paymentStatus === 'pending' ? 'pending' : 'unpaid');
   order.name = nextName;
@@ -3901,10 +5635,10 @@ app.patch('/api/cashier/orders/:id', requireCapability('orders.manage'), (req, r
   order.editRevision = Math.max(0, Number(order.editRevision) || 0) + 1;
   order.balanceDue = Math.max(0, nextTotal - amountPaid);
   order.editHistory = Array.isArray(order.editHistory) ? order.editHistory : [];
-  order.editHistory.push({ at: order.editedAt, by: order.editedBy, before: previous, after: { total: nextTotal, subtotal: normalized.subtotal, itemUnits: normalized.lines.reduce((sum, line) => sum + Number(line.qty || 0), 0) } });
+  order.editHistory.push({ at: order.editedAt, by: order.editedBy, before: previous, after: { total: nextTotal, subtotal: normalized.subtotal, covers: rawCovers, itemUnits: normalized.lines.reduce((sum, line) => sum + Number(line.qty || 0), 0) } });
   order.editHistory = order.editHistory.slice(-30);
 
-  if (req.body?.sendToKitchen && order.status === 'pay_at_cashier') {
+  if (sendToKitchen && order.status === 'pay_at_cashier' && canTransitionOrder(order, 'sent_to_kitchen')) {
     appendOrderStatus(order, 'sent_to_kitchen', req.user, { source: 'waiter-pos' });
     recordAudit(req, 'order.sent_to_kitchen', 'order', order.id, { source: 'waiter-pos', paymentStatus: order.paymentStatus }, order.branchId);
   }
@@ -3916,12 +5650,21 @@ app.patch('/api/cashier/orders/:id', requireCapability('orders.manage'), (req, r
     afterItemUnits: normalized.lines.reduce((sum, line) => sum + Number(line.qty || 0), 0),
     paymentStatus: order.paymentStatus,
   }, order.branchId);
-  publishOperationalEvent('order.updated', { orderId: order.id, branchId: order.branchId, status: order.status, edited: true });
-  save({ bumpMenu: true });
-  res.json({ ok: true, order, editable: canEditOrderBeforeKitchen(order) });
-});
+  try {
+    await persistFinanceMutation(mutationSnapshot, { bumpMenu: true });
+  } catch (error) {
+    restoreFinanceMutationState(mutationSnapshot);
+    return res.status(error.status || 503).json({ error: error.code || 'order_persistence_failed', message: error.message });
+  }
+  try { publishOperationalEvent('order.updated', { orderId: order.id, branchId: order.branchId, status: order.status, edited: true }); }
+  catch (error) { console.error('[order-edit] post-commit event failed', error?.message || error); }
+  res.json({ ok: true, order: operationalOrderResponse(order, req.user), editable: canEditOrderBeforeKitchen(order) });
+};
 
-app.post('/api/cashier/orders/:id/apply-loyalty', requireCapability('orders.manage'), (req, res) => {
+app.patch('/api/cashier/orders/:id', requireCapability('orders.manage'), serializeOrderMutationRoute(handleEditOrder));
+app.patch('/api/waiter/orders/:id', requireCapability('service.manage'), serializeOrderMutationRoute(handleEditOrder));
+
+app.post('/api/cashier/orders/:id/apply-loyalty', requireCapability('orders.manage'), serializeOrderMutationRoute(async (req, res) => {
   const targetId = Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
   const order = (db.orders || []).find((item) => Number(item.id) === targetId);
   if (!order) return res.status(404).json({ error: 'not found' });
@@ -3935,40 +5678,50 @@ app.post('/api/cashier/orders/:id/apply-loyalty', requireCapability('orders.mana
   }
   const phone = normalizeDigits(req.body?.phone || order.phone || '').trim();
   const redeemPoints = Number(normalizeDigits(String(req.body?.redeemPoints || '0')).replace(/\D/g, '')) || 0;
+  if (redeemPoints > 0) {
+    return res.status(409).json({ error: 'loyalty_redemption_requires_settlement', message: 'استفاده از امتیاز تا زمان پیاده‌سازی رزرو و ثبت اتمیک در تسویه غیرفعال است.' });
+  }
 
-  const user = phone ? (db.users || []).find((u) => u.phone === phone) : null;
+  const authorizedCustomer = phone && (req.user?.phone === phone || userCan(req.user, 'orders.manage'));
+  const user = authorizedCustomer ? (db.users || []).find((u) => u.phone === phone) : null;
   const discounts = loyaltyEngine.calculateOrderDiscounts(db, {
     subtotalToman: order.subtotal,
-    phone,
+    phone: user ? phone : '',
     user,
-    redeemPoints,
+    redeemPoints: 0,
   });
 
   if (req.body?.apply) {
-    if (discounts.pointsRedeemed > 0 && user) {
-      user.points = Math.max(0, user.points - discounts.pointsRedeemed);
-      awardLoyaltyPoints(user.phone, -discounts.pointsRedeemed, 'redeem_order', {
-        orderId: order.id,
-        discountToman: discounts.pointsDiscountToman,
-      });
-    }
+    const amountPaid = Math.max(0, Number(order.amountPaid) || 0);
+    const nextTotal = Math.max(0, Number(order.subtotal || 0) + Number(order.deliveryFee || 0) - discounts.totalDiscountToman);
+    if (nextTotal < amountPaid) return res.status(409).json({ error: 'order_edit_refund_required', amountPaid, nextTotal });
+    const snapshot = snapshotFinanceMutationState();
+    try {
     order.phone = phone || order.phone;
     if (user?.name && !order.name) order.name = user.name;
     order.tierDiscountToman = discounts.tierDiscountToman;
-    order.pointsRedeemed = discounts.pointsRedeemed;
+    order.pointsRedeemed = 0;
     order.pointsDiscountToman = discounts.pointsDiscountToman;
     order.loyaltyTier = discounts.tier?.id || 'bronze';
     order.discount = discounts.totalDiscountToman;
-    order.total = Math.max(0, Number(order.subtotal || 0) + Number(order.deliveryFee || 0) - order.discount);
-    save();
-    publishOperationalEvent('order.updated', { orderId: order.id, branchId: order.branchId, status: order.status, edited: true });
+    order.total = nextTotal;
+    order.amountPaid = amountPaid;
+    order.balanceDue = Math.max(0, nextTotal - amountPaid);
+    recordAudit(req, 'order.loyalty_discount_applied', 'order', order.id, { tierDiscountToman: discounts.tierDiscountToman, pointsRedeemed: 0 }, order.branchId);
+    await persistFinanceMutation(snapshot);
+    try { publishOperationalEvent('order.updated', { orderId: order.id, branchId: order.branchId, status: order.status, edited: true }); }
+    catch (eventError) { console.error('[loyalty-discount] post-commit event failed', eventError?.message || eventError); }
+    } catch (error) {
+      restoreFinanceMutationState(snapshot);
+      return res.status(error.status || 503).json({ error: error.code || 'order_persistence_failed', message: error.message });
+    }
   }
 
   res.json({
     ok: true,
-    order,
+    order: operationalOrderResponse(order, req.user),
     discounts,
-    customer: user
+    customer: user && userCan(req.user, 'pii.view')
       ? {
           name: user.name,
           phone: user.phone,
@@ -3978,45 +5731,172 @@ app.post('/api/cashier/orders/:id/apply-loyalty', requireCapability('orders.mana
         }
       : null,
   });
-});
+}));
+
+function isSettlementRequestFingerprint(value) {
+  return typeof value === 'string' && /^[a-f0-9]{64}$/i.test(value);
+}
 
 const handleSettleOrder = async (req, res, forcedTargetId) => {
+  const persistenceReadiness = settlementPersistenceGate.check({
+    postgresEnabled: stateStore.enabled,
+    postgresRequired: stateStore.required,
+  });
+  if (!persistenceReadiness.ok) {
+    return res.status(persistenceReadiness.status).json({ error: persistenceReadiness.code, message: persistenceReadiness.message });
+  }
   const targetId = forcedTargetId !== undefined ? forcedTargetId : Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
   const order = (db.orders || []).find((item) => Number(item.id) === targetId);
   if (!order) return res.status(404).json({ error: 'not found' });
+  const branchId = persistedOrderBranchId(order);
+  if (!branchId) return res.status(409).json({ error: 'order_branch_unresolved', message: 'شعبهٔ ثبت‌شدهٔ سفارش معتبر نیست؛ تسویه تا تطبیق شعبه انجام نمی‌شود.' });
   // The route's request body is optional, so requireCapability cannot infer
   // the branch from it. Resolve access from the order itself before even
   // returning an idempotent response; otherwise a scoped cashier/manager
   // could settle or inspect a paid order belonging to another branch.
   try {
-    assertUserBranchAccess(req.user, order.branchId);
+    assertUserBranchAccess(req.user, branchId);
   } catch (error) {
     return res.status(error.status || 403).json({ error: error.code || 'branch_access_denied', message: error.message, requestId: req.requestId });
   }
-  if (order.paymentStatus === 'paid') return res.json({ ok: true, idempotent: true, order });
-  if (!['pay_at_cashier', 'awaiting_confirmation', 'sent_to_kitchen', 'preparing', 'ready'].includes(String(order.status || ''))) {
+  if (effectiveRole(req.user) === 'waiter') {
+    const serviceTiming = validateWaiterSettlementTiming(order);
+    if (!serviceTiming.ok) {
+      return res.status(409).json({
+        error: serviceTiming.error,
+        message: 'گارسون فقط پس از ثبت تحویل سفارش به میز می‌تواند تسویه را انجام دهد؛ برای تسویهٔ زودتر، فاکتور را به صندوق بسپارید.',
+      });
+    }
+  }
+  const tenderValue = req.body?.tender;
+  if (typeof tenderValue !== 'string' || !tenderValue.trim()) {
+    return res.status(400).json({ error: 'settlement_tender_required', message: 'روش دریافت وجه را انتخاب کنید.' });
+  }
+  const tender = tenderValue.trim();
+  if (tender === 'cash' && !userCan(req.user, 'cash.manage')) {
+    return res.status(403).json({ error: 'cash_collection_forbidden', message: 'دریافت وجه نقد فقط برای کاربر دارای دسترسی صندوق مجاز است.' });
+  }
+  const rawPaymentAmount = req.body?.paymentAmount == null ? null : req.body.paymentAmount;
+  const rawAmountTendered = req.body?.amountTendered == null ? null : req.body.amountTendered;
+  let paymentReference;
+  try { paymentReference = normalizeSettlementReference(req.body?.paymentReference); }
+  catch (error) { return res.status(error.status || 400).json({ error: error.code || 'settlement_reference_invalid', message: error.message }); }
+  const idempotencyKey = String(req.get('Idempotency-Key') || req.body?.idempotencyKey || '').trim();
+  if (process.env.NODE_ENV === 'production' && !idempotencyKey) {
+    return res.status(400).json({ error: 'settlement_idempotency_required', message: 'برای ثبت پرداخت، کلید یکتای درخواست لازم است.' });
+  }
+  if (idempotencyKey && !/^[A-Za-z0-9][A-Za-z0-9._:-]{7,159}$/.test(idempotencyKey)) {
+    return res.status(400).json({ error: 'settlement_idempotency_invalid', message: 'کلید یکتای پرداخت معتبر نیست.' });
+  }
+  const inFlightKey = idempotencyKey ? settlementLockKey(req, order, idempotencyKey, branchId) : null;
+  const requestFingerprint = idempotencyKey ? checkoutIdempotencyFingerprint({
+    orderId: order.id,
+    branchId,
+    tender,
+    paymentAmount: rawPaymentAmount,
+    amountTendered: rawAmountTendered,
+    paymentReference,
+  }, req.user) : null;
+  const existingPayment = idempotencyKey
+    ? (Array.isArray(order.partialPayments) ? order.partialPayments : []).find((payment) => payment.idempotencyKey === idempotencyKey)
+    : null;
+  if (existingPayment) {
+    if (!isSettlementRequestFingerprint(existingPayment.requestFingerprint)) {
+      return res.status(409).json({
+        error: 'idempotency_replay_unavailable',
+        message: 'پرداخت قبلی اثرانگشت معتبر ندارد؛ برای جلوگیری از دریافت تکراری، رسید و وضعیت صندوق را تطبیق دهید و پرداخت را دوباره ثبت نکنید.',
+      });
+    }
+    if (existingPayment.requestFingerprint && existingPayment.requestFingerprint !== requestFingerprint) {
+      return res.status(409).json({ error: 'idempotency_key_conflict', message: 'این کلید پرداخت پیش‌تر با مبلغ یا روش دیگری استفاده شده است.' });
+    }
+    const pending = settlementInFlight.get(inFlightKey);
+    if (pending) {
+      const outcome = await pending;
+      if (!outcome.ok) return res.status(outcome.status || 503).json({ error: outcome.error || 'finance_persistence_failed', message: outcome.message });
+    }
+    return res.json({
+      ok: true,
+      idempotent: true,
+      order: operationalOrderResponse(order, req.user),
+      payment: operationalPaymentResponse(existingPayment, req.user),
+    });
+  }
+  if (order.paymentStatus === 'paid') {
+    return res.json({ ok: true, idempotent: true, order: operationalOrderResponse(order, req.user) });
+  }
+  if (order.paymentStatus === 'unknown') {
+    return res.status(409).json({ error: 'payment_status_reconciliation_required', message: 'وضعیت پرداخت این سفارش قابل‌تأیید نیست؛ پیش از دریافت دوباره، سابقهٔ مالی را تطبیق دهید.' });
+  }
+  if (!canSettleOrder(order)) {
     return res.status(409).json({ error: 'order_not_payable', current: order.status });
   }
-  const tender = String(req.body?.tender || 'cash');
-  if (!['cash', 'card', 'manual_card', 'gift_card', 'card_on_file', 'wallet'].includes(tender)) return res.status(400).json({ error: 'tender_invalid' });
+  // Only accept tenders backed by an actual local settlement path. Card
+  // processing, gift cards, and stored cards are not connected providers;
+  // they must never be marked paid merely because a client named them.
+  if (!['cash', 'manual_card', 'wallet'].includes(tender)) return res.status(400).json({ error: 'tender_invalid', message: 'این روش پرداخت در این سامانه فعال یا متصل نیست.' });
+  if (tender === 'manual_card' && !paymentReference) {
+    return res.status(400).json({
+      error: 'settlement_reference_required',
+      message: 'کد پیگیری درج‌شده روی رسید کارت‌خوان برای ثبت دستی الزامی است.',
+    });
+  }
   const previousPayments = Array.isArray(order.partialPayments) ? order.partialPayments : [];
-  const alreadyPaid = previousPayments.reduce((sum, payment) => sum + Math.max(0, Number(payment.amount) || 0), 0);
-  const outstanding = Math.max(0, (Number(order.total) || 0) - alreadyPaid);
-  const requestedAmount = Math.min(outstanding, Math.max(1, Math.round(Number(req.body?.paymentAmount) || outstanding)));
-  if (!requestedAmount || !outstanding) return res.json({ ok: true, idempotent: true, order });
-  const branchId = Number(order.branchId) || defaultBranch()?.id || 1;
+  if (tender === 'manual_card' && paymentReference) {
+    const incomingReference = settlementReferenceIdentity(paymentReference);
+    const referenceAlreadyUsed = previousPayments.some((payment) => {
+      try { return settlementReferenceIdentity(payment?.reference) === incomingReference; }
+      catch { return false; }
+    });
+    if (referenceAlreadyUsed) {
+      return res.status(409).json({
+        error: 'settlement_reference_duplicate',
+        message: 'این کد پیگیری قبلاً برای همین فاکتور ثبت شده است؛ رسیدهای پرداخت را تطبیق دهید.',
+      });
+    }
+  }
+  const amounts = resolveSettlementAmounts({
+    total: order.total,
+    amountPaid: order.amountPaid,
+    payments: previousPayments,
+    paymentAmount: req.body?.paymentAmount,
+    amountTendered: req.body?.amountTendered,
+    tender,
+  });
+  if (!amounts.ok) {
+    const status = amounts.error === 'payment_amount_exceeds_due' ? 409 : 400;
+    return res.status(status).json({
+      error: amounts.error,
+      ...(amounts.outstanding !== undefined ? { outstanding: amounts.outstanding } : {}),
+      ...(amounts.minimum !== undefined ? { minimum: amounts.minimum } : {}),
+    });
+  }
+  const { alreadyPaid, outstanding, requestedAmount, amountTendered } = amounts;
+  if (!requestedAmount || !outstanding) {
+    return res.json({ ok: true, idempotent: true, order: operationalOrderResponse(order, req.user) });
+  }
   const drawer = tender === 'cash' ? activeCashSession(req.user, branchId) : null;
   if (tender === 'cash' && !drawer) return res.status(409).json({ error: 'cash_drawer_not_open' });
-  const amountTendered = tender === 'cash'
-    ? Math.round(Number(req.body?.amountTendered) || requestedAmount)
-    : requestedAmount;
-  if (amountTendered < requestedAmount) return res.status(400).json({ error: 'cash_received_insufficient', minimum: requestedAmount });
+  if (drawer) {
+    const currentDrawerTotals = cashSessionTotals(drawer);
+    const projectedDrawerTotals = cashSessionTotals({
+      ...drawer,
+      movements: [{ type: 'sale', amount: requestedAmount }, ...(Array.isArray(drawer.movements) ? drawer.movements : [])],
+    });
+    if (!currentDrawerTotals || !projectedDrawerTotals) {
+      return res.status(409).json({ error: 'cash_drawer_ledger_invalid', message: 'سابقهٔ صندوق معتبر و قابل جمع‌بندی نیست؛ پیش از دریافت وجه آن را تطبیق دهید.' });
+    }
+  }
 
   // Snapshot before any tender-side mutation. Wallet payments update the
   // customer balance before the sale journal is attempted; a closed/missing
   // fiscal period or a durable-write failure must roll that debit back along
   // with the order and drawer projection.
   const snapshot = snapshotFinanceMutationState();
+  let resolveSettlement;
+  let settlementPromise;
+  let settlementAuditEntry;
+  try {
   if (tender === 'wallet') {
     if (!order.phone) return res.status(400).json({ error: 'شماره مشتری برای پرداخت از کیف پول الزامی است.' });
     const walletBal = walletEngine.getWalletBalance(db, order.phone);
@@ -4031,21 +5911,30 @@ const handleSettleOrder = async (req, res, forcedTargetId) => {
     });
   }
 
-  try {
   const paymentAt = new Date().toISOString();
   const payment = {
     id: nextId(previousPayments), tender, amount: requestedAmount,
     amountTendered, changeDue: tender === 'cash' ? Math.max(0, amountTendered - requestedAmount) : 0,
+    ...(paymentReference ? { reference: paymentReference } : {}),
+    ...(tender === 'cash' && drawer ? { cashSessionId: drawer.id } : {}),
     at: paymentAt, by: req.user.phone,
+    ...(idempotencyKey ? { idempotencyKey, requestFingerprint } : {}),
   };
   order.partialPayments = previousPayments;
   order.partialPayments.push(payment);
   order.amountPaid = alreadyPaid + requestedAmount;
   const fullyPaid = order.amountPaid >= Number(order.total || 0);
-  if (fullyPaid && ['pay_at_cashier', 'awaiting_confirmation'].includes(String(order.status || ''))) {
-    appendOrderStatus(order, 'paid', req.user, { source: 'cashier', tender });
-  }
   order.paymentStatus = fullyPaid ? 'paid' : 'partial';
+  if (fullyPaid) {
+    const nextStatus = nextOrderStatusAfterPayment(order);
+    if (nextStatus && canTransitionOrder(order, nextStatus)) {
+      appendOrderStatus(order, nextStatus, req.user, { source: 'cashier', tender });
+    } else if (normalizeFulfillment(order.fulfillment, { tableNo: order.tableNo }) !== 'delivery'
+        && ['pending', 'pending_cashier'].includes(String(order.status || ''))) {
+      // Preserve the legacy wallet-intent states for non-delivery orders.
+      appendOrderStatus(order, 'paid', req.user, { source: 'cashier', tender });
+    }
+  }
   order.paymentTender = tender;
   order.paymentTenders = [...new Set(order.partialPayments.map((entry) => entry.tender))];
   if (fullyPaid) order.paidAt = paymentAt;
@@ -4058,11 +5947,17 @@ const handleSettleOrder = async (req, res, forcedTargetId) => {
       amount: requestedAmount,
       orderId: order.id,
       note: `فروش سفارش ${order.orderNo || order.id}`,
-      at: order.paidAt,
+      at: paymentAt,
       by: req.user.phone,
     });
   }
-  recordAudit(req, fullyPaid ? 'order.settled' : 'order.partial_payment', 'order', order.id, { tender, paymentAmount: requestedAmount, amountPaid: order.amountPaid, outstanding: Math.max(0, Number(order.total || 0) - order.amountPaid), amountTendered, changeDue: order.changeDue }, branchId);
+  const receiptFinanceResult = ['cash', 'manual_card'].includes(tender)
+    ? financeV2.captureOrderPaymentReceipt(db, order, payment, {
+      actor: req.user.phone,
+      cashSessionId: drawer?.id || null,
+    })
+    : null;
+  settlementAuditEntry = recordAudit(req, fullyPaid ? 'order.settled' : 'order.partial_payment', 'order', order.id, { tender, paymentAmount: requestedAmount, amountPaid: order.amountPaid, outstanding: Math.max(0, Number(order.total || 0) - order.amountPaid), amountTendered, changeDue: order.changeDue }, branchId, { deferAppend: true });
   const financeResult = fullyPaid
     ? financeV2.capturePaidOrder(db, order, { actor: req.user.phone, idempotencyKey: `order:${order.id}:payment:${order.paymentRevision || order.partialPayments.length}` })
     : null;
@@ -4081,24 +5976,46 @@ const handleSettleOrder = async (req, res, forcedTargetId) => {
       details: financeResult?.event?.error || null,
     });
   }
+  if (idempotencyKey) {
+    settlementPromise = new Promise((resolve) => { resolveSettlement = resolve; });
+    settlementInFlight.set(inFlightKey, settlementPromise);
+  }
   await persistFinanceMutation(snapshot);
-  publishOperationalEvent('order.updated', { orderId: order.id, branchId, status: order.status });
-  res.json({ ok: true, order, drawer: drawer ? { session: drawer, totals: cashSessionTotals(drawer) } : null, finance: financeResult });
+  appendAuditAfterCommit(settlementAuditEntry);
+  try { publishOperationalEvent('order.updated', { orderId: order.id, branchId, status: order.status }); }
+  catch (eventError) { console.error('[settlement] post-commit event failed', eventError?.message || eventError); }
+  const responsePayload = {
+    ok: true,
+    order: operationalOrderResponse(order, req.user),
+    payment: operationalPaymentResponse(payment, req.user),
+    drawer: drawer ? { session: drawer, totals: cashSessionTotals(drawer) } : null,
+    ...(userCan(req.user, 'payments.manage') ? { finance: financeResult, financeReceipt: receiptFinanceResult } : {}),
+  };
+  resolveSettlement?.({ ok: true });
+  if (inFlightKey) settlementInFlight.delete(inFlightKey);
+  res.json(responsePayload);
   } catch (error) {
     restoreFinanceMutationState(snapshot);
+    const failedKey = inFlightKey;
+    if (settlementPromise) {
+      // Resolve duplicate requests only after the original durable write has
+      // either committed or rolled back; never acknowledge an in-memory debit.
+      resolveSettlement?.({ ok: false, status: error.status || 503, error: error.code || error.message, message: error.message });
+      if (failedKey) settlementInFlight.delete(failedKey);
+    }
     return res.status(error.status || 503).json({ error: error.code || error.message });
   }
 };
 
-app.post('/api/cashier/orders/:id/settle', requireCapability('payments.manage'), async (req, res) => {
+app.post('/api/cashier/orders/:id/settle', requireCapability('payments.manage'), serializeOrderMutationRoute(async (req, res) => {
   const targetId = Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
-  return handleSettleOrder(req, res, targetId);
-});
+  return withCashDrawerSettlementLock(req, targetId, () => handleSettleOrder(req, res, targetId));
+}));
 
-app.post('/api/staff/orders/:id/settle', requireCapability('payments.manage'), async (req, res) => {
+app.post('/api/staff/orders/:id/settle', requireCapability('payments.collect'), serializeOrderMutationRoute(async (req, res) => {
   const targetId = Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
-  return handleSettleOrder(req, res, targetId);
-});
+  return withCashDrawerSettlementLock(req, targetId, () => handleSettleOrder(req, res, targetId));
+}));
 
 app.get('/api/cashier/printer', requireCapability('payments.manage'), (req, res) => {
   const branchId = parseBranchId(req) || defaultBranch()?.id || 1;
@@ -4164,14 +6081,14 @@ app.post('/api/cashier/orders/:id/print', requireCapability('payments.manage'), 
   const printer = printerForBranch(db, branchId, req.body?.printerId);
   if (!printer) return res.status(409).json({ error: 'printer_not_configured' });
   try {
-    const result = req.body?.raster
-      ? await printRasterReceipt(req.body.raster, printer)
-      : await sendOrderToPrinter(order, printer, { restaurantName: db.restaurant?.name || 'وستو' });
+    // Official order printouts must be rendered from the authoritative order;
+    // never let a browser-supplied image redefine prices or payment state.
+    const result = await sendOrderToPrinter(order, printer, { restaurantName: db.restaurant?.name || 'وستو' });
     const printedAt = new Date().toISOString();
     order.lastPrint = { status: 'printed', printerId: printer.id, printedAt, by: req.user.phone };
     recordAudit(req, 'order.printed', 'order', order.id, { printerId: printer.id, host: printer.host, port: printer.port, bytes: result.bytes, paid: order.paymentStatus === 'paid' }, branchId);
     save();
-    return res.json({ ok: true, printed: true, printer: publicPrinterConfig(printer), result, order });
+    return res.json({ ok: true, printed: true, printer: publicPrinterConfig(printer), result, order: operationalOrderResponse(order, req.user) });
   } catch (error) {
     order.lastPrint = { status: 'failed', printerId: printer.id, printedAt: new Date().toISOString(), by: req.user.phone, error: error.code || error.message };
     recordAudit(req, 'order.print_failed', 'order', order.id, { printerId: printer.id, host: printer.host, port: printer.port, error: error.code || error.message }, branchId);
@@ -4184,22 +6101,21 @@ app.post('/api/cashier/orders/:id/receipt', requireCapability('payments.manage')
   const targetId = Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
   const order = (db.orders || []).find((item) => Number(item.id) === targetId);
   if (!order) return res.status(404).json({ error: 'not found' });
-  if (order.paymentStatus !== 'paid') return res.status(409).json({ error: 'order_not_paid' });
-  const method = String(req.body?.method || 'none');
-  if (!['print', 'email', 'sms', 'none'].includes(method)) return res.status(400).json({ error: 'receipt_method_invalid' });
   const branchId = Number(order.branchId) || defaultBranch()?.id || 1;
   try {
     assertUserBranchAccess(req.user, branchId);
   } catch (error) {
     return res.status(error.status || 403).json({ error: error.code || 'branch_access_denied', message: error.message });
   }
+  if (order.paymentStatus !== 'paid') return res.status(409).json({ error: 'order_not_paid' });
+  const method = String(req.body?.method || 'none');
+  if (!['print', 'email', 'sms', 'none'].includes(method)) return res.status(400).json({ error: 'receipt_method_invalid' });
   if (method === 'print') {
     const printer = printerForBranch(db, branchId, req.body?.printerId);
     if (!printer) return res.status(409).json({ error: 'printer_not_configured' });
     try {
-      const result = req.body?.raster
-        ? await printRasterReceipt(req.body.raster, printer)
-        : await sendOrderToPrinter(order, printer, { restaurantName: db.restaurant?.name || 'وستو' });
+      // A paid receipt is generated only from the canonical, persisted order.
+      const result = await sendOrderToPrinter(order, printer, { restaurantName: db.restaurant?.name || 'وستو' });
       const printedAt = new Date().toISOString();
       order.receipt = {
         method,
@@ -4212,13 +6128,21 @@ app.post('/api/cashier/orders/:id/receipt', requireCapability('payments.manage')
       order.lastPrint = { status: 'printed', printerId: printer.id, printedAt, by: req.user.phone };
       recordAudit(req, 'order.receipt_printed', 'order', order.id, { method, printerId: printer.id, host: printer.host, port: printer.port, bytes: result.bytes }, branchId);
       save();
-      return res.json({ ok: true, order, printed: true, deliveryConfigured: true, printer: publicPrinterConfig(printer), result });
+      return res.json({ ok: true, order: operationalOrderResponse(order, req.user), printed: true, deliveryConfigured: true, printer: publicPrinterConfig(printer), result });
     } catch (error) {
+      const failedAt = new Date().toISOString();
       order.receipt = {
         method,
         status: 'failed',
         printerId: printer.id,
-        selectedAt: new Date().toISOString(),
+        selectedAt: failedAt,
+        by: req.user.phone,
+        error: error.code || error.message,
+      };
+      order.lastPrint = {
+        status: 'failed',
+        printerId: printer.id,
+        printedAt: failedAt,
         by: req.user.phone,
         error: error.code || error.message,
       };
@@ -4236,10 +6160,10 @@ app.post('/api/cashier/orders/:id/receipt', requireCapability('payments.manage')
   };
   recordAudit(req, 'order.receipt_selected', 'order', order.id, { method }, order.branchId);
   save();
-  res.json({ ok: true, order, deliveryConfigured: method === 'none' });
+  res.json({ ok: true, order: operationalOrderResponse(order, req.user), deliveryConfigured: method === 'none' });
 });
 
-app.patch('/api/cashier/orders/:id/status', requireCapability('orders.manage'), (req, res) => {
+app.patch('/api/cashier/orders/:id/status', requireCapability('orders.manage'), serializeOrderMutationRoute(async (req, res) => {
   const targetId = Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
   const order = (db.orders || []).find((item) => Number(item.id) === targetId);
   if (!order) return res.status(404).json({ error: 'not found' });
@@ -4249,20 +6173,41 @@ app.patch('/api/cashier/orders/:id/status', requireCapability('orders.manage'), 
     return res.status(error.status || 403).json({ error: error.code || 'branch_access_denied', message: error.message, requestId: req.requestId });
   }
   const next = String(req.body?.status || '');
+  if (next && next === String(order.status || '')) {
+    return res.json({ ok: true, idempotent: true, order: operationalOrderResponse(order, req.user) });
+  }
+  if (normalizeFulfillment(order.fulfillment, { tableNo: order.tableNo }) === 'delivery'
+      && ['dispatched', 'delivered'].includes(next) && !hasAcceptedDelivery(order)) {
+    return res.status(409).json({ error: 'delivery_acceptance_required', message: 'ارسال و تحویل پیک بدون پذیرش ثبت‌شدهٔ رستوران ممکن نیست.' });
+  }
   const allowed = {
     pay_at_cashier: ['cancelled'],
     awaiting_confirmation: ['cancelled'],
     ready: order.fulfillment === 'delivery' ? ['dispatched'] : order.fulfillment === 'pickup' ? ['picked_up'] : ['done'],
-    dispatched: ['delivered'],
+    dispatched: order.fulfillment === 'delivery' ? ['delivered'] : [],
   }[String(order.status || '')] || [];
   if (!allowed.includes(next)) return res.status(409).json({ error: 'cashier_transition_invalid', current: order.status, allowed });
+  if (next === 'cancelled') {
+    const cancellation = orderCancellationGuard(order);
+    if (!cancellation.ok) return res.status(409).json({ error: cancellation.code, message: cancellation.message });
+  }
+  const snapshot = snapshotFinanceMutationState();
+  try {
+  if (next === 'cancelled' && shouldReleaseOrderInventory(order)) {
+    adjustOrderInventory(order.items, 1, order.branchId);
+  }
   appendOrderStatus(order, next, req.user, { source: 'cashier' });
   if (['done', 'picked_up', 'delivered'].includes(next)) maybeAwardOrderLoyalty(order);
   recordAudit(req, 'order.status_changed', 'order', order.id, { status: next, source: 'cashier' }, order.branchId);
-  publishOperationalEvent('order.updated', { orderId: order.id, branchId: order.branchId, status: next });
-  save();
-  res.json({ ok: true, order });
-});
+  await persistFinanceMutation(snapshot);
+  try { publishOperationalEvent('order.updated', { orderId: order.id, branchId: order.branchId, status: next }); }
+  catch (eventError) { console.error('[cashier-status] post-commit event failed', eventError?.message || eventError); }
+  res.json({ ok: true, order: operationalOrderResponse(order, req.user) });
+  } catch (error) {
+    restoreFinanceMutationState(snapshot);
+    return res.status(error.status || 503).json({ error: error.code || 'order_persistence_failed', message: error.message });
+  }
+}));
 
 app.get('/api/waiter/calls', requireCapability('service.manage'), (req, res) => {
   const branchId = parseBranchId(req);
@@ -4272,7 +6217,7 @@ app.get('/api/waiter/calls', requireCapability('service.manage'), (req, res) => 
   res.json({ calls, serverTime: new Date().toISOString() });
 });
 
-app.patch('/api/waiter/calls/:id', requireCapability('service.manage'), (req, res) => {
+app.patch('/api/waiter/calls/:id', requireCapability('service.manage'), async (req, res) => {
   const targetId = Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
   const call = (db.waiterCalls || []).find((item) => Number(item.id) === targetId);
   if (!call) return res.status(404).json({ error: 'not found' });
@@ -4282,16 +6227,46 @@ app.patch('/api/waiter/calls/:id', requireCapability('service.manage'), (req, re
     return res.status(error.status || 403).json({ error: error.code || 'branch_access_denied', message: error.message, requestId: req.requestId });
   }
   if (String(req.body?.status || '') !== 'done') return res.status(400).json({ error: 'call_status_invalid' });
-  call.status = 'done';
-  call.resolvedAt = new Date().toISOString();
-  call.resolvedBy = req.user.phone;
-  recordAudit(req, 'waiter_call.resolved', 'waiter_call', call.id, { tableNo: call.tableNo }, call.branchId);
-  publishOperationalEvent('waiter_call.updated', { callId: call.id, branchId: call.branchId, status: call.status });
-  save();
-  res.json({ ok: true, call });
+  return serializeAdminConfigMutation(call.branchId, async () => {
+    const current = (db.waiterCalls || []).find((item) => Number(item.id) === targetId);
+    if (!current) return res.status(404).json({ error: 'not found' });
+    try {
+      assertUserBranchAccess(req.user, current.branchId);
+    } catch (error) {
+      return res.status(error.status || 403).json({ error: error.code || 'branch_access_denied', message: error.message, requestId: req.requestId });
+    }
+    if (current.status === 'done') return res.json({ ok: true, idempotent: true, call: current });
+    if (!['open', 'new'].includes(String(current.status || ''))) {
+      return res.status(409).json({ error: 'waiter_call_transition_invalid', current: current.status });
+    }
+
+    const snapshot = snapshotFinanceMutationState();
+    current.status = 'done';
+    current.resolvedAt = new Date().toISOString();
+    current.resolvedBy = req.user.phone;
+    const auditEntry = recordAudit(req, 'waiter_call.resolved', 'waiter_call', current.id, { tableNo: current.tableNo }, current.branchId, { deferAppend: true });
+    try {
+      await persistFinanceMutation(snapshot);
+    } catch (error) {
+      return res.status(error.status || 503).json({ error: error.code || 'waiter_call_persistence_failed', message: 'ثبت انجام فراخوان پایدار نشد؛ دوباره همگام‌سازی کنید.' });
+    }
+
+    appendAuditAfterCommit(auditEntry);
+    let eventPublished = true;
+    try {
+      publishOperationalEvent('waiter_call.updated', { callId: current.id, branchId: current.branchId, status: current.status });
+    } catch (error) {
+      eventPublished = false;
+      console.error('[waiter-call] committed event failed', error?.message || error);
+    }
+    return res.json({ ok: true, eventPublished, call: current });
+  }).catch((error) => {
+    if (res.headersSent) return undefined;
+    return res.status(error.status || 503).json({ error: error.code || 'waiter_call_update_failed' });
+  });
 });
 
-app.patch('/api/waiter/orders/:id/status', requireCapability('service.manage'), (req, res) => {
+app.patch('/api/waiter/orders/:id/status', requireCapability('service.manage'), serializeOrderMutationRoute(async (req, res) => {
   const targetId = Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
   const order = (db.orders || []).find((item) => Number(item.id) === targetId);
   if (!order) return res.status(404).json({ error: 'not found' });
@@ -4301,15 +6276,25 @@ app.patch('/api/waiter/orders/:id/status', requireCapability('service.manage'), 
     return res.status(error.status || 403).json({ error: error.code || 'branch_access_denied', message: error.message, requestId: req.requestId });
   }
   const next = String(req.body?.status || '');
+  if (next === 'done' && order.status === 'done') {
+    return res.json({ ok: true, idempotent: true, order: operationalOrderResponse(order, req.user) });
+  }
   const allowed = order.fulfillment === 'dine_in' && order.status === 'ready' ? ['done'] : [];
   if (!allowed.includes(next)) return res.status(409).json({ error: 'waiter_transition_invalid', current: order.status, allowed });
+  const snapshot = snapshotFinanceMutationState();
+  try {
   appendOrderStatus(order, next, req.user, { source: 'waiter' });
   maybeAwardOrderLoyalty(order);
   recordAudit(req, 'order.status_changed', 'order', order.id, { status: next, source: 'waiter' }, order.branchId);
-  publishOperationalEvent('order.updated', { orderId: order.id, branchId: order.branchId, status: next });
-  save();
-  res.json({ ok: true, order });
-});
+  await persistFinanceMutation(snapshot);
+  try { publishOperationalEvent('order.updated', { orderId: order.id, branchId: order.branchId, status: next }); }
+  catch (eventError) { console.error('[waiter-status] post-commit event failed', eventError?.message || eventError); }
+  res.json({ ok: true, order: operationalOrderResponse(order, req.user) });
+  } catch (error) {
+    restoreFinanceMutationState(snapshot);
+    return res.status(error.status || 503).json({ error: error.code || 'order_persistence_failed', message: error.message });
+  }
+}));
 
 // Walk-in reception is deliberately separate from timed reservation editing.
 // A waiter may receive a phone number and later seat the guest, but cannot
@@ -4330,6 +6315,21 @@ function waitlistForBranch(branchId, includeHistory = true) {
   }));
 }
 
+const waitlistMutationQueues = new Map();
+
+async function serializeWaitlistMutation(branchId, operation) {
+  const tenantId = tenantStorage.getStore()?.tenantId || TENANT_CONFIG.tenantId || 'westo';
+  const key = `${tenantId}:${Number(branchId)}`;
+  const previous = waitlistMutationQueues.get(key) || Promise.resolve();
+  const current = previous.catch(() => {}).then(operation);
+  waitlistMutationQueues.set(key, current);
+  try {
+    return await current;
+  } finally {
+    if (waitlistMutationQueues.get(key) === current) waitlistMutationQueues.delete(key);
+  }
+}
+
 app.get('/api/waiter/waitlist', requireCapability('reservations.receive'), (req, res) => {
   const branchId = parseBranchId(req);
   const entries = waitlistForBranch(branchId, String(req.query.history || '') === '1');
@@ -4346,75 +6346,109 @@ app.get('/api/waiter/waitlist', requireCapability('reservations.receive'), (req,
   });
 });
 
-app.post('/api/waiter/waitlist', requireCapability('reservations.receive'), (req, res) => {
-  const branchId = parseBranchId(req);
-  if (!branchId) return res.status(400).json({ error: 'waitlist_branch_required', message: 'شعبهٔ فعال مشخص نیست.' });
-  db.reservations = Array.isArray(db.reservations) ? db.reservations : [];
-  try {
-    const result = waitlist.createWaitlistEntry({
-      records: db.reservations,
-      branchId,
-      phone: normalizeDigits(req.body?.phone || '').trim(),
-      name: req.body?.name,
-      partySize: req.body?.partySize == null || String(req.body.partySize).trim() === '' ? null : normalizeDigits(req.body.partySize),
-      note: req.body?.note,
-      idempotencyKey: req.get('Idempotency-Key') || req.body?.idempotencyKey,
-      phoneRe: PHONE_RE,
-      nextId: (rows) => Math.max(0, ...rows.map((row) => Number(row.id) || 0), 0) + 1,
-      maxParty: db.reservationSettings?.maxParty || 40,
-    });
-    if (!result.idempotentReplay) {
-      recordAudit(req, 'waitlist.created', 'reservation', result.entry.id, { phone: result.entry.phone, partySize: result.entry.partySize }, branchId);
-      publishOperationalEvent('waitlist.created', { waitlistId: result.entry.id, branchId, status: result.entry.status });
-      save();
-    }
-    return res.status(result.idempotentReplay ? 200 : 201).json({ ok: true, idempotent: result.idempotentReplay, entry: publicWaitlistEntry(result.entry) });
-  } catch (error) {
-    return res.status(error.status || 400).json({ error: error.code || 'waitlist_create_failed', message: error.message, entry: error.entry ? publicWaitlistEntry(error.entry) : undefined });
+app.post('/api/waiter/waitlist', requireCapability('reservations.receive'), async (req, res) => {
+  let branchId;
+  try { branchId = parseBranchId(req); } catch (error) {
+    return res.status(error.status || 400).json({ error: error.code || 'waitlist_branch_invalid', message: error.message });
   }
+  if (!branchId) return res.status(400).json({ error: 'waitlist_branch_required', message: 'شعبهٔ فعال مشخص نیست.' });
+  return serializeWaitlistMutation(branchId, async () => {
+    db.reservations = Array.isArray(db.reservations) ? db.reservations : [];
+    const reservationsBefore = db.reservations.slice();
+    const hadAuditLog = Array.isArray(db.auditLog);
+    const auditLogBefore = hadAuditLog ? db.auditLog.slice() : null;
+    try {
+      const result = waitlist.createWaitlistEntry({
+        records: db.reservations,
+        branchId,
+        phone: normalizeDigits(req.body?.phone || '').trim(),
+        name: req.body?.name,
+        partySize: req.body?.partySize == null || String(req.body.partySize).trim() === '' ? null : normalizeDigits(req.body.partySize),
+        note: req.body?.note,
+        idempotencyKey: req.get('Idempotency-Key') || req.body?.idempotencyKey,
+        phoneRe: PHONE_RE,
+        nextId: (rows) => Math.max(0, ...rows.map((row) => Number(row.id) || 0), 0) + 1,
+        maxParty: db.reservationSettings?.maxParty || 40,
+      });
+      if (!result.idempotentReplay) {
+        recordAudit(req, 'waitlist.created', 'reservation', result.entry.id, { phone: result.entry.phone, partySize: result.entry.partySize }, branchId);
+        await save({ requireDurable: true });
+        try { publishOperationalEvent('waitlist.created', { waitlistId: result.entry.id, branchId, status: result.entry.status }); }
+        catch (eventError) { console.error('[waitlist-create] post-commit event failed', eventError?.message || eventError); }
+      }
+      return res.status(result.idempotentReplay ? 200 : 201).json({ ok: true, idempotent: result.idempotentReplay, entry: publicWaitlistEntry(result.entry) });
+    } catch (error) {
+      db.reservations = reservationsBefore;
+      if (hadAuditLog) db.auditLog = auditLogBefore;
+      else delete db.auditLog;
+      return res.status(error.status || 503).json({ error: error.code || 'waitlist_create_failed', message: error.message, entry: error.entry ? publicWaitlistEntry(error.entry) : undefined });
+    }
+  });
 });
 
-app.patch('/api/waiter/waitlist/:id', requireCapability('reservations.receive'), (req, res) => {
+app.patch('/api/waiter/waitlist/:id', requireCapability('reservations.receive'), async (req, res) => {
   const targetId = Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
   const entry = (db.reservations || []).find((item) => Number(item.id) === targetId && waitlist.isWaitlist(item));
   if (!entry) return res.status(404).json({ error: 'waitlist_not_found', message: 'مهمان موردنظر در صف پیدا نشد.' });
   try { assertUserBranchAccess(req.user, entry.branchId); } catch (error) {
     return res.status(error.status || 403).json({ error: error.code || 'branch_access_denied', message: error.message, requestId: req.requestId });
   }
-  const nextStatus = String(req.body?.status || '').trim();
-  if (!waitlist.WAITLIST_STATUSES.has(nextStatus) || !waitlist.canTransition(entry.status, nextStatus)) {
-    return res.status(409).json({ error: 'waitlist_transition_invalid', message: 'این تغییر وضعیت برای مهمان ممکن نیست.', current: entry.status });
-  }
-  const hasPartySize = req.body?.partySize != null && String(req.body.partySize).trim() !== '';
-  const party = !hasPartySize ? entry.partySize : waitlist.normalizePartySize(normalizeDigits(req.body.partySize), db.reservationSettings?.maxParty || 40);
-  if (hasPartySize && party == null) return res.status(400).json({ error: 'waitlist_party_invalid', message: 'تعداد مهمان باید حداقل یک نفر باشد.' });
-  if (typeof req.body?.name === 'string') entry.name = req.body.name.trim().slice(0, 80);
-  if (typeof req.body?.note === 'string') entry.note = req.body.note.trim().slice(0, 200);
-  if (hasPartySize) entry.partySize = party;
+  return serializeWaitlistMutation(entry.branchId, async () => {
+    const current = (db.reservations || []).find((item) => Number(item.id) === targetId && waitlist.isWaitlist(item));
+    if (!current) return res.status(404).json({ error: 'waitlist_not_found', message: 'مهمان موردنظر در صف پیدا نشد.' });
+    try { assertUserBranchAccess(req.user, current.branchId); } catch (error) {
+      return res.status(error.status || 403).json({ error: error.code || 'branch_access_denied', message: error.message, requestId: req.requestId });
+    }
 
-  if (nextStatus === 'seated') {
-    const tableNo = String(normalizeDigits(req.body?.tableNo || '')).replace(/\D/g, '');
-    const table = (db.tables || []).find((item) => Number(item.branchId) === Number(entry.branchId) && String(item.id) === tableNo);
-    if (!table || table.active === false) return res.status(409).json({ error: 'waitlist_table_invalid', message: 'میز انتخاب‌شده در این شعبه فعال نیست.' });
-    const partySize = Number(entry.partySize || 0);
-    if (partySize && Number(table.seats || 0) && partySize > Number(table.seats)) return res.status(409).json({ error: 'waitlist_table_capacity', message: 'ظرفیت این میز برای تعداد مهمان کافی نیست.' });
-    const tableBusy = (db.orders || []).some((order) => Number(order.branchId) === Number(entry.branchId) && String(order.tableNo || '') === tableNo && !['done', 'cancelled', 'picked_up', 'delivered'].includes(String(order.status || '')));
-    const anotherSeated = (db.reservations || []).some((item) => item !== entry && Number(item.branchId) === Number(entry.branchId) && String(item.tableNo || '') === tableNo && ((waitlist.isWaitlist(item) && item.status === 'seated') || (!waitlist.isWaitlist(item) && ['pending', 'confirmed', 'seated'].includes(item.status))));
-    if (tableBusy || anotherSeated) return res.status(409).json({ error: 'waitlist_table_busy', message: 'این میز همین حالا در اختیار مهمان یا سفارش دیگری است.' });
-    entry.tableNo = tableNo;
-    entry.seatedAt = new Date().toISOString();
-  }
-  if (nextStatus === 'left' && entry.status === 'seated') entry.leftAt = new Date().toISOString();
-  if (nextStatus === 'waiting' || nextStatus === 'called') entry.tableNo = null;
-  entry.status = nextStatus;
-  entry.statusAt = new Date().toISOString();
-  recordAudit(req, 'waitlist.updated', 'reservation', entry.id, { status: entry.status, tableNo: entry.tableNo || null }, entry.branchId);
-  publishOperationalEvent('waitlist.updated', { waitlistId: entry.id, branchId: entry.branchId, status: entry.status, tableNo: entry.tableNo || null });
-  save();
-  res.json({ ok: true, entry: publicWaitlistEntry(entry) });
+    let prepared;
+    const operationNow = new Date();
+    try {
+      prepared = waitlist.prepareWaitlistUpdate({
+        entry: current,
+        records: db.reservations || [],
+        tables: db.tables || [],
+        body: req.body || {},
+        maxParty: db.reservationSettings?.maxParty || 40,
+        now: operationNow.toISOString(),
+        isTableBusy: (tableNo, table, candidate) => {
+          const orderBusy = (db.orders || []).some((order) => activeDineInOrderOnTable(order, table.id, candidate.branchId));
+          if (orderBusy) return true;
+          return (db.reservations || []).some((item) => item !== candidate
+            && Number(item.branchId) === Number(candidate.branchId)
+            && waitlist.tableIdsOverlap(item.tableNo, tableNo)
+            && ((waitlist.isWaitlist(item) && item.status === 'seated')
+              || (!waitlist.isWaitlist(item) && waitlist.reservationBlocksTable(
+                item,
+                operationNow,
+                db.reservationSettings?.slotMinutes,
+              ))));
+        },
+      });
+    } catch (error) {
+      return res.status(error.status || 400).json({ error: error.code || 'waitlist_update_invalid', message: error.message, current: current.status });
+    }
+    if (prepared.idempotent) return res.json({ ok: true, idempotent: true, entry: publicWaitlistEntry(current) });
+
+    const before = JSON.parse(JSON.stringify(current));
+    const hadAuditLog = Array.isArray(db.auditLog);
+    const auditLogBefore = hadAuditLog ? db.auditLog.slice() : null;
+    Object.assign(current, prepared.entry);
+    try {
+      recordAudit(req, 'waitlist.updated', 'reservation', current.id, { status: current.status, tableNo: current.tableNo || null }, current.branchId);
+      await save({ requireDurable: true });
+    } catch (error) {
+      Object.assign(current, before);
+      if (hadAuditLog) db.auditLog = auditLogBefore;
+      else delete db.auditLog;
+      return res.status(error.status || 503).json({ error: error.code || 'waitlist_persistence_failed', message: 'تغییر صف پایدار نشد؛ دوباره همگام‌سازی کنید.', current: current.status });
+    }
+    try { publishOperationalEvent('waitlist.updated', { waitlistId: current.id, branchId: current.branchId, status: current.status, tableNo: current.tableNo || null }); }
+    catch (eventError) { console.error('[waitlist-update] post-commit event failed', eventError?.message || eventError); }
+    return res.json({ ok: true, entry: publicWaitlistEntry(current) });
+  });
 });
 
-app.patch('/api/waiter/orders/:id/fire-course', requireCapability('orders.course.manage'), async (req, res) => {
+app.patch('/api/waiter/orders/:id/fire-course', requireCapability('orders.course.manage'), serializeOrderMutationRoute(async (req, res) => {
   const targetId = Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
   const order = (db.orders || []).find((item) => Number(item.id) === targetId);
   if (!order) return res.status(404).json({ error: 'not found' });
@@ -4423,8 +6457,24 @@ app.patch('/api/waiter/orders/:id/fire-course', requireCapability('orders.course
   } catch (error) {
     return res.status(error.status || 403).json({ error: error.code || 'branch_access_denied', message: error.message, requestId: req.requestId });
   }
+  if (normalizeFulfillment(order.fulfillment, { tableNo: order.tableNo }) === 'delivery' && !hasAcceptedDelivery(order)) {
+    return res.status(409).json({ error: 'delivery_acceptance_required', message: 'پیش از ارسال دورهٔ سفارش، پذیرش رستوران را ثبت کنید.' });
+  }
   const course = String(req.body?.course || '').trim().toLowerCase();
   if (!course) return res.status(400).json({ error: 'course_required' });
+  const courseValidation = validateWaiterCourseFire(order, course);
+  if (!courseValidation.ok) {
+    const status = ['order_not_found', 'course_not_found'].includes(courseValidation.error)
+      ? 404
+      : ['course_invalid'].includes(courseValidation.error)
+        ? 400
+        : 409;
+    return res.status(status).json({ error: courseValidation.error, current: order.status });
+  }
+  if (courseValidation.idempotent) {
+    return res.json({ ok: true, idempotent: true, order: operationalOrderResponse(order, req.user), firedCount: 0, course: courseValidation.course });
+  }
+  const snapshot = snapshotFinanceMutationState();
   const now = new Date().toISOString();
   let firedCount = 0;
   (order.items || []).forEach((item) => {
@@ -4434,16 +6484,40 @@ app.patch('/api/waiter/orders/:id/fire-course', requireCapability('orders.course
       firedCount++;
     }
   });
-  if (firedCount > 0 && order.status === 'pay_at_cashier') {
+  if (firedCount > 0 && order.status === 'pay_at_cashier' && canTransitionOrder(order, 'sent_to_kitchen')) {
     appendOrderStatus(order, 'sent_to_kitchen', req.user, { source: 'waiter-fire', course });
   }
   recordAudit(req, 'order.course_fired', 'order', order.id, { course, firedCount }, order.branchId);
-  await save();
-  publishOperationalEvent('order.updated', { orderId: order.id, branchId: order.branchId, status: order.status, courseFired: course });
-  res.json({ ok: true, order, firedCount, course });
-});
+  try {
+    await persistFinanceMutation(snapshot);
+  } catch (error) {
+    return res.status(error.status || 503).json({ error: error.code || 'course_persistence_failed', message: 'ارسال مرحلهٔ سفارش پایدار نشد؛ وضعیت را تازه کنید و دوباره بررسی کنید.' });
+  }
+  try { publishOperationalEvent('order.updated', { orderId: order.id, branchId: order.branchId, status: order.status, courseFired: course }); }
+  catch (eventError) { console.error('[waiter-course] post-commit event failed', eventError?.message || eventError); }
+  res.json({ ok: true, order: operationalOrderResponse(order, req.user), firedCount, course });
+}));
 
-app.post('/api/waiter/orders/:id/split', requireCapability('orders.split'), async (req, res) => {
+function allocateOrderSplitDiscount(discount, selectedSubtotal, remainingSubtotal) {
+  const selected = Number(selectedSubtotal);
+  const remaining = Number(remainingSubtotal);
+  const gross = selected + remaining;
+  const requestedDiscount = Number(discount);
+  if (!Number.isSafeInteger(selected) || selected < 0
+      || !Number.isSafeInteger(remaining) || remaining < 0
+      || !Number.isSafeInteger(gross)
+      || !Number.isSafeInteger(requestedDiscount) || requestedDiscount < 0) return null;
+  const totalDiscount = Math.min(requestedDiscount, gross);
+  const selectedDiscount = gross > 0
+    ? Number((BigInt(totalDiscount) * BigInt(selected)) / BigInt(gross))
+    : 0;
+  return {
+    selectedDiscount,
+    remainingDiscount: totalDiscount - selectedDiscount,
+  };
+}
+
+app.post('/api/waiter/orders/:id/split', requireCapability('orders.split'), serializeOrderMutationRoute(async (req, res) => {
   const targetId = Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
   const order = (db.orders || []).find((item) => Number(item.id) === targetId);
   if (!order) return res.status(404).json({ error: 'not found' });
@@ -4452,20 +6526,65 @@ app.post('/api/waiter/orders/:id/split', requireCapability('orders.split'), asyn
   } catch (error) {
     return res.status(error.status || 403).json({ error: error.code || 'branch_access_denied', message: error.message, requestId: req.requestId });
   }
-  if (order.paymentStatus === 'paid' || order.status === 'paid' || Number(order.amountPaid || 0) > 0) {
-    return res.status(409).json({ error: 'order_split_locked', message: 'پس از ثبت پرداخت، تفکیک فاکتور ممکن نیست؛ ابتدا اصلاح مالی را از صندوق انجام دهید.' });
+  const idempotencyKey = String(req.get('Idempotency-Key') || req.body?.idempotencyKey || '').trim();
+  if (process.env.NODE_ENV === 'production' && !idempotencyKey) {
+    return res.status(400).json({ error: 'order_split_idempotency_required', message: 'برای تفکیک فاکتور در محیط تولید، کلید یکتای درخواست لازم است.' });
   }
-  if (!Array.isArray(order.items) || order.items.length <= 1) {
-    return res.status(400).json({ error: 'cannot_split_single_item_order' });
+  if (idempotencyKey && !ORDER_IDEMPOTENCY_KEY_RE.test(idempotencyKey)) {
+    return res.status(400).json({ error: 'order_split_idempotency_invalid' });
   }
   const splitMode = req.body?.mode || 'seat';
   if (!['seat', 'items'].includes(splitMode)) {
     return res.status(400).json({ error: 'split_mode_invalid' });
   }
   const targetSeat = Number(req.body?.seat || 0);
-  const selectedItemIndices = Array.isArray(req.body?.itemIndices)
-    ? [...new Set(req.body.itemIndices.map(Number).filter((index) => Number.isInteger(index) && index >= 0 && index < order.items.length))]
+  const requestedItemIndices = Array.isArray(req.body?.itemIndices)
+    ? [...new Set(req.body.itemIndices.map(Number).filter((index) => Number.isInteger(index) && index >= 0))]
     : [];
+  const requestFingerprint = idempotencyKey ? checkoutIdempotencyFingerprint({
+    orderId: order.id,
+    branchId: persistedOrderBranchId(order),
+    mode: splitMode,
+    seat: splitMode === 'seat' ? targetSeat : null,
+    itemIndices: splitMode === 'items' ? requestedItemIndices : [],
+  }, req.user) : null;
+  if (idempotencyKey && order.splitOperations != null && !Array.isArray(order.splitOperations)) {
+    return res.status(409).json({ error: 'idempotency_replay_unavailable', message: 'سابقهٔ تفکیک سفارش معتبر نیست؛ پیش از تکرار، فاکتورهای مرتبط را دستی تطبیق دهید.' });
+  }
+  const splitOperations = Array.isArray(order.splitOperations) ? order.splitOperations : [];
+  const priorSplit = idempotencyKey
+    ? splitOperations.find((operation) => operation?.idempotencyKey === idempotencyKey)
+    : null;
+  if (priorSplit) {
+    if (!/^[a-f0-9]{64}$/i.test(String(priorSplit.requestFingerprint || ''))) {
+      return res.status(409).json({ error: 'idempotency_replay_unavailable', message: 'اطلاعات بازیابی تفکیک کامل نیست؛ سفارش‌ها را بررسی کنید و درخواست را تکرار نکنید.' });
+    }
+    if (priorSplit.requestFingerprint !== requestFingerprint) {
+      return res.status(409).json({ error: 'idempotency_key_conflict' });
+    }
+    const replayOrder = (db.orders || []).find((item) => Number(item.id) === Number(priorSplit.splitOrderId));
+    if (!replayOrder || Number(replayOrder.splitFromOrderId) !== Number(order.id)
+        || Number(replayOrder.branchId) !== Number(order.branchId)) {
+      return res.status(409).json({ error: 'idempotency_replay_unavailable', message: 'فاکتور حاصل از تفکیک دیگر در دسترس نیست؛ وضعیت را دستی تطبیق دهید.' });
+    }
+    return res.json({ ok: true, idempotent: true, primaryOrder: operationalOrderResponse(order, req.user), splitOrder: operationalOrderResponse(replayOrder, req.user) });
+  }
+  if (['paid', 'partial', 'pending', 'unknown'].includes(String(order.paymentStatus || '').toLowerCase())
+    || order.status === 'paid'
+    || receivedAmount(order) > 0) {
+    return res.status(409).json({ error: 'order_split_locked', message: 'تا تعیین تکلیف پرداخت یا ثبت دریافت، تفکیک فاکتور ممکن نیست؛ ابتدا وضعیت صندوق را بررسی کنید.' });
+  }
+  const splitLifecycle = orderSplitLifecycleGuard(order);
+  if (!splitLifecycle.ok) {
+    return res.status(409).json({ error: splitLifecycle.code, message: splitLifecycle.message });
+  }
+  if (normalizeFulfillment(order.fulfillment, { tableNo: order.tableNo }) !== 'dine_in') {
+    return res.status(409).json({ error: 'order_split_dine_in_only', message: 'تفکیک فاکتور فقط برای سفارش حضوری مجاز است.' });
+  }
+  if (!Array.isArray(order.items) || order.items.length <= 1) {
+    return res.status(400).json({ error: 'cannot_split_single_item_order' });
+  }
+  const selectedItemIndices = requestedItemIndices.filter((index) => index < order.items.length);
 
   const splitItems = [];
   const remainingItems = [];
@@ -4485,9 +6604,19 @@ app.post('/api/waiter/orders/:id/split', requireCapability('orders.split'), asyn
     return res.status(400).json({ error: 'split_must_leave_items_in_both_orders' });
   }
 
+  const lineSubtotal = (item) => Number(item.lineTotal) || Number(item.price) * Number(item.qty);
+  const splitSubtotal = splitItems.reduce((sum, item) => sum + lineSubtotal(item), 0);
+  const remainingSubtotal = remainingItems.reduce((sum, item) => sum + lineSubtotal(item), 0);
+  const discountAllocation = allocateOrderSplitDiscount(order.discount || 0, splitSubtotal, remainingSubtotal);
+  if (!discountAllocation) {
+    return res.status(409).json({ error: 'order_split_pricing_invalid', message: 'مبلغ اقلام یا تخفیف سفارش برای تفکیک معتبر نیست.' });
+  }
+
+  const snapshot = snapshotFinanceMutationState();
   order.items = remainingItems;
-  order.subtotal = remainingItems.reduce((sum, item) => sum + (Number(item.lineTotal) || Number(item.price) * Number(item.qty)), 0);
-  order.total = Math.max(0, order.subtotal - Number(order.discount || 0));
+  order.subtotal = remainingSubtotal;
+  order.discount = discountAllocation.remainingDiscount;
+  order.total = remainingSubtotal - discountAllocation.remainingDiscount;
   order.balanceDue = order.total;
   order.splitCount = Math.max(0, Number(order.splitCount) || 0) + 1;
 
@@ -4501,16 +6630,16 @@ app.post('/api/waiter/orders/:id/split', requireCapability('orders.split'), asyn
     tableNo: subTableNo,
     checkNo: subTableNo,
     items: splitItems,
-    subtotal: splitItems.reduce((sum, item) => sum + (Number(item.lineTotal) || Number(item.price) * Number(item.qty)), 0),
-    discount: 0,
-    total: splitItems.reduce((sum, item) => sum + (Number(item.lineTotal) || Number(item.price) * Number(item.qty)), 0),
+    subtotal: splitSubtotal,
+    discount: discountAllocation.selectedDiscount,
+    total: splitSubtotal - discountAllocation.selectedDiscount,
     checkNo: subTableNo,
     createdAt: new Date().toISOString(),
     statusAt: new Date().toISOString(),
     paymentStatus: 'unpaid',
     amountPaid: 0,
     partialPayments: [],
-    balanceDue: splitItems.reduce((sum, item) => sum + (Number(item.lineTotal) || Number(item.price) * Number(item.qty)), 0),
+    balanceDue: splitSubtotal - discountAllocation.selectedDiscount,
     splitFromOrderId: order.id,
     splitMode,
     splitSeat: splitMode === 'seat' ? targetSeat : null,
@@ -4518,43 +6647,169 @@ app.post('/api/waiter/orders/:id/split', requireCapability('orders.split'), asyn
     splitAt: new Date().toISOString(),
   };
   db.orders.unshift(subOrder);
+  if (idempotencyKey) {
+    order.splitOperations = [
+      ...splitOperations,
+      {
+        idempotencyKey,
+        requestFingerprint,
+        splitOrderId: subOrder.id,
+        createdAt: subOrder.splitAt,
+      },
+    ];
+  }
 
   recordAudit(req, 'order.split', 'order', order.id, { newOrderId: subOrder.id, subTableNo }, order.branchId);
-  await save();
+  try {
+    await persistFinanceMutation(snapshot);
+  } catch (error) {
+    return res.status(error.status || 503).json({ error: error.code || 'order_split_persistence_failed', message: 'تفکیک سفارش به‌صورت پایدار ثبت نشد؛ وضعیت را تازه کنید و دوباره بررسی کنید.' });
+  }
   publishOperationalEvent('order.created', { orderId: subOrder.id, branchId: subOrder.branchId, status: subOrder.status });
   publishOperationalEvent('order.updated', { orderId: order.id, branchId: order.branchId, status: order.status });
-  res.json({ ok: true, primaryOrder: order, splitOrder: subOrder });
-});
+  res.json({ ok: true, primaryOrder: operationalOrderResponse(order, req.user), splitOrder: operationalOrderResponse(subOrder, req.user) });
+}));
 
 app.patch('/api/waiter/orders/:id/move-table', requireCapability('orders.move_table'), async (req, res) => {
   const targetId = Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
-  const order = (db.orders || []).find((item) => Number(item.id) === targetId);
-  if (!order) return res.status(404).json({ error: 'not found' });
+  if (!Number.isSafeInteger(targetId) || targetId <= 0) return res.status(400).json({ error: 'order_id_invalid' });
+  const initial = (db.orders || []).find((item) => Number(item.id) === targetId);
+  if (!initial) return res.status(404).json({ error: 'not found' });
+  const initialBranchId = persistedOrderBranchId(initial);
+  if (!initialBranchId) return res.status(409).json({ error: 'order_branch_invalid' });
   try {
-    assertUserBranchAccess(req.user, order.branchId);
+    assertUserBranchAccess(req.user, initialBranchId);
   } catch (error) {
     return res.status(error.status || 403).json({ error: error.code || 'branch_access_denied', message: error.message, requestId: req.requestId });
   }
   const nextTable = String(req.body?.tableNo || '').trim();
   if (!nextTable) return res.status(400).json({ error: 'table_required' });
-  const branchId = Number(order.branchId) || defaultBranch()?.id || 1;
-  const targetTable = tableForBranch(nextTable, branchId);
-  if (!targetTable) return res.status(404).json({ error: 'table_not_found', message: 'میز مقصد در شعبهٔ فعال پیدا نشد.' });
-  if (targetTable.active === false) return res.status(409).json({ error: 'table_inactive', message: 'میز مقصد غیرفعال است.' });
-  const oldTable = order.tableNo;
-  if (tableNoBelongsToTable(oldTable, targetTable.id)) {
-    return res.json({ ok: true, idempotent: true, order, oldTable, nextTable: oldTable });
-  }
-  const occupied = (db.orders || []).some((candidate) => Number(candidate.id) !== Number(order.id)
-    && activeDineInOrderOnTable(candidate, targetTable.id, branchId));
-  if (occupied) return res.status(409).json({ error: 'table_occupied', message: 'میز مقصد در حال سرویس است؛ میز دیگری انتخاب کنید.' });
-  const assignedTable = String(targetTable.id);
-  order.tableNo = assignedTable;
-  order.checkNo = nextDineInCheckNo(branchId, assignedTable, assignedTable);
-  recordAudit(req, 'order.table_moved', 'order', order.id, { oldTable, nextTable }, order.branchId);
-  await save();
-  publishOperationalEvent('order.updated', { orderId: order.id, branchId: order.branchId, tableNo: nextTable });
-  res.json({ ok: true, order, oldTable, nextTable });
+  return serializeBranchOrderMutation(initial, async () => {
+    const order = (db.orders || []).find((item) => Number(item.id) === targetId);
+    if (!order) return res.status(404).json({ error: 'not found' });
+    if (persistedOrderBranchId(order) !== initialBranchId) {
+      return res.status(409).json({ error: 'order_branch_changed' });
+    }
+    try {
+      assertUserBranchAccess(req.user, initialBranchId);
+    } catch (error) {
+      return res.status(error.status || 403).json({ error: error.code || 'branch_access_denied', message: error.message, requestId: req.requestId });
+    }
+    if (!(db.branches || []).some((branch) => Number(branch.id) === initialBranchId && branch.active !== false)) {
+      return res.status(409).json({ error: 'order_branch_inactive' });
+    }
+
+    const fulfillment = normalizeFulfillment(order.fulfillment, { tableNo: order.tableNo });
+    const status = String(order.status || '').trim().toLowerCase();
+    const invoiceStatus = String(order.invoiceStatus || '').trim().toLowerCase();
+    const explicitlyClosed = order.closed === true || order.invoiceClosed === true
+      || Boolean(order.closedAt || order.invoiceClosedAt)
+      || ['closed', 'settled', 'paid', 'cancelled', 'canceled', 'void', 'refunded'].includes(invoiceStatus);
+    const serviceComplete = ['done', 'completed', 'picked_up', 'delivered'].includes(status);
+    const unpaidCompletion = ['unpaid', 'partial', 'pending', 'failed', 'unknown'].includes(paymentStatusFor(order));
+    const knownOpenStatus = ['draft', 'pay_at_cashier', 'awaiting_confirmation', 'pending_online',
+      'sent_to_kitchen', 'preparing', 'ready', 'paid', 'dispatched', 'done', 'completed', 'picked_up', 'delivered'];
+    if (fulfillment !== 'dine_in' || explicitlyClosed || !knownOpenStatus.includes(status)
+        || status === 'cancelled' || (serviceComplete && !unpaidCompletion)) {
+      return res.status(409).json({ error: 'order_not_open_dine_in', message: 'فقط سفارش حضوریِ باز و تسویه‌نشده قابل انتقال است.' });
+    }
+
+    const targetTable = tableForBranch(nextTable, initialBranchId);
+    if (!targetTable || Number(tableBranchId(targetTable)) !== initialBranchId) {
+      return res.status(404).json({ error: 'table_not_found', message: 'میز مقصد در شعبهٔ فعال پیدا نشد.' });
+    }
+    if (targetTable.active === false) {
+      return res.status(409).json({ error: 'table_inactive', message: 'میز مقصد غیرفعال است.' });
+    }
+    const oldTable = order.tableNo || null;
+    if (tableNoBelongsToTable(oldTable, targetTable.id)) {
+      const movedAuditExists = (db.auditLog || []).some((entry) => entry.action === 'order.table_moved'
+        && String(entry.targetId) === String(order.id)
+        && String(entry.meta?.nextTable || '') === String(order.tableNo));
+      if (!movedAuditExists) {
+        const auditSnapshot = snapshotFinanceMutationState();
+        const auditEntry = recordAudit(req, 'order.table_moved', 'order', order.id, {
+          oldTable: null, nextTable: String(order.tableNo), recoveredAfterCommit: true,
+        }, initialBranchId, { deferAppend: true });
+        try {
+          await persistFinanceMutation(auditSnapshot);
+        } catch (error) {
+          return res.status(error.status || 503).json({
+            error: error.code || 'order_table_move_audit_persistence_failed',
+            message: 'انتقال انجام شده اما ثبت سابقه کامل نشد؛ وضعیت را تازه و دوباره بررسی کنید.',
+          });
+        }
+        appendAuditAfterCommit(auditEntry);
+      }
+      return res.json({ ok: true, idempotent: true, order: operationalOrderResponse(order, req.user), oldTable, nextTable: oldTable });
+    }
+
+    const occupied = (db.orders || []).some((candidate) => Number(candidate.id) !== targetId
+      && Number(candidate.branchId) === initialBranchId
+      && waitlist.tableIdsOverlap(candidate.tableNo, targetTable.id)
+      && activeDineInOrderOnTable(candidate, candidate.tableNo, initialBranchId));
+    if (occupied || ['busy', 'occupied'].includes(String(targetTable.state || '').trim().toLowerCase())) {
+      return res.status(409).json({ error: 'table_occupied', message: 'میز مقصد در حال سرویس است؛ میز دیگری انتخاب کنید.' });
+    }
+    if (String(targetTable.state || '').trim().toLowerCase() === 'reserved') {
+      return res.status(409).json({ error: 'table_reserved', message: 'میز مقصد رزرو شده است؛ میز دیگری انتخاب کنید.' });
+    }
+
+    const now = new Date();
+    const todayKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    const reserved = (db.reservations || []).some((entry) => {
+      if (Number(entry.branchId) !== initialBranchId || !waitlist.tableIdsOverlap(entry.tableNo, targetTable.id)) return false;
+      if (waitlist.isWaitlist(entry)) return String(entry.status || '') === 'seated';
+      const reservationStatus = String(entry.status || '').trim().toLowerCase();
+      if (!['pending', 'confirmed', 'seated'].includes(reservationStatus)) return false;
+      const dateKey = String(entry.date || '').slice(0, 10);
+      return reservationStatus === 'seated'
+        || waitlist.reservationBlocksTable(entry, now, db.reservationSettings?.slotMinutes)
+        || !/^\d{4}-\d{2}-\d{2}$/u.test(dateKey)
+        || dateKey > todayKey;
+    });
+    if (reserved) {
+      return res.status(409).json({ error: 'table_reserved', message: 'میز مقصد برای رزرو یا مهمانِ نشسته نگه داشته شده است.' });
+    }
+
+    const snapshot = snapshotFinanceMutationState();
+    const assignedTable = String(targetTable.id);
+    order.tableNo = assignedTable;
+    order.checkNo = nextDineInCheckNo(initialBranchId, assignedTable, assignedTable);
+    try {
+      await persistFinanceMutation(snapshot);
+    } catch (error) {
+      return res.status(error.status || 503).json({
+        error: error.code || 'order_table_move_persistence_failed',
+        message: 'انتقال میز ذخیره نشد؛ وضعیت قبلی سفارش حفظ شد.',
+      });
+    }
+
+    const auditSnapshot = snapshotFinanceMutationState();
+    const auditEntry = recordAudit(req, 'order.table_moved', 'order', order.id, {
+      oldTable, nextTable: assignedTable,
+    }, initialBranchId, { deferAppend: true });
+    try {
+      await persistFinanceMutation(auditSnapshot);
+    } catch (error) {
+      return res.status(error.status || 503).json({
+        error: error.code || 'order_table_move_audit_persistence_failed',
+        message: 'انتقال ذخیره شد اما ثبت سابقه کامل نشد؛ وضعیت را تازه و دوباره بررسی کنید.',
+      });
+    }
+    appendAuditAfterCommit(auditEntry);
+    let eventPublished = true;
+    try {
+      publishOperationalEvent('order.updated', { orderId: order.id, branchId: initialBranchId, tableNo: assignedTable });
+    } catch (error) {
+      eventPublished = false;
+      console.error('[waiter-move-table] committed event failed', error?.message || error);
+    }
+    return res.json({ ok: true, idempotent: false, eventPublished, order: operationalOrderResponse(order, req.user), oldTable, nextTable: assignedTable });
+  }).catch((error) => {
+    if (res.headersSent) return undefined;
+    return res.status(error.status || 503).json({ error: error.code || 'order_table_move_failed', message: error.message });
+  });
 });
 
 
@@ -4588,92 +6843,197 @@ app.get('/api/admin/delivery-zones', requireCapability('delivery.view'), (req, r
   res.json({ zones: branchScoped(db.deliveryZones || [], branchId).sort((a, b) => Number(a.sort || 0) - Number(b.sort || 0)) });
 });
 
-app.post('/api/admin/delivery-zones', requireCapability('delivery.manage'), (req, res) => {
-  const zone = cleanDeliveryZone(req.body || {});
-  if (!zone.name) return res.status(400).json({ error: 'نام محدوده لازم است' });
-  db.deliveryZones = Array.isArray(db.deliveryZones) ? db.deliveryZones : [];
-  db.deliveryZones.push(zone);
-  recordAudit(req, 'delivery_zone.created', 'delivery_zone', zone.id, { name: zone.name }, zone.branchId);
-  publishOperationalEvent('delivery_zone.updated', { zoneId: zone.id, branchId: zone.branchId });
-  save();
-  res.status(201).json({ ok: true, zone });
+function rollbackAuditEntry(entry, auditLogWasPresent) {
+  if (entry && Array.isArray(db.auditLog)) db.auditLog = db.auditLog.filter((candidate) => candidate !== entry);
+  if (!auditLogWasPresent && Array.isArray(db.auditLog) && db.auditLog.length === 0) delete db.auditLog;
+}
+
+function respondAdminConfigPersistenceFailure(res, error, fallbackCode) {
+  console.error('[admin-config] durable write failed', error?.message || error);
+  return res.status(error?.status || 503).json({
+    error: error?.code || fallbackCode,
+    message: 'تغییر ذخیره نشد؛ دوباره تلاش کنید.',
+  });
+}
+
+function validateAdminHoursTime(value) {
+  if (typeof value !== 'string') return null;
+  const normalized = normalizeDigits(value).trim();
+  return /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(normalized) ? normalized : null;
+}
+
+app.post('/api/admin/delivery-zones', requireCapability('delivery.manage'), async (req, res) => {
+  let branchId;
+  try { branchId = parseBranchId(req); } catch (error) {
+    return res.status(error.status || 400).json({ error: error.code || 'branch_invalid', message: error.message });
+  }
+  if (branchId == null) return res.status(400).json({ error: 'branch_required' });
+  return serializeAdminConfigMutation(branchId, async () => {
+    const zone = cleanDeliveryZone({ ...(req.body || {}), branchId });
+    if (!zone.name) return res.status(400).json({ error: 'نام محدوده لازم است' });
+    const hadZones = Array.isArray(db.deliveryZones);
+    db.deliveryZones = hadZones ? db.deliveryZones : [];
+    db.deliveryZones.push(zone);
+    const auditLogWasPresent = Array.isArray(db.auditLog);
+    let auditEntry;
+    try {
+      auditEntry = recordAudit(req, 'delivery_zone.created', 'delivery_zone', zone.id, { name: zone.name }, zone.branchId, { deferAppend: true });
+      await persistAdminConfigMutation(() => {
+        db.deliveryZones = (db.deliveryZones || []).filter((candidate) => candidate !== zone);
+        if (!hadZones && db.deliveryZones.length === 0) delete db.deliveryZones;
+        rollbackAuditEntry(auditEntry, auditLogWasPresent);
+      });
+    } catch (error) {
+      return respondAdminConfigPersistenceFailure(res, error, 'delivery_zone_persistence_failed');
+    }
+    appendAuditAfterCommit(auditEntry);
+    try { publishOperationalEvent('delivery_zone.updated', { zoneId: zone.id, branchId: zone.branchId }); }
+    catch (eventError) { console.error('[delivery-zone-create] post-commit event failed', eventError?.message || eventError); }
+    return res.status(201).json({ ok: true, zone });
+  });
 });
 
-app.patch('/api/admin/delivery-zones/:id', requireCapability('delivery.manage'), (req, res) => {
+app.patch('/api/admin/delivery-zones/:id', requireCapability('delivery.manage'), async (req, res) => {
   const targetId = Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
-  const current = (db.deliveryZones || []).find((item) => Number(item.id) === targetId);
-  if (!current) return res.status(404).json({ error: 'not found' });
-  const zone = cleanDeliveryZone(req.body || {}, current);
-  if (!zone.name) return res.status(400).json({ error: 'نام محدوده لازم است' });
-  Object.assign(current, zone);
-  recordAudit(req, 'delivery_zone.updated', 'delivery_zone', current.id, { name: current.name }, current.branchId);
-  publishOperationalEvent('delivery_zone.updated', { zoneId: current.id, branchId: current.branchId });
-  save();
-  res.json({ ok: true, zone: current });
+  const initial = (db.deliveryZones || []).find((item) => Number(item.id) === targetId);
+  if (!initial) return res.status(404).json({ error: 'not found' });
+  const initialBranchId = Number(initial.branchId) || Number(defaultBranch()?.id) || 1;
+  try { assertUserBranchAccess(req.user, initialBranchId); } catch (error) {
+    return res.status(error.status || 403).json({ error: error.code || 'branch_access_denied', message: error.message, requestId: req.requestId });
+  }
+  return serializeAdminConfigMutation(initialBranchId, async () => {
+    const current = (db.deliveryZones || []).find((item) => Number(item.id) === targetId);
+    if (!current) return res.status(404).json({ error: 'not found' });
+    const currentBranchId = Number(current.branchId) || Number(defaultBranch()?.id) || 1;
+    try { assertUserBranchAccess(req.user, currentBranchId); } catch (error) {
+      return res.status(error.status || 403).json({ error: error.code || 'branch_access_denied', message: error.message, requestId: req.requestId });
+    }
+    if (currentBranchId !== initialBranchId) return res.status(409).json({ error: 'delivery_zone_changed', message: 'محدودهٔ ارسال هنگام ویرایش تغییر کرده است؛ صفحه را تازه کنید.' });
+    if (requestBranchValue(req) != null && Number(parseBranchId(req)) !== currentBranchId) {
+      return res.status(409).json({ error: 'delivery_zone_branch_immutable', message: 'محدودهٔ ارسال را نمی‌توان به شعبهٔ دیگری منتقل کرد.' });
+    }
+    const zone = cleanDeliveryZone({ ...(req.body || {}), branchId: currentBranchId }, current);
+    if (!zone.name) return res.status(400).json({ error: 'نام محدوده لازم است' });
+    const before = { ...current };
+    Object.assign(current, zone);
+    const auditLogWasPresent = Array.isArray(db.auditLog);
+    let auditEntry;
+    try {
+      auditEntry = recordAudit(req, 'delivery_zone.updated', 'delivery_zone', current.id, { name: current.name }, current.branchId, { deferAppend: true });
+      await persistAdminConfigMutation(() => {
+        for (const key of Object.keys(current)) delete current[key];
+        Object.assign(current, before);
+        rollbackAuditEntry(auditEntry, auditLogWasPresent);
+      });
+    } catch (error) {
+      return respondAdminConfigPersistenceFailure(res, error, 'delivery_zone_persistence_failed');
+    }
+    appendAuditAfterCommit(auditEntry);
+    try { publishOperationalEvent('delivery_zone.updated', { zoneId: current.id, branchId: current.branchId }); }
+    catch (eventError) { console.error('[delivery-zone-update] post-commit event failed', eventError?.message || eventError); }
+    return res.json({ ok: true, zone: current });
+  });
 });
 
-app.delete('/api/admin/delivery-zones/:id', requireCapability('delivery.manage'), (req, res) => {
+app.delete('/api/admin/delivery-zones/:id', requireCapability('delivery.manage'), async (req, res) => {
   const targetId = Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
-  const zone = (db.deliveryZones || []).find((item) => Number(item.id) === targetId);
-  if (!zone) return res.status(404).json({ error: 'not found' });
-  db.deliveryZones = db.deliveryZones.filter((item) => Number(item.id) !== Number(zone.id));
-  recordAudit(req, 'delivery_zone.deleted', 'delivery_zone', zone.id, { name: zone.name }, zone.branchId);
-  publishOperationalEvent('delivery_zone.updated', { zoneId: zone.id, branchId: zone.branchId, deleted: true });
-  save();
-  res.json({ ok: true });
+  const initial = (db.deliveryZones || []).find((item) => Number(item.id) === targetId);
+  if (!initial) return res.status(404).json({ error: 'not found' });
+  const initialBranchId = Number(initial.branchId) || Number(defaultBranch()?.id) || 1;
+  try { assertUserBranchAccess(req.user, initialBranchId); } catch (error) {
+    return res.status(error.status || 403).json({ error: error.code || 'branch_access_denied', message: error.message, requestId: req.requestId });
+  }
+  return serializeAdminConfigMutation(initialBranchId, async () => {
+    const zones = db.deliveryZones || [];
+    const index = zones.findIndex((item) => Number(item.id) === targetId);
+    if (index < 0) return res.status(404).json({ error: 'not found' });
+    const zone = zones[index];
+    const zoneBranchId = Number(zone.branchId) || Number(defaultBranch()?.id) || 1;
+    try { assertUserBranchAccess(req.user, zoneBranchId); } catch (error) {
+      return res.status(error.status || 403).json({ error: error.code || 'branch_access_denied', message: error.message, requestId: req.requestId });
+    }
+    if (zoneBranchId !== initialBranchId) return res.status(409).json({ error: 'delivery_zone_changed', message: 'محدودهٔ ارسال هنگام حذف تغییر کرده است؛ صفحه را تازه کنید.' });
+    db.deliveryZones = zones.filter((item) => item !== zone);
+    const auditLogWasPresent = Array.isArray(db.auditLog);
+    let auditEntry;
+    try {
+      auditEntry = recordAudit(req, 'delivery_zone.deleted', 'delivery_zone', zone.id, { name: zone.name }, zone.branchId, { deferAppend: true });
+      await persistAdminConfigMutation(() => {
+        const currentZones = db.deliveryZones || (db.deliveryZones = []);
+        if (!currentZones.includes(zone)) currentZones.splice(Math.min(index, currentZones.length), 0, zone);
+        rollbackAuditEntry(auditEntry, auditLogWasPresent);
+      });
+    } catch (error) {
+      return respondAdminConfigPersistenceFailure(res, error, 'delivery_zone_persistence_failed');
+    }
+    appendAuditAfterCommit(auditEntry);
+    try { publishOperationalEvent('delivery_zone.updated', { zoneId: zone.id, branchId: zone.branchId, deleted: true }); }
+    catch (eventError) { console.error('[delivery-zone-delete] post-commit event failed', eventError?.message || eventError); }
+    return res.json({ ok: true });
+  });
 });
 
 app.get('/api/admin/payments', requireCapability('payments.manage'), (req, res) => {
   const branchId = parseBranchId(req);
   const limit = Math.max(1, Math.min(200, Number(req.query.limit) || 80));
   res.json({
-    provider: { mode: db.paymentProvider?.mode || 'sandbox', provider: db.paymentProvider?.provider || 'sandbox', enabled: db.paymentProvider?.enabled !== false },
+    provider: paymentProviderPublicStatus(db.paymentProvider, {
+      nodeEnv: process.env.NODE_ENV,
+      providerReady: productionPaymentProviderReady(),
+    }),
     payments: branchScoped(db.paymentAttempts || [], branchId).slice(0, limit).map(publicPaymentAttempt),
   });
 });
 
 function maybeAwardOrderLoyalty(order) {
-  if (!order || order.loyaltyAwarded || !db.loyalty?.enabled) return;
-  const user = order.phone ? db.users.find((u) => u.phone === order.phone) : null;
-  const resolved = loyaltyEngine.resolveCustomerTier(db, user);
-  let pts = loyaltyEngine.calculateOrderPointsEarned(db, order.total, resolved.tier);
-  
-  // Happy Hour multiplier
-  const hh = campaignsEngine.checkHappyHourStatus(db);
-  if (hh.active && hh.pointsMultiplier > 1.0) {
-    pts = Math.round(pts * hh.pointsMultiplier);
-  }
+  if (!order) return;
+  if (!order.loyaltyAwarded && db.loyalty?.enabled) {
+  const phone = normalizeDigits(order.phone || '').trim();
+  const user = PHONE_RE.test(phone)
+    ? db.users.find((candidate) => candidate.phone === phone && effectiveRole(candidate) === 'user')
+    : null;
+  if (user) {
+    const resolved = loyaltyEngine.resolveCustomerTier(db, user);
+    let pts = loyaltyEngine.calculateOrderPointsEarned(db, order.total, resolved.tier);
 
-  if (pts > 0) {
-    awardLoyaltyPoints(order.phone, pts, 'order', {
-      orderId: order.id,
-      total: order.total,
-      tierId: resolved.tier.id,
-      tierName: resolved.tier.name,
-      multiplier: resolved.tier.multiplier,
-      happyHour: hh.active,
-    });
-    order.loyaltyAwarded = true;
-    order.loyaltyPoints = pts;
-    order.loyaltyTier = resolved.tier.id;
+    // Happy Hour multiplier
+    const hh = campaignsEngine.checkHappyHourStatus(db);
+    if (hh.active && hh.pointsMultiplier > 1.0) {
+      pts = Math.round(pts * hh.pointsMultiplier);
+    }
 
-    // Trigger Smart SMS notification
-    try {
-      const userBal = walletEngine.getWalletBalance(db, order.phone);
-      smsEngine.sendSms(db, {
-        phone: order.phone,
-        name: order.name || user?.name || '',
-        templateKey: 'points_awarded',
-        vars: {
-          name: order.name || user?.name || 'مشتری گرامی',
-          points: pts,
-          total_points: user ? user.points : pts,
-          wallet_balance: userBal,
-          tier: resolved.tier.name,
-        },
-        triggerType: 'event',
+    if (pts > 0) {
+      awardLoyaltyPoints(phone, pts, 'order', {
+        orderId: order.id,
+        total: order.total,
+        tierId: resolved.tier.id,
+        tierName: resolved.tier.name,
+        multiplier: resolved.tier.multiplier,
+        happyHour: hh.active,
       });
-    } catch (_) {}
+      order.loyaltyAwarded = true;
+      order.loyaltyPoints = pts;
+      order.loyaltyTier = resolved.tier.id;
+
+      // Notification delivery is best-effort; an async SMS rejection must
+      // never turn a committed service completion into a failed HTTP request.
+      try {
+        const userBal = walletEngine.getWalletBalance(db, phone);
+        Promise.resolve(smsEngine.sendSms(db, {
+          phone,
+          name: order.name || user.name || '',
+          templateKey: 'points_awarded',
+          vars: {
+            name: order.name || user.name || 'مشتری گرامی',
+            points: pts,
+            total_points: user.points,
+            wallet_balance: userBal,
+            tier: resolved.tier.name,
+          },
+          triggerType: 'event',
+        })).catch(() => {});
+      } catch (_) {}
+    }
   }
 
   // Check and unlock referral rewards
@@ -4684,9 +7044,303 @@ function maybeAwardOrderLoyalty(order) {
   } catch (e) {
     console.error('[referral-reward] order check failed:', e.message);
   }
+  }
+
+  // Behavioral milestone points are created only as part of a real order
+  // completion transition. Reads of /api/loyalty/me are strictly read-only.
+  if (!db.loyalty?.enabled || !loyaltyAchievements.isValidCompletedOrder(order)) return;
+  const member = (db.users || []).find((candidate) => effectiveRole(candidate) === 'user'
+    && loyaltyAchievements.orderBelongsToMember(order, candidate));
+  if (!member || !member.phone) return;
+  const memberKey = member.id !== undefined && member.id !== null
+    ? `user:${String(member.id)}`
+    : `phone:${loyaltyAchievements.normalizePhoneKey(member.phone)}`;
+  if (!Array.isArray(db.loyaltyAchievementAwards)) db.loyaltyAchievementAwards = [];
+  const linkedOrders = (db.orders || []).filter((candidate) => loyaltyAchievements.orderBelongsToMember(candidate, member));
+  const achievements = loyaltyAchievements.getLoyaltyAchievements(db);
+  const context = {
+    menuItems: db.menuItems || [],
+    branches: db.branches || [],
+    fallbackTimeZone: db.settings?.businessTimeZone || db.settings?.timezone || loyaltyAchievements.FALLBACK_TIME_ZONE,
+  };
+  for (const achievement of achievements) {
+    if (!achievement.enabled || achievement.rewardPoints <= 0) continue;
+    const progress = loyaltyAchievements.evaluateAchievement(achievement, linkedOrders, context);
+    if (!loyaltyAchievements.isRewardEligibleAtLaunch(achievement, progress, order.id)) continue;
+    const awardKey = `${memberKey}:${achievement.id}`;
+    loyaltyAchievements.recordAchievementAwardOnce(db.loyaltyAchievementAwards, {
+      key: awardKey,
+      memberKey,
+      achievementId: achievement.id,
+      orderId: order.id,
+      points: achievement.rewardPoints,
+    }, () => awardLoyaltyPoints(member.phone, achievement.rewardPoints, 'achievement', {
+      achievementId: achievement.id,
+      achievementName: achievement.name,
+      memberKey,
+      orderId: order.id,
+      oneTime: true,
+    }));
+  }
 }
 
-app.patch('/api/admin/orders/:id', requireCapability('orders.manage'), async (req, res) => {
+app.post('/api/delivery/orders/:id/accept', requireCapability('delivery.manage'), async (req, res) => {
+  const targetId = Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
+  if (!Number.isSafeInteger(targetId) || targetId <= 0) return res.status(400).json({ error: 'order_id_invalid' });
+  const initial = (db.orders || []).find((item) => Number(item.id) === targetId);
+  if (!initial) return res.status(404).json({ error: 'not found' });
+  const initialBranchId = Number(initial.branchId);
+  if (!Number.isSafeInteger(initialBranchId) || initialBranchId <= 0) return res.status(409).json({ error: 'order_branch_invalid' });
+  if (!(db.branches || []).some((branch) => Number(branch.id) === initialBranchId && branch.active !== false)) {
+    return res.status(409).json({ error: 'order_branch_inactive' });
+  }
+  try {
+    assertUserBranchAccess(req.user, initialBranchId);
+  } catch (error) {
+    return res.status(error.status || 403).json({ error: error.code || 'branch_access_denied', message: error.message, requestId: req.requestId });
+  }
+  const idempotencyKey = String(req.get('Idempotency-Key') || req.body?.idempotencyKey || '').trim();
+  if (process.env.NODE_ENV === 'production' && !idempotencyKey) {
+    return res.status(400).json({ error: 'delivery_acceptance_idempotency_required', message: 'برای پذیرش سفارش، کلید یکتای درخواست لازم است.' });
+  }
+  if (idempotencyKey && !ORDER_IDEMPOTENCY_KEY_RE.test(idempotencyKey)) {
+    return res.status(400).json({ error: 'delivery_acceptance_idempotency_invalid' });
+  }
+
+  return serializeBranchOrderMutation(initial, async () => {
+    const order = (db.orders || []).find((item) => Number(item.id) === targetId);
+    if (!order) return res.status(404).json({ error: 'not found' });
+    if (Number(order.branchId) !== initialBranchId) return res.status(409).json({ error: 'order_branch_changed' });
+    try {
+      assertUserBranchAccess(req.user, order.branchId);
+    } catch (error) {
+      return res.status(error.status || 403).json({ error: error.code || 'branch_access_denied', message: error.message, requestId: req.requestId });
+    }
+    if (normalizeFulfillment(order.fulfillment, { tableNo: order.tableNo }) !== 'delivery') {
+      return res.status(409).json({ error: 'delivery_acceptance_not_applicable' });
+    }
+    if (order.deliveryAcceptance?.status === 'accepted') {
+      const acceptance = validateDeliveryAcceptance(order);
+      if (!acceptance.ok) {
+        return res.status(409).json({ error: 'delivery_acceptance_provenance_invalid', message: 'پذیرش قبلی قابل انتساب و تأیید نیست؛ این سفارش نیازمند بررسی است.' });
+      }
+      if (idempotencyKey && acceptance.reference !== idempotencyKey) {
+        return res.status(409).json({ error: 'delivery_acceptance_idempotency_conflict' });
+      }
+      return res.json({ ok: true, idempotent: true, order: operationalOrderResponse(order, req.user) });
+    }
+    if (idempotencyKey && (db.orders || []).some((candidate) =>
+      Number(candidate.id) !== targetId
+      && Number(candidate.branchId) === initialBranchId
+      && String(candidate.deliveryAcceptance?.reference || '') === idempotencyKey)) {
+      return res.status(409).json({ error: 'delivery_acceptance_idempotency_conflict' });
+    }
+    if (order.deliveryAcceptance?.status === 'rejected') {
+      return res.status(409).json({ error: 'delivery_acceptance_rejected' });
+    }
+    const status = String(order.status || '');
+    const kitchenWasStarted = Boolean(order.startedAt)
+      || ['sent_to_kitchen', 'preparing', 'ready', 'dispatched', 'delivered'].includes(status)
+      || (Array.isArray(order.statusHistory) && order.statusHistory.some((entry) => ['sent_to_kitchen', 'preparing', 'ready', 'dispatched', 'delivered'].includes(String(entry?.status || ''))));
+    if (kitchenWasStarted) {
+      return res.status(409).json({ error: 'delivery_acceptance_after_kitchen_start', message: 'پذیرش باید پیش از ورود سفارش به آشپزخانه ثبت شود؛ این سفارش نیازمند بررسی سابقه است.' });
+    }
+    if (!['pending_online', 'awaiting_confirmation', 'pay_at_cashier', 'paid'].includes(status)) {
+      return res.status(409).json({ error: 'delivery_acceptance_state_invalid', current: status });
+    }
+
+    const snapshot = snapshotFinanceMutationState();
+    const acceptedAt = new Date().toISOString();
+    const requestReference = String(req.requestId || '');
+    const reference = idempotencyKey || (/^[A-Za-z0-9][A-Za-z0-9._:-]{7,159}$/.test(requestReference) ? requestReference : crypto.randomUUID());
+    const deliveryAcceptance = {
+      status: 'accepted',
+      acceptedAt,
+      acceptedBy: { phone: String(req.user.phone || ''), role: effectiveRole(req.user) },
+      source: 'restaurant',
+      reference,
+    };
+    const acceptance = validateDeliveryAcceptance({ fulfillment: 'delivery', deliveryAcceptance });
+    if (!acceptance.ok) {
+      return res.status(403).json({ error: 'delivery_acceptance_actor_invalid', message: 'حساب کاربری مجاز برای پذیرش سفارش معتبر نیست.' });
+    }
+    order.deliveryAcceptance = deliveryAcceptance;
+    const nextStatus = nextOrderStatusAfterDeliveryAcceptance(order);
+    if (nextStatus && canTransitionOrder(order, nextStatus)) {
+      appendOrderStatus(order, nextStatus, req.user, { source: 'restaurant-delivery-acceptance', acceptanceReference: reference });
+    }
+    recordAudit(req, 'delivery.order_accepted', 'order', order.id, {
+      reference,
+      previousStatus: status,
+      resultingStatus: order.status,
+      paymentStatus: paymentStatusFor(order),
+    }, order.branchId);
+    try {
+      await persistFinanceMutation(snapshot);
+    } catch (error) {
+      return res.status(error.status || 503).json({ error: error.code || 'delivery_acceptance_persistence_failed', message: error.message });
+    }
+    try {
+      publishOperationalEvent('order.updated', { orderId: order.id, branchId: order.branchId, status: order.status, deliveryAcceptance: 'accepted' });
+      neemBridge.enqueueOrder(order, (db.paymentAttempts || []).find((item) => Number(item.orderId) === Number(order.id)) || null);
+    } catch (error) {
+      console.error('[delivery-acceptance] post-commit event failed', error?.message || error);
+    }
+    return res.json({ ok: true, idempotent: false, order: operationalOrderResponse(order, req.user) });
+  }).catch((error) => {
+    console.error('[delivery-acceptance] mutation failed', error?.message || error);
+    if (res.headersSent) return undefined;
+    return res.status(error.status || 503).json({ error: error.code || 'delivery_acceptance_failed', message: error.message || 'پذیرش سفارش ثبت نشد.' });
+  });
+});
+
+app.post('/api/delivery/orders/:id/reject', requireCapability('delivery.manage'), async (req, res) => {
+  const targetId = Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
+  if (!Number.isSafeInteger(targetId) || targetId <= 0) return res.status(400).json({ error: 'order_id_invalid' });
+  const initial = (db.orders || []).find((item) => Number(item.id) === targetId);
+  if (!initial) return res.status(404).json({ error: 'not found' });
+  const initialBranchId = persistedOrderBranchId(initial);
+  if (!initialBranchId) return res.status(409).json({ error: 'order_branch_invalid' });
+  if (!(db.branches || []).some((branch) => Number(branch.id) === initialBranchId && branch.active !== false)) {
+    return res.status(409).json({ error: 'order_branch_inactive' });
+  }
+  try {
+    assertUserBranchAccess(req.user, initialBranchId);
+  } catch (error) {
+    return res.status(error.status || 403).json({ error: error.code || 'branch_access_denied', message: error.message, requestId: req.requestId });
+  }
+
+  const rawReason = typeof req.body?.reason === 'string' ? req.body.reason : '';
+  const reason = rawReason.replace(/\r\n?/gu, '\n').trim();
+  if (!reason || reason.length > 500 || /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/u.test(reason)) {
+    return res.status(400).json({ error: 'delivery_rejection_reason_required', message: 'دلیل رد سفارش را کوتاه و روشن وارد کنید.' });
+  }
+  const idempotencyKey = String(req.get?.('Idempotency-Key') || req.body?.idempotencyKey || '').trim();
+  if (idempotencyKey && !ORDER_IDEMPOTENCY_KEY_RE.test(idempotencyKey)) {
+    return res.status(400).json({ error: 'delivery_rejection_idempotency_invalid' });
+  }
+
+  return serializeBranchOrderMutation(initial, async () => {
+    const order = (db.orders || []).find((item) => Number(item.id) === targetId);
+    if (!order) return res.status(404).json({ error: 'not found' });
+    if (persistedOrderBranchId(order) !== initialBranchId) return res.status(409).json({ error: 'order_branch_changed' });
+    try {
+      assertUserBranchAccess(req.user, initialBranchId);
+    } catch (error) {
+      return res.status(error.status || 403).json({ error: error.code || 'branch_access_denied', message: error.message, requestId: req.requestId });
+    }
+    if (normalizeFulfillment(order.fulfillment, { tableNo: order.tableNo }) !== 'delivery') {
+      return res.status(409).json({ error: 'delivery_rejection_not_applicable' });
+    }
+
+    const priorDecision = order.deliveryAcceptance;
+    if (priorDecision?.status === 'rejected') {
+      const provenanceValid = priorDecision.source === 'restaurant'
+        && typeof priorDecision.reason === 'string' && priorDecision.reason.trim()
+        && Number.isFinite(Date.parse(priorDecision.rejectedAt || ''))
+        && /^[A-Za-z0-9][A-Za-z0-9._:-]{7,159}$/u.test(String(priorDecision.reference || ''))
+        && typeof priorDecision.rejectedBy?.phone === 'string' && priorDecision.rejectedBy.phone.trim()
+        && ['owner', 'manager', 'cashier'].includes(String(priorDecision.rejectedBy.role || '').toLowerCase());
+      if (!provenanceValid) return res.status(409).json({ error: 'delivery_rejection_provenance_invalid' });
+      if (priorDecision.reason !== reason || (idempotencyKey && priorDecision.reference !== idempotencyKey)) {
+        return res.status(409).json({ error: 'delivery_rejection_idempotency_conflict' });
+      }
+      const auditExists = (db.auditLog || []).some((entry) => entry.action === 'delivery.order_rejected'
+        && String(entry.targetId) === String(order.id)
+        && String(entry.meta?.reference || '') === String(priorDecision.reference));
+      if (!auditExists) {
+        const auditSnapshot = snapshotFinanceMutationState();
+        const auditEntry = recordAudit(req, 'delivery.order_rejected', 'order', order.id, {
+          reference: priorDecision.reference, reason: priorDecision.reason,
+          recoveredAfterCommit: true,
+        }, initialBranchId, { deferAppend: true });
+        try {
+          await persistFinanceMutation(auditSnapshot);
+        } catch (error) {
+          return res.status(error.status || 503).json({ error: error.code || 'delivery_rejection_audit_persistence_failed' });
+        }
+        appendAuditAfterCommit(auditEntry);
+      }
+      return res.json({ ok: true, idempotent: true, order: operationalOrderResponse(order, req.user) });
+    }
+    if (priorDecision?.status === 'accepted') {
+      return res.status(409).json({ error: 'delivery_already_accepted' });
+    }
+
+    const status = String(order.status || '').trim().toLowerCase();
+    const kitchenWasStarted = Boolean(order.startedAt)
+      || ['sent_to_kitchen', 'preparing', 'ready', 'dispatched', 'delivered'].includes(status)
+      || (Array.isArray(order.statusHistory) && order.statusHistory.some((entry) =>
+        ['sent_to_kitchen', 'preparing', 'ready', 'dispatched', 'delivered'].includes(String(entry?.status || '').toLowerCase())));
+    if (kitchenWasStarted) {
+      return res.status(409).json({ error: 'delivery_rejection_after_kitchen_start' });
+    }
+    if (!['pending_online', 'awaiting_confirmation', 'pay_at_cashier', 'paid'].includes(status)) {
+      return res.status(409).json({ error: 'delivery_rejection_state_invalid', current: order.status });
+    }
+
+    const actorRole = String(effectiveRole(req.user) || '').trim().toLowerCase();
+    const actorPhone = String(req.user?.phone || '').trim();
+    if (!actorPhone || actorPhone.length > 64 || !['owner', 'manager', 'cashier'].includes(actorRole)) {
+      return res.status(403).json({ error: 'delivery_rejection_actor_invalid' });
+    }
+    const referenceFromRequest = String(req.requestId || '');
+    const reference = idempotencyKey
+      || (/^[A-Za-z0-9][A-Za-z0-9._:-]{7,159}$/u.test(referenceFromRequest) ? referenceFromRequest : crypto.randomUUID());
+    if ((db.orders || []).some((candidate) => Number(candidate.id) !== targetId
+      && Number(candidate.branchId) === initialBranchId
+      && String(candidate.deliveryAcceptance?.reference || '') === reference)) {
+      return res.status(409).json({ error: 'delivery_rejection_idempotency_conflict' });
+    }
+
+    const snapshot = snapshotFinanceMutationState();
+    order.deliveryAcceptance = {
+      status: 'rejected',
+      source: 'restaurant',
+      rejectedAt: new Date().toISOString(),
+      rejectedBy: { phone: actorPhone, role: actorRole },
+      reason,
+      reference,
+    };
+    try {
+      await persistFinanceMutation(snapshot);
+    } catch (error) {
+      return res.status(error.status || 503).json({
+        error: error.code || 'delivery_rejection_persistence_failed',
+        message: 'رد سفارش ذخیره نشد؛ وضعیت قبلی حفظ شد.',
+      });
+    }
+
+    const auditSnapshot = snapshotFinanceMutationState();
+    const auditEntry = recordAudit(req, 'delivery.order_rejected', 'order', order.id, {
+      reference, reason, previousStatus: status,
+    }, initialBranchId, { deferAppend: true });
+    try {
+      await persistFinanceMutation(auditSnapshot);
+    } catch (error) {
+      return res.status(error.status || 503).json({
+        error: error.code || 'delivery_rejection_audit_persistence_failed',
+        message: 'رد سفارش ثبت شد اما ثبت سابقه کامل نشد؛ وضعیت را تازه و دوباره بررسی کنید.',
+      });
+    }
+    appendAuditAfterCommit(auditEntry);
+    let eventPublished = true;
+    try {
+      publishOperationalEvent('order.updated', {
+        orderId: order.id, branchId: initialBranchId, status: order.status, deliveryAcceptance: 'rejected',
+      });
+    } catch (error) {
+      eventPublished = false;
+      console.error('[delivery-rejection] committed event failed', error?.message || error);
+    }
+    return res.json({ ok: true, idempotent: false, eventPublished, order: operationalOrderResponse(order, req.user) });
+  }).catch((error) => {
+    if (res.headersSent) return undefined;
+    return res.status(error.status || 503).json({ error: error.code || 'delivery_rejection_failed', message: error.message });
+  });
+});
+
+app.patch('/api/admin/orders/:id', requireCapability('orders.manage'), serializeOrderMutationRoute(async (req, res) => {
   if (!['owner', 'manager'].includes(effectiveRole(req.user))) return res.status(403).json({ error: 'supervisor_required' });
   const targetId = Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
   const order = (db.orders || []).find((o) => Number(o.id) === targetId);
@@ -4697,46 +7351,30 @@ app.patch('/api/admin/orders/:id', requireCapability('orders.manage'), async (re
     return res.status(error.status || 403).json({ error: error.code || 'branch_access_denied', message: error.message, requestId: req.requestId });
   }
   const allowed = ['pending_online', 'awaiting_confirmation', 'pay_at_cashier', 'sent_to_kitchen', 'paid', 'preparing', 'ready', 'dispatched', 'picked_up', 'delivered', 'done', 'cancelled'];
+  const status = String(req.body?.status || '');
+  if (!allowed.includes(status)) return res.status(400).json({ error: 'order_status_invalid' });
+  if (status === 'paid' && order.paymentStatus !== 'paid') {
+    return res.status(409).json({ error: 'payment_settlement_required', message: 'پرداخت را از مسیر تسویه ثبت کنید؛ تغییر وضعیت سفارش رسید دریافت وجه نیست.' });
+  }
+  if (status === String(order.status || '')) return res.json({ ok: true, idempotent: true, order: operationalOrderResponse(order, req.user) });
+  if (status === 'cancelled') {
+    const cancellation = orderCancellationGuard(order);
+    if (!cancellation.ok) return res.status(409).json({ error: cancellation.code, message: cancellation.message });
+  }
+  if (!canTransitionOrder(order, status)) {
+    return res.status(409).json({ error: 'order_transition_invalid', current: order.status, allowed: allowedOrderTransitions(order) });
+  }
   const snapshot = snapshotFinanceMutationState();
   try {
-    if (typeof req.body.status === 'string' && allowed.includes(req.body.status)) {
-      appendOrderStatus(order, req.body.status, req.user, { source: 'legacy-admin' });
-      if (['paid', 'preparing', 'ready', 'dispatched', 'picked_up', 'delivered', 'done'].includes(req.body.status)) {
-        order.paymentStatus = 'paid';
-        const financeResult = financeV2.capturePaidOrder(db, order, { actor: req.user.phone });
-        try {
-          accountingEngine.syncOrderSalesJournal(db, order);
-        } catch (accErr) {
-          console.error('[accounting] syncOrderSalesJournal note:', accErr.message);
-        }
-        if (!financeResult?.journalEntry || financeResult.journalEntry.status !== 'posted') {
-          const captureCode = financeResult?.event?.error?.code || 'finance_capture_blocked';
-          throw Object.assign(new Error('تغییر وضعیت انجام نشد چون سند فروش در دفتر مالی ثبت نشد.'), {
-            code: captureCode,
-            status: 409,
-            details: financeResult?.event?.error || null,
-          });
-        }
-      } else if (req.body.status === 'cancelled') {
-        try {
-          accountingEngine.reverseOrderSalesJournal(db, order.id, {
-            reason: `لغو سفارش #${order.orderNo || order.id}`,
-            userId: req.user?.phone || 'admin'
-          });
-          const v2Event = (db.financeV2?.events || []).find((e) => e.source === 'order.paid' && String(e.sourceId) === String(order.id) && e.journalEntryId);
-          if (v2Event?.journalEntryId) {
-            financeV2.reverseEntry(db, v2Event.journalEntryId, req.user?.phone || 'admin', `لغو سفارش #${order.orderNo || order.id}`);
-          }
-          financeV2.reverseOrderCogsAndInventory(db, order.id, req.user?.phone || 'admin', `لغو سفارش #${order.orderNo || order.id}`);
-        } catch (revErr) {
-          console.error('[finance] auto reversal on order cancel note:', revErr.message);
-        }
-      }
-      if (['done', 'picked_up', 'delivered'].includes(req.body.status)) {
-        maybeAwardOrderLoyalty(order);
-      }
-      recordAudit(req, 'order.status_changed', 'order', order.id, { status: req.body.status, source: 'legacy-admin' }, order.branchId);
+    if (status === 'cancelled' && shouldReleaseOrderInventory(order)) {
+      adjustOrderInventory(order.items, 1, order.branchId);
     }
+    appendOrderStatus(order, status, req.user, { source: 'legacy-admin' });
+    if (status === 'cancelled') {
+      reverseCancelledOrderFinancialEffects(order, req.user);
+    }
+    if (['done', 'picked_up', 'delivered'].includes(status)) maybeAwardOrderLoyalty(order);
+    recordAudit(req, 'order.status_changed', 'order', order.id, { status, source: 'legacy-admin' }, order.branchId);
     await persistFinanceMutation(snapshot);
   } catch (error) {
     restoreFinanceMutationState(snapshot);
@@ -4746,12 +7384,12 @@ app.patch('/api/admin/orders/:id', requireCapability('orders.manage'), async (re
     publishOperationalEvent('order.updated', { orderId: order.id, branchId: order.branchId, status: order.status });
     neemBridge.enqueueOrder(order, (db.paymentAttempts || []).find((item) => Number(item.orderId) === Number(order.id)) || null);
   } catch (error) { console.error('[order-post-commit] integration effect failed', error?.message || error); }
-  res.json({ ok: true, order });
-});
+  res.json({ ok: true, order: operationalOrderResponse(order, req.user) });
+}));
 
-// Versioned endpoint for new clients: status changes must follow the state
-// machine, while the legacy route above remains backwards compatible.
-app.patch('/api/v2/orders/:id/status', requireCapability('orders.manage'), async (req, res) => {
+// Versioned endpoint for new clients: order progress follows the state machine;
+// payment status is only changed by a verified settlement/payment command.
+app.patch('/api/v2/orders/:id/status', requireCapability('orders.manage'), serializeOrderMutationRoute(async (req, res) => {
   if (!['owner', 'manager'].includes(effectiveRole(req.user))) return res.status(403).json({ error: 'supervisor_required' });
   const targetId = Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
   const order = (db.orders || []).find((item) => Number(item.id) === targetId);
@@ -4762,43 +7400,25 @@ app.patch('/api/v2/orders/:id/status', requireCapability('orders.manage'), async
   } catch (error) {
     return res.status(error.status || 403).json({ error: error.code || 'branch_access_denied', message: error.message, requestId: req.requestId });
   }
-  if (status === String(order.status || '')) return res.json({ ok: true, idempotent: true, order });
+  if (status === 'paid' && order.paymentStatus !== 'paid') {
+    return res.status(409).json({ error: 'payment_settlement_required', message: 'پرداخت را از مسیر تسویه ثبت کنید؛ تغییر وضعیت سفارش رسید دریافت وجه نیست.' });
+  }
+  if (status === String(order.status || '')) return res.json({ ok: true, idempotent: true, order: operationalOrderResponse(order, req.user) });
+  if (status === 'cancelled') {
+    const cancellation = orderCancellationGuard(order);
+    if (!cancellation.ok) return res.status(409).json({ error: cancellation.code, message: cancellation.message });
+  }
   if (!canTransitionOrder(order, status)) {
     return res.status(409).json({ error: 'order_transition_invalid', current: order.status, allowed: allowedOrderTransitions(order) });
   }
   const snapshot = snapshotFinanceMutationState();
   try {
+    if (status === 'cancelled' && shouldReleaseOrderInventory(order)) {
+      adjustOrderInventory(order.items, 1, order.branchId);
+    }
     appendOrderStatus(order, status, req.user, { source: 'v2' });
-    if (['paid', 'preparing', 'ready', 'dispatched', 'picked_up', 'delivered', 'done'].includes(status)) {
-      order.paymentStatus = 'paid';
-      const financeResult = financeV2.capturePaidOrder(db, order, { actor: req.user.phone });
-      try {
-        accountingEngine.syncOrderSalesJournal(db, order);
-      } catch (accErr) {
-        console.error('[accounting] syncOrderSalesJournal note:', accErr.message);
-      }
-      if (!financeResult?.journalEntry || financeResult.journalEntry.status !== 'posted') {
-        const captureCode = financeResult?.event?.error?.code || 'finance_capture_blocked';
-        throw Object.assign(new Error('تغییر وضعیت انجام نشد چون سند فروش در دفتر مالی ثبت نشد.'), {
-          code: captureCode,
-          status: 409,
-          details: financeResult?.event?.error || null,
-        });
-      }
-    } else if (status === 'cancelled') {
-      try {
-        accountingEngine.reverseOrderSalesJournal(db, order.id, {
-          reason: `لغو سفارش #${order.orderNo || order.id}`,
-          userId: req.user?.phone || 'admin'
-        });
-        const v2Event = (db.financeV2?.events || []).find((e) => e.source === 'order.paid' && String(e.sourceId) === String(order.id) && e.journalEntryId);
-        if (v2Event?.journalEntryId) {
-          financeV2.reverseEntry(db, v2Event.journalEntryId, req.user?.phone || 'admin', `لغو سفارش #${order.orderNo || order.id}`);
-        }
-        financeV2.reverseOrderCogsAndInventory(db, order.id, req.user?.phone || 'admin', `لغو سفارش #${order.orderNo || order.id}`);
-      } catch (revErr) {
-        console.error('[finance] auto reversal on order cancel note:', revErr.message);
-      }
+    if (status === 'cancelled') {
+      reverseCancelledOrderFinancialEffects(order, req.user);
     }
     if (['done', 'picked_up', 'delivered'].includes(status)) maybeAwardOrderLoyalty(order);
     recordAudit(req, 'order.status_changed', 'order', order.id, { status, source: 'v2' }, order.branchId);
@@ -4811,8 +7431,8 @@ app.patch('/api/v2/orders/:id/status', requireCapability('orders.manage'), async
     publishOperationalEvent('order.updated', { orderId: order.id, branchId: order.branchId, status: order.status });
     neemBridge.enqueueOrder(order, (db.paymentAttempts || []).find((item) => Number(item.orderId) === Number(order.id)) || null);
   } catch (error) { console.error('[order-post-commit] integration effect failed', error?.message || error); }
-  res.json({ ok: true, order });
-});
+  res.json({ ok: true, order: operationalOrderResponse(order, req.user) });
+}));
 
 /* ---- Kitchen Display System (KDS) ---- */
 const KDS_STATIONS = Object.freeze([
@@ -4843,12 +7463,18 @@ function kdsLineKey(item, index) {
   return `${index}:${Number(item?.menuItemId || 0)}`;
 }
 
-function kitchenLines(order) {
+function kitchenHeldCourseItems(order) {
+  return (order.items || []).filter((item) => String(item.courseStatus || 'fired').toLowerCase() === 'hold');
+}
+
+function kitchenLines(order, { onlyHeld = false } = {}) {
   const kds = ensureKdsState(order);
   const categories = new Map((db.menuCategories || []).map((entry) => [Number(entry.id), entry]));
   const menu = new Map((db.menuItems || []).map((entry) => [Number(entry.id), entry]));
   const lines = [];
   (order.items || []).forEach((item, index) => {
+    const isHeld = String(item.courseStatus || 'fired').toLowerCase() === 'hold';
+    if (isHeld !== onlyHeld) return;
     const source = menu.get(Number(item.menuItemId)) || {};
     const key = kdsLineKey(item, index);
     const category = categories.get(Number(source.categoryId)) || {};
@@ -4864,7 +7490,7 @@ function kitchenLines(order) {
       note: item.note || '',
       seat: Number(item.seat) || 0,
       course: item.course || 'starters',
-      courseStatus: item.courseStatus || 'fired',
+      courseStatus: isHeld ? 'hold' : item.courseStatus || 'fired',
       firedAt: item.firedAt || null,
       allergens: Array.isArray(source.allergens) ? source.allergens : [],
       completedAt: kds.itemStates[key]?.completedAt || null,
@@ -4886,7 +7512,7 @@ function kitchenLines(order) {
         note: '',
         seat: Number(item.seat) || 0,
         course: item.course || 'starters',
-        courseStatus: item.courseStatus || 'fired',
+        courseStatus: isHeld ? 'hold' : item.courseStatus || 'fired',
         firedAt: item.firedAt || null,
         allergens: [],
         completedAt: kds.itemStates[complementKey]?.completedAt || null,
@@ -4904,15 +7530,59 @@ function kitchenColumn(order) {
   return 'new';
 }
 
+function elapsedSecondsSince(timestamp, now = Date.now()) {
+  const timestampMs = timestamp instanceof Date
+    ? timestamp.getTime()
+    : typeof timestamp === 'number'
+      ? timestamp
+      : Date.parse(String(timestamp || ''));
+  const nowMs = now instanceof Date ? now.getTime() : Number(now);
+  if (!Number.isFinite(timestampMs) || !Number.isFinite(nowMs)) return null;
+  return Math.max(0, Math.floor((nowMs - timestampMs) / 1000));
+}
+
+function isKdsPaymentStatusEligible(order) {
+  const orderStatus = String(order?.status || '').trim().toLowerCase();
+  const paymentStatus = String(paymentStatusFor(order) || '').trim().toLowerCase();
+  if (!['sent_to_kitchen', 'preparing', 'ready', 'paid'].includes(orderStatus)) return false;
+  if (!['unpaid', 'partial', 'failed', 'paid'].includes(paymentStatus)) return false;
+  return orderStatus !== 'paid' || paymentStatus === 'paid';
+}
+
+function isKdsPaymentEligible(order) {
+  return isKitchenOrderPaymentEligible(order, paymentStatusFor(order));
+}
+
+function summarizeKdsPaymentReview(orders, branchId) {
+  const active = new Set(['sent_to_kitchen', 'paid', 'preparing', 'ready']);
+  const summary = { blockedCount: 0, pendingCount: 0, unknownCount: 0, incompatibleCount: 0 };
+  for (const order of Array.isArray(orders) ? orders : []) {
+    if (Number(order?.branchId) !== Number(branchId) || !active.has(String(order?.status || '').trim().toLowerCase())) continue;
+    if (isKdsPaymentStatusEligible(order)) continue;
+    summary.blockedCount += 1;
+    const paymentStatus = String(paymentStatusFor(order) || '').trim().toLowerCase();
+    if (paymentStatus === 'pending') summary.pendingCount += 1;
+    else if (paymentStatus === 'unknown' || !paymentStatus) summary.unknownCount += 1;
+    else summary.incompatibleCount += 1;
+  }
+  return summary;
+}
+
 function kitchenTicket(order, now = Date.now()) {
   const kds = ensureKdsState(order);
   const lines = kitchenLines(order);
+  const heldCourseItems = kitchenLines(order, { onlyHeld: true });
+  const ageSec = elapsedSecondsSince(order.createdAt, now);
+  const prepAgeSec = order.startedAt ? elapsedSecondsSince(order.startedAt, now) : 0;
   return {
     ...order,
     items: lines,
+    heldCourseItems,
     column: kitchenColumn(order),
-    ageSec: Math.max(0, Math.floor((now - new Date(order.createdAt).getTime()) / 1000)),
-    prepAgeSec: order.startedAt ? Math.max(0, Math.floor((now - new Date(order.startedAt).getTime()) / 1000)) : 0,
+    ageSec,
+    ageKnown: ageSec !== null,
+    prepAgeSec,
+    prepAgeKnown: prepAgeSec !== null,
     kds: {
       priority: kds.priority,
       priorityAt: kds.priorityAt || null,
@@ -4955,6 +7625,26 @@ function kdsIdempotent(order) {
   return { ok: true, idempotent: true, order: kitchenTicket(order) };
 }
 
+function kdsMenuAvailabilityPayload(item, branchId) {
+  const inventory = financeV2.menuItemAvailability(db, item.id, branchId);
+  const override = menuAvailabilityOverride(db, item.id, branchId);
+  const inventoryBlocked = (typeof item.stock === 'number' && item.stock <= 0)
+    || (db.settings?.enforceInventoryStock === true && inventory?.tracked === true && inventory.available !== true);
+  const manualAvailable = menuItemAvailableForBranch(db, item, branchId);
+  const globallyAvailable = item.available !== false;
+  return {
+    id: item.id,
+    name: item.name,
+    available: manualAvailable && !inventoryBlocked,
+    manualAvailable,
+    globallyAvailable,
+    inventoryBlocked,
+    branchOverride: override.ok ? override.override?.available ?? null : null,
+    station: kdsStationForMenuItem(item),
+    categoryName: (db.menuCategories || []).find((entry) => Number(entry.id) === Number(item.categoryId))?.title || '',
+  };
+}
+
 app.get('/api/kitchen/orders', requireKitchen, (req, res) => {
   // Only confirmed orders reach the kitchen. Cash collection, cancellation and
   // fulfilment remain cashier/manager actions and cannot be bypassed from KDS.
@@ -4962,17 +7652,82 @@ app.get('/api/kitchen/orders', requireKitchen, (req, res) => {
   const bid = requestedKdsBranch(req);
   if (!bid) return res.status(400).json({ error: 'branch_invalid' });
   const now = Date.now();
-  const tickets = (db.orders || [])
-    .filter((o) => active.includes(o.status))
-    .filter((o) => Number(o.branchId) === Number(bid))
-    .map((o) => kitchenTicket(o, now))
-    .sort((a, b) => Number(b.kds.priority) - Number(a.kds.priority) || new Date(a.createdAt) - new Date(b.createdAt))
-    .slice(0, 80);
-  const counts = {
-    new: tickets.filter((t) => t.column === 'new').length,
-    preparing: tickets.filter((t) => t.column === 'preparing').length,
-    ready: tickets.filter((t) => t.column === 'ready').length,
+  const branchOrders = (db.orders || []).filter((order) => Number(order.branchId) === Number(bid));
+  const queuePaymentEligible = (order) => {
+    if (normalizeFulfillment(order?.fulfillment, { tableNo: order?.tableNo }) === 'delivery' && !hasAcceptedDelivery(order)) return false;
+    return isKdsPaymentEligible(order);
   };
+  const activeTickets = branchOrders
+    .filter((o) => active.includes(o.status) && queuePaymentEligible(o))
+    .filter((o) => kitchenLines(o).length > 0 || kitchenLines(o, { onlyHeld: true }).length > 0)
+    .map((o) => kitchenTicket(o, now));
+  // Keep active legacy deliveries visible as aggregate blockers, without
+  // putting their customer/order details into the kitchen ticket list.
+  const acceptanceReviewTickets = branchOrders
+    .filter((order) => active.includes(order.status)
+      && normalizeFulfillment(order?.fulfillment, { tableNo: order?.tableNo }) === 'delivery'
+      && !hasAcceptedDelivery(order))
+    .map((order) => ({
+      id: order.id,
+      branchId: order.branchId,
+      status: order.status,
+      fulfillment: 'delivery',
+      paymentStatus: paymentStatusFor(order),
+      deliveryAcceptance: {
+        status: String(order.deliveryAcceptance?.status || 'pending').trim().toLowerCase(),
+      },
+    }));
+
+  // A cancellation is visible to KDS only if the order had entered a state
+  // that the active kitchen queue accepts. Keep the review window explicit;
+  // undated legacy cancellations remain visible but are labelled as unknown.
+  const cancellationCutoff = now - 24 * 60 * 60 * 1000;
+  const cancelledTicketsForQueue = branchOrders
+    .filter((order) => String(order.status || '').toLowerCase() === 'cancelled')
+    .filter((order) => (Array.isArray(order.statusHistory) && order.statusHistory.some((entry) => active.includes(String(entry?.status || '').toLowerCase())))
+      || !!(order.startedAt || order.readyAt))
+    .map((order) => {
+      const cancellationEvent = [...(Array.isArray(order.statusHistory) ? order.statusHistory : [])]
+        .reverse()
+        .find((entry) => String(entry?.status || '').toLowerCase() === 'cancelled');
+      const statusCancelledAt = order.statusAt ? new Date(order.statusAt).getTime() : NaN;
+      const eventCancelledAt = cancellationEvent?.at ? new Date(cancellationEvent.at).getTime() : NaN;
+      const parsedCancelledAt = Number.isFinite(statusCancelledAt) ? statusCancelledAt : eventCancelledAt;
+      const isRecent = Number.isFinite(parsedCancelledAt)
+        ? parsedCancelledAt >= cancellationCutoff && parsedCancelledAt <= now
+        : true;
+      if (!isRecent) return null;
+
+      // kitchenTicket/ensureKdsState normalizes KDS state. Clone this terminal
+      // order's KDS shell so a read of the cancellation lane never mutates db.
+      const snapshot = {
+        ...order,
+        kds: {
+          ...(order.kds && typeof order.kds === 'object' ? order.kds : {}),
+          itemStates: { ...(order.kds?.itemStates && typeof order.kds.itemStates === 'object' ? order.kds.itemStates : {}) },
+        },
+      };
+      const ticket = kitchenTicket(snapshot, now);
+      const items = [...(ticket.items || []), ...(ticket.heldCourseItems || [])];
+      if (!items.length) return null;
+      return {
+        id: order.id,
+        orderNo: order.orderNo || `#${order.id}`,
+        branchId: order.branchId,
+        fulfillment: order.fulfillment || (order.tableNo ? 'dine_in' : 'pickup'),
+        tableNo: order.tableNo || null,
+        createdAt: order.createdAt || null,
+        cancelledAt: Number.isFinite(parsedCancelledAt) ? new Date(parsedCancelledAt).toISOString() : null,
+        note: order.note || '',
+        kitchenNote: order.kitchenNote || '',
+        items,
+        column: 'cancelled',
+      };
+    })
+    .filter(Boolean);
+
+  const queue = prepareKitchenQueue([...activeTickets, ...acceptanceReviewTickets, ...cancelledTicketsForQueue], { branchId: bid });
+  const { tickets, cancelledTickets, counts } = queue;
   const allDayMap = new Map();
   for (const ticket of tickets.filter((entry) => entry.column !== 'ready')) {
     for (const item of ticket.items.filter((entry) => !entry.completedAt)) {
@@ -4985,13 +7740,18 @@ app.get('/api/kitchen/orders', requireKitchen, (req, res) => {
   }
   const stationCounts = Object.fromEntries(KDS_STATIONS.filter((entry) => entry.id !== 'expo').map((entry) => [entry.id, 0]));
   tickets.filter((entry) => entry.column !== 'ready').forEach((ticket) => ticket.items.filter((item) => !item.completedAt).forEach((item) => { stationCounts[item.station] = Number(stationCounts[item.station] || 0) + Math.max(1, Number(item.qty) || 1); }));
-  const categoryNames = new Map((db.menuCategories || []).map((entry) => [Number(entry.id), entry.title || '']));
   res.json({
     tickets,
+    cancelledTickets,
+    cancellationWindowHours: 24,
     counts,
+    paymentReview: summarizeKdsPaymentReview(branchOrders, bid),
     stations: KDS_STATIONS.map((entry) => ({ ...entry, count: entry.id === 'expo' ? tickets.filter((ticket) => ticket.column !== 'ready').length : Number(stationCounts[entry.id] || 0) })),
     allDay: [...allDayMap.values()].sort((a, b) => b.qty - a.qty || String(a.name).localeCompare(String(b.name), 'fa')),
-    availability: (db.menuItems || []).map((item) => ({ id: item.id, name: item.name, available: item.available !== false, station: kdsStationForMenuItem(item), categoryName: categoryNames.get(Number(item.categoryId)) || '' })).sort((a, b) => String(a.name).localeCompare(String(b.name), 'fa')),
+    availability: (db.menuItems || [])
+      .filter((item) => menuItemBelongsToBranch(item, bid))
+      .map((item) => kdsMenuAvailabilityPayload(item, bid))
+      .sort((a, b) => String(a.name).localeCompare(String(b.name), 'fa')),
     performance: kdsPerformance((db.orders || []).filter((order) => Number(order.branchId) === Number(bid)), now),
     summary: {
       oldestAgeSec: tickets.reduce((m, t) => Math.max(m, Number(t.ageSec) || 0), 0),
@@ -5004,15 +7764,22 @@ app.get('/api/kitchen/orders', requireKitchen, (req, res) => {
   });
 });
 
-app.patch('/api/kitchen/orders/:id', requireCapability('kitchen.manage'), (req, res) => {
+app.patch('/api/kitchen/orders/:id', requireCapability('kitchen.manage'), serializeOrderMutationRoute(async (req, res) => {
   const branchId = requestedKdsBranch(req);
   if (!branchId) return res.status(400).json({ error: 'branch_invalid' });
   const targetId = Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
   const order = (db.orders || []).find((o) => Number(o.id) === targetId && Number(o.branchId) === Number(branchId));
   if (!order) return res.status(404).json({ error: 'not found' });
+  if (normalizeFulfillment(order.fulfillment, { tableNo: order.tableNo }) === 'delivery' && !hasAcceptedDelivery(order)) {
+    return res.status(409).json({ error: 'delivery_acceptance_required', message: 'این سفارش تا ثبت پذیرش رستوران وارد آشپزخانه نمی‌شود.' });
+  }
+  if (!isKitchenOrderPaymentEligible(order, paymentStatusFor(order))) {
+    return res.status(409).json({ error: 'payment_reconciliation_required', message: 'وضعیت پرداخت این سفارش باید پیش از ورود به صف آشپزخانه تطبیق شود.' });
+  }
   const legacyStatus = String(req.body?.status || '');
   const requestedAction = String(req.body?.action || '');
   const actionName = requestedAction || (legacyStatus === 'preparing' ? 'start_ticket' : legacyStatus === 'ready' ? 'complete_ticket' : '');
+  const snapshot = snapshotFinanceMutationState();
   const kds = ensureKdsState(order);
   const now = new Date().toISOString();
   const actor = { phone: req.user.phone, name: req.user.name || '' };
@@ -5031,13 +7798,18 @@ app.patch('/api/kitchen/orders/:id', requireCapability('kitchen.manage'), (req, 
   if (actionName === 'start_ticket') {
     if (order.status === 'preparing') return res.json(kdsIdempotent(order));
     if (!isNew) return res.status(409).json({ error: 'kitchen_transition_invalid', current: order.status, allowed: ['preparing'] });
+    if (!lines.length) return res.status(409).json({ error: 'kds_ticket_incomplete', incomplete: (order.items || []).map((item, index) => kdsLineKey(item, index)) });
     start();
   } else if (actionName === 'complete_item') {
-    if (!line || order.status === 'ready') return res.status(409).json({ error: 'kds_item_invalid', lineKey, current: order.status });
-    start();
+    if (!line) return res.status(409).json({ error: 'kds_item_invalid', lineKey, current: order.status });
+    // A lost response after the final item completed must be safely retryable
+    // even though that completion already moved the ticket to `ready`.
     if (kds.itemStates[lineKey]?.completedAt) return res.json(kdsIdempotent(order));
+    if (order.status === 'ready') return res.status(409).json({ error: 'kds_item_invalid', lineKey, current: order.status });
+    start();
     kds.itemStates[lineKey] = { completedAt: now, completedBy: actor };
-    const allComplete = kitchenLines(order).every((entry) => kds.itemStates[entry.key]?.completedAt);
+    const allComplete = kitchenHeldCourseItems(order).length === 0
+      && kitchenLines(order).every((entry) => kds.itemStates[entry.key]?.completedAt);
     if (allComplete && order.status === 'preparing' && canTransitionOrder(order, 'ready')) {
       appendOrderStatus(order, 'ready', req.user, { source: 'kds', action: 'all_items_complete' });
       kds.completedAt = order.readyAt;
@@ -5047,11 +7819,15 @@ app.patch('/api/kitchen/orders/:id', requireCapability('kitchen.manage'), (req, 
     if (!['hot', 'cold', 'bar'].includes(station)) return res.status(409).json({ error: 'kds_station_invalid', station, current: order.status });
     const stationLines = lines.filter((entry) => entry.station === station);
     if (!stationLines.length) return res.status(409).json({ error: 'kds_station_empty', station });
-    if (order.status === 'ready' && stationLines.every((entry) => kds.itemStates[entry.key]?.completedAt)) return res.json(kdsIdempotent(order));
+    // A retried station completion is a no-op even when another station is
+    // still working and the whole order remains `preparing`. Do not persist,
+    // audit, or publish the same station completion again.
+    if (stationLines.every((entry) => kds.itemStates[entry.key]?.completedAt)) return res.json(kdsIdempotent(order));
     if (order.status === 'ready') return res.status(409).json({ error: 'kds_station_invalid', station, current: order.status });
     start();
     for (const entry of stationLines) kds.itemStates[entry.key] = kds.itemStates[entry.key] || { completedAt: now, completedBy: actor };
-    const allComplete = kitchenLines(order).every((entry) => kds.itemStates[entry.key]?.completedAt);
+    const allComplete = kitchenHeldCourseItems(order).length === 0
+      && kitchenLines(order).every((entry) => kds.itemStates[entry.key]?.completedAt);
     if (allComplete && order.status === 'preparing' && canTransitionOrder(order, 'ready')) {
       appendOrderStatus(order, 'ready', req.user, { source: 'kds', action: 'all_stations_complete' });
       kds.completedAt = order.readyAt;
@@ -5065,11 +7841,16 @@ app.patch('/api/kitchen/orders/:id', requireCapability('kitchen.manage'), (req, 
     }
     delete kds.itemStates[lineKey];
   } else if (actionName === 'complete_ticket') {
-    if (order.status === 'ready') return res.json(kdsIdempotent(order));
     const incomplete = lines.filter((entry) => !kds.itemStates[entry.key]?.completedAt);
-    if (!lines.length || incomplete.length) {
-      return res.status(409).json({ error: 'kds_ticket_incomplete', incomplete: incomplete.map((entry) => entry.key) });
+    const heldKeys = (order.items || [])
+      .map((item, index) => String(item.courseStatus || 'fired').toLowerCase() === 'hold' ? kdsLineKey(item, index) : null)
+      .filter(Boolean);
+    if (!lines.length || incomplete.length || heldKeys.length) {
+      return res.status(409).json({ error: 'kds_ticket_incomplete', incomplete: [...incomplete.map((entry) => entry.key), ...heldKeys] });
     }
+    // Validate the persisted ticket even for a replay. A stale/corrupt `ready`
+    // status must not be acknowledged as complete when its items are not.
+    if (order.status === 'ready') return res.json(kdsIdempotent(order));
     start();
     if (order.status !== 'preparing' || !canTransitionOrder(order, 'ready')) return res.status(409).json({ error: 'kitchen_transition_invalid', current: order.status, allowed: ['ready'] });
     appendOrderStatus(order, 'ready', req.user, { source: 'kds', action: 'complete_ticket' });
@@ -5093,93 +7874,222 @@ app.patch('/api/kitchen/orders/:id', requireCapability('kitchen.manage'), (req, 
   }
 
   recordAudit(req, auditAction, 'order', order.id, { action: actionName, lineKey: lineKey || null, status: order.status }, order.branchId);
-  publishOperationalEvent('order.updated', { orderId: order.id, branchId: order.branchId, status: order.status, kdsAction: actionName });
-  save();
-  res.json({ ok: true, order: kitchenTicket(order) });
-});
+  try {
+    await persistFinanceMutation(snapshot);
+  } catch (error) {
+    return res.status(error.status || 503).json({ error: error.code || 'kds_persistence_failed', message: 'تغییر وضعیت آشپزخانه پایدار نشد؛ دوباره همگام‌سازی کنید.' });
+  }
+  let eventPublished = true;
+  try {
+    publishOperationalEvent('order.updated', { orderId: order.id, branchId: order.branchId, status: order.status, kdsAction: actionName });
+  } catch (error) {
+    eventPublished = false;
+    console.error('[kds] committed state event failed', error?.message || error);
+  }
+  res.json({ ok: true, eventPublished, order: kitchenTicket(order) });
+}));
 
-app.patch('/api/kitchen/items/:id/availability', requireCapability('kitchen.manage'), (req, res) => {
+app.patch('/api/kitchen/items/:id/availability', requireCapability('kitchen.manage'), async (req, res) => {
+  const branchId = requestedKdsBranch(req);
+  if (!branchId) return res.status(400).json({ error: 'branch_invalid' });
   const targetId = Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
+  if (!Number.isSafeInteger(targetId) || targetId <= 0) return res.status(400).json({ error: 'menu_item_id_invalid' });
   const item = (db.menuItems || []).find((entry) => Number(entry.id) === targetId);
-  if (!item) return res.status(404).json({ error: 'not found' });
+  if (!item || !menuItemBelongsToBranch(item, branchId)) return res.status(404).json({ error: 'not found' });
   if (typeof req.body?.available !== 'boolean') return res.status(400).json({ error: 'availability_invalid' });
-  item.available = req.body.available;
-  recordAudit(req, 'kds.item_availability_changed', 'menu_item', item.id, { available: item.available }, null);
-  publishOperationalEvent('menu.availability_updated', { menuItemId: item.id, available: item.available });
-  save({ bumpMenu: true });
-  res.json({ ok: true, item: { id: item.id, name: item.name, available: item.available } });
+  if (req.body.available && item.available === false) {
+    return res.status(409).json({ error: 'menu_item_globally_unavailable', message: 'این کالا در کاتالوگ اصلی غیرفعال است؛ فعال‌سازی شعبه‌ای کافی نیست.' });
+  }
+
+  return serializeAdminConfigMutation(branchId, async () => {
+    const snapshot = snapshotFinanceMutationState();
+    const mutation = setMenuAvailabilityOverride(db, {
+      menuItemId: item.id,
+      branchId,
+      available: req.body.available,
+    });
+    if (!mutation.ok) return res.status(409).json({ error: mutation.error });
+    const auditEntry = recordAudit(req, 'kds.item_availability_changed', 'menu_item', item.id, {
+      branchId, available: req.body.available,
+    }, branchId, { deferAppend: true });
+    try {
+      await persistFinanceMutation(snapshot, { bumpMenu: true });
+    } catch (error) {
+      return res.status(error.status || 503).json({
+        error: error.code || 'menu_availability_persistence_failed',
+        message: 'تغییر موجودی شعبه ذخیره نشد؛ وضعیت قبلی حفظ شد.',
+      });
+    }
+
+    appendAuditAfterCommit(auditEntry);
+    let eventPublished = true;
+    try {
+      publishOperationalEvent('menu.availability_updated', {
+        menuItemId: item.id, branchId, available: req.body.available,
+      });
+    } catch (error) {
+      eventPublished = false;
+      console.error('[kds] committed availability event failed', error?.message || error);
+    }
+    return res.json({
+      ok: true,
+      eventPublished,
+      branchId,
+      item: kdsMenuAvailabilityPayload(item, branchId),
+    });
+  }).catch((error) => {
+    if (res.headersSent) return undefined;
+    return res.status(error.status || 503).json({ error: error.code || 'menu_availability_update_failed' });
+  });
 });
 
 /* ---- Call waiter (فراخوان گارسون) ---- */
-app.post('/api/call-waiter', (req, res) => {
+app.post('/api/call-waiter', async (req, res) => {
   const tableNo = normalizeDigits(String(req.body.tableNo || '')).trim().slice(0, 20);
   if (!tableNo) return res.status(400).json({ error: 'شماره میز لازم است' });
   const note = String(req.body.note || '').trim().slice(0, 120);
-  const tableMatch = (db.tables || []).find(
-    (t) => String(t.id) === tableNo || normalizeDigits(String(t.label || '')).trim() === tableNo || String(t.label || '').trim() === `میز ${tableNo}`
-  );
-  const rawBranchId = req.body?.branchId;
-  let branchId = rawBranchId == null || String(rawBranchId).trim() === '' ? null : Number(normalizeDigits(String(rawBranchId)).replace(/\D/g, ''));
-  if (branchId != null && (!Number.isSafeInteger(branchId) || branchId <= 0)) {
+  // Older clients omitted requestType; preserve their established meaning as
+  // a service call while rejecting unknown types instead of silently losing
+  // the request's intent.
+  const requestType = String(req.body?.requestType ?? 'service').trim().toLowerCase();
+  if (!['service', 'bill', 'supplies', 'other'].includes(requestType)) {
+    return res.status(400).json({ error: 'waiter_call_request_type_invalid' });
+  }
+  const branchInput = normalizeDigits(String(req.body?.branchId ?? '')).trim();
+  if (branchInput && !/^\d+$/u.test(branchInput)) {
     return res.status(400).json({ error: 'branch_invalid' });
   }
-  const tableBranchId = Number(tableMatch?.branchId);
-  if (Number.isSafeInteger(tableBranchId) && tableBranchId > 0 && branchId != null && branchId !== tableBranchId) {
-    return res.status(409).json({ error: 'waiter_call_branch_mismatch', tableBranchId, requestedBranchId: branchId });
-  }
-  if (branchId == null) branchId = Number.isSafeInteger(tableBranchId) && tableBranchId > 0
-    ? tableBranchId : defaultBranch()?.id || 1;
-  if (!(db.branches || []).some((branch) => Number(branch.id) === branchId && branch.active !== false)) {
+  const branchId = branchInput ? Number(branchInput) : Number(defaultBranch()?.id);
+  if (!Number.isSafeInteger(branchId) || branchId <= 0
+      || !(db.branches || []).some((branch) => Number(branch.id) === branchId && branch.active !== false)) {
     return res.status(400).json({ error: 'branch_invalid' });
   }
-  db.waiterCalls = db.waiterCalls || [];
-  const call = {
-    id: Math.max(0, ...db.waiterCalls.map((c) => c.id), 0) + 1,
-    tableNo,
-    note,
-    branchId,
-    status: 'open',
-    createdAt: new Date().toISOString(),
-  };
-  db.waiterCalls.unshift(call);
-  db.waiterCalls = db.waiterCalls.slice(0, 200);
-  publishOperationalEvent('waiter_call.created', {
-    callId: call.id,
-    branchId: call.branchId,
-    tableNo: call.tableNo,
-    note: call.note,
+  const tableMatch = tableForBranch(tableNo, branchId)
+    || (db.tables || []).find((table) => tableBranchId(table) === branchId
+      && table.active !== false && tableNoBelongsToTable(tableNo, table.id));
+  if (!tableMatch) return res.status(404).json({ error: 'waiter_call_table_not_found', message: 'میز فعال در شعبهٔ انتخاب‌شده پیدا نشد.' });
+  if (tableMatch.active === false) return res.status(409).json({ error: 'waiter_call_table_inactive' });
+
+  return serializeAdminConfigMutation(branchId, async () => {
+    db.waiterCalls = Array.isArray(db.waiterCalls) ? db.waiterCalls : [];
+    const activeCall = db.waiterCalls.find((call) => Number(call.branchId) === branchId
+      && ['open', 'new'].includes(String(call.status || ''))
+      && tableNoBelongsToTable(call.tableNo, tableMatch.id)
+      && String(call.requestType || 'service').trim().toLowerCase() === requestType
+      && String(call.note || '').trim().slice(0, 120) === note);
+    if (activeCall) return res.json({ ok: true, idempotent: true, call: activeCall });
+
+    const snapshot = snapshotFinanceMutationState();
+    const numericIds = db.waiterCalls.map((call) => Number(call.id)).filter(Number.isSafeInteger);
+    const call = {
+      id: Math.max(0, ...numericIds) + 1,
+      tableNo,
+      requestType,
+      note,
+      branchId,
+      status: 'open',
+      createdAt: new Date().toISOString(),
+    };
+    db.waiterCalls.unshift(call);
+    db.waiterCalls = db.waiterCalls.slice(0, 200);
+    const auditEntry = recordAudit(req, 'waiter_call.created', 'waiter_call', call.id, {
+      tableNo: call.tableNo, requestType: call.requestType, note: call.note,
+    }, branchId, { deferAppend: true });
+    try {
+      await persistFinanceMutation(snapshot);
+    } catch (error) {
+      return res.status(error.status || 503).json({ error: error.code || 'waiter_call_persistence_failed', message: 'فراخوان ذخیره نشد؛ دوباره تلاش کنید.' });
+    }
+
+    appendAuditAfterCommit(auditEntry);
+    let eventPublished = true;
+    try {
+      publishOperationalEvent('waiter_call.created', {
+        callId: call.id,
+        branchId: call.branchId,
+        tableNo: call.tableNo,
+        requestType: call.requestType,
+        note: call.note,
+      });
+    } catch (error) {
+      eventPublished = false;
+      console.error('[waiter-call] committed event failed', error?.message || error);
+    }
+    return res.json({ ok: true, eventPublished, call });
+  }).catch((error) => {
+    if (res.headersSent) return undefined;
+    return res.status(error.status || 503).json({ error: error.code || 'waiter_call_create_failed' });
   });
-  save();
-  res.json({ ok: true, call });
 });
 
-app.post('/api/call-waiter/cancel', (req, res) => {
-  const tableNo = normalizeDigits(String(req.body.tableNo || '')).trim().slice(0, 20);
-  const callId = req.body.callId ? Number(normalizeDigits(String(req.body.callId)).replace(/\D/g, '')) : null;
-  if (!tableNo && !callId) return res.status(400).json({ error: 'شماره میز یا شناسه فراخوان لازم است' });
-  const tableDigits = tableNo.replace(/\D/g, '');
-  const tableNum = tableDigits ? Number(tableDigits) : null;
+app.post('/api/call-waiter/cancel', async (req, res) => {
+  const tableNo = normalizeDigits(String(req.body?.tableNo || '')).trim().slice(0, 20);
+  const rawCallId = normalizeDigits(String(req.body?.callId ?? '')).trim();
+  const branchInput = normalizeDigits(String(req.body?.branchId ?? '')).trim();
+  if (!tableNo) return res.status(400).json({ error: 'شماره میز لازم است' });
+  if (rawCallId && !/^\d+$/u.test(rawCallId)) return res.status(400).json({ error: 'call_id_invalid' });
+  if (branchInput && !/^\d+$/u.test(branchInput)) return res.status(400).json({ error: 'branch_invalid' });
+  const callId = rawCallId ? Number(rawCallId) : null;
+  if (callId !== null && (!Number.isSafeInteger(callId) || callId <= 0)) {
+    return res.status(400).json({ error: 'call_id_invalid' });
+  }
+  const branchId = branchInput ? Number(branchInput) : Number(defaultBranch()?.id);
+  if (!Number.isSafeInteger(branchId) || branchId <= 0
+      || !(db.branches || []).some((branch) => Number(branch.id) === branchId && branch.active !== false)) {
+    return res.status(400).json({ error: 'branch_invalid' });
+  }
+  const tableMatch = tableForBranch(tableNo, branchId)
+    || (db.tables || []).find((table) => tableBranchId(table) === branchId
+      && table.active !== false && tableNoBelongsToTable(tableNo, table.id));
+  if (!tableMatch || tableMatch.active === false) {
+    return res.status(404).json({ error: 'waiter_call_table_not_found' });
+  }
 
-  const targetCalls = (db.waiterCalls || []).filter((c) => {
-    if (c.status !== 'open' && c.status !== 'new') return false;
-    if (callId && Number(c.id) === callId) return true;
-    if (callId) return false;
-    const cDigits = String(c.tableNo || '').replace(/\D/g, '');
-    const cNum = cDigits ? Number(cDigits) : null;
-    return (tableNum !== null && cNum === tableNum) || (cDigits && cDigits === tableDigits) || c.tableNo === tableNo;
-  });
+  return serializeAdminConfigMutation(branchId, async () => {
+    db.waiterCalls = Array.isArray(db.waiterCalls) ? db.waiterCalls : [];
+    const tableCallMatches = (call) => Number(call.branchId) === branchId
+      && (tableNoBelongsToTable(call.tableNo, tableMatch.id)
+        || Number(tableForBranch(call.tableNo, branchId)?.id) === Number(tableMatch.id));
+    const call = callId === null
+      ? db.waiterCalls.find((item) => ['open', 'new'].includes(String(item.status || '')) && tableCallMatches(item))
+      : db.waiterCalls.find((item) => Number(item.id) === callId && tableCallMatches(item));
+    if (!call) return res.status(404).json({ error: 'فراخوان بازی یافت نشد' });
+    if (call.status === 'cancelled') return res.json({ ok: true, idempotent: true, call });
+    if (!['open', 'new'].includes(String(call.status || ''))) {
+      return res.status(409).json({ error: 'waiter_call_transition_invalid', current: call.status });
+    }
 
-  if (!targetCalls.length) return res.status(404).json({ error: 'فراخوان بازی یافت نشد' });
-
-  targetCalls.forEach((call) => {
+    const snapshot = snapshotFinanceMutationState();
     call.status = 'cancelled';
     call.resolvedAt = new Date().toISOString();
     call.resolvedBy = 'guest';
-    publishOperationalEvent('waiter_call.updated', { callId: call.id, branchId: call.branchId, status: call.status });
-  });
+    const auditEntry = recordAudit(req, 'waiter_call.cancelled', 'waiter_call', call.id, {
+      tableNo: call.tableNo,
+    }, branchId, { deferAppend: true });
+    try {
+      await persistFinanceMutation(snapshot);
+    } catch (error) {
+      return res.status(error.status || 503).json({
+        error: error.code || 'waiter_call_persistence_failed',
+        message: 'لغو فراخوان ذخیره نشد؛ دوباره تلاش کنید.',
+      });
+    }
 
-  save();
-  res.json({ ok: true, calls: targetCalls, call: targetCalls[0] });
+    appendAuditAfterCommit(auditEntry);
+    let eventPublished = true;
+    try {
+      publishOperationalEvent('waiter_call.updated', {
+        callId: call.id, branchId: call.branchId, status: call.status,
+      });
+    } catch (error) {
+      eventPublished = false;
+      console.error('[waiter-call] committed cancellation event failed', error?.message || error);
+    }
+    return res.json({ ok: true, eventPublished, call });
+  }).catch((error) => {
+    if (res.headersSent) return undefined;
+    return res.status(error.status || 503).json({ error: error.code || 'waiter_call_cancel_failed' });
+  });
 });
 
 
@@ -5209,8 +8119,14 @@ app.patch('/api/kitchen/calls/:id', requireCapability('service.manage'), (req, r
   } catch (error) {
     return res.status(error.status || 403).json({ error: error.code || 'branch_access_denied', message: error.message, requestId: req.requestId });
   }
-  if (req.body.status === 'done' || req.body.status === 'open') call.status = req.body.status;
-  call.resolvedAt = new Date().toISOString();
+  const requestedStatus = req.body?.status;
+  if (!['done', 'open'].includes(requestedStatus)) {
+    return res.status(400).json({ error: 'kitchen_call_status_invalid', allowed: ['open', 'done'] });
+  }
+  if (call.status !== requestedStatus) {
+    call.status = requestedStatus;
+    call.resolvedAt = requestedStatus === 'done' ? new Date().toISOString() : null;
+  }
   save();
   res.json({ ok: true, call });
 });
@@ -5252,7 +8168,7 @@ app.put('/api/faq-order', requireAdmin, (req, res) => {
 });
 
 // --- admin: users & roles ---
-app.get('/api/admin/users', requireAdmin, (req, res) => {
+app.get('/api/admin/users', requireOwner, (req, res) => {
   const users = (db.users || []).map((u) => {
     const pub = publicUser(u);
     try {
@@ -5348,6 +8264,44 @@ app.get('/api/admin/roles/matrix', requireAdmin, (req, res) => {
   res.json(matrix);
 });
 
+const STAFF_BRANCH_ROLES = new Set(['manager', 'accountant', 'cashier', 'waiter', 'kitchen']);
+const USER_ROLE_MAP = Object.freeze({ admin: 'owner', user: 'guest', owner: 'owner', manager: 'manager', accountant: 'accountant', cashier: 'cashier', waiter: 'waiter', kitchen: 'kitchen', guest: 'guest' });
+
+function requestedBranchAssignments(body = {}, existingUser = null) {
+  let rawIds;
+  if (Array.isArray(body.allowedBranchIds)) rawIds = body.allowedBranchIds;
+  else if (Object.prototype.hasOwnProperty.call(body, 'allowedBranchIds')) rawIds = [];
+  else if (Object.prototype.hasOwnProperty.call(body, 'branchId')) rawIds = body.branchId == null || body.branchId === '' ? [] : [body.branchId];
+  else if (Array.isArray(existingUser?.allowedBranchIds)) rawIds = existingUser.allowedBranchIds;
+  else if (existingUser?.branchId != null && existingUser.branchId !== '') rawIds = [existingUser.branchId];
+  else rawIds = [];
+
+  const parsed = rawIds.map((value) => {
+    const digits = normalizeDigits(String(value)).trim();
+    const id = Number(digits);
+    return /^\d+$/.test(digits) && Number.isSafeInteger(id) && id > 0 ? id : null;
+  });
+  if (parsed.some((id) => id == null)) {
+    return { error: { status: 400, code: 'staff_branch_assignment_invalid', message: 'فهرست شعب شامل شناسهٔ نامعتبر است.' } };
+  }
+  return { ids: [...new Set(parsed)] };
+}
+
+function validateStaffBranchAssignments(actor, role, ids) {
+  if (!Array.isArray(ids) || (STAFF_BRANCH_ROLES.has(role) && ids.length === 0)) {
+    return { status: 400, code: 'staff_branch_assignment_required', message: 'برای کارمند حداقل یک شعبهٔ مجاز انتخاب کنید.' };
+  }
+  const activeBranchIds = new Set((db.branches || []).filter((branch) => branch.active !== false).map((branch) => Number(branch.id)));
+  if (ids.some((id) => !activeBranchIds.has(Number(id)))) {
+    return { status: 400, code: 'staff_branch_assignment_invalid', message: 'یکی از شعب انتخاب‌شده وجود ندارد یا غیرفعال است.' };
+  }
+  const actorScope = branchScopeForUser(actor, { role: effectiveRole(actor) });
+  if (actorScope !== null && ids.some((id) => !actorScope.includes(Number(id)))) {
+    return { status: 403, code: 'staff_branch_assignment_forbidden', message: 'فقط می‌توانید شعبه‌هایی را واگذار کنید که خودتان به آن‌ها دسترسی دارید.' };
+  }
+  return null;
+}
+
 app.post(['/api/admin/users', '/api/admin/customers'], requireAdmin, (req, res) => {
   const phone = normalizeDigits(req.body.phone || '').trim();
   const name = String(req.body.name || '').trim().slice(0, 120);
@@ -5356,8 +8310,7 @@ app.post(['/api/admin/users', '/api/admin/customers'], requireAdmin, (req, res) 
   if (db.users.some((user) => user.phone === phone)) return res.status(409).json({ error: 'کاربری با این شماره قبلاً ثبت شده است.' });
   
   const requestedRole = String(req.body.role || 'user').trim().toLowerCase();
-  const roleMap = { admin: 'owner', user: 'guest', owner: 'owner', manager: 'manager', accountant: 'accountant', cashier: 'cashier', waiter: 'waiter', kitchen: 'kitchen', guest: 'guest' };
-  const role = roleMap[requestedRole] || 'guest';
+  const role = USER_ROLE_MAP[requestedRole] || 'guest';
   
   if (['owner', 'manager'].includes(role) && !isOwnerActor(db, req.user)) {
     return res.status(403).json({
@@ -5366,14 +8319,13 @@ app.post(['/api/admin/users', '/api/admin/customers'], requireAdmin, (req, res) 
     });
   }
 
-  let allowedBranchIds = null;
-  if (Array.isArray(req.body.allowedBranchIds)) {
-    allowedBranchIds = req.body.allowedBranchIds
-      .map((b) => Number(normalizeDigits(String(b)).replace(/\D/g, '')))
-      .filter((n) => Number.isSafeInteger(n) && n > 0);
-  } else if (req.body.branchId != null && req.body.branchId !== '') {
-    const single = Number(normalizeDigits(String(req.body.branchId)).replace(/\D/g, ''));
-    if (Number.isSafeInteger(single) && single > 0) allowedBranchIds = [single];
+  const branchRequest = requestedBranchAssignments(req.body || {});
+  if (branchRequest.error) return res.status(branchRequest.error.status).json({ error: branchRequest.error.code, message: branchRequest.error.message });
+  let allowedBranchIds = branchRequest.ids;
+  if (!Array.isArray(req.body?.allowedBranchIds) && !Object.prototype.hasOwnProperty.call(req.body || {}, 'branchId') && role === 'owner') allowedBranchIds = null;
+  if (role !== 'owner') {
+    const assignmentError = validateStaffBranchAssignments(req.user, role, allowedBranchIds || []);
+    if (assignmentError) return res.status(assignmentError.status).json({ error: assignmentError.code, message: assignmentError.message });
   }
 
   const parsePoints = (v) => {
@@ -5419,10 +8371,36 @@ app.patch(['/api/admin/users/:phone', '/api/admin/customers/:phone'], requireAdm
     return res.status(error.status || 403).json({ error: error.code || 'staff_mutation_forbidden', message: error.message });
   }
 
+  const requestedRole = String(req.body.role || '').trim().toLowerCase();
+  const newRole = USER_ROLE_MAP[requestedRole] || null;
+  if (newRole && newRole !== user.role && ['owner', 'manager'].includes(newRole) && !isOwnerActor(db, req.user)) {
+    return res.status(403).json({
+      error: newRole === 'owner' ? 'staff_owner_protected' : 'staff_manager_protected',
+      message: newRole === 'owner' ? 'اعطای نقش مالک فقط توسط مالک امکان‌پذیر است.' : 'اعطای نقش مدیر فقط توسط مالک امکان‌پذیر است.',
+    });
+  }
+  const branchAssignmentSpecified = Object.prototype.hasOwnProperty.call(req.body || {}, 'allowedBranchIds')
+    || Object.prototype.hasOwnProperty.call(req.body || {}, 'branchId');
+  let assignedBranchIds = null;
+  const resultingRole = newRole || user.role;
+  if (branchAssignmentSpecified || (newRole && newRole !== user.role && STAFF_BRANCH_ROLES.has(resultingRole))) {
+    const branchRequest = requestedBranchAssignments(req.body || {}, user);
+    if (branchRequest.error) return res.status(branchRequest.error.status).json({ error: branchRequest.error.code, message: branchRequest.error.message });
+    const assignmentError = validateStaffBranchAssignments(req.user, resultingRole, branchRequest.ids);
+    if (assignmentError) return res.status(assignmentError.status).json({ error: assignmentError.code, message: assignmentError.message });
+    assignedBranchIds = branchRequest.ids;
+  }
+
   if (typeof req.body.blocked === 'boolean') user.blocked = req.body.blocked;
   if (typeof req.body.name === 'string') user.name = req.body.name.trim();
   if (typeof req.body.email === 'string') user.email = req.body.email.trim();
   if (typeof req.body.notes === 'string') user.notes = req.body.notes.trim().slice(0, 500);
+  if (Array.isArray(req.body.tags)) {
+    user.tags = req.body.tags.map((t) => String(t).trim().slice(0, 30)).filter(Boolean);
+  }
+  if (typeof req.body.vipNote === 'string') {
+    user.vipNote = req.body.vipNote.trim().slice(0, 300);
+  }
   if (req.body.points != null) {
     const parsePoints = (v) => {
       if (v == null || v === '') return null;
@@ -5433,32 +8411,13 @@ app.patch(['/api/admin/users/:phone', '/api/admin/customers/:phone'], requireAdm
     const pts = parsePoints(req.body.points);
     if (pts != null) user.points = Math.max(0, Math.round(pts));
   }
-  if (Array.isArray(req.body.allowedBranchIds)) {
-    user.allowedBranchIds = req.body.allowedBranchIds
-      .map((b) => Number(normalizeDigits(String(b)).replace(/\D/g, '')))
-      .filter((n) => Number.isSafeInteger(n) && n > 0);
-  } else if (req.body.allowedBranchIds === null) {
-    user.allowedBranchIds = null;
-  }
+  if (assignedBranchIds) user.allowedBranchIds = assignedBranchIds;
   if (typeof req.body.birthdate === 'string') {
     user.birthdate = req.body.birthdate.trim().slice(0, 50);
     user.birthdateUpdatedAt = new Date().toISOString();
     try { campaignsEngine.checkBirthdayEligibility(db, user); } catch (_) {}
   }
-  const requestedRole = String(req.body.role || '').trim().toLowerCase();
-  const roleMap = { admin: 'owner', user: 'guest', owner: 'owner', manager: 'manager', accountant: 'accountant', cashier: 'cashier', waiter: 'waiter', kitchen: 'kitchen', guest: 'guest' };
-  if (roleMap[requestedRole]) {
-    const newRole = roleMap[requestedRole];
-    if (newRole !== user.role) {
-      if (['owner', 'manager'].includes(newRole) && !isOwnerActor(db, req.user)) {
-        return res.status(403).json({
-          error: newRole === 'owner' ? 'staff_owner_protected' : 'staff_manager_protected',
-          message: newRole === 'owner' ? 'اعطای نقش مالک فقط توسط مالک امکان‌پذیر است.' : 'اعطای نقش مدیر فقط توسط مالک امکان‌پذیر است.',
-        });
-      }
-      user.role = newRole;
-    }
-  }
+  if (newRole) user.role = newRole;
   recordAudit(req, 'user.access_updated', 'user', user.phone, { role: user.role, blocked: !!user.blocked, birthdate: user.birthdate, allowedBranchIds: user.allowedBranchIds });
   save();
   res.json({ ok: true, user: publicUser(user) });
@@ -5487,7 +8446,7 @@ app.post('/api/newsletter', (req, res) => {
   }
   res.json({ ok: true });
 });
-app.get('/api/admin/newsletter', requireAdmin, (req, res) => {
+app.get('/api/admin/newsletter', requireOwner, (req, res) => {
   res.json({ newsletter: Array.isArray(db.newsletter) ? db.newsletter : [] });
 });
 
@@ -5879,34 +8838,78 @@ app.put('/api/admin/restaurant', requireAdmin, (req, res) => {
   save();
   res.json({ ok: true, restaurant: db.restaurant });
 });
-app.put('/api/admin/hours', requireAdmin, (req, res) => {
+app.put('/api/admin/hours', requireAdmin, async (req, res) => {
   const days = ['sat', 'sun', 'mon', 'tue', 'wed', 'thu', 'fri'];
-  const incoming = req.body.hours || {};
-  const branch = resolveBranch(req.body.branchId || req.query.branchId);
-  if (!branch) return res.status(400).json({ error: 'شعبه یافت نشد' });
-  if (!branch.hours) branch.hours = defaultHoursTemplate();
-  for (const d of days) {
-    if (!incoming[d]) continue;
-    const cur = branch.hours[d] || { open: '10:00', close: '23:00', closed: false };
-    if (typeof incoming[d].open === 'string') cur.open = incoming[d].open.slice(0, 5);
-    if (typeof incoming[d].close === 'string') cur.close = incoming[d].close.slice(0, 5);
-    if (typeof incoming[d].closed === 'boolean') cur.closed = incoming[d].closed;
-    branch.hours[d] = cur;
+  const incoming = req.body?.hours;
+  if (!incoming || typeof incoming !== 'object' || Array.isArray(incoming)) {
+    return res.status(400).json({ error: 'hours_invalid', message: 'ساختار ساعت کاری معتبر نیست.' });
   }
-  syncLegacyHours();
-  save();
-  res.json({ ok: true, hours: branch.hours, branchId: branch.id });
+  for (const day of days) {
+    const value = incoming[day];
+    if (value != null && (typeof value !== 'object' || Array.isArray(value))) {
+      return res.status(400).json({ error: 'hours_invalid', message: 'ساختار ساعت کاری معتبر نیست.' });
+    }
+    for (const field of ['open', 'close']) {
+      if (typeof value?.[field] !== 'string') continue;
+      if (!validateAdminHoursTime(value[field])) {
+        return res.status(400).json({ error: 'hours_time_invalid', day, field, message: 'ساعت باید در قالب ۲۴ ساعتهٔ ساعت:دقیقه باشد.' });
+      }
+    }
+  }
+  let branchId;
+  try { branchId = parseBranchId(req); } catch (error) {
+    return res.status(error.status || 400).json({ error: error.code || 'branch_invalid', message: error.message });
+  }
+  const branch = resolveBranchExact(branchId);
+  if (!branch) return res.status(400).json({ error: 'شعبه یافت نشد' });
+  return serializeAdminConfigMutation(branch.id, async () => {
+    const currentBranch = resolveBranchExact(branch.id);
+    if (!currentBranch) return res.status(409).json({ error: 'branch_changed', message: 'شعبه تغییر کرده است؛ صفحه را تازه کنید.' });
+    const hadBranchHours = Object.prototype.hasOwnProperty.call(currentBranch, 'hours');
+    const previousBranchHours = hadBranchHours ? JSON.parse(JSON.stringify(currentBranch.hours)) : undefined;
+    const hadLegacyHours = Object.prototype.hasOwnProperty.call(db, 'hours');
+    const previousLegacyHours = hadLegacyHours ? JSON.parse(JSON.stringify(db.hours)) : undefined;
+    if (!currentBranch.hours || typeof currentBranch.hours !== 'object' || Array.isArray(currentBranch.hours)) {
+      currentBranch.hours = defaultHoursTemplate();
+    }
+    for (const day of days) {
+      if (!incoming[day]) continue;
+      const current = currentBranch.hours[day] || { open: '10:00', close: '23:00', closed: false };
+      if (typeof incoming[day].open === 'string') current.open = validateAdminHoursTime(incoming[day].open);
+      if (typeof incoming[day].close === 'string') current.close = validateAdminHoursTime(incoming[day].close);
+      if (typeof incoming[day].closed === 'boolean') current.closed = incoming[day].closed;
+      currentBranch.hours[day] = current;
+    }
+    syncLegacyHours();
+    const auditLogWasPresent = Array.isArray(db.auditLog);
+    let auditEntry;
+    try {
+      auditEntry = recordAudit(req, 'branch.hours.updated', 'branch', currentBranch.id, { days: days.filter((day) => incoming[day]) }, currentBranch.id, { deferAppend: true });
+      await persistAdminConfigMutation(() => {
+        if (hadBranchHours) currentBranch.hours = previousBranchHours;
+        else delete currentBranch.hours;
+        if (hadLegacyHours) db.hours = previousLegacyHours;
+        else delete db.hours;
+        rollbackAuditEntry(auditEntry, auditLogWasPresent);
+      });
+    } catch (error) {
+      return respondAdminConfigPersistenceFailure(res, error, 'hours_persistence_failed');
+    }
+    appendAuditAfterCommit(auditEntry);
+    return res.json({ ok: true, hours: currentBranch.hours, branchId: currentBranch.id });
+  });
 });
 
 app.get('/api/admin/tables', requireAdmin, (req, res) => {
-  let tables = db.tables || [];
-  if (req.query.branchId) {
-    const bid = Number(req.query.branchId);
-    tables = tables.filter((t) => Number(t.branchId) === bid);
-  }
-  res.json({ tables, branches: db.branches || [] });
+  const bid = Number(parseBranchId(req));
+  const allowedBranchIds = branchScopeForUser(req.user, { role: effectiveRole(req.user) });
+  const tables = (db.tables || []).filter((table) => tableBranchId(table) === bid);
+  const branches = allowedBranchIds === null
+    ? (db.branches || [])
+    : (db.branches || []).filter((branch) => allowedBranchIds.includes(Number(branch.id)));
+  res.json({ tables, branches });
 });
-app.put('/api/admin/tables', requireAdmin, (req, res) => {
+app.put('/api/admin/tables', requireAdmin, async (req, res) => {
   if (!Array.isArray(req.body.tables)) return res.status(400).json({ error: 'tables required' });
   const parseNum = (v, fb = 0) => {
     if (v == null || v === '') return fb;
@@ -5914,9 +8917,15 @@ app.put('/api/admin/tables', requireAdmin, (req, res) => {
     const n = Number(normalizeDigits(String(v)).replace(/[,٬_\s]/g, '').trim());
     return isNaN(n) ? fb : n;
   };
-  const bid = Math.round(parseNum(req.body.branchId, defaultBranch()?.id || 1));
-  const others = (db.tables || []).filter((t) => Number(t.branchId) !== bid);
+  const bid = Number(parseBranchId(req));
+  const requestedIds = req.body.tables.slice(0, 80).map((table, index) => Math.round(parseNum(table.id, index + 1)));
+  if (new Set(requestedIds).size !== requestedIds.length) return res.status(400).json({ error: 'table_id_duplicate' });
   const existingMap = new Map((db.tables || []).map((t) => [Number(t.id), t]));
+  if (requestedIds.some((id) => existingMap.has(id) && tableBranchId(existingMap.get(id)) !== bid)) {
+    return res.status(403).json({ error: 'branch_access_denied', message: 'نمی‌توان میز شعبهٔ دیگری را با این درخواست جابه‌جا کرد.' });
+  }
+  const before = JSON.parse(JSON.stringify(db.tables || []));
+  const others = (db.tables || []).filter((t) => tableBranchId(t) !== bid);
   const updated = req.body.tables.slice(0, 80).map((t, i) => {
     const id = Math.round(parseNum(t.id, i + 1));
     const prev = existingMap.get(id) || {};
@@ -5943,10 +8952,15 @@ app.put('/api/admin/tables', requireAdmin, (req, res) => {
     return item;
   });
   db.tables = [...others, ...updated].sort((a, b) => a.id - b.id);
-  save();
+  try {
+    await save({ requireDurable: true });
+  } catch (error) {
+    db.tables = before;
+    return res.status(503).json({ error: 'table_persistence_failed', message: 'ذخیرهٔ تغییرات میز انجام نشد؛ وضعیت قبلی حفظ شد.' });
+  }
   res.json({ ok: true, tables: updated });
 });
-app.post('/api/admin/tables', requireAdmin, (req, res) => {
+app.post('/api/admin/tables', requireAdmin, async (req, res) => {
   const parseNum = (v, fb = 0) => {
     if (v == null || v === '') return fb;
     if (typeof v === 'number') return isNaN(v) ? fb : v;
@@ -5954,7 +8968,7 @@ app.post('/api/admin/tables', requireAdmin, (req, res) => {
     return isNaN(n) ? fb : n;
   };
   const id = Math.max(0, ...db.tables.map((t) => Number(t.id) || 0), 0) + 1;
-  const branchId = Math.round(parseNum(req.body.branchId, defaultBranch()?.id || 1));
+  const branchId = Number(parseBranchId(req));
   const table = {
     id,
     label: String(req.body.label || `میز ${id}`).slice(0, 40),
@@ -5972,21 +8986,30 @@ app.post('/api/admin/tables', requireAdmin, (req, res) => {
   if (typeof req.body.rotation === 'number') table.rotation = Math.round(req.body.rotation) % 360;
   if (req.body.floorId) table.floorId = String(req.body.floorId).slice(0, 40);
   if (Array.isArray(req.body.tags)) table.tags = req.body.tags.slice(0, 10).map((x) => String(x).slice(0, 30));
+  const before = JSON.parse(JSON.stringify(db.tables || []));
   db.tables.push(table);
-  save();
+  try {
+    await save({ requireDurable: true });
+  } catch (error) {
+    db.tables = before;
+    return res.status(503).json({ error: 'table_persistence_failed', message: 'ذخیرهٔ میز انجام نشد؛ وضعیت قبلی حفظ شد.' });
+  }
   res.json({ ok: true, table });
 });
-app.delete('/api/admin/tables/:id', requireAdmin, (req, res) => {
-  const targetId = Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
-  const rawBranch = requestBranchValue(req);
-  const branch = rawBranch ? resolveBranchExact(rawBranch) : null;
-  db.tables = db.tables.filter((t) => {
-    if (Number(t.id) !== targetId) return true;
-    if (branch && t.branchId && Number(t.branchId) !== Number(branch.id)) return true;
-    return false;
+app.delete('/api/admin/tables/:id', requireAdmin, async (req, res) => {
+  // The legacy endpoint has no expectedLayoutRevision and cannot join the
+  // floor-layout lock used by /api/admin/v2/floor/tables/delete. Refuse every
+  // legacy delete until it can be routed through that guarded mutation; even
+  // idle-table deletes must not silently bypass revisioning.
+  return res.status(428).json({
+    error: 'floor_layout_revision_required',
+    message: 'حذف میز از این مسیر قدیمی امن نیست. نقشه را از API نسخه‌دار تازه کنید و حذف را همراه نسخهٔ نقشه انجام دهید.',
+    replacement: {
+      read: 'GET /api/admin/v2/floor?branchId={branchId}',
+      delete: 'POST /api/admin/v2/floor/tables/delete',
+      requiredBody: ['expectedLayoutRevision', 'tableIds'],
+    },
   });
-  save();
-  res.json({ ok: true });
 });
 
 // QR artwork is generated on the server so the admin can print/download a
@@ -6415,12 +9438,19 @@ app.get('/api/admin/uploads', requireAdmin, (req, res) => {
 app.get('/api/admin/settings', requireAdmin, (req, res) => res.json({ settings: db.settings, loyalty: db.loyalty }));
 app.put('/api/admin/settings', requireAdmin, (req, res) => {
   const s = req.body.settings || {};
+  let configuredAdminPhones = null;
+  if (Array.isArray(s.adminPhones) && s.adminPhones.length) {
+    configuredAdminPhones = s.adminPhones.map((phone) => normalizeDigits(phone).trim());
+    if (configuredAdminPhones.some((phone) => PLATFORM_ONLY_PHONE_IDENTITIES.has(phone))) {
+      return res.status(400).json({ error: 'platform_identity_cannot_be_tenant_owner', message: 'حساب راهبر پلتفرم را نمی‌توان به مالک رستوران تبدیل کرد.' });
+    }
+    if (!configuredAdminPhones.every((phone) => PHONE_RE.test(phone))) {
+      return res.status(400).json({ error: 'admin_phone_invalid' });
+    }
+  }
   if (typeof s.siteTitle === 'string') db.settings.siteTitle = s.siteTitle;
   if (typeof s.metaDescription === 'string') db.settings.metaDescription = s.metaDescription;
-  if (Array.isArray(s.adminPhones) && s.adminPhones.length) {
-    const phones = s.adminPhones.map((p) => normalizeDigits(p).trim());
-    if (phones.every((p) => PHONE_RE.test(p))) db.settings.adminPhones = phones;
-  }
+  if (configuredAdminPhones) db.settings.adminPhones = configuredAdminPhones;
   const L = req.body.loyalty || {};
   if (!db.loyalty) db.loyalty = {};
   if (typeof L.enabled === 'boolean') db.loyalty.enabled = L.enabled;
@@ -6490,7 +9520,7 @@ app.post('/api/admin/inventory/adjust', requireAdmin, (req, res) => {
   res.json({ ok: true, item });
 });
 
-app.get('/api/admin/loyalty', requireAdmin, (req, res) => {
+app.get('/api/admin/loyalty', requireOwner, (req, res) => {
   const rawMembers = db.users.map(publicUser).sort((a, b) => b.points - a.points);
   const members = rawMembers.map((m) => {
     const tierInfo = loyaltyEngine.resolveCustomerTier(db, m);
@@ -6506,10 +9536,33 @@ app.get('/api/admin/loyalty', requireAdmin, (req, res) => {
     };
   });
   const tiers = loyaltyEngine.summarizeTiersMembership(db, rawMembers);
+  const completedOrders = (db.orders || []).filter(loyaltyAchievements.isValidCompletedOrder);
+  const linkedMembers = (db.users || []).filter((member) => effectiveRole(member) === 'user');
+  const unlinkedCompleted = completedOrders.filter((order) => !linkedMembers.some((member) => loyaltyAchievements.orderBelongsToMember(order, member)));
+  const membersWithoutCompletedOrders = linkedMembers.filter((member) => Number(member.points) > 0
+    && !completedOrders.some((order) => loyaltyAchievements.orderBelongsToMember(order, member)));
   res.json({
     loyalty: {
       ...(db.loyalty || {}),
       tiers: loyaltyEngine.getLoyaltyTiers(db),
+    },
+    achievements: loyaltyAchievements.getLoyaltyAchievements(db),
+    menuCategories: (db.menuCategories || []).map((category) => ({ id: category.id, title: category.title || category.name1 || `دسته ${category.id}` })),
+    diagnostics: {
+      completedOrders: completedOrders.length,
+      unlinkedCompletedOrders: unlinkedCompleted.length,
+      unlinkedOrdersSample: unlinkedCompleted.slice(0, 12).map((order) => ({
+        orderNo: order.orderNo || `W-${order.id}`,
+        status: order.status,
+        completedAt: loyaltyAchievements.completionDate(order)?.toISOString() || null,
+        phoneLast4: normalizeDigits(order.phone || order.userPhone || order.customerPhone || '').replace(/\D/g, '').slice(-4),
+      })),
+      membersWithPointsWithoutLinkedCompletedOrders: membersWithoutCompletedOrders.length,
+      membersWithoutOrdersSample: membersWithoutCompletedOrders.slice(0, 12).map((member) => ({
+        name: String(member.name || 'مشتری').slice(0, 48),
+        phoneLast4: normalizeDigits(member.phone || '').replace(/\D/g, '').slice(-4),
+        points: Math.max(0, Math.round(Number(member.points) || 0)),
+      })),
     },
     tiers,
     members,
@@ -6521,13 +9574,70 @@ app.get('/api/admin/loyalty', requireAdmin, (req, res) => {
   });
 });
 
-app.get('/api/admin/club', requireAdmin, (req, res) => {
+app.get('/api/admin/club', requireOwner, (req, res) => {
+  const orderStatsByPhone = new Map();
+  const now = Date.now();
+  for (const o of (db.orders || [])) {
+    const phone = String(o.phone || '').trim();
+    if (!phone) continue;
+    const stat = orderStatsByPhone.get(phone) || { orders: 0, total: 0, lastOrderAt: null };
+    stat.orders += 1;
+    if (o.paid || ['paid', 'preparing', 'ready', 'delivered', 'completed'].includes(o.status)) {
+      stat.total += Number(o.total) || 0;
+    }
+    if (!stat.lastOrderAt || new Date(o.createdAt || 0) > new Date(stat.lastOrderAt)) {
+      stat.lastOrderAt = o.createdAt;
+    }
+    orderStatsByPhone.set(phone, stat);
+  }
+
+  let totalOrderSpendToman = 0;
+  let totalPaidOrders = 0;
+  let atRiskCount = 0;
+  let championsCount = 0;
+
   const rawMembers = (db.users || []).map(publicUser).sort((a, b) => (b.points || 0) - (a.points || 0));
   const members = rawMembers.map((m) => {
     const tierInfo = loyaltyEngine.resolveCustomerTier(db, m);
     const walletBalanceToman = walletEngine.getWalletBalance(db, m.phone);
+    const stat = orderStatsByPhone.get(m.phone) || { orders: 0, total: 0, lastOrderAt: null };
+    const recencyDays = stat.lastOrderAt ? Math.max(0, Math.floor((now - new Date(stat.lastOrderAt).getTime()) / (1000 * 3600 * 24))) : null;
+    const monetaryToman = Math.round(stat.total / 10);
+    totalOrderSpendToman += monetaryToman;
+    totalPaidOrders += stat.orders;
+
+    let rfmSegment = 'new';
+    let rfmLabel = 'مشتری جدید 🌱';
+    if (stat.orders >= 6 && recencyDays != null && recencyDays <= 30) {
+      rfmSegment = 'champion';
+      rfmLabel = 'قهرمان 🏆';
+      championsCount++;
+    } else if (stat.orders >= 3 && recencyDays != null && recencyDays <= 45) {
+      rfmSegment = 'loyal';
+      rfmLabel = 'وفادار 💎';
+    } else if (stat.orders >= 2 && recencyDays != null && recencyDays <= 60) {
+      rfmSegment = 'potential';
+      rfmLabel = 'مستعد رشد 🚀';
+    } else if (stat.orders >= 2 && recencyDays != null && recencyDays > 60) {
+      rfmSegment = 'at_risk';
+      rfmLabel = 'در معرض ریزش ⚠️';
+      atRiskCount++;
+    } else if (recencyDays != null && recencyDays > 90) {
+      rfmSegment = 'churned';
+      rfmLabel = 'خواب‌رفته 💤';
+    } else if (stat.orders <= 1 && recencyDays != null && recencyDays <= 30) {
+      rfmSegment = 'new';
+      rfmLabel = 'مشتری جدید 🌱';
+    }
+
     return {
       ...m,
+      orders: stat.orders,
+      total: stat.total,
+      monetaryToman,
+      recencyDays,
+      rfmSegment,
+      rfmLabel,
       walletBalanceToman,
       tier: tierInfo.tier,
       nextTier: tierInfo.nextTier,
@@ -6546,39 +9656,69 @@ app.get('/api/admin/club', requireAdmin, (req, res) => {
       customers: members.length,
       points: members.reduce((s, m) => s + (m.points || 0), 0),
       walletTotalToman: walletSummary.totalLiabilityToman || 0,
+      activeWallets: walletSummary.activeWalletsCount || 0,
+      avgLtvToman: members.length ? Math.round(totalOrderSpendToman / members.length) : 0,
+      avgOrderToman: totalPaidOrders ? Math.round(totalOrderSpendToman / totalPaidOrders) : 0,
+      atRiskCount,
+      championsCount,
       newFeedback,
     },
     customers: members,
   });
 });
 
-app.get('/api/admin/loyalty/tiers', requireAdmin, (req, res) => {
+app.get('/api/admin/loyalty/tiers', requireOwner, (req, res) => {
   const rawMembers = db.users.map(publicUser);
   const tiers = loyaltyEngine.summarizeTiersMembership(db, rawMembers);
   res.json({ tiers });
 });
 
-app.put('/api/admin/loyalty/tiers', requireAdmin, (req, res) => {
-  if (!Array.isArray(req.body.tiers) || !req.body.tiers.length) {
-    return res.status(400).json({ error: 'tiers_array_required' });
+app.put('/api/admin/loyalty/tiers', requireOwner, (req, res) => {
+  let normalizedTiers;
+  try {
+    normalizedTiers = loyaltyEngine.normalizeLoyaltyTiers(req.body.tiers);
+  } catch (error) {
+    return res.status(400).json({ error: error.code || 'invalid_loyalty_tiers', message: error.message });
   }
   if (!db.loyalty) db.loyalty = {};
-  db.loyalty.tiers = req.body.tiers.map((t, idx) => ({
-    id: String(t.id || `tier-${idx + 1}`).trim(),
-    name: String(t.name || `سطح ${idx + 1}`).trim(),
-    minPoints: Math.max(0, Math.round(Number(t.minPoints) || 0)),
-    minSpendToman: Math.max(0, Math.round(Number(t.minSpendToman) || 0)),
-    multiplier: Math.max(1, Math.min(10, Number(t.multiplier) || 1)),
-    discountPct: Math.max(0, Math.min(50, Number(t.discountPct) || 0)),
-    color: String(t.color || '#a855f7').trim(),
-    badgeIcon: String(t.badgeIcon || '🥉').trim(),
-    perks: Array.isArray(t.perks) ? t.perks.map(String) : [],
-  }));
+  db.loyalty.tiers = normalizedTiers;
   save();
   res.json({ ok: true, tiers: db.loyalty.tiers });
 });
 
-app.post('/api/admin/loyalty/adjust', requireAdmin, (req, res) => {
+app.put('/api/admin/loyalty/achievements', requireOwner, async (req, res) => {
+  const validCategoryIds = (db.menuCategories || []).map((category) => Number(category.id));
+  let normalized;
+  try {
+    normalized = loyaltyAchievements.normalizeLoyaltyAchievements(req.body?.achievements, { validCategoryIds });
+  } catch (error) {
+    return res.status(400).json({ error: error.code || 'invalid_loyalty_achievements', message: error.message });
+  }
+  if (!db.loyalty) db.loyalty = {};
+  const previous = db.loyalty.achievements;
+  const previousById = new Map(loyaltyAchievements.getLoyaltyAchievements(db).map((item) => [item.id, item]));
+  const savedAt = new Date().toISOString();
+  db.loyalty.achievements = normalized.map((achievement) => {
+    const prior = previousById.get(achievement.id);
+    const priorRewardWasLive = prior?.enabled !== false && Number(prior?.rewardPoints) > 0 && !!prior?.rewardStartsAt
+      && loyaltyAchievements.sameAchievementRewardDefinition(prior, achievement);
+    const rewardStartsAt = achievement.enabled && achievement.rewardPoints > 0
+      ? (priorRewardWasLive ? prior.rewardStartsAt : savedAt)
+      : null;
+    return { ...achievement, rewardStartsAt };
+  });
+  try {
+    const persisted = await save({ requireDurable: true });
+    if (persisted !== true) throw Object.assign(new Error('ذخیرهٔ پایدار تنظیمات تأیید نشد.'), { code: 'persistence_unconfirmed', status: 503 });
+  } catch (error) {
+    if (previous === undefined) delete db.loyalty.achievements;
+    else db.loyalty.achievements = previous;
+    return res.status(error.status || 503).json({ error: error.code || 'loyalty_achievement_save_failed', message: 'ذخیرهٔ پایدار هدف‌های وفاداری انجام نشد؛ تغییری اعمال نشده است.' });
+  }
+  return res.json({ ok: true, achievements: db.loyalty.achievements });
+});
+
+app.post('/api/admin/loyalty/adjust', requireOwner, (req, res) => {
   const phone = normalizeDigits(req.body.phone || '').trim();
   const delta = Math.round(Number(req.body.delta) || 0);
   const reason = String(req.body.reason || 'manual').slice(0, 80);
@@ -6667,6 +9807,31 @@ app.get('/api/loyalty/qr-code', requireAuth, async (req, res) => {
 app.get('/api/loyalty/me', requireAuth, (req, res) => {
   const resolved = loyaltyEngine.resolveCustomerTier(db, req.user);
   const walletBalance = walletEngine.getWalletBalance(db, req.user.phone);
+  const member = (db.users || []).find((candidate) => loyaltyAchievements.orderBelongsToMember({ userId: req.user.id, phone: req.user.phone }, candidate)) || req.user;
+  const memberKey = member.id !== undefined && member.id !== null
+    ? `user:${String(member.id)}`
+    : `phone:${loyaltyAchievements.normalizePhoneKey(member.phone || req.user.phone)}`;
+  const linkedOrders = (db.orders || []).filter((order) => loyaltyAchievements.orderBelongsToMember(order, member));
+  const awards = (db.loyaltyAchievementAwards || []).filter((award) => award.memberKey === memberKey);
+  const achievementRows = loyaltyAchievements.evaluateAchievements(
+    loyaltyAchievements.getLoyaltyAchievements(db),
+    linkedOrders,
+    {
+      menuItems: db.menuItems || [],
+      branches: db.branches || [],
+      fallbackTimeZone: db.settings?.businessTimeZone || db.settings?.timezone || loyaltyAchievements.FALLBACK_TIME_ZONE,
+    },
+  ).map((achievement) => {
+    const award = awards.find((entry) => entry.achievementId === achievement.id);
+    let rewardStatus = 'in_progress';
+    if (award) rewardStatus = 'issued';
+    else if (achievement.unlocked && achievement.rewardPoints <= 0) rewardStatus = 'not_configured';
+    else if (achievement.unlocked && achievement.rewardStartsAt && achievement.completedAt
+      && Date.parse(achievement.completedAt) < Date.parse(achievement.rewardStartsAt)) rewardStatus = 'completed_before_rewards';
+    else if (achievement.unlocked && !db.loyalty?.enabled) rewardStatus = 'program_paused';
+    else if (achievement.unlocked) rewardStatus = 'award_review';
+    return { ...achievement, thresholdOrderId: undefined, rewardStatus, rewardIssuedAt: award?.at || null, pointsAwarded: award?.points || 0 };
+  });
   res.json({
     points: Math.max(0, Math.round(Number(req.user.points) || 0)),
     walletBalanceToman: walletBalance,
@@ -6684,7 +9849,10 @@ app.get('/api/loyalty/me', requireAuth, (req, res) => {
       redeemValue: db.loyalty?.redeemValue ?? 0,
       welcomePoints: db.loyalty?.welcomePoints ?? 0,
       tiers: loyaltyEngine.getLoyaltyTiers(db),
+      achievements: achievementRows,
+      achievementProgressSource: 'server_completed_orders',
     },
+    achievements: achievementRows,
     ledger: (db.loyaltyLedger || []).filter((e) => e.phone === req.user.phone).slice(0, 20),
   });
 });
@@ -6825,6 +9993,9 @@ app.post('/api/wallet/topup/request', requireAuth, (req, res) => {
   const amountToman = Math.max(0, Math.round(Number(req.body.amountToman || req.body.amount) || 0));
   const packageId = req.body.packageId ? String(req.body.packageId).trim() : null;
   const channel = req.body.channel === 'instore_staff' ? 'instore_staff' : 'online_gateway';
+  if (channel === 'online_gateway' && process.env.NODE_ENV === 'production') {
+    return res.status(503).json({ error: 'wallet_online_gateway_not_configured', message: 'شارژ آنلاین تا اتصال و تأیید واقعی درگاه بانکی در دسترس نیست؛ از شارژ حضوری استفاده کنید.' });
+  }
   let branchId;
   try { branchId = parseBranchId(req); } catch (error) { return res.status(error.status || 400).json({ error: error.code || 'branch_invalid', message: error.message }); }
   if (!branchId) return res.status(400).json({ error: 'wallet_topup_branch_required' });
@@ -6890,6 +10061,9 @@ app.post('/api/wallet/topup/request', requireAuth, (req, res) => {
 
 // 2. Gateway Verification (Online payment gateway verification callback)
 app.post('/api/wallet/topup/gateway-verify', requireAuth, async (req, res) => {
+  if (process.env.NODE_ENV === 'production') {
+    return res.status(503).json({ error: 'wallet_online_gateway_not_configured', message: 'تأیید شارژ فقط پس از اتصال امن به درگاه واقعی امکان‌پذیر است.' });
+  }
   const { requestId, gatewayToken } = req.body || {};
   const request = (db.walletTopupRequests || []).find((r) => (requestId && r.id === requestId) || (gatewayToken && r.gatewayToken === gatewayToken));
 
@@ -7163,10 +10337,19 @@ app.post('/api/wallet/topup', requireAuth, async (req, res) => {
   res.json({ ok: true, ...result });
 });
 
-app.post('/api/orders/:id/pay-wallet', requireAuth, async (req, res) => {
+app.post('/api/orders/:id/pay-wallet', requireAuth, serializeOrderMutationRoute(async (req, res) => {
+  const persistenceReadiness = settlementPersistenceGate.check({
+    postgresEnabled: stateStore.enabled,
+    postgresRequired: stateStore.required,
+  });
+  if (!persistenceReadiness.ok) {
+    return res.status(persistenceReadiness.status).json({ error: persistenceReadiness.code, message: persistenceReadiness.message });
+  }
   const orderId = Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
   const order = (db.orders || []).find((o) => Number(o.id) === orderId);
   if (!order) return res.status(404).json({ error: 'سفارش یافت نشد.' });
+  const branchId = persistedOrderBranchId(order);
+  if (!branchId) return res.status(409).json({ error: 'order_branch_unresolved', message: 'شعبهٔ ثبت‌شدهٔ سفارش معتبر نیست؛ پرداخت تا تطبیق شعبه انجام نمی‌شود.' });
 
   const phone = normalizeDigits(req.user?.phone || '').trim();
   if (!phone) return res.status(400).json({ error: 'شماره مشتری برای پرداخت کیف پول مشخص نیست.' });
@@ -7175,15 +10358,62 @@ app.post('/api/orders/:id/pay-wallet', requireAuth, async (req, res) => {
   }
   if (!order.phone) return res.status(409).json({ error: 'سفارش شماره مشتری قابل پرداخت از کیف پول ندارد.' });
 
-  if (['paid', 'done', 'delivered'].includes(order.paymentStatus) || order.paymentStatus === 'paid') {
-    return res.status(400).json({ error: 'این سفارش قبلاً پرداخت شده است.' });
+  const idempotencyKey = String(req.get('Idempotency-Key') || req.body?.idempotencyKey || '').trim();
+  if (process.env.NODE_ENV === 'production' && !idempotencyKey) {
+    return res.status(400).json({ error: 'settlement_idempotency_required', message: 'برای ثبت پرداخت، کلید یکتای درخواست لازم است.' });
+  }
+  if (idempotencyKey && !/^[A-Za-z0-9][A-Za-z0-9._:-]{7,159}$/.test(idempotencyKey)) {
+    return res.status(400).json({ error: 'settlement_idempotency_invalid' });
+  }
+  const inFlightKey = idempotencyKey ? settlementLockKey(req, order, idempotencyKey, branchId) : null;
+  const requestFingerprint = idempotencyKey ? checkoutIdempotencyFingerprint({ orderId: order.id, branchId, action: 'wallet-pay-remaining' }, req.user) : null;
+  const existingWalletPayment = idempotencyKey
+    ? (Array.isArray(order.partialPayments) ? order.partialPayments : []).find((payment) => payment.idempotencyKey === idempotencyKey)
+    : null;
+  if (existingWalletPayment) {
+    if (!isSettlementRequestFingerprint(existingWalletPayment.requestFingerprint)) {
+      return res.status(409).json({ error: 'idempotency_replay_unavailable', message: 'اثر انگشت پرداخت کیف پول موجود نیست؛ برای جلوگیری از برداشت تکراری، ابتدا سابقهٔ کیف پول و سفارش را تطبیق دهید.' });
+    }
+    if (existingWalletPayment.requestFingerprint !== requestFingerprint) {
+      return res.status(409).json({ error: 'idempotency_key_conflict', message: 'این کلید برای درخواست پرداخت دیگری استفاده شده است.' });
+    }
+    const pending = settlementInFlight.get(inFlightKey);
+    if (pending) {
+      const outcome = await pending;
+      if (!outcome.ok) return res.status(outcome.status || 503).json({ error: outcome.error || 'finance_persistence_failed', message: outcome.message });
+    }
+    return res.json({
+      ok: true,
+      idempotent: true,
+      order: operationalOrderResponse(order, req.user),
+      payment: operationalPaymentResponse(existingWalletPayment, req.user),
+    });
+  }
+  if (order.paymentStatus === 'unknown') {
+    return res.status(409).json({ error: 'payment_status_reconciliation_required', message: 'وضعیت پرداخت سفارش باید پیش از برداشت از کیف پول تطبیق شود.' });
+  }
+  if (order.paymentStatus === 'paid') {
+    return res.json({ ok: true, idempotent: true, order: operationalOrderResponse(order, req.user) });
   }
 
-  const orderTotal = Math.max(0, Math.round(Number(order.total) || 0));
   const existingPayments = Array.isArray(order.partialPayments) ? order.partialPayments : [];
-  const alreadyPaid = existingPayments.reduce((sum, payment) => sum + Math.max(0, Math.round(Number(payment.amount) || 0)), 0);
-  const payableAmount = Math.max(0, orderTotal - alreadyPaid);
-  if (!payableAmount) return res.status(200).json({ ok: true, idempotent: true, order });
+  const settlementAmounts = resolveSettlementAmounts({
+    total: order.total,
+    amountPaid: order.amountPaid,
+    payments: existingPayments,
+    tender: 'wallet',
+  });
+  if (!settlementAmounts.ok) {
+    return res.status(409).json({
+      error: settlementAmounts.error,
+      ...(settlementAmounts.outstanding !== undefined ? { outstanding: settlementAmounts.outstanding } : {}),
+      message: 'ماندهٔ پرداخت از سابقهٔ سفارش قابل‌اعتماد نیست؛ پیش از برداشت کیف پول، پرداخت‌ها را تطبیق دهید.',
+    });
+  }
+  const { orderTotal, alreadyPaid, outstanding, requestedAmount: payableAmount } = settlementAmounts;
+  if (!outstanding) {
+    return res.status(409).json({ error: 'order_payment_reconciliation_required', message: 'وضعیت سفارش پرداخت‌نشده است اما مانده‌ای برای برداشت وجود ندارد؛ ابتدا وضعیت را تطبیق دهید.' });
+  }
   const currentBalance = walletEngine.getWalletBalance(db, phone);
 
   if (currentBalance < payableAmount) {
@@ -7198,6 +10428,8 @@ app.post('/api/orders/:id/pay-wallet', requireAuth, async (req, res) => {
   // one user-visible payment. Never leave a deducted wallet behind when the
   // fiscal period is closed or the sale cannot be posted.
   const snapshot = snapshotFinanceMutationState();
+  let resolveWalletPayment;
+  let walletPaymentPromise;
   let paymentResult;
   let financeResult;
   let cashbackAmount = 0;
@@ -7224,17 +10456,24 @@ app.post('/api/orders/:id/pay-wallet', requireAuth, async (req, res) => {
         amount: payableAmount,
         at: order.paidAt || new Date().toISOString(),
         by: req.user?.phone || 'customer',
+        ...(idempotencyKey ? { idempotencyKey, requestFingerprint } : {}),
       });
     }
     order.amountPaid = alreadyPaid + payableAmount;
     order.paymentTenders = [...new Set(order.partialPayments.map((row) => row.tender).filter(Boolean))];
-    if (fullyPaid && ['pending', 'pending_cashier', 'pay_at_cashier', 'awaiting_confirmation'].includes(String(order.status || ''))) {
-      appendOrderStatus(order, 'paid', req.user || null, { source: 'wallet' });
+    if (fullyPaid) {
+      const nextStatus = nextOrderStatusAfterPayment(order);
+      if (nextStatus && canTransitionOrder(order, nextStatus)) {
+        appendOrderStatus(order, nextStatus, req.user || null, { source: 'wallet' });
+      } else if (normalizeFulfillment(order.fulfillment, { tableNo: order.tableNo }) !== 'delivery'
+          && ['pending', 'pending_cashier'].includes(String(order.status || ''))) {
+        appendOrderStatus(order, 'paid', req.user || null, { source: 'wallet' });
+      }
     }
 
     financeResult = financeV2.capturePaidOrder(db, order, {
       actor: req.user?.phone || 'customer-wallet',
-      idempotencyKey: `order:${order.branchId || 'unscoped'}:${order.id}:wallet-payment`,
+      idempotencyKey: `order:${branchId}:${order.id}:wallet-payment`,
     });
     if (!financeResult?.journalEntry || financeResult.journalEntry.status !== 'posted') {
       const captureCode = financeResult?.event?.error?.code || 'finance_capture_blocked';
@@ -7261,28 +10500,50 @@ app.post('/api/orders/:id/pay-wallet', requireAuth, async (req, res) => {
         actor: 'system',
       });
     }
+    if (idempotencyKey) {
+      walletPaymentPromise = new Promise((resolve) => { resolveWalletPayment = resolve; });
+      settlementInFlight.set(inFlightKey, walletPaymentPromise);
+    }
     await persistFinanceMutation(snapshot);
   } catch (error) {
     restoreFinanceMutationState(snapshot);
-    return res.status(error.status || 503).json({ error: error.code || error.message, details: error.details || undefined });
+    if (walletPaymentPromise) {
+      resolveWalletPayment?.({ ok: false, status: error.status || 503, error: error.code || error.message, message: error.message });
+      settlementInFlight.delete(inFlightKey);
+    }
+    return res.status(error.status || 503).json({
+      error: error.code || error.message,
+      ...(userCan(req.user, 'payments.manage') && error.details ? { details: error.details } : {}),
+    });
   }
+
+  try {
+    publishOperationalEvent('payment.updated', { orderId: order.id, branchId: order.branchId, status: order.paymentStatus, tender: 'wallet' });
+    publishOperationalEvent('order.updated', { orderId: order.id, branchId: order.branchId, status: order.status });
+  } catch (eventError) { console.error('[wallet-payment] post-commit event failed', eventError?.message || eventError); }
+  resolveWalletPayment?.({ ok: true });
+  if (inFlightKey) settlementInFlight.delete(inFlightKey);
 
   res.json({
     ok: true,
-    order,
-    paymentResult,
-    finance: financeResult,
+    order: operationalOrderResponse(order, req.user),
+    paymentResult: {
+      ok: paymentResult?.ok === true,
+      amountPaid: paymentResult?.amountPaid ?? null,
+      newBalance: paymentResult?.newBalance ?? null,
+    },
+    ...(userCan(req.user, 'payments.manage') ? { finance: financeResult } : {}),
     cashbackAwarded: cashbackAmount,
     newWalletBalance: walletEngine.getWalletBalance(db, phone),
   });
-});
+}));
 
-app.get('/api/admin/wallet/summary', requireAdmin, (req, res) => {
+app.get('/api/admin/wallet/summary', requireOwner, (req, res) => {
   const summary = walletEngine.summarizeWallet(db);
   res.json(summary);
 });
 
-app.post('/api/admin/wallet/adjust', requireCapability('finance.journal.create'), async (req, res) => {
+app.post('/api/admin/wallet/adjust', requireOwner, async (req, res) => {
   const phone = normalizeDigits(req.body.phone || '').trim();
   const rawDelta = req.body.deltaToman ?? req.body.delta;
   const parsedDelta = typeof rawDelta === 'number'
@@ -7341,11 +10602,11 @@ app.post('/api/admin/wallet/adjust', requireCapability('finance.journal.create')
   }
 });
 
-app.get('/api/admin/wallet/packages', requireAdmin, (req, res) => {
+app.get('/api/admin/wallet/packages', requireOwner, (req, res) => {
   res.json({ packages: walletEngine.getWalletPackages(db) });
 });
 
-app.put('/api/admin/wallet/packages', requireAdmin, (req, res) => {
+app.put('/api/admin/wallet/packages', requireOwner, (req, res) => {
   if (!Array.isArray(req.body.packages) || !req.body.packages.length) {
     return res.status(400).json({ error: 'packages_array_required' });
   }
@@ -7635,6 +10896,65 @@ app.post('/api/admin/sms/run-winback', requireAdmin, async (req, res) => {
 /* ---- Online reservations (رزرو میز) ---- */
 const JS_DAY_TO_KEY = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
 const ACTIVE_RES_STATUSES = new Set(['pending', 'confirmed', 'seated']);
+let reservationCreationTail = Promise.resolve();
+
+async function serializeReservationCreation(operation) {
+  const previous = reservationCreationTail;
+  let release;
+  reservationCreationTail = new Promise((resolve) => { release = resolve; });
+  await previous.catch(() => {});
+  try {
+    return await operation();
+  } finally {
+    release();
+  }
+}
+
+function normalizeReservationDate(value) {
+  const raw = normalizeDigits(String(value || '')).trim();
+  const match = /^(\d{4})[/-](\d{1,2})[/-](\d{1,2})$/.exec(raw);
+  if (!match) return null;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+
+  if (year >= 1200 && year <= 1600) {
+    if (month < 1 || month > 12 || day < 1 || day > shamsi.getJalaliMonthDays(year, month)) return null;
+    try {
+      return shamsi.toShamsiParts(`${year}/${month}/${day}`).isoDate;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  const isoDate = `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+  const parsed = new Date(`${isoDate}T00:00:00.000Z`);
+  return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === isoDate ? isoDate : null;
+}
+
+function reservationDateWithinWindow(dateStr, settings) {
+  const now = new Date();
+  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  const dayDelta = (Date.parse(`${dateStr}T00:00:00.000Z`) - Date.parse(`${today}T00:00:00.000Z`)) / 86400000;
+  const advanceDays = Math.max(1, Number(settings.advanceDays) || 21);
+  return Number.isInteger(dayDelta) && dayDelta >= 0 && dayDelta <= advanceDays;
+}
+
+function reservationFingerprint({ branchId, date, time, partySize, name, phone, note }) {
+  const canonical = JSON.stringify({ branchId, date, time, partySize, name, phone, note });
+  return crypto.createHash('sha256').update(canonical, 'utf8').digest('hex');
+}
+
+function reservationResponse(reservation, branch) {
+  return {
+    ...reservation,
+    shamsiDate: shamsi.formatShamsiDate(reservation.date),
+    shamsiDateLong: shamsi.formatShamsiDateLong(reservation.date),
+    shamsiDateFull: shamsi.formatShamsiDateFull(reservation.date),
+    branchName: branch?.name,
+    restaurantName: db.restaurant?.name,
+  };
+}
 
 function parseHm(hm) {
   const [h, m] = String(hm || '00:00').split(':').map(Number);
@@ -7741,75 +11061,205 @@ app.get('/api/reservations/slots', (req, res) => {
 
 app.post('/api/reservations', async (req, res) => {
   const settings = db.reservationSettings || {};
-  if (settings.enabled === false) return res.status(403).json({ error: 'رزرو غیرفعال است' });
-  const name = String(req.body.name || '').trim().slice(0, 80);
-  const phone = normalizeDigits(req.body.phone || '').trim();
-  let dateStr = String(req.body.date || '').slice(0, 10);
-  if (/^\d{4}[/-]\d{1,2}[/-]\d{1,2}$/.test(dateStr)) {
-    try {
-      const parts = shamsi.toShamsiParts(dateStr);
-      dateStr = parts.isoDate;
-    } catch (_) {}
+  const sendError = (status, code, message) => res.status(status).json({ ok: false, error: code, code, message });
+  const rawKey = String(req.get('Idempotency-Key') || '').trim();
+  if (process.env.NODE_ENV === 'production' && !rawKey) {
+    return sendError(400, 'idempotency_key_required', 'برای ثبت رزرو، کلید درخواست لازم است.');
   }
-  const time = String(req.body.time || '').slice(0, 5);
-  const endTime = String(req.body.endTime || '').slice(0, 5);
-  const note = String(req.body.note || '').trim().slice(0, 200);
-  const partySize = Math.max(1, Math.min(Number(settings.maxParty) || 12, Math.round(Number(req.body.partySize) || 2)));
-  const branch = resolveBranch(req.body.branchId || req.body.branch);
-  if (!name) return res.status(400).json({ error: 'نام لازم است' });
-  if (!PHONE_RE.test(phone)) return res.status(400).json({ error: 'شماره موبایل معتبر نیست' });
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return res.status(400).json({ error: 'تاریخ نامعتبر' });
-  if (!/^\d{2}:\d{2}$/.test(time)) return res.status(400).json({ error: 'ساعت نامعتبر' });
-  if (endTime && !/^\d{2}:\d{2}$/.test(endTime)) return res.status(400).json({ error: 'ساعت پایان نامعتبر' });
-  if (!branch) return res.status(400).json({ error: 'شعبه یافت نشد' });
-  const { slots, closed } = listReservationSlots(branch, dateStr, partySize);
-  if (closed) return res.status(400).json({ error: 'در این روز مجموعه تعطیل است' });
-  const slot = slots.find((s) => s.time === time);
-  if (!slot || !slot.available) return res.status(400).json({ error: 'این ساعت موجود نیست' });
-  const id = Math.max(0, ...(db.reservations || []).map((r) => r.id), 0) + 1;
-  const reservation = {
-    id,
-    branchId: branch.id,
+  if (rawKey && !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/.test(rawKey)) {
+    return sendError(400, 'idempotency_key_invalid', 'کلید درخواست معتبر نیست.');
+  }
+
+  const candidateBody = req.body;
+  const bodyPrototype = candidateBody && typeof candidateBody === 'object'
+    ? Object.getPrototypeOf(candidateBody)
+    : null;
+  const body = candidateBody
+    && typeof candidateBody === 'object'
+    && !Array.isArray(candidateBody)
+    && (bodyPrototype === Object.prototype || bodyPrototype === null)
+    ? candidateBody
+    : null;
+  if (!body) return sendError(400, 'reservation_body_invalid', 'بدنهٔ درخواست رزرو معتبر نیست.');
+  const name = String(body.name || '').trim().normalize('NFC').slice(0, 80);
+  const phone = normalizeDigits(body.phone || '').trim();
+  const dateStr = normalizeReservationDate(body.date);
+  const dateFingerprintValue = dateStr || normalizeDigits(String(body.date || '')).trim().slice(0, 32);
+  const time = normalizeDigits(String(body.time || '')).trim();
+  const note = String(body.note || '').trim().normalize('NFC').slice(0, 200);
+  const maxParty = Math.max(1, Number(settings.maxParty) || 12);
+  const rawPartySize = body.partySize == null || String(body.partySize).trim() === ''
+    ? '2'
+    : normalizeDigits(body.partySize);
+  const partySize = Number(rawPartySize);
+  const branchValue = body.branchId ?? body.branch;
+  const branch = resolveBranchExact(branchValue);
+
+  const idempotencyKey = rawKey || crypto.randomUUID();
+  const fingerprint = reservationFingerprint({
+    branchId: branch ? Number(branch.id) : normalizeDigits(String(branchValue || '')).trim().toLowerCase(),
+    date: dateFingerprintValue,
+    time,
+    partySize: Number.isSafeInteger(partySize) ? partySize : String(rawPartySize).trim(),
     name,
     phone,
-    partySize,
-    date: dateStr,
-    time,
-    endTime,
     note,
-    status: 'pending',
-    createdAt: new Date().toISOString(),
-    statusAt: new Date().toISOString(),
-  };
-  db.reservations = db.reservations || [];
-  db.reservations.unshift(reservation);
-  db.reservations = db.reservations.slice(0, 1000);
-  const notify = await notifyReservationWhatsApp(db, reservation);
-  recordAudit(null, 'reservation.created', 'reservation', reservation.id, { partySize: reservation.partySize }, reservation.branchId);
-  publishOperationalEvent('reservation.created', { reservationId: reservation.id, branchId: reservation.branchId, status: reservation.status });
-  save();
-  res.json({
+  });
+
+  let outcome;
+  try {
+    outcome = await serializeReservationCreation(async () => {
+      const idempotency = db.reservationIdempotency && typeof db.reservationIdempotency === 'object'
+        ? db.reservationIdempotency
+        : {};
+      const prior = Object.prototype.hasOwnProperty.call(idempotency, idempotencyKey)
+        ? idempotency[idempotencyKey]
+        : null;
+      if (prior) {
+        if (prior.fingerprint !== fingerprint) {
+          return { error: { status: 409, code: 'idempotency_key_conflict', message: 'این کلید قبلاً برای اطلاعات رزرو دیگری استفاده شده است.' } };
+        }
+        const existing = (db.reservations || []).find((item) => Number(item.id) === Number(prior.reservationId));
+        if (!existing) {
+          return { error: { status: 409, code: 'reservation_idempotency_result_unavailable', message: 'نتیجهٔ این کلید دیگر در سابقهٔ رزروها موجود نیست.' } };
+        }
+        const existingBranch = (db.branches || []).find((item) => Number(item.id) === Number(existing.branchId)) || branch;
+        return { reservation: existing, branch: existingBranch, replay: true };
+      }
+
+      if (!name) return { error: { status: 400, code: 'reservation_name_required', message: 'نام لازم است.' } };
+      if (!PHONE_RE.test(phone)) return { error: { status: 400, code: 'reservation_phone_invalid', message: 'شماره موبایل معتبر نیست.' } };
+      if (!dateStr) return { error: { status: 400, code: 'reservation_date_invalid', message: 'تاریخ معتبر نیست.' } };
+      if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(time)) {
+        return { error: { status: 400, code: 'reservation_time_invalid', message: 'ساعت معتبر نیست.' } };
+      }
+      if (!Number.isSafeInteger(partySize) || partySize < 1 || partySize > maxParty) {
+        return { error: { status: 400, code: 'reservation_party_size_invalid', message: `تعداد نفرات باید بین ۱ تا ${maxParty} باشد.` } };
+      }
+      if (!branch || branch.active === false) {
+        return { error: { status: 400, code: 'reservation_branch_invalid', message: 'شعبهٔ فعال یافت نشد.' } };
+      }
+      if (settings.enabled === false) {
+        return { error: { status: 403, code: 'reservations_disabled', message: 'رزرو غیرفعال است.' } };
+      }
+      if (!reservationDateWithinWindow(dateStr, settings)) {
+        return { error: { status: 400, code: 'reservation_date_out_of_range', message: 'تاریخ رزرو خارج از بازهٔ مجاز است.' } };
+      }
+      const { slots, closed } = listReservationSlots(branch, dateStr, partySize);
+      if (closed) {
+        return { error: { status: 409, code: 'reservation_day_closed', message: 'در این روز مجموعه تعطیل است.' } };
+      }
+      const slot = slots.find((item) => item.time === time);
+      if (!slot || !slot.available) {
+        return { error: { status: 409, code: 'reservation_slot_unavailable', message: 'این ساعت در حال حاضر ظرفیت ندارد.' } };
+      }
+
+      const hadReservations = Object.prototype.hasOwnProperty.call(db, 'reservations');
+      const reservationsBefore = Array.isArray(db.reservations) ? db.reservations.slice() : db.reservations;
+      const hadIdempotency = Object.prototype.hasOwnProperty.call(db, 'reservationIdempotency');
+      const idempotencyBefore = db.reservationIdempotency;
+      const hadAuditLog = Object.prototype.hasOwnProperty.call(db, 'auditLog');
+      const auditLogBefore = Array.isArray(db.auditLog) ? db.auditLog.slice() : db.auditLog;
+      const id = Math.max(0, ...(db.reservations || []).map((item) => Number(item.id) || 0)) + 1;
+      const createdAt = new Date().toISOString();
+      const reservation = {
+        id,
+        branchId: branch.id,
+        name,
+        phone,
+        partySize,
+        date: dateStr,
+        time,
+        endTime: '',
+        note,
+        status: 'pending',
+        createdAt,
+        statusAt: createdAt,
+      };
+
+      db.reservations = [reservation, ...(Array.isArray(db.reservations) ? db.reservations : [])].slice(0, 1000);
+      db.reservationIdempotency = {
+        ...idempotency,
+        [idempotencyKey]: { fingerprint, reservationId: id, createdAt },
+      };
+      const auditEntry = recordAudit(null, 'reservation.created', 'reservation', id, { partySize }, branch.id, { deferAppend: true });
+
+      try {
+        const persisted = await save({ requireDurable: true });
+        if (persisted !== true) throw Object.assign(new Error('Reservation persistence was not confirmed.'), { code: 'reservation_persistence_unconfirmed', status: 503 });
+      } catch (error) {
+        if (hadReservations) db.reservations = reservationsBefore;
+        else delete db.reservations;
+        if (hadIdempotency) db.reservationIdempotency = idempotencyBefore;
+        else delete db.reservationIdempotency;
+        if (hadAuditLog) db.auditLog = auditLogBefore;
+        else delete db.auditLog;
+        console.error('[reservation] durable commit failed', error?.message || error);
+        return { error: { status: 503, code: 'reservation_persistence_failed', message: 'رزرو ذخیره نشد؛ لطفاً با همین درخواست دوباره تلاش کنید.' } };
+      }
+
+      appendAuditAfterCommit(auditEntry);
+      return { reservation, branch, replay: false };
+    });
+  } catch (error) {
+    console.error('[reservation] creation failed', error?.message || error);
+    return sendError(503, 'reservation_creation_failed', 'ثبت رزرو موقتاً انجام نشد.');
+  }
+
+  if (outcome.error) return sendError(outcome.error.status, outcome.error.code, outcome.error.message);
+  const reservation = outcome.reservation;
+  const responseBranch = outcome.branch || branch;
+  if (outcome.replay) {
+    return res.status(200).json({ ok: true, idempotentReplay: true, reservation: reservationResponse(reservation, responseBranch), whatsapp: null });
+  }
+
+  let notify = null;
+  try {
+    publishOperationalEvent('reservation.created', { reservationId: reservation.id, branchId: reservation.branchId, status: reservation.status });
+  } catch (error) {
+    console.error('[reservation] post-commit event failed', error?.message || error);
+  }
+  try {
+    notify = await notifyReservationWhatsApp(db, reservation);
+    if (!notify?.skipped) await save({ requireDurable: true });
+  } catch (error) {
+    // The durable reservation and idempotency record already committed. Never
+    // turn a notification error into a retryable create failure.
+    console.error('[reservation] post-commit notification failed', error?.message || error);
+    notify = null;
+  }
+
+  return res.status(201).json({
     ok: true,
-    reservation: {
-      ...reservation,
-      shamsiDate: shamsi.formatShamsiDate(reservation.date),
-      shamsiDateLong: shamsi.formatShamsiDateLong(reservation.date),
-      shamsiDateFull: shamsi.formatShamsiDateFull(reservation.date),
-      branchName: branch.name,
-      restaurantName: db.restaurant?.name,
-    },
-    whatsapp: notify.skipped ? null : notify,
+    idempotentReplay: false,
+    reservation: reservationResponse(reservation, responseBranch),
+    whatsapp: notify?.skipped ? null : notify,
   });
 });
 
 app.get('/api/admin/reservations', requireCapability('reservations.view'), (req, res) => {
   // Walk-in guests have no date/time slot; they are served by the waiter
   // reception endpoint and must not pollute the online reservation calendar.
-  let list = (db.reservations || []).filter((item) => !waitlist.isWaitlist(item)).slice();
-  if (req.query.branchId) {
-    const bid = Number(req.query.branchId);
-    list = list.filter((r) => Number(r.branchId) === bid);
+  const requestedBranch = requestBranchValue(req);
+  const allowedBranchIds = branchScopeForUser(req.user, { role: effectiveRole(req.user) });
+  let branchId = null;
+  try {
+    if (requestedBranch != null) {
+      branchId = parseBranchId(req);
+    } else if (allowedBranchIds !== null) {
+      if (!allowedBranchIds.length) {
+        return res.status(403).json({ error: 'branch_scope_empty', message: 'برای این کاربر شعبهٔ مجازی تعریف نشده است.' });
+      }
+      const preferred = defaultBranch();
+      branchId = preferred && allowedBranchIds.includes(Number(preferred.id))
+        ? preferred.id
+        : allowedBranchIds[0];
+    }
+  } catch (error) {
+    return res.status(error.status || 400).json({ error: error.code || 'branch_invalid', message: error.message });
   }
+  let list = (db.reservations || []).filter((item) => !waitlist.isWaitlist(item)).slice();
+  if (branchId != null) list = list.filter((r) => Number(r.branchId) === Number(branchId));
   let queryDate = req.query.date ? String(req.query.date).slice(0, 10) : null;
   if (queryDate && /^\d{4}[/-]\d{1,2}[/-]\d{1,2}$/.test(queryDate)) {
     try {
@@ -7869,12 +11319,28 @@ app.patch('/api/admin/reservations/:id', requireCapability('reservations.manage'
   const targetId = Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
   const item = (db.reservations || []).find((r) => Number(r.id) === targetId);
   if (!item) return res.status(404).json({ error: 'not found' });
-  const allowed = ['pending', 'confirmed', 'seated', 'cancelled', 'no_show'];
+  try {
+    assertUserBranchAccess(req.user, item.branchId);
+  } catch (error) {
+    return res.status(error.status || 403).json({ error: error.code || 'branch_access_denied', message: error.message, requestId: req.requestId });
+  }
+  if (req.body?.branchId != null && Number(req.body.branchId) !== Number(item.branchId)) {
+    return res.status(404).json({ error: 'reservation_branch_mismatch' });
+  }
+  const allowed = ['pending', 'confirmed', 'seated', 'completed', 'cancelled', 'no_show'];
   if (typeof req.body.status === 'string' && allowed.includes(req.body.status)) {
     item.status = req.body.status;
     item.statusAt = new Date().toISOString();
+    if (req.body.status === 'seated' && !item.seatedAt) item.seatedAt = new Date().toISOString();
+    if (req.body.status === 'completed' && !item.completedAt) item.completedAt = new Date().toISOString();
   }
   if (typeof req.body.note === 'string') item.note = req.body.note.trim().slice(0, 200);
+  if (req.body.tableNo !== undefined) {
+    item.tableNo = req.body.tableNo == null || req.body.tableNo === '' ? null : String(req.body.tableNo).trim().slice(0, 20);
+  }
+  if (req.body.occasion !== undefined) {
+    item.occasion = req.body.occasion == null || req.body.occasion === '' ? null : String(req.body.occasion).trim().slice(0, 40);
+  }
   if (req.body.partySize != null) {
     const rawParty = typeof req.body.partySize === 'number'
       ? req.body.partySize
@@ -7883,7 +11349,7 @@ app.patch('/api/admin/reservations/:id', requireCapability('reservations.manage'
       item.partySize = Math.max(1, Math.min(Number(db.reservationSettings?.maxParty) || 12, Math.round(rawParty)));
     }
   }
-  recordAudit(req, 'reservation.updated', 'reservation', item.id, { status: item.status, partySize: item.partySize }, item.branchId);
+  recordAudit(req, 'reservation.updated', 'reservation', item.id, { status: item.status, partySize: item.partySize, tableNo: item.tableNo }, item.branchId);
   publishOperationalEvent('reservation.updated', { reservationId: item.id, branchId: item.branchId, status: item.status });
   save();
   res.json({ ok: true, reservation: item });
@@ -8033,10 +11499,17 @@ app.post('/api/feedback', (req, res) => {
   res.json({ ok: true, id: entry.id, thankYou: s.thankYou || 'ممنون از بازخوردتان' });
 });
 
-app.get('/api/admin/feedback', requireAdmin, (req, res) => {
-  const bid = req.query.branchId ? Number(req.query.branchId) : null;
+app.get('/api/admin/feedback', requireCapability('pii.view'), (req, res) => {
+  let bid;
+  try {
+    assertRequestBranchAccess(req);
+    bid = parseBranchId(req);
+  } catch (error) {
+    return res.status(error.status || 403).json({ error: error.code || 'branch_access_denied', message: error.message });
+  }
   let list = db.feedback || [];
-  if (bid) list = list.filter((f) => Number(f.branchId) === bid);
+  if (bid != null) list = list.filter((f) => Number(f.branchId) === Number(bid));
+  else if (effectiveRole(req.user) !== 'owner') return res.status(403).json({ error: 'branch_scope_required' });
   const days = Math.min(90, Math.max(1, Number(req.query.days) || 30));
   const since = Date.now() - days * 24 * 3600 * 1000;
   const windowed = list.filter((f) => new Date(f.createdAt).getTime() >= since);
@@ -8048,7 +11521,7 @@ app.get('/api/admin/feedback', requireAdmin, (req, res) => {
   });
 });
 
-app.put('/api/admin/feedback/settings', requireAdmin, (req, res) => {
+app.put('/api/admin/feedback/settings', requireOwner, (req, res) => {
   if (!db.feedbackSettings) db.feedbackSettings = {};
   const s = req.body.settings || req.body || {};
   if (typeof s.enabled === 'boolean') db.feedbackSettings.enabled = s.enabled;
@@ -8064,8 +11537,17 @@ app.patch('/api/admin/feedback/:id', requireAdmin, (req, res) => {
   const targetId = Number(normalizeDigits(String(req.params.id || '')).replace(/\D/g, ''));
   const item = (db.feedback || []).find((f) => Number(f.id) === targetId);
   if (!item) return res.status(404).json({ error: 'not found' });
+  try {
+    assertUserBranchAccess(req.user, item.branchId);
+  } catch (error) {
+    return res.status(error.status || 403).json({ error: error.code || 'branch_access_denied', message: error.message });
+  }
   const st = String(req.body.status || '').trim();
-  if (['new', 'reviewed', 'archived'].includes(st)) item.status = st;
+  if (['new', 'reviewed', 'in_progress', 'resolved', 'archived'].includes(st)) item.status = st;
+  if (typeof req.body.resolutionNote === 'string') {
+    item.resolutionNote = req.body.resolutionNote.trim().slice(0, 300);
+    item.resolvedAt = new Date().toISOString();
+  }
   save();
   res.json({ ok: true, item });
 });
@@ -8091,9 +11573,9 @@ app.get('/', (req, res, next) => {
     try {
       res.writeEarlyHints({
         link: [
-          '</css/westo-critical.smart.css?v=release14uf1d29-promo-geometry>; rel=preload; as=style',
-          '</js/westo-smart-loader.js?v=release14uf1d29-promo-geometry>; rel=preload; as=script',
-          '</js/westo-app.smart.js?v=release14uf1d29-promo-geometry>; rel=preload; as=script',
+          '</css/westo-critical.smart.css?v=release14uf1d31-order-staged-quote>; rel=preload; as=style',
+          '</js/westo-smart-loader.js?v=release14uf1d31-order-staged-quote>; rel=preload; as=script',
+          '</js/westo-app.smart.js?v=release14uf1d31-order-staged-quote>; rel=preload; as=script',
           '</api/content-bootstrap.js>; rel=preload; as=script',
           '</assets/fonts/Vazirmatn-Variable.woff2>; rel=preload; as=font; type=font/woff2; crossorigin',
         ],
@@ -8113,6 +11595,7 @@ const PAGES = {
   '/profile': 'profile.html',
   '/menu': 'menu.html',
   '/order': 'order.html',
+  '/order.html': 'order.html',
   '/menu-print': 'menu-print.html',
   '/reserve': 'reserve.html',
   '/about': 'about.html',
@@ -8122,10 +11605,11 @@ const PAGES = {
   '/politique-de-confidentialite': 'politique-de-confidentialite.html',
 };
 
-// Aliases for Operational Panels (POS, Waiter, KDS)
+// Aliases for Operational Panels (POS, Waiter, KDS) and Checkout
 app.get(['/pos', '/pos.html', '/cashier', '/cashier.html'], (req, res) => res.redirect(302, '/admin/cashier'));
 app.get(['/waiter', '/waiter.html'], (req, res) => res.redirect(302, '/admin/waiter'));
 app.get(['/kitchen', '/kitchen.html', '/kds', '/kds.html'], (req, res) => res.redirect(302, '/admin/kitchen'));
+app.get(['/checkout', '/checkout.html'], (req, res) => res.redirect(302, '/order'));
 
 app.get(Object.keys(PAGES), (req, res) => {
   if (req.path.startsWith('/admin') || req.path === '/login') res.setHeader('Cache-Control', 'no-store');
@@ -8277,6 +11761,32 @@ async function hydrateStateFromPostgres() {
     for (const key of Object.keys(db)) delete db[key];
     Object.assign(db, migrated);
   }
+  try {
+    const recovery = await stateStore.loadActionableOrders();
+    if (!recovery.available) {
+      if (stateStore.required) {
+        throw Object.assign(new Error('Normalized PostgreSQL order history is required for safe production startup.'), {
+          code: recovery.reason || 'operational_order_store_missing', status: 503,
+        });
+      }
+      console.warn('[orders] normalized order history is unavailable; only snapshot orders can be restored');
+    } else {
+      if (recovery.invalidRows && stateStore.required) {
+        throw Object.assign(new Error(`Unable to restore ${recovery.invalidRows} malformed actionable order row(s).`), {
+          code: 'operational_order_recovery_incomplete', status: 503,
+        });
+      }
+      if (recovery.invalidRows) console.warn(`[orders] skipped ${recovery.invalidRows} malformed normalized order row(s)`);
+      const mergedOrders = mergeActionableOrders(db.orders, recovery.orders);
+      if (mergedOrders.restoredCount) {
+        db.orders = mergedOrders.orders;
+        console.warn(`[orders] restored ${mergedOrders.restoredCount} actionable order(s) omitted from the recent snapshot`);
+      }
+    }
+  } catch (error) {
+    if (stateStore.required) throw error;
+    console.error('[orders] unable to reconcile actionable order history', error.message);
+  }
   return loaded;
 }
 
@@ -8334,6 +11844,8 @@ async function shutdown(signal) {
       else pending.resolve(!shutdownPersistenceError);
     }
     await stateStore.close();
+    await tenantConnectionManager.close();
+    await closeRuntimeControlDatabase();
   } finally { process.exit(0); }
 }
 ['SIGTERM', 'SIGINT'].forEach((signal) => process.once(signal, () => shutdown(signal)));
@@ -8353,6 +11865,10 @@ module.exports = {
   stateStore,
   eventHub,
   tenantConfig: TENANT_CONFIG,
+  tenantResolver,
+  tenantConnectionManager,
+  tenantRegistry,
+  tenantInfrastructureEnabled: TENANT_INFRASTRUCTURE_ENABLED,
   commandCenterPayload,
   publicContentPayload,
   shouldWriteJsonState,

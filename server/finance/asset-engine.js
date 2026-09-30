@@ -378,6 +378,6 @@ function getAssetRegister(acc, branchId) {
 }
 
 module.exports = {
-  ensureAssets, calcMonthlyDep, runDepreciation, disposeAsset,
+  ensureAssets, calcMonthlyDep, calculateMonthlyDepreciation: calcMonthlyDep, runDepreciation, disposeAsset,
   transferAsset, reverseDepreciationRun, createAsset, getAssetRegister,
 };

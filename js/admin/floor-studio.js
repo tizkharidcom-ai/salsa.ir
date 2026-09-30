@@ -14,28 +14,620 @@
 
 'use strict';
 
+const cloneLayoutSnapshot = (state) => JSON.parse(JSON.stringify(state));
+
+const normalizeSeatCapacity = (value, fallback = 4) =>
+  Math.max(1, Math.min(24, Math.round(Number(value) || fallback)));
+
+// Older sessions may remember the unfinished cards view. Never let that
+// preference turn the tables workspace into an empty page.
+const resolveFloorViewMode = (requested, cardsAvailable = false) =>
+  requested === 'cards' && cardsAvailable ? 'cards' : 'map';
+
+const normalizeFloorRotation = (value) => {
+  const angle = Number(value);
+  if (!Number.isFinite(angle)) return 0;
+  return ((Math.round(angle) % 360) + 360) % 360;
+};
+
+const isActiveFloorPointerEvent = (event, pointerId) => event?.pointerId == null
+  || pointerId == null
+  || Number(event.pointerId) === Number(pointerId);
+const isCancelledFloorPointerEvent = (event) => event?.type === 'pointercancel';
+
+const suggestedTablePosition = (index) => ({
+  x: 14 + ((Math.max(0, Number(index) || 0) % 4) * 24),
+  y: Math.min(90, 12 + (Math.floor(Math.max(0, Number(index) || 0) / 4) * 16)),
+});
+
+const tableCoordinatesForSave = (table) => {
+  if (table?._floorStudioSuggestedPosition) return {};
+  const normalizedCoordinate = (value) => Number.isFinite(Number(value))
+    ? Math.max(0, Math.min(100, Math.round(Number(value) * 10) / 10))
+    : 50;
+  return {
+    x: normalizedCoordinate(table?.x),
+    y: normalizedCoordinate(table?.y),
+  };
+};
+
+const markTablePositioned = (table) => {
+  if (!table) return table;
+  delete table._floorStudioSuggestedPosition;
+  return table;
+};
+
+const normalizeTableZoneValue = (zone, normalizeZone) => {
+  const value = String(zone ?? '').trim();
+  return value ? normalizeZone(value) : 'بدون بخش';
+};
+
+const isTableInsideZone = (table, zone) => {
+  if (!zone) return false;
+  const x = Number(table?.x); const y = Number(table?.y);
+  const left = Number(zone.x); const top = Number(zone.y);
+  const width = Number(zone.w); const height = Number(zone.h);
+  return [x, y, left, top, width, height].every(Number.isFinite)
+    && x >= left && x <= left + width && y >= top && y <= top + height;
+};
+
+const calculateZoneFocusPan = (zone, zoneTables, stageWidth, stageHeight, zoom = 1) => {
+  const xs = []; const ys = [];
+  const addPoint = (x, y) => {
+    if (Number.isFinite(x) && x >= 0 && x <= 100) xs.push(x);
+    if (Number.isFinite(y) && y >= 0 && y <= 100) ys.push(y);
+  };
+  if (zone) {
+    addPoint(Number(zone.x), Number(zone.y));
+    addPoint(Number(zone.x) + Number(zone.w), Number(zone.y) + Number(zone.h));
+  }
+  (Array.isArray(zoneTables) ? zoneTables : []).forEach((table) => {
+    if (table?.x == null || table?.y == null || table.x === '' || table.y === '') return;
+    addPoint(Number(table.x), Number(table.y));
+  });
+  const scale = Number.isFinite(Number(zoom)) && Number(zoom) > 0 ? Number(zoom) : 1;
+  const width = Number.isFinite(Number(stageWidth)) ? Number(stageWidth) : 0;
+  const height = Number.isFinite(Number(stageHeight)) ? Number(stageHeight) : 0;
+  return {
+    x: xs.length ? Math.round((50 - (Math.min(...xs) + Math.max(...xs)) / 2) * width * scale / 100) : 0,
+    y: ys.length && Math.max(...ys) - Math.min(...ys) < 85
+      ? Math.round((50 - (Math.min(...ys) + Math.max(...ys)) / 2) * height * scale / 100) : 0,
+  };
+};
+
+const tableZoneForSave = (table, normalizeZone) => table?._floorStudioUnassignedZone
+  ? {}
+  : { zone: normalizeTableZoneValue(table?.zone, normalizeZone) };
+
+const markTableZoneAssigned = (table, zone, normalizeZone) => {
+  if (!table) return table;
+  table.zone = normalizeTableZoneValue(zone, normalizeZone);
+  delete table._floorStudioUnassignedZone;
+  return table;
+};
+
+const calculateMobileTableAdjustment = (table, action) => {
+  if (!table) return { key: null, value: null, changed: false };
+  if (action === 'inc-seats' || action === 'dec-seats') {
+    const current = normalizeSeatCapacity(table.seats);
+    const delta = action === 'inc-seats' ? 1 : -1;
+    const value = Math.max(1, Math.min(24, current + delta));
+    return { key: 'seats', value, changed: value !== current };
+  }
+  if (action === 'inc-scale' || action === 'dec-scale') {
+    const current = Math.max(0.5, Math.min(3, Math.round((Number(table.scale) || 1) * 10) / 10));
+    const delta = action === 'inc-scale' ? 0.1 : -0.1;
+    const value = Math.max(0.5, Math.min(3, Math.round((current + delta) * 10) / 10));
+    return { key: 'scale', value, changed: value !== current };
+  }
+  if (['inc-width', 'dec-width', 'inc-length', 'dec-length'].includes(action)) {
+    const axis = action.endsWith('width') ? 'scaleX' : 'scaleY';
+    const current = Math.max(0.5, Math.min(3, Number(table[axis] ?? table.scale) || 1));
+    const delta = action.startsWith('inc-') ? 0.1 : -0.1;
+    const value = Math.max(0.5, Math.min(3, Math.round((current + delta) * 10) / 10));
+    return { key: axis, value, changed: value !== current };
+  }
+  if (action === 'rotate') {
+    const current = normalizeFloorRotation(table.rotation);
+    return { key: 'rotation', value: normalizeFloorRotation(current + 45), changed: true };
+  }
+  return { key: null, value: null, changed: false };
+};
+
+const UNASSIGNED_FLOOR_ID = '__unassigned__';
+const floorCollection = (floor, key) => Array.isArray(floor?.[key]) ? floor[key] : [];
+const floorEntityId = (entity) => {
+  const raw = String(entity?.floorId || '').trim();
+  if (raw && raw !== UNASSIGNED_FLOOR_ID && raw !== 'undefined' && raw !== 'null') {
+    return raw;
+  }
+  return UNASSIGNED_FLOOR_ID;
+};
+const zonesShareLayoutSpace = (left, right) => floorEntityId(left) === floorEntityId(right);
+const entitiesForFloor = (items, floorId) => (Array.isArray(items) ? items : [])
+  .filter((item) => floorEntityId(item) === String(floorId || UNASSIGNED_FLOOR_ID));
+const findFloorZoneAtPosition = (zones, floorId, x, y) => {
+  const point = { x: Number(x), y: Number(y) };
+  if (!Number.isFinite(point.x) || !Number.isFinite(point.y)) return null;
+  return entitiesForFloor(zones, floorId).find((zone) => isTableInsideZone(point, zone)) || null;
+};
+const planFloorZoneMembershipSync = (tables, zones, floorId, normalizeZone) =>
+  entitiesForFloor(tables, floorId).flatMap((table) => {
+    const zone = findFloorZoneAtPosition(zones, floorId, table.x, table.y);
+    if (!zone) return [];
+    const fromZone = normalizeTableZoneValue(table.zone, normalizeZone);
+    const toZone = normalizeTableZoneValue(zone.name, normalizeZone);
+    if (fromZone === toZone && !table._floorStudioUnassignedZone) return [];
+    return [{ tableId: table.id, fromZone, toZone }];
+  });
+const applyFloorZoneMembershipSync = (tables, changes, normalizeZone) => {
+  if (!Array.isArray(changes) || !changes.length) return 0;
+  const zoneByTableId = new Map(changes.map((change) => [String(change.tableId), change.toZone]));
+  let updated = 0;
+  (Array.isArray(tables) ? tables : []).forEach((table) => {
+    const zone = zoneByTableId.get(String(table.id));
+    if (zone === undefined) return;
+    markTableZoneAssigned(table, zone, normalizeZone);
+    updated += 1;
+  });
+  return updated;
+};
+const floorExists = (floors, floorId) => (Array.isArray(floors) ? floors : [])
+  .some((floor) => String(floor?.id || '') === String(floorId || ''));
+const hasUnassignedFloorEntities = (...collections) => collections
+  .some((items) => (Array.isArray(items) ? items : []).some((item) => floorEntityId(item) === UNASSIGNED_FLOOR_ID));
+const floorIdForPersistence = (entity) => {
+  const floorId = String(entity?.floorId || '').trim();
+  return floorId && floorId !== UNASSIGNED_FLOOR_ID ? { floorId } : {};
+};
+const parseFloorLevel = (value, fallback = 0) => {
+  const raw = String(value ?? '').trim();
+  if (!raw) return fallback;
+  const parsed = Number(raw);
+  return Number.isInteger(parsed) ? parsed : fallback;
+};
+const mergeFloorOperationalState = (tables, floorTables) => {
+  const operationalFields = [
+    'state', 'stateLabel', 'serviceOrderId', 'serviceStartedAt',
+    'serviceEndsAt', 'serviceRemainingSec', 'autoReleased', 'waiterCallId',
+  ];
+  const latestById = new Map((Array.isArray(floorTables) ? floorTables : [])
+    .map((table) => [String(table?.id ?? ''), table]));
+  return (Array.isArray(tables) ? tables : []).map((table) => {
+    const latest = latestById.get(String(table?.id ?? ''));
+    if (!latest) return table;
+    const next = { ...table };
+    operationalFields.forEach((field) => {
+      if (Object.prototype.hasOwnProperty.call(latest, field)) next[field] = latest[field];
+    });
+    return next;
+  });
+};
+const findFloorZonePlacement = (zones, width, height, step = 3) => {
+  const w = Number(width);
+  const h = Number(height);
+  const increment = Math.max(0.5, Number(step) || 3);
+  if (!Number.isFinite(w) || !Number.isFinite(h) || w <= 0 || h <= 0 || w > 96 || h > 96) return null;
+  const occupied = Array.isArray(zones) ? zones : [];
+  const positionsThroughEdge = (last) => {
+    const positions = [];
+    for (let position = 2; position <= last; position += increment) positions.push(position);
+    if (!positions.length || positions[positions.length - 1] < last) positions.push(last);
+    return positions;
+  };
+  for (const y of positionsThroughEdge(98 - h)) {
+    for (const x of positionsThroughEdge(98 - w)) {
+      const overlaps = occupied.some((zone) =>
+        Math.max(x, Number(zone.x) || 0) < Math.min(x + w, (Number(zone.x) || 0) + (Number(zone.w) || 0))
+        && Math.max(y, Number(zone.y) || 0) < Math.min(y + h, (Number(zone.y) || 0) + (Number(zone.h) || 0)));
+      if (!overlaps) return { x: Math.round(x * 10) / 10, y: Math.round(y * 10) / 10, w, h };
+    }
+  }
+  return null;
+};
+const isFloorLayoutEmpty = ({ tables = [], zones = [], fixtures = [] } = {}) =>
+  tables.length === 0 && zones.length === 0 && fixtures.length === 0;
+const relatedFloorTableIds = (tables, requestedIds) => {
+  const rows = Array.isArray(tables) ? tables : [];
+  const related = new Set((Array.isArray(requestedIds) ? requestedIds : []).map((id) => String(Number(id))));
+  let changed = true;
+  while (changed) {
+    changed = false;
+    rows.forEach((table) => {
+      const id = String(Number(table?.id));
+      const parentId = table?.mergedInto == null ? '' : String(Number(table.mergedInto));
+      const children = Array.isArray(table?.mergedWith) ? table.mergedWith.map((value) => String(Number(value))) : [];
+      if (related.has(id) || parentId && related.has(parentId) || children.some((child) => related.has(child))) {
+        [id, parentId, ...children].filter(Boolean).forEach((value) => {
+          if (!related.has(value)) { related.add(value); changed = true; }
+        });
+      }
+    });
+  }
+  return related;
+};
+const activeWaiterCallTableIds = (tables, requestedIds) => {
+  const related = relatedFloorTableIds(tables, requestedIds);
+  return [...new Set((Array.isArray(tables) ? tables : [])
+    .filter((table) => related.has(String(Number(table?.id))) && table?.waiterCallId != null)
+    .map((table) => String(Number(table.id))))];
+};
+
+const FLOOR_LAYOUT_TEMPLATES = Object.freeze([
+  {
+    id: 'single-area', title: 'یک فضای ساده', icon: '▱',
+    desc: 'یک محدودهٔ خالی و قابل ویرایش؛ میزها از فهرست واقعی شعبه اضافه می‌شوند.',
+    zones: [{ name: 'بخش ۱', x: 2, y: 2, w: 96, h: 96, color: 'blue', icon: '▱', shape: 'rectangle', lengthM: 12, widthM: 8 }],
+    fixtures: [],
+  },
+  {
+    id: 'two-areas', title: 'دو بخش مجزا', icon: '▤',
+    desc: 'دو محدودهٔ پایه با نام‌های قابل تغییر؛ بدون میز یا اطلاعات رستوران نمونه.',
+    zones: [
+      { name: 'بخش ۱', x: 2, y: 2, w: 58, h: 96, color: 'blue', icon: '▱', shape: 'rectangle', lengthM: 8, widthM: 8 },
+      { name: 'بخش ۲', x: 62, y: 2, w: 36, h: 96, color: 'emerald', icon: '▱', shape: 'rectangle', lengthM: 5, widthM: 8 },
+    ],
+    fixtures: [],
+  },
+  {
+    id: 'counter-area', title: 'فضا با پیشخوان', icon: '▰',
+    desc: 'یک بخش و یک پیشخوان قابل جابه‌جایی؛ میزها و ظرفیت از دادهٔ واقعی می‌آیند.',
+    zones: [{ name: 'بخش ۱', x: 2, y: 2, w: 96, h: 96, color: 'blue', icon: '▱', shape: 'rectangle', lengthM: 12, widthM: 8 }],
+    fixtures: [{ type: 'counter', name: 'پیشخوان', x: 38, y: 7, w: 24, h: 8, rotation: 0, color: 'cyan', icon: '▰' }],
+  },
+]);
+
+const materializeFloorTemplate = (template, floorId, idPrefix = 'floor-template') => {
+  const targetFloorId = String(floorId || '').trim();
+  if (!template || !targetFloorId || targetFloorId === UNASSIGNED_FLOOR_ID) return null;
+  return {
+    zones: floorCollection(template, 'zones').map((zone, index) => ({
+      ...zone, id: `${idPrefix}-zone-${index + 1}`, floorId: targetFloorId,
+    })),
+    fixtures: floorCollection(template, 'fixtures').map((fixture, index) => ({
+      ...fixture, id: `${idPrefix}-fixture-${index + 1}`, floorId: targetFloorId,
+    })),
+  };
+};
+const validateFloorTableDeleteResponse = (response, requestedIds) => {
+  const normalizedRequests = (Array.isArray(requestedIds) ? requestedIds : []).map((id) => {
+    const value = Number(id);
+    return Number.isSafeInteger(value) && value > 0 ? String(value) : 'invalid';
+  });
+  const requested = new Set(normalizedRequests);
+  if (requested.size === 0 || requested.has('invalid') || requested.size !== normalizedRequests.length) {
+    return { ok: false, reason: 'invalid_request' };
+  }
+  const floor = response?.floor;
+  const validRevision = Number.isSafeInteger(floor?.layoutRevision) && floor.layoutRevision >= 0;
+  if (!response?.ok || !validRevision || !Array.isArray(floor?.tables)
+      || !Array.isArray(response.deletedIds) || !Array.isArray(response.alreadyAbsentIds)
+      || !Array.isArray(response.rejected)) return { ok: false, reason: 'incomplete_response' };
+
+  const normalizeAckIds = (ids) => ids.map((id) => {
+    const value = Number(id);
+    return Number.isSafeInteger(value) && value > 0 ? String(value) : 'invalid';
+  });
+  const deletedIds = normalizeAckIds(response.deletedIds);
+  const alreadyAbsentIds = normalizeAckIds(response.alreadyAbsentIds);
+  const rejected = response.rejected.map((entry) => ({ id: String(Number(entry?.id)), reason: String(entry?.reason || '') }));
+  const allReported = [...deletedIds, ...alreadyAbsentIds, ...rejected.map(({ id }) => id)];
+  if (allReported.some((id) => id === 'invalid' || !requested.has(id))
+      || new Set(allReported).size !== allReported.length
+      || allReported.length !== requested.size
+      || rejected.some(({ reason }) => !reason)) return { ok: false, reason: 'invalid_response' };
+  return { ok: true, floor, deletedIds, alreadyAbsentIds, rejected };
+};
+
+const planTableMerge = (tables, requestedIds, floorId) => {
+  const ids = Array.from(new Set((Array.isArray(requestedIds) || requestedIds instanceof Set
+    ? Array.from(requestedIds)
+    : []).map((id) => String(id ?? '').trim()).filter(Boolean)));
+  if (ids.length < 2) return { ok: false, reason: 'minimum_tables' };
+
+  const byId = new Map((Array.isArray(tables) ? tables : []).map((table) => [String(table.id), table]));
+  const members = ids.map((id) => byId.get(id));
+  if (members.some((table) => !table)) return { ok: false, reason: 'missing_table' };
+
+  const targetFloor = String(floorId || UNASSIGNED_FLOOR_ID);
+  if (members.some((table) => floorEntityId(table) !== targetFloor)) {
+    return { ok: false, reason: 'different_floor' };
+  }
+
+  const memberIds = new Set(ids);
+  const hasExistingLink = members.some((table) => Boolean(table.mergedInto)
+    || (Array.isArray(table.mergedWith) && table.mergedWith.length > 0))
+    || (Array.isArray(tables) ? tables : []).some((table) => {
+      if (table.mergedInto && memberIds.has(String(table.mergedInto))) return true;
+      return Array.isArray(table.mergedWith) && table.mergedWith.some((id) => memberIds.has(String(id)));
+    });
+  if (hasExistingLink) return { ok: false, reason: 'already_merged' };
+
+  // Preserve floor-table order, not Set insertion order, so the parent remains
+  // deterministic regardless of the order in which touch selections occurred.
+  const orderedMembers = (Array.isArray(tables) ? tables : []).filter((table) => memberIds.has(String(table.id)));
+  return { ok: true, reason: null, memberIds: orderedMembers.map((table) => table.id) };
+};
+
+const applyTableMergePlan = (tables, plan) => {
+  if (!plan?.ok || !Array.isArray(plan.memberIds) || plan.memberIds.length < 2) return false;
+  const byId = new Map((Array.isArray(tables) ? tables : []).map((table) => [String(table.id), table]));
+  const members = plan.memberIds.map((id) => byId.get(String(id)));
+  if (members.some((table) => !table)) return false;
+  const [master, ...children] = members;
+  master.mergedWith = children.map((table) => table.id);
+  master.mergedInto = null;
+  children.forEach((table) => {
+    table.mergedInto = master.id;
+    table.mergedWith = null;
+  });
+  return true;
+};
+
+const groupTablesByZoneForFloor = (tables, floorId, normalizeZone = (zone) => String(zone || 'بدون بخش')) => {
+  const groups = new Map();
+  entitiesForFloor(tables, floorId).forEach((table) => {
+    const zone = normalizeZone(table.zone) || 'بدون بخش';
+    if (!groups.has(zone)) groups.set(zone, []);
+    groups.get(zone).push(table);
+  });
+  return groups;
+};
+
+const floorZoneOptionsForMove = (zones, tables, floorId, normalizeZone) => {
+  const names = [
+    ...entitiesForFloor(zones, floorId).map((zone) => normalizeZone(zone.name)),
+    ...entitiesForFloor(tables, floorId).map((table) => normalizeTableZoneValue(table.zone, normalizeZone)),
+  ].map((name) => String(name || '').trim()).filter((name) => name && normalizeZone(name) !== normalizeZone('بدون بخش'));
+  return ['بدون بخش', ...new Set(names)];
+};
+
+const preferredFloorZone = (options, currentZone, normalizeZone) =>
+  options.find((name) => normalizeZone(name) === normalizeZone(currentZone)) || 'بدون بخش';
+
+const isFloorZoneNameTaken = (zones, name, floorId, normalizeZone, exceptId = null) => {
+  const normalizedName = normalizeZone(name);
+  return entitiesForFloor(zones, floorId).some((zone) => zone.id !== exceptId
+    && normalizeZone(zone.name) === normalizedName);
+};
+
+const renameZoneAndTablesOnFloor = (zones, tables, zoneId, newName, normalizeZone) => {
+  const zone = (Array.isArray(zones) ? zones : []).find((item) => String(item.id) === String(zoneId));
+  if (!zone) return null;
+  const oldName = normalizeZone(zone.name);
+  const floorId = floorEntityId(zone);
+  zone.name = newName;
+  (Array.isArray(tables) ? tables : []).forEach((table) => {
+    if (floorEntityId(table) === floorId && normalizeZone(table.zone) === oldName) table.zone = newName;
+  });
+  return zone;
+};
+
+const removeZoneAndReassignTablesOnFloor = (zones, tables, zoneId, fallbackZone, normalizeZone) => {
+  const zone = (Array.isArray(zones) ? zones : []).find((item) => String(item.id) === String(zoneId));
+  if (!zone) return null;
+  const deletedName = normalizeZone(zone.name);
+  const floorId = floorEntityId(zone);
+  const remainingZones = zones.filter((item) => String(item.id) !== String(zone.id));
+  (Array.isArray(tables) ? tables : []).forEach((table) => {
+    if (floorEntityId(table) === floorId && normalizeZone(table.zone) === deletedName) table.zone = fallbackZone;
+  });
+  return { zone, zones: remainingZones };
+};
+
+const isFloorLayoutRevisionConflict = (error) => {
+  const message = String(error?.message || error || '');
+  return message === 'floor_layout_revision_conflict'
+    || message.includes('نقشه در دستگاه دیگری تغییر کرده است');
+};
+
+const isUsableFloorDataSnapshot = (floor) => Boolean(floor
+  && Number.isSafeInteger(floor.layoutRevision)
+  && floor.layoutRevision >= 0
+  && Array.isArray(floor.tables));
+const isCompleteFloorLayoutSnapshot = (floor) => isUsableFloorDataSnapshot(floor)
+  && Array.isArray(floor.zones)
+  && Array.isArray(floor.fixtures)
+  && Array.isArray(floor.floors)
+  && Boolean(floor.settings && typeof floor.settings === 'object' && !Array.isArray(floor.settings));
+
+const floorRefreshNotice = (refreshed) => refreshed
+  ? { message: 'رسیدگی به فراخوان ثبت شد و وضعیت میز به‌روز شد.', type: 'success' }
+  : { message: 'رسیدگی ثبت شد، اما وضعیت میز تازه نشد؛ اتصال را بررسی و نقشه را دوباره بارگیری کنید.', type: 'info' };
+
+const normalizeFloorTableReference = (value) => String(value ?? '')
+  .normalize('NFKC')
+  .replace(/[۰-۹]/g, (digit) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(digit)))
+  .replace(/[٠-٩]/g, (digit) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(digit)))
+  .replace(/[ي]/g, 'ی')
+  .replace(/[ك]/g, 'ک')
+  .replace(/[\s‌]+/g, ' ')
+  .trim()
+  .toLocaleLowerCase('fa');
+
+const isWaiterCallForTable = (call, table, allTables = [table]) => {
+  const callReference = normalizeFloorTableReference(call?.tableNo);
+  if (!callReference || !table) return false;
+  const tableId = normalizeFloorTableReference(table.id);
+  if (tableId && callReference === tableId) return true;
+  if (tableId && callReference === normalizeFloorTableReference(`میز ${tableId}`)) return true;
+
+  const label = normalizeFloorTableReference(table.label);
+  if (!label || callReference !== label) return false;
+  const sameLabelTables = (Array.isArray(allTables) ? allTables : [table])
+    .filter((candidate) => normalizeFloorTableReference(candidate?.label) === label);
+  return sameLabelTables.length === 1 && String(sameLabelTables[0]?.id) === String(table.id);
+};
+
+const createLayoutHistory = (getState, restoreState, limit = 35) => {
+  const undoStack = [];
+  const redoStack = [];
+  const pushLimited = (stack, state) => {
+    stack.push(cloneLayoutSnapshot(state));
+    if (stack.length > limit) stack.shift();
+  };
+
+  return {
+    recordBefore() {
+      pushLimited(undoStack, getState());
+      redoStack.length = 0;
+    },
+    undo() {
+      if (!undoStack.length) return false;
+      pushLimited(redoStack, getState());
+      restoreState(cloneLayoutSnapshot(undoStack.pop()));
+      return true;
+    },
+    redo() {
+      if (!redoStack.length) return false;
+      pushLimited(undoStack, getState());
+      restoreState(cloneLayoutSnapshot(redoStack.pop()));
+      return true;
+    },
+    rollbackLatest() {
+      if (!undoStack.length) return false;
+      restoreState(cloneLayoutSnapshot(undoStack.pop()));
+      redoStack.length = 0;
+      return true;
+    },
+    clear() { undoStack.length = 0; redoStack.length = 0; },
+    get undoCount() { return undoStack.length; },
+    get redoCount() { return redoStack.length; },
+  };
+};
+
+const createHistoryCheckpoint = (recordBefore, onFirstChange = null) => {
+  let recorded = false;
+  return (hasChanged) => {
+    if (!hasChanged || recorded) return false;
+    recorded = true;
+    recordBefore();
+    onFirstChange?.();
+    return true;
+  };
+};
+
+const createLayoutRevision = () => {
+  let revision = 0;
+  return {
+    markDirty() { revision += 1; return revision; },
+    snapshot() { return revision; },
+    isCurrent(snapshot) { return revision === snapshot; },
+  };
+};
+
+const isLayoutImportBranchCompatible = (backupBranchId, currentBranchId) => {
+  const backupBranch = String(backupBranchId ?? '').trim();
+  const currentBranch = String(currentBranchId ?? '').trim();
+  if (!backupBranch) return true; // Backups created before branch IDs existed.
+  return Boolean(currentBranch) && backupBranch === currentBranch;
+};
+
+const createFloorBranchContext = (branchId) => {
+  const id = branchId == null || String(branchId).trim() === '' ? null : branchId;
+  return Object.freeze({
+    id,
+    query(extra = '') {
+      const params = new URLSearchParams(extra);
+      if (id != null) params.set('branchId', String(id));
+      const search = params.toString();
+      return search ? `?${search}` : '';
+    },
+  });
+};
+
+const createSerializedSaveRunner = () => {
+  let active = null;
+  let queuedSave = null;
+
+  return {
+    run(save) {
+      if (active) {
+        // Keep only the newest request: every save serializes the full layout,
+        // so replaying intermediate snapshots would be both wasteful and unsafe.
+        queuedSave = save;
+        return active;
+      }
+
+      let resolveRun;
+      let rejectRun;
+      active = new Promise((resolve, reject) => {
+        resolveRun = resolve;
+        rejectRun = reject;
+      });
+      const activePromise = active;
+
+      (async () => {
+        let nextSave = save;
+        let result;
+        try {
+          while (nextSave) {
+            queuedSave = null;
+            result = await nextSave();
+            if (result === false) break;
+            nextSave = queuedSave;
+          }
+          if (active === activePromise) active = null;
+          resolveRun(result);
+        } catch (error) {
+          if (active === activePromise) active = null;
+          rejectRun(error);
+        } finally {
+          if (!active) queuedSave = null;
+        }
+      })();
+
+      return activePromise;
+    },
+    get isRunning() { return Boolean(active); },
+  };
+};
+
+const calculateZoneDragPosition = (zone, dx, dy, step) => {
+  const snap = Math.max(0.1, Number(step) || 0.5);
+  const width = Math.max(0, Number(zone?.w) || 0);
+  const height = Math.max(0, Number(zone?.h) || 0);
+  const x = Math.round((Math.round(((Number(zone?.x) || 0) + dx) / snap) * snap) * 10) / 10;
+  const y = Math.round((Math.round(((Number(zone?.y) || 0) + dy) / snap) * snap) * 10) / 10;
+  return {
+    x: Math.max(0, Math.min(100 - width, x)),
+    y: Math.max(0, Math.min(100 - height, y)),
+  };
+};
+
 /* ============================================================
    Factory: createFloorStudio(opts) → { mount, unmount }
-   opts: { main, api, branchQs, currentBranchId, showToast,
+   opts: { main, api, getCurrentBranchId, showToast,
            fmtNum, esc, debounce, autosave, runBusy, currentBranch }
    ============================================================ */
 function createFloorStudio(opts) {
   const {
-    main, api, branchQs, getCurrentBranchId, showToast,
+    main, api, getCurrentBranchId, showToast,
     fmtNum, esc, debounce, currentBranch,
   } = opts;
+  const floorBranch = createFloorBranchContext(getCurrentBranchId());
 
   // ─── AbortController برای cleanup کامل هنگام unmount ───────────────────
   let _abortCtrl = new AbortController();
+  let _renderCtrl = new AbortController();
   const signal = () => _abortCtrl.signal;
 
   // ─── وضعیت داخلی ──────────────────────────────────────────────────────
   const VIEW_PREFS_KEY = 'westo_admin_tables_view_mode';
   const QR_PREFS_KEY = 'westo_admin_qr_studio_v1';
+  const SIDEBAR_PREF_KEY = `westo_admin_floor_sidebar_collapsed_${floorBranch.id}`;
 
-  let currentView = localStorage.getItem(VIEW_PREFS_KEY) || 'map';
+  const cardsViewAvailable = typeof opts.renderCardsView === 'function';
+  let currentView = resolveFloorViewMode(localStorage.getItem(VIEW_PREFS_KEY), cardsViewAvailable);
+  try { localStorage.setItem(VIEW_PREFS_KEY, currentView); } catch {}
   let activeZone = 'all';
-  let isEditMode = true;
+  let tableSearchQuery = '';
+  let showOverviewFixtures = false;
+  let isSidebarCollapsed = false;
+  try { isSidebarCollapsed = localStorage.getItem(SIDEBAR_PREF_KEY) === '1'; } catch {}
+  let advancedOpen = false;
+  // Browse first on every screen. Moving furniture always requires an explicit action.
+  let isEditMode = false;
   let studioMode = 'furniture';
   let selectedTableId = null;
   let selectedFixtureId = null;
@@ -47,20 +639,35 @@ function createFloorStudio(opts) {
   let canvasPanY = 0;
   let snapGridStep = 0.5;
   let isSavingLayout = false;
+  let isLayoutDirty = false;
+  let hasLayoutRevisionConflict = false;
   let isDrawingZone = false;
+  let isMounted = false;
+  const layoutRevision = createLayoutRevision();
+  const layoutSaveRunner = createSerializedSaveRunner();
 
   const selectedTableIds = new Set();
-  const layoutHistory = [];
-  const layoutRedoHistory = [];
-
   let tables = [];
   let floorZones = [];
   let floorFixtures = [];
   let floorLevels = [];
   let floorSettings = {};
-  let activeFloorId = 'floor-ground';
+  let activeFloorId = UNASSIGNED_FLOOR_ID;
   let floorData = null;
   let qrPrefs = {};
+
+  const layoutHistory = createLayoutHistory(
+    () => ({ tables, zones: floorZones, fixtures: floorFixtures, floors: floorLevels, settings: floorSettings, activeFloorId, activeZone }),
+    (snapshot) => {
+      tables = mergeFloorOperationalState(snapshot.tables, tables);
+      floorZones = snapshot.zones;
+      floorFixtures = snapshot.fixtures;
+      floorLevels = snapshot.floors;
+      floorSettings = snapshot.settings || {};
+      activeFloorId = snapshot.activeFloorId || floorLevels[0]?.id || UNASSIGNED_FLOOR_ID;
+      activeZone = snapshot.activeZone || 'all';
+    },
+  );
 
   // ─── Timer interval (نه روی window — کنترل شده) ──────────────────────
   let _countdownTimer = null;
@@ -68,20 +675,29 @@ function createFloorStudio(opts) {
 
   // ─── متوقف‌سازی کامل ──────────────────────────────────────────────────
   function unmount() {
+    isMounted = false;
+    document.body.classList.remove('admin-floor-active');
     _abortCtrl.abort();
+    _renderCtrl.abort();
     _abortCtrl = new AbortController();
+    _renderCtrl = new AbortController();
     if (_countdownTimer) { clearInterval(_countdownTimer); _countdownTimer = null; }
     if (_pollTimer) { clearInterval(_pollTimer); _pollTimer = null; }
   }
 
   // ─── helpers ──────────────────────────────────────────────────────────
   const origin = location.origin;
-  const currentBranchId = () => getCurrentBranchId();
+  const currentBranchId = () => floorBranch.id;
+  const branchQuery = () => floorBranch.query();
+  const isCurrentStudio = () => isMounted
+    && String(getCurrentBranchId() ?? '') === String(floorBranch.id ?? '');
 
   const normalizeZone = (z) => {
     const s = String(z || '').trim();
-    if (!s) return 'سالن';
-    if (/^vip$/i.test(s)) return 'ویژه';
+    if (!s) return '';
+    if (/^(?:سالن اصلی|سالن|main(?: hall)?)$/i.test(s)) return 'سالن';
+    if (/^(?:تراس و فضای باز|تراس|terrace|outdoor)$/i.test(s)) return 'تراس';
+    if (/^(?:سالن اختصاصی ویژه|سالن ویژه|ویژه|vip)$/i.test(s)) return 'ویژه';
     return s;
   };
 
@@ -174,112 +790,109 @@ function createFloorStudio(opts) {
 
   // ─── History (Undo/Redo) ────────────────────────────────────────────
   const pushHistory = () => {
-    try {
-      layoutHistory.push({
-        tables: JSON.parse(JSON.stringify(tables)),
-        zones: JSON.parse(JSON.stringify(floorZones)),
-        fixtures: JSON.parse(JSON.stringify(floorFixtures)),
-        floors: JSON.parse(JSON.stringify(floorLevels)),
-      });
-      if (layoutHistory.length > 35) layoutHistory.shift();
-      layoutRedoHistory.length = 0;
-      updateUndoButtonUi();
-    } catch {}
+    try { layoutHistory.recordBefore(); } catch {}
+    updateUndoButtonUi();
   };
 
   const undoLayout = () => {
-    if (!layoutHistory.length) return;
-    const prev = layoutHistory.pop();
-    if (prev && Array.isArray(prev.tables)) {
-      layoutRedoHistory.push({
-        tables: JSON.parse(JSON.stringify(tables)),
-        zones: JSON.parse(JSON.stringify(floorZones)),
-        fixtures: JSON.parse(JSON.stringify(floorFixtures)),
-        floors: JSON.parse(JSON.stringify(floorLevels)),
-      });
-      tables = prev.tables;
-      if (Array.isArray(prev.zones)) floorZones = prev.zones;
-      if (Array.isArray(prev.fixtures)) floorFixtures = prev.fixtures;
-      if (Array.isArray(prev.floors)) floorLevels = prev.floors;
-      updateUndoButtonUi();
-      debouncedSaveFloor();
-      render();
-      showToast('آخرین تغییرات چیدمان سالن بازگردانی شد (Undo).', 'info');
-    }
+    if (!layoutHistory.undo()) return;
+    updateUndoButtonUi();
+    debouncedSaveFloor();
+    render();
+    showToast('آخرین تغییرات چیدمان سالن بازگردانی شد (Undo).', 'info');
   };
 
   const redoLayout = () => {
-    if (!layoutRedoHistory.length) return;
-    const next = layoutRedoHistory.pop();
-    if (next && Array.isArray(next.tables)) {
-      layoutHistory.push({
-        tables: JSON.parse(JSON.stringify(tables)),
-        zones: JSON.parse(JSON.stringify(floorZones)),
-        fixtures: JSON.parse(JSON.stringify(floorFixtures)),
-        floors: JSON.parse(JSON.stringify(floorLevels)),
-      });
-      tables = next.tables;
-      if (Array.isArray(next.zones)) floorZones = next.zones;
-      if (Array.isArray(next.fixtures)) floorFixtures = next.fixtures;
-      if (Array.isArray(next.floors)) floorLevels = next.floors;
-      updateUndoButtonUi();
-      debouncedSaveFloor();
-      render();
-      showToast('تغییر مجدداً اعمال گردید (Redo).', 'info');
-    }
+    if (!layoutHistory.redo()) return;
+    updateUndoButtonUi();
+    debouncedSaveFloor();
+    render();
+    showToast('تغییر مجدداً اعمال گردید (Redo).', 'info');
   };
 
   // ─── DOM helpers (بدون full render) ────────────────────────────────
   const updateUndoButtonUi = () => {
+    if (!isCurrentStudio()) return;
+    document.querySelectorAll('[data-mobile-table-action="undo"]').forEach((button) => {
+      button.disabled = layoutHistory.undoCount === 0;
+    });
+    document.querySelectorAll('[data-mobile-table-action="redo"]').forEach((button) => {
+      button.disabled = layoutHistory.redoCount === 0;
+    });
     const undoBtn = document.getElementById('map-undo') || document.getElementById('map-history-undo');
     if (undoBtn) {
-      undoBtn.disabled = layoutHistory.length === 0;
-      undoBtn.title = layoutHistory.length > 0
-        ? `بازگردانی آخرین تغییر (${fmtNum(layoutHistory.length)})`
+      undoBtn.disabled = layoutHistory.undoCount === 0;
+      undoBtn.title = layoutHistory.undoCount > 0
+        ? `بازگردانی آخرین تغییر (${fmtNum(layoutHistory.undoCount)})`
         : 'تاریخچه خالی است';
     }
     const redoBtn = document.getElementById('map-redo') || document.getElementById('map-history-redo');
     if (redoBtn) {
-      redoBtn.disabled = layoutRedoHistory.length === 0;
-      redoBtn.title = layoutRedoHistory.length > 0
-        ? `تکرار تغییر (${fmtNum(layoutRedoHistory.length)})`
+      redoBtn.disabled = layoutHistory.redoCount === 0;
+      redoBtn.title = layoutHistory.redoCount > 0
+        ? `تکرار تغییر (${fmtNum(layoutHistory.redoCount)})`
         : 'موردی برای تکرار نیست';
     }
   };
 
   const updateSaveStatus = (saving) => {
     isSavingLayout = saving;
+    if (!isCurrentStudio()) return;
+    const saveButton = document.getElementById('map-save-layout');
+    if (saveButton) saveButton.disabled = !isEditMode || saving || !isLayoutDirty || hasLayoutRevisionConflict;
     const pill = document.getElementById('map-save-status');
     if (!pill) return;
     if (saving) {
       pill.className = 'floor-save-status is-saving';
       pill.innerHTML = '<span class="pulse-dot" style="background:#f59e0b"></span><span>در حال ذخیره...</span>';
+    } else if (hasLayoutRevisionConflict) {
+      pill.className = 'floor-save-status is-error';
+      pill.innerHTML = '<span role="alert">⚠️ نقشه در دستگاه دیگری تغییر کرده؛ نسخهٔ شما ذخیره نشد.</span><button class="btn btn-sm btn-ghost" type="button" data-floor-conflict-action="export">دانلود نسخهٔ من</button><button class="btn btn-sm btn-ghost" type="button" data-floor-conflict-action="reload">بارگیری نسخهٔ تازه</button>';
+    } else if (isLayoutDirty) {
+      pill.className = 'floor-save-status is-dirty';
+      pill.innerHTML = '<span>● تغییرات در انتظار ذخیره</span>';
     } else {
       pill.className = 'floor-save-status';
       pill.innerHTML = '<span>✓ چیدمان ذخیره است</span>';
     }
   };
 
-  // alias برای سازگاری
-  const setUnsavedStatus = () => updateSaveStatus(false);
+  const setUnsavedStatus = () => {
+    layoutRevision.markDirty();
+    isLayoutDirty = true;
+    updateSaveStatus(isSavingLayout);
+  };
+
+  const setSaveErrorStatus = (error) => {
+    isSavingLayout = false;
+    isLayoutDirty = true;
+    if (!isCurrentStudio()) return;
+    const saveButton = document.getElementById('map-save-layout');
+    if (saveButton) saveButton.disabled = !isEditMode || hasLayoutRevisionConflict;
+    const pill = document.getElementById('map-save-status');
+    if (!pill) return;
+    pill.className = 'floor-save-status is-error';
+    const rawMessage = String(error?.message || '');
+    const message = rawMessage.includes('floor_layout_table_in_use')
+      || rawMessage.includes('چیدمان فیزیکی میزهای در حال سرویس')
+      ? 'ذخیره نشد: میزِ در حال سرویس، دارای تماس باز یا رزرو فعال تغییر کرده است. پس از پایان سرویس دوباره تلاش کنید.'
+      : rawMessage.includes('floor_layout_revision_conflict')
+        ? 'ذخیره نشد: نقشه در دستگاه دیگری تغییر کرده است؛ نسخهٔ تازه را بارگیری کنید.'
+        : rawMessage || 'اتصال به سرور را بررسی و دوباره تلاش کنید.';
+    pill.innerHTML = `<span role="alert">${esc(message)}</span>`;
+  };
 
   // ─── Zone Helpers ───────────────────────────────────────────────────
-  const detectZoneAtCoords = (x, y) =>
-    floorZones.find((z) => x >= z.x && x <= (z.x + z.w) && y >= z.y && y <= (z.y + z.h)) || null;
+  const detectZoneAtCoords = (x, y) => findFloorZoneAtPosition(floorZones, activeFloorId, x, y);
 
   const detectTableCollision = (targetTable) =>
     tables.some((other) => {
       if (Number(other.id) === Number(targetTable.id)) return false;
+      if (floorEntityId(other) !== floorEntityId(targetTable)) return false;
       const dx = (Number(other.x) || 0) - (Number(targetTable.x) || 0);
       const dy = (Number(other.y) || 0) - (Number(targetTable.y) || 0);
       return Math.hypot(dx, dy) < 8.5;
     });
-
-  const DEFAULT_FLOOR_ZONES = [
-    { id: 'zone-main', name: 'سالن اصلی', x: 2, y: 3, w: 47, h: 94, color: 'blue', icon: '🛋️' },
-    { id: 'zone-terrace', name: 'تراس و فضای باز', x: 49, y: 3, w: 49, h: 56, color: 'emerald', icon: '🌿' },
-    { id: 'zone-vip', name: 'سالن اختصاصی ویژه', x: 49, y: 59, w: 49, h: 38, color: 'purple', icon: '👑' },
-  ];
 
   const sanitizeNonOverlappingZones = (zones) => {
     if (!Array.isArray(zones) || zones.length <= 1) return zones || [];
@@ -287,6 +900,7 @@ function createFloorStudio(opts) {
     for (let i = 0; i < result.length; i++) {
       for (let j = i + 1; j < result.length; j++) {
         const a = result[i]; const b = result[j];
+        if (!zonesShareLayoutSpace(a, b)) continue;
         const xOverlap = Math.max(a.x, b.x) < Math.min(a.x + a.w, b.x + b.w) - 0.5;
         const yOverlap = Math.max(a.y, b.y) < Math.min(a.y + a.h, b.y + b.h) - 0.5;
         if (xOverlap && yOverlap) {
@@ -307,50 +921,56 @@ function createFloorStudio(opts) {
     return result;
   };
 
-  const DEFAULT_FLOOR_FIXTURES = [
-    { id: 'fix-entrance', type: 'entrance', name: 'ورودی اصلی', x: 2, y: 44, w: 3, h: 14, rotation: 0, color: 'blue', icon: '🚪', floorId: 'floor-ground' },
-    { id: 'fix-bar', type: 'bar', name: 'کافه بار و پیشخوان', x: 16, y: 3, w: 16, h: 7, rotation: 0, color: 'slate', icon: '☕', floorId: 'floor-ground' },
-    { id: 'fix-kitchen', type: 'kitchen', name: 'تحویل غذا و آشپزخانه', x: 2, y: 84, w: 15, h: 8, rotation: 0, color: 'orange', icon: '🍳', floorId: 'floor-ground' },
-    { id: 'fix-cashier', type: 'cashier', name: 'صندوق و پذیرش', x: 7, y: 3, w: 7, h: 7, rotation: 0, color: 'emerald', icon: '💳', floorId: 'floor-ground' },
-    { id: 'fix-restroom', type: 'restroom', name: 'سرویس بهداشتی', x: 89, y: 3, w: 9, h: 7, rotation: 0, color: 'sky', icon: '🚻', floorId: 'floor-ground' },
-  ];
+  const dedupeFloorZones = (zones) => {
+    const byNameAndFloor = new Map();
+    (Array.isArray(zones) ? zones : []).forEach((zone) => {
+      const normalized = { ...zone, name: normalizeZone(zone.name) };
+      const key = `${normalized.floorId}::${normalized.name}`;
+      const current = byNameAndFloor.get(key);
+      const isCanonicalId = /^zone-(?:main|terrace|vip)$/.test(String(normalized.id || ''));
+      const currentIsCanonicalId = /^zone-(?:main|terrace|vip)$/.test(String(current?.id || ''));
+      const area = Math.max(0, Number(normalized.w) || 0) * Math.max(0, Number(normalized.h) || 0);
+      const currentArea = Math.max(0, Number(current?.w) || 0) * Math.max(0, Number(current?.h) || 0);
 
-  const DEFAULT_TABLE_COORDINATES = [
-    { id: 1, x: 18, y: 25, shape: 'circle', seats: 2, rotation: 0, zone: 'سالن' },
-    { id: 2, x: 36, y: 25, shape: 'circle', seats: 2, rotation: 0, zone: 'سالن' },
-    { id: 3, x: 18, y: 52, shape: 'circle', seats: 2, rotation: 0, zone: 'سالن' },
-    { id: 4, x: 36, y: 52, shape: 'circle', seats: 2, rotation: 0, zone: 'سالن' },
-    { id: 14, x: 18, y: 80, shape: 'rectangle', seats: 4, rotation: 0, zone: 'سالن' },
-    { id: 15, x: 36, y: 80, shape: 'rectangle', seats: 4, rotation: 0, zone: 'سالن' },
-    { id: 5, x: 60, y: 25, shape: 'rectangle', seats: 4, rotation: 0, zone: 'تراس' },
-    { id: 6, x: 82, y: 25, shape: 'rectangle', seats: 4, rotation: 0, zone: 'تراس' },
-    { id: 7, x: 60, y: 52, shape: 'rectangle', seats: 4, rotation: 0, zone: 'تراس' },
-    { id: 8, x: 82, y: 52, shape: 'rectangle', seats: 4, rotation: 0, zone: 'تراس' },
-    { id: 9, x: 60, y: 75, shape: 'booth', seats: 6, rotation: 0, zone: 'ویژه' },
-    { id: 10, x: 82, y: 75, shape: 'booth', seats: 6, rotation: 0, zone: 'ویژه' },
-    { id: 11, x: 60, y: 86, shape: 'booth', seats: 6, rotation: 0, zone: 'ویژه' },
-    { id: 12, x: 82, y: 86, shape: 'booth', seats: 6, rotation: 0, zone: 'ویژه' },
-  ];
+      if (!current || (isCanonicalId && !currentIsCanonicalId) || (isCanonicalId === currentIsCanonicalId && area > currentArea)) {
+        byNameAndFloor.set(key, normalized);
+      }
+    });
+    return Array.from(byNameAndFloor.values());
+  };
 
   const ensureTableGeometry = (table, index) => {
-    if (typeof table.x !== 'number' || typeof table.y !== 'number') {
-      const match = DEFAULT_TABLE_COORDINATES.find((item) => String(item.id) === String(table.id));
-      if (match) {
-        table.x = match.x; table.y = match.y;
-        table.shape = table.shape || match.shape;
-        table.rotation = table.rotation ?? match.rotation;
-      } else {
-        table.x = ((index % 4) * 22) + 16;
-        table.y = (Math.floor(index / 4) * 26) + 24;
-        table.shape = table.shape || (Number(table.seats) <= 2 ? 'circle' : Number(table.seats) >= 6 ? 'booth' : 'rectangle');
-        table.rotation = table.rotation || 0;
-      }
+    const hasX = table.x !== '' && table.x != null && Number.isFinite(Number(table.x));
+    const hasY = table.y !== '' && table.y != null && Number.isFinite(Number(table.y));
+    if (hasX) table.x = Number(table.x);
+    if (hasY) table.y = Number(table.y);
+    if (!hasX || !hasY) {
+      const suggestion = suggestedTablePosition(index);
+      if (!hasX) table.x = suggestion.x;
+      if (!hasY) table.y = suggestion.y;
+      table._floorStudioSuggestedPosition = true;
     }
+    if (hasX && hasY && !table._floorStudioSuggestedPosition) {
+      markTablePositioned(table);
+    }
+    if (!String(table.zone ?? '').trim() && !table._floorStudioUnassignedZone) table._floorStudioUnassignedZone = true;
     table.shape = table.shape || (Number(table.seats) <= 2 ? 'circle' : Number(table.seats) >= 6 ? 'booth' : 'rectangle');
-    table.rotation = Number(table.rotation) || 0;
-    table.scale = Math.max(0.5, Math.min(3.0, Number(table.scale) || 1));
-    table.seats = Number(table.seats) || 4;
-    table.zone = normalizeZone(table.zone);
+    table.rotation = normalizeFloorRotation(table.rotation);
+    table.scale = Math.max(0.5, Math.min(3.0, Number(table.scale ?? table.tableScale) || 1));
+    table.scaleX = Math.max(0.5, Math.min(3.0, Number(table.scaleX ?? table.tableScaleX) || table.scale));
+    table.scaleY = Math.max(0.5, Math.min(3.0, Number(table.scaleY ?? table.tableScaleY) || table.scale));
+    table.chairScale = Math.max(0.6, Math.min(2.0, Number(table.chairScale) || 1));
+    table.seats = normalizeSeatCapacity(table.seats);
+    table.zone = normalizeTableZoneValue(table.zone, normalizeZone);
+  };
+
+  const commitTablePosition = (table, element) => {
+    const wasSuggested = Boolean(table?._floorStudioSuggestedPosition);
+    markTablePositioned(table);
+    if (!wasSuggested || !element) return;
+    element.querySelector('.floor-table-position-status')?.remove();
+    element.title = `${tableTitle(table)} — ${table.stateLabel || 'آزاد'}`;
+    element.setAttribute('aria-label', `${tableTitle(table)} — ${table.stateLabel || 'آزاد'}، ${fmtNum(normalizeSeatCapacity(table.seats))} صندلی`);
   };
 
   const floorCountdownLabel = (endsAt) => {
@@ -362,21 +982,28 @@ function createFloorStudio(opts) {
   };
 
   // ─── Save Layout ─────────────────────────────────────────────────────
-  const saveFloorLayout = async (silent = false) => {
+  const persistFloorLayout = async (silent = false) => {
+    const saveRevision = layoutRevision.snapshot();
     updateSaveStatus(true);
     try {
+      if (!Number.isSafeInteger(floorData?.layoutRevision) || floorData.layoutRevision < 0) {
+        throw new Error('نسخهٔ چیدمان دریافت نشده است؛ صفحه را تازه کنید و تغییرات را دوباره اعمال کنید.');
+      }
       const layoutPayload = tables.map((t) => ({
         id: Number(t.id),
         label: String(t.label || `میز ${t.id}`).trim(),
-        seats: Math.max(1, Math.min(20, Number(t.seats) || 4)),
-        zone: normalizeZone(t.zone),
+        seats: normalizeSeatCapacity(t.seats),
+        ...tableZoneForSave(t, normalizeZone),
         active: t.active !== false,
-        x: Math.max(0, Math.min(100, Math.round((Number(t.x) || 50) * 10) / 10)),
-        y: Math.max(0, Math.min(100, Math.round((Number(t.y) || 50) * 10) / 10)),
+        ...tableCoordinatesForSave(t),
         shape: t.shape || 'rectangle',
-        rotation: (Number(t.rotation) || 0) % 360,
-        scale: Math.max(0.5, Math.min(3.0, Math.round((Number(t.scale) || 1) * 10) / 10)),
-        floorId: t.floorId || 'floor-ground',
+        rotation: normalizeFloorRotation(t.rotation),
+        tableScale: Math.max(0.6, Math.min(2.5, Math.round((Number(t.scale ?? t.tableScale) || 1) * 10) / 10)),
+        tableScaleX: Math.max(0.5, Math.min(3, Math.round((Number(t.scaleX ?? t.tableScaleX ?? t.scale ?? t.tableScale) || 1) * 100) / 100)),
+        tableScaleY: Math.max(0.5, Math.min(3, Math.round((Number(t.scaleY ?? t.tableScaleY ?? t.scale ?? t.tableScale) || 1) * 100) / 100)),
+        chairScale: Math.max(0.6, Math.min(2.0, Math.round((Number(t.chairScale) || 1) * 10) / 10)),
+        chairModel: String(t.chairModel || '').slice(0, 25) || undefined,
+        ...floorIdForPersistence(t),
         mergedWith: Array.isArray(t.mergedWith) ? t.mergedWith : [],
         mergedInto: t.mergedInto || null,
         tags: Array.isArray(t.tags) ? t.tags : [],
@@ -390,7 +1017,7 @@ function createFloorStudio(opts) {
         h: Math.max(5, Math.min(100, Math.round(Number(z.h) * 10) / 10)),
         color: z.color || 'blue', icon: z.icon || '🏷️',
         lengthM: z.lengthM, widthM: z.widthM, areaSqM: z.areaSqM,
-        shape: z.shape, floorId: z.floorId || 'floor-ground',
+        shape: z.shape, ...floorIdForPersistence(z),
       }));
       const fixturesPayload = floorFixtures.map((f) => ({
         id: String(f.id), type: f.type || 'fixture', name: f.name || 'المان',
@@ -398,9 +1025,9 @@ function createFloorStudio(opts) {
         y: Math.max(0, Math.min(100, Math.round(Number(f.y) * 10) / 10)),
         w: Math.max(2, Math.min(100, Math.round(Number(f.w) * 10) / 10)),
         h: Math.max(2, Math.min(100, Math.round(Number(f.h) * 10) / 10)),
-        rotation: (Number(f.rotation) || 0) % 360,
+        rotation: normalizeFloorRotation(f.rotation),
         color: f.color || 'slate', icon: f.icon || '🏷️',
-        floorId: f.floorId || 'floor-ground',
+        ...floorIdForPersistence(f),
       }));
       const floorsPayload = floorLevels.map((fl) => ({
         id: String(fl.id), name: String(fl.name),
@@ -410,21 +1037,30 @@ function createFloorStudio(opts) {
       const res = await api('/api/admin/v2/floor/layout', {
         method: 'PUT',
         body: JSON.stringify({
+          expectedLayoutRevision: floorData.layoutRevision,
           tables: layoutPayload, zones: zonesPayload,
           fixtures: fixturesPayload, floors: floorsPayload,
           settings: floorSettings, branchId: currentBranchId(),
         }),
       });
-      if (res?.floor) {
+      const responseLayoutRevision = res?.floor?.layoutRevision ?? res?.layoutRevision;
+      if (!Number.isSafeInteger(responseLayoutRevision) || responseLayoutRevision < 0) {
+        throw new Error('سرور نسخهٔ تازهٔ چیدمان را تأیید نکرد؛ وضعیت ذخیره را بررسی کنید.');
+      }
+      // A successful older save still advances the server revision even when
+      // a newer local edit is queued. Keep that revision for the queued save,
+      // but only replace the editable layout when this snapshot is current.
+      floorData = { ...(floorData || {}), layoutRevision: responseLayoutRevision };
+      if (layoutRevision.isCurrent(saveRevision) && res?.floor) {
         floorData = res.floor;
-        if (Array.isArray(res.floor.zones) && res.floor.zones.length > 0) {
+        if (Array.isArray(res.floor.zones)) {
           floorZones = res.floor.zones.map((z) => ({
             id: String(z.id), name: normalizeZone(z.name),
             x: Number(z.x) || 0, y: Number(z.y) || 0,
             w: Number(z.w) || 30, h: Number(z.h) || 30,
             color: z.color || 'blue', icon: z.icon || '🏷️',
             lengthM: z.lengthM, widthM: z.widthM, areaSqM: z.areaSqM,
-            shape: z.shape, floorId: z.floorId || 'floor-ground',
+            shape: z.shape, ...floorIdForPersistence(z),
           }));
         }
         if (Array.isArray(res.floor.fixtures)) {
@@ -434,7 +1070,7 @@ function createFloorStudio(opts) {
             w: Number(f.w) || 10, h: Number(f.h) || 8,
             rotation: Number(f.rotation) || 0,
             color: f.color || 'slate', icon: f.icon || '🏷️',
-            floorId: f.floorId || 'floor-ground',
+            ...floorIdForPersistence(f),
           }));
         }
         if (Array.isArray(res.floor.floors)) {
@@ -442,40 +1078,133 @@ function createFloorStudio(opts) {
             id: String(fl.id), name: String(fl.name),
             level: Number(fl.level) || 0, icon: fl.icon || '🏛️',
             isDefault: Boolean(fl.isDefault),
-          }));
+          })).filter((floor) => floor.id && floor.id !== 'undefined');
+          if (!floorExists(floorLevels, activeFloorId)) activeFloorId = floorLevels[0]?.id || UNASSIGNED_FLOOR_ID;
         }
       }
+      const savedCurrentRevision = layoutRevision.isCurrent(saveRevision);
+      if (savedCurrentRevision) isLayoutDirty = false;
       updateSaveStatus(false);
-      if (!silent) showToast('چیدمان نقشه سالن با موفقیت ذخیره گردید.', 'success');
+      if (!silent && savedCurrentRevision) showToast('چیدمان نقشه سالن با موفقیت ذخیره گردید.', 'success');
+      return true;
     } catch (e) {
-      updateSaveStatus(false);
-      if (!silent) showToast(e.message || 'خطا در ذخیره چیدمان نقشه', 'error');
+      if (isFloorLayoutRevisionConflict(e)) {
+        hasLayoutRevisionConflict = true;
+        updateSaveStatus(false);
+        if (!silent) showToast('نقشه در دستگاه دیگری تغییر کرده است. نسخهٔ محلی را دانلود کنید و سپس نسخهٔ تازه را آگاهانه بارگیری کنید.', 'error');
+      } else {
+        setSaveErrorStatus(e);
+        if (!silent) showToast(e.message || 'خطا در ذخیره چیدمان نقشه', 'error');
+      }
+      return false;
     }
   };
-  const debouncedSaveFloor = debounce(saveFloorLayout, 600);
+  const saveFloorLayout = (silent = false) => {
+    if (hasLayoutRevisionConflict) {
+      if (!silent) showToast('ابتدا تعارض را با دانلود نسخهٔ محلی یا بارگیری نسخهٔ تازه حل کنید.', 'warning');
+      return Promise.resolve(false);
+    }
+    layoutRevision.markDirty();
+    isLayoutDirty = true;
+    updateSaveStatus(isSavingLayout);
+    return layoutSaveRunner.run(() => persistFloorLayout(silent));
+  };
+  const showLayoutSaveFailure = () => showToast(
+    hasLayoutRevisionConflict
+      ? 'تعارض نسخه: نسخهٔ محلی را دانلود کنید و بعد نسخهٔ تازه را آگاهانه بارگیری کنید.'
+      : 'تغییر روی همین دستگاه باقی مانده اما ذخیره نشد؛ اتصال را بررسی و دوباره ذخیره کنید.',
+    'error',
+  );
+  const queuedSaveFloor = debounce(() => saveFloorLayout(true), 600);
+  const debouncedSaveFloor = () => {
+    setUnsavedStatus();
+    queuedSaveFloor();
+  };
+  const rollbackCancelledLayoutGesture = (hasChanged, wasDirtyBeforeGesture) => {
+    if (!hasChanged || !layoutHistory.rollbackLatest()) return false;
+    // Invalidate any save snapshot captured while the cancelled gesture was
+    // visible locally, then preserve and re-save edits that predated it.
+    layoutRevision.markDirty();
+    isLayoutDirty = wasDirtyBeforeGesture;
+    updateSaveStatus(isSavingLayout);
+    updateUndoButtonUi();
+    render();
+    if (wasDirtyBeforeGesture) debouncedSaveFloor();
+    return true;
+  };
 
   const loadFloorData = async () => {
     try {
-      const fresh = await api(`/api/admin/v2/floor${branchQs()}`);
-      if (!fresh) return;
+      const fresh = await api(`/api/admin/v2/floor${branchQuery()}`);
+      if (!isUsableFloorDataSnapshot(fresh)) return false;
+      // This refresh follows an operational waiter-call action. It may update
+      // live table status, but must not advance the layout revision or replace
+      // geometry while local edits are pending on this device.
+      tables = mergeFloorOperationalState(tables, fresh.tables);
+      if (fresh.layoutRevision !== floorData?.layoutRevision) {
+        hasLayoutRevisionConflict = true;
+        updateSaveStatus(false);
+      }
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  const reloadLatestLayoutAfterConflict = async () => {
+    queuedSaveFloor.cancel?.();
+    try {
+      const fresh = await api(`/api/admin/v2/floor${branchQuery()}`);
+      if (!isCompleteFloorLayoutSnapshot(fresh)) {
+        throw new Error('دادهٔ کامل و نسخه‌دار نقشه دریافت نشد؛ تغییرات محلی حفظ شده‌اند.');
+      }
+
       floorData = fresh;
-      const floorTableMap = new Map((fresh.tables || []).map((t) => [Number(t.id), t]));
-      tables.forEach((table) => {
-        const f = floorTableMap.get(Number(table.id));
-        if (f) {
-          if (typeof f.x === 'number') table.x = f.x;
-          if (typeof f.y === 'number') table.y = f.y;
-          if (f.shape) table.shape = f.shape;
-          if (typeof f.rotation === 'number') table.rotation = f.rotation;
-          if (f.zone) table.zone = normalizeZone(f.zone);
-          table.state = f.state || table.state;
-          table.stateLabel = f.stateLabel || table.stateLabel;
-          table.serviceEndsAt = f.serviceEndsAt || null;
-          table.autoReleased = Boolean(f.autoReleased);
-          table.waiterCallId = f.waiterCallId || null;
-        }
+      floorLevels = floorCollection(fresh, 'floors').filter((floor) => String(floor?.id || '').trim()).map((floor) => ({
+        id: String(floor.id), name: String(floor.name || 'طبقه بدون نام'),
+        level: Number(floor.level) || 0, icon: floor.icon || '🏛️', isDefault: Boolean(floor.isDefault),
+      }));
+      floorZones = sanitizeNonOverlappingZones(dedupeFloorZones(floorCollection(fresh, 'zones').map((zone) => ({
+        ...zone,
+        id: String(zone.id || `zone-${Math.random().toString(36).slice(2, 7)}`),
+        name: normalizeZone(zone.name),
+        x: Number(zone.x) || 0, y: Number(zone.y) || 0,
+        w: Number(zone.w) || 30, h: Number(zone.h) || 30,
+        ...floorIdForPersistence(zone),
+      }))));
+      floorFixtures = floorCollection(fresh, 'fixtures').map((fixture, index) => ({
+        ...fixture,
+        id: String(fixture.id || `fixture-${index}`),
+        x: Number(fixture.x) || 0, y: Number(fixture.y) || 0,
+        w: Number(fixture.w) || 2, h: Number(fixture.h) || 2,
+        ...floorIdForPersistence(fixture),
+      }));
+      if (fresh.settings && typeof fresh.settings === 'object') floorSettings = fresh.settings;
+      tables = floorCollection(fresh, 'tables').map((table, index) => {
+        const next = { ...table, zone: normalizeTableZoneValue(table.zone, normalizeZone) };
+        if (!String(table.zone ?? '').trim()) next._floorStudioUnassignedZone = true;
+        ensureTableGeometry(next, index);
+        return next;
       });
-    } catch {}
+      if (!floorExists(floorLevels, activeFloorId)) activeFloorId = floorLevels[0]?.id || UNASSIGNED_FLOOR_ID;
+      if (hasUnassignedFloorEntities(tables, floorZones, floorFixtures)) activeFloorId = UNASSIGNED_FLOOR_ID;
+      activeZone = 'all';
+      selectedTableId = null;
+      selectedFixtureId = null;
+      selectedZoneId = null;
+      selectedTableIds.clear();
+      layoutHistory.clear();
+      layoutRevision.markDirty(); // Invalidate any snapshot captured before the refresh.
+      isLayoutDirty = false;
+      hasLayoutRevisionConflict = false;
+      updateSaveStatus(false);
+      render();
+      showToast('آخرین نسخهٔ ثبت‌شدهٔ نقشه بارگیری شد؛ تغییرات ذخیره‌نشدهٔ محلی کنار گذاشته شدند.', 'success');
+      return true;
+    } catch (error) {
+      showToast(error?.message || 'بارگیری نسخهٔ تازه ناموفق بود؛ نسخهٔ محلی حفظ شده است.', 'error');
+      return false;
+    }
   };
 
   // ─── Modal سیستم (in-studio) ────────────────────────────────────────
@@ -533,7 +1262,7 @@ function createFloorStudio(opts) {
 
   // ─── Generic Drag Handler ────────────────────────────────────────────
   // جایگزین ۳ drag handler تکراری — table/fixture/zone drag
-  const createDragHandler = ({ getScaleEl, onDragStart, onMove, onEnd, snapStep = () => snapGridStep }) => {
+  const createDragHandler = ({ getScaleEl, onDragStart, onMove, onEnd, onCancel, snapStep = () => snapGridStep }) => {
     return (e, el) => {
       const scaleEl = getScaleEl ? getScaleEl() : (document.getElementById('admin-canvas-scaler') || document.getElementById('admin-floor-canvas'));
       if (!scaleEl) return;
@@ -547,6 +1276,7 @@ function createFloorStudio(opts) {
       let hasMoved = false;
 
       const onPointerMove = (ev) => {
+        if (!isActiveFloorPointerEvent(ev, e.pointerId)) return;
         const dx = ((ev.clientX - e.clientX) / rect.width) * 100;
         const dy = ((ev.clientY - e.clientY) / rect.height) * 100;
         if (Math.abs(dx) > 0.3 || Math.abs(dy) > 0.3) hasMoved = true;
@@ -554,11 +1284,16 @@ function createFloorStudio(opts) {
       };
 
       const onPointerUp = (ev) => {
+        if (!isActiveFloorPointerEvent(ev, e.pointerId)) return;
         window.removeEventListener('pointermove', onPointerMove);
         window.removeEventListener('pointerup', onPointerUp);
         window.removeEventListener('pointercancel', onPointerUp);
         el.classList.remove('is-dragging');
         try { el.releasePointerCapture(ev.pointerId || e.pointerId); } catch {}
+        if (isCancelledFloorPointerEvent(ev)) {
+          if (onCancel) onCancel(ev, { hasMoved });
+          return;
+        }
         if (onEnd) onEnd(ev, { hasMoved });
       };
 
@@ -606,18 +1341,19 @@ function createFloorStudio(opts) {
     badge.textContent = `${Math.round(originX)}% , ${Math.round(originY)}%`;
 
     let hasMoved = false;
+    const wasDirtyBeforeGesture = isLayoutDirty;
+    const checkpoint = createHistoryCheckpoint(pushHistory, setUnsavedStatus);
 
     const onPointerMove = (ev) => {
+      if (!isActiveFloorPointerEvent(ev, e.pointerId)) return;
       const dx = ((ev.clientX - startX) / rect.width) * 100;
       const dy = ((ev.clientY - startY) / rect.height) * 100;
-      if (Math.abs(dx) > 0.3 || Math.abs(dy) > 0.3) hasMoved = true;
-
       let newX = Math.round((originX + dx) / snapGridStep) * snapGridStep;
       let newY = Math.round((originY + dy) / snapGridStep) * snapGridStep;
 
       // Smart guides
       let matchedX = null; let matchedY = null;
-      const otherTables = tables.filter((t) => Number(t.id) !== Number(table.id) && (!activeFloorId || t.floorId === activeFloorId));
+      const otherTables = tables.filter((t) => Number(t.id) !== Number(table.id) && floorEntityId(t) === activeFloorId);
       for (const ot of otherTables) {
         if (isGroup && selectedTableIds.has(Number(ot.id))) continue;
         const ox = Number(ot.x) || 50; const oy = Number(ot.y) || 50;
@@ -627,6 +1363,17 @@ function createFloorStudio(opts) {
 
       newX = Math.max(5, Math.min(95, newX));
       newY = Math.max(5, Math.min(95, newY));
+
+      const groupTargets = isGroup ? groupMembers.map((m) => ({
+        ...m,
+        x: Math.max(5, Math.min(95, Math.round((m.ox + (newX - originX)) * 10) / 10)),
+        y: Math.max(5, Math.min(95, Math.round((m.oy + (newY - originY)) * 10) / 10)),
+      })) : [];
+      const changesLayout = Math.abs((Number(table.x) || 0) - newX) > 0.001 ||
+        Math.abs((Number(table.y) || 0) - newY) > 0.001 ||
+        groupTargets.some((m) => Math.abs((Number(m.table.x) || 0) - m.x) > 0.001 || Math.abs((Number(m.table.y) || 0) - m.y) > 0.001);
+      if (checkpoint(changesLayout)) hasMoved = true;
+      if (Math.abs((Number(table.x) || 0) - newX) > 0.001 || Math.abs((Number(table.y) || 0) - newY) > 0.001) commitTablePosition(table, el);
       table.x = newX; table.y = newY;
 
       // Direct DOM update — بدون full render
@@ -635,16 +1382,13 @@ function createFloorStudio(opts) {
 
       // Group Drag sync for all selected tables
       if (isGroup) {
-        const dXDelta = newX - originX;
-        const dYDelta = newY - originY;
-        for (const m of groupMembers) {
+        for (const m of groupTargets) {
           if (m.id === tableId) continue;
-          const mx = Math.max(5, Math.min(95, Math.round((m.ox + dXDelta) * 10) / 10));
-          const my = Math.max(5, Math.min(95, Math.round((m.oy + dYDelta) * 10) / 10));
-          m.table.x = mx;
-          m.table.y = my;
-          m.el.style.left = `${mx}%`;
-          m.el.style.top = `${my}%`;
+          if (Math.abs((Number(m.table.x) || 0) - m.x) > 0.001 || Math.abs((Number(m.table.y) || 0) - m.y) > 0.001) commitTablePosition(m.table, m.el);
+          m.table.x = m.x;
+          m.table.y = m.y;
+          m.el.style.left = `${m.x}%`;
+          m.el.style.top = `${m.y}%`;
         }
       }
 
@@ -677,6 +1421,7 @@ function createFloorStudio(opts) {
     };
 
     const onPointerUp = (ev) => {
+      if (!isActiveFloorPointerEvent(ev, e.pointerId)) return;
       window.removeEventListener('pointermove', onPointerMove);
       window.removeEventListener('pointerup', onPointerUp);
       window.removeEventListener('pointercancel', onPointerUp);
@@ -684,10 +1429,21 @@ function createFloorStudio(opts) {
       badge?.remove();
       _hideSmartGuides();
       try { el.releasePointerCapture(ev.pointerId || e.pointerId); } catch {}
+      if (isCancelledFloorPointerEvent(ev)) {
+        rollbackCancelledLayoutGesture(hasMoved, wasDirtyBeforeGesture);
+        return;
+      }
       if (hasMoved) {
+        const droppedTables = isGroup ? groupMembers.map((member) => member.table) : [table];
+        const zoneChanges = planFloorZoneMembershipSync(droppedTables, floorZones, activeFloorId, normalizeZone);
+        const reassignedCount = applyFloorZoneMembershipSync(droppedTables, zoneChanges, normalizeZone);
         justDragged = true;
         setTimeout(() => { justDragged = false; }, 180);
         debouncedSaveFloor();
+        if (reassignedCount) {
+          render();
+          showToast(`بخش ${fmtNum(reassignedCount)} میز با محدودهٔ نقشه هماهنگ شد.`, 'info');
+        }
       }
     };
 
@@ -708,35 +1464,97 @@ function createFloorStudio(opts) {
     const startX = e.clientX; const startY = e.clientY;
     const origX = Number(fixture.x) || 0; const origY = Number(fixture.y) || 0;
     let hasMoved = false;
+    const wasDirtyBeforeGesture = isLayoutDirty;
+    const checkpoint = createHistoryCheckpoint(pushHistory, setUnsavedStatus);
 
     el.classList.add('is-dragging');
     try { el.setPointerCapture(e.pointerId); } catch {}
 
     const onPointerMove = (ev) => {
+      if (!isActiveFloorPointerEvent(ev, e.pointerId)) return;
       const dx = ((ev.clientX - startX) / rect.width) * 100;
       const dy = ((ev.clientY - startY) / rect.height) * 100;
-      if (Math.abs(dx) > 0.3 || Math.abs(dy) > 0.3) hasMoved = true;
       let newX = Math.round((origX + dx) / snapGridStep) * snapGridStep;
       let newY = Math.round((origY + dy) / snapGridStep) * snapGridStep;
       newX = Math.max(0, Math.min(100 - (Number(fixture.w) || 10), newX));
       newY = Math.max(0, Math.min(100 - (Number(fixture.h) || 8), newY));
-      fixture.x = Math.round(newX * 10) / 10;
-      fixture.y = Math.round(newY * 10) / 10;
+      const nextX = Math.round(newX * 10) / 10;
+      const nextY = Math.round(newY * 10) / 10;
+      if (checkpoint(Math.abs((Number(fixture.x) || 0) - nextX) > 0.001 || Math.abs((Number(fixture.y) || 0) - nextY) > 0.001)) hasMoved = true;
+      fixture.x = nextX;
+      fixture.y = nextY;
       el.style.left = `${fixture.x}%`;
       el.style.top = `${fixture.y}%`;
     };
 
     const onPointerUp = (ev) => {
+      if (!isActiveFloorPointerEvent(ev, e.pointerId)) return;
       window.removeEventListener('pointermove', onPointerMove);
       window.removeEventListener('pointerup', onPointerUp);
       window.removeEventListener('pointercancel', onPointerUp);
       el.classList.remove('is-dragging');
       try { el.releasePointerCapture(ev.pointerId || e.pointerId); } catch {}
+      if (isCancelledFloorPointerEvent(ev)) {
+        rollbackCancelledLayoutGesture(hasMoved, wasDirtyBeforeGesture);
+        return;
+      }
       if (hasMoved) {
         justDragged = true;
         setTimeout(() => { justDragged = false; }, 180);
         debouncedSaveFloor();
       }
+    };
+
+    window.addEventListener('pointermove', onPointerMove);
+    window.addEventListener('pointerup', onPointerUp);
+    window.addEventListener('pointercancel', onPointerUp);
+  };
+
+  const handleZoneDrag = (e, el) => {
+    const zone = entitiesForFloor(floorZones, activeFloorId).find((item) => item.id === el.dataset.zoneId);
+    if (!zone || el.classList.contains('is-full-view')) return;
+    const scaleEl = document.getElementById('admin-canvas-scaler') || document.getElementById('admin-floor-canvas');
+    if (!scaleEl) return;
+    const rect = scaleEl.getBoundingClientRect();
+    const startX = e.clientX;
+    const startY = e.clientY;
+    let hasMoved = false;
+    const wasDirtyBeforeGesture = isLayoutDirty;
+    const checkpoint = createHistoryCheckpoint(pushHistory, setUnsavedStatus);
+
+    el.classList.add('is-moving');
+    try { el.setPointerCapture(e.pointerId); } catch {}
+
+    const onPointerMove = (ev) => {
+      if (!isActiveFloorPointerEvent(ev, e.pointerId)) return;
+      const dx = ((ev.clientX - startX) / rect.width) * 100;
+      const dy = ((ev.clientY - startY) / rect.height) * 100;
+      const next = calculateZoneDragPosition(zone, dx, dy, snapGridStep);
+      const changed = Math.abs((Number(zone.x) || 0) - next.x) > 0.001 || Math.abs((Number(zone.y) || 0) - next.y) > 0.001;
+      if (checkpoint(changed)) hasMoved = true;
+      zone.x = next.x;
+      zone.y = next.y;
+      el.style.left = `${next.x}%`;
+      el.style.top = `${next.y}%`;
+    };
+
+    const onPointerUp = (ev) => {
+      if (!isActiveFloorPointerEvent(ev, e.pointerId)) return;
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerup', onPointerUp);
+      window.removeEventListener('pointercancel', onPointerUp);
+      el.classList.remove('is-moving');
+      try { el.releasePointerCapture(ev.pointerId || e.pointerId); } catch {}
+      if (isCancelledFloorPointerEvent(ev)) {
+        rollbackCancelledLayoutGesture(hasMoved, wasDirtyBeforeGesture);
+        return;
+      }
+      if (!hasMoved) return;
+      justDragged = true;
+      setTimeout(() => { justDragged = false; }, 180);
+      selectedZoneId = zone.id;
+      debouncedSaveFloor();
+      render();
     };
 
     window.addEventListener('pointermove', onPointerMove);
@@ -756,29 +1574,43 @@ function createFloorStudio(opts) {
     const rect = scaleEl.getBoundingClientRect();
     const startX = e.clientX; const startY = e.clientY;
     const origW = Number(fixture.w) || 12; const origH = Number(fixture.h) || 8;
+    let hasMoved = false;
+    const wasDirtyBeforeGesture = isLayoutDirty;
+    const checkpoint = createHistoryCheckpoint(pushHistory, setUnsavedStatus);
 
     handleEl.classList.add('is-resizing');
     try { handleEl.setPointerCapture(e.pointerId); } catch {}
 
     const onPointerMove = (ev) => {
+      if (!isActiveFloorPointerEvent(ev, e.pointerId)) return;
       const dx = ((ev.clientX - startX) / rect.width) * 100;
       const dy = ((ev.clientY - startY) / rect.height) * 100;
       const newW = Math.max(4, Math.min(60, Math.round((origW + dx) / snapGridStep) * snapGridStep));
       const newH = Math.max(3, Math.min(50, Math.round((origH + dy) / snapGridStep) * snapGridStep));
-      fixture.w = Math.round(newW * 10) / 10;
-      fixture.h = Math.round(newH * 10) / 10;
+      const nextW = Math.round(newW * 10) / 10;
+      const nextH = Math.round(newH * 10) / 10;
+      if (checkpoint(Math.abs((Number(fixture.w) || 0) - nextW) > 0.001 || Math.abs((Number(fixture.h) || 0) - nextH) > 0.001)) hasMoved = true;
+      fixture.w = nextW;
+      fixture.h = nextH;
       fixtureEl.style.width = `${fixture.w}%`;
       fixtureEl.style.height = `${fixture.h}%`;
     };
 
     const onPointerUp = (ev) => {
+      if (!isActiveFloorPointerEvent(ev, e.pointerId)) return;
       window.removeEventListener('pointermove', onPointerMove);
       window.removeEventListener('pointerup', onPointerUp);
       window.removeEventListener('pointercancel', onPointerUp);
       handleEl.classList.remove('is-resizing');
       try { handleEl.releasePointerCapture(ev.pointerId || e.pointerId); } catch {}
-      debouncedSaveFloor();
-      render();
+      if (isCancelledFloorPointerEvent(ev)) {
+        rollbackCancelledLayoutGesture(hasMoved, wasDirtyBeforeGesture);
+        return;
+      }
+      if (hasMoved) {
+        debouncedSaveFloor();
+        render();
+      }
     };
 
     window.addEventListener('pointermove', onPointerMove);
@@ -793,8 +1625,10 @@ function createFloorStudio(opts) {
     const table = tableById(tableId);
     if (!table || !tableEl) return;
 
-    const corner = handleEl.dataset.resizeCorner || 'se'; // nw | ne | sw | se
+    const corner = handleEl.dataset.resizeCorner || 'se';
     const origScale = Number(table.scale) || 1;
+    const origScaleX = Number(table.scaleX ?? table.tableScaleX) || origScale;
+    const origScaleY = Number(table.scaleY ?? table.tableScaleY) || origScale;
 
     const scaleEl = document.getElementById('admin-canvas-scaler') || document.getElementById('admin-floor-canvas');
     if (!scaleEl) return;
@@ -803,15 +1637,18 @@ function createFloorStudio(opts) {
     // اندازه فیزیکی محاسبه‌شده سطح میز بدون scale
     const surfaceEl = tableEl.querySelector('.plan-table-surface') || tableEl;
     const surfRect = surfaceEl.getBoundingClientRect();
-    const unscaledW = Math.max(40, (surfRect.width / origScale) || 96);
-    const unscaledH = Math.max(30, (surfRect.height / origScale) || 68);
+    const unscaledW = Math.max(40, (surfRect.width / origScaleX) || 96);
+    const unscaledH = Math.max(30, (surfRect.height / origScaleY) || 68);
 
-    const origHW = (unscaledW * origScale) / 2;
-    const origHH = (unscaledH * origScale) / 2;
+    const origHW = (unscaledW * origScaleX) / 2;
+    const origHH = (unscaledH * origScaleY) / 2;
 
     // مرکز فعلی میز در مختصات پیکسلی بوم
     const origCenterX = (table.x / 100) * canvasRect.width;
     const origCenterY = (table.y / 100) * canvasRect.height;
+    let hasMoved = false;
+    const wasDirtyBeforeGesture = isLayoutDirty;
+    const checkpoint = createHistoryCheckpoint(pushHistory, setUnsavedStatus);
 
     // زاویه چرخش به رادیان
     const rad = ((Number(table.rotation) || 0) * Math.PI) / 180;
@@ -819,11 +1656,13 @@ function createFloorStudio(opts) {
     const sin = Math.sin(rad);
 
     // تعیین بردار دستگیره و نقطه لنگر (Anchor) مقابل
-    const dirU = (corner === 'se' || corner === 'ne') ? 1 : -1;
-    const dirV = (corner === 'se' || corner === 'sw') ? 1 : -1;
+    const dirU = (corner.endsWith('e') || corner === 'e') ? 1 : -1;
+    const dirV = (corner.endsWith('s') || corner === 's') ? 1 : -1;
+    const affectsWidth = ['e', 'w', 'ne', 'nw', 'se', 'sw'].includes(corner);
+    const affectsLength = ['n', 's', 'ne', 'nw', 'se', 'sw'].includes(corner);
 
-    const anchorLocalU = -dirU * origHW;
-    const anchorLocalV = -dirV * origHH;
+    const anchorLocalU = affectsWidth ? -dirU * origHW : 0;
+    const anchorLocalV = affectsLength ? -dirV * origHH : 0;
 
     // مختصات پیکسلی لنگر روی بوم
     const anchorPxX = origCenterX + (anchorLocalU * cos - anchorLocalV * sin);
@@ -841,26 +1680,29 @@ function createFloorStudio(opts) {
     try { handleEl.setPointerCapture(e.pointerId); } catch {}
     e.stopPropagation();
 
-    const updateHud = (scaleVal, ev) => {
+    const updateHud = (scaleX, scaleY, ev) => {
       if (!hudEl) return;
-      const wCm = Math.round(unscaledW * scaleVal * 1.5);
-      const hCm = Math.round(unscaledH * scaleVal * 1.5);
+      const wCm = Math.round(unscaledW * scaleX * 1.5);
+      const hCm = Math.round(unscaledH * scaleY * 1.5);
       hudEl.innerHTML = `
-        <strong>📐 مقیاس: ${(scaleVal).toFixed(2)}×</strong>
+        <strong>📐 عرض ${fmtNum(wCm)} × طول ${fmtNum(hCm)} سانتی‌متر</strong>
         <small>${fmtNum(wCm)} × ${fmtNum(hCm)} سانتی‌متر</small>
-        <small style="color:#64748b">کلید Alt: تغییر اندازه متقارن</small>
+        <small style="color:#64748b">عرض و طول جداگانه قابل تنظیم است</small>
       `;
       hudEl.style.left = `${ev.clientX}px`;
       hudEl.style.top = `${ev.clientY}px`;
     };
 
-    updateHud(origScale, e);
+    updateHud(origScaleX, origScaleY, e);
 
     const onPointerMove = (ev) => {
+      if (!isActiveFloorPointerEvent(ev, e.pointerId)) return;
       const curCanvasX = ev.clientX - canvasRect.left;
       const curCanvasY = ev.clientY - canvasRect.top;
 
       let newScale = origScale;
+      let newScaleX = origScaleX;
+      let newScaleY = origScaleY;
       let newXpct = table.x;
       let newYpct = table.y;
 
@@ -870,6 +1712,8 @@ function createFloorStudio(opts) {
         const initDist = Math.hypot(origHW, origHH);
         const rawScale = origScale * (distCenter / Math.max(10, initDist));
         newScale = Math.max(0.5, Math.min(3.0, Math.round(rawScale * 20) / 20));
+        newScaleX = newScale;
+        newScaleY = newScale;
       } else {
         // تغییر اندازه مهندسی CAD با لنگر ثابت در گوشه مقابل
         const vX = curCanvasX - anchorPxX;
@@ -883,18 +1727,16 @@ function createFloorStudio(opts) {
         const directedU = Math.max(15, localU * dirU);
         const directedV = Math.max(15, localV * dirV);
 
-        const scaleU = directedU / unscaledW;
-        const scaleV = directedV / unscaledH;
-        const rawScale = (scaleU + scaleV) / 2;
-
-        newScale = Math.max(0.5, Math.min(3.0, Math.round(rawScale * 20) / 20));
+        newScaleX = affectsWidth ? Math.max(0.5, Math.min(3, Math.round((directedU / unscaledW) * 20) / 20)) : origScaleX;
+        newScaleY = affectsLength ? Math.max(0.5, Math.min(3, Math.round((directedV / unscaledH) * 20) / 20)) : origScaleY;
+        newScale = Math.max(newScaleX, newScaleY);
 
         // محاسبه مرکز جدید بر مبنای لنگر کاملاً ثابت
-        const newHW = (unscaledW * newScale) / 2;
-        const newHH = (unscaledH * newScale) / 2;
+        const newHW = (unscaledW * newScaleX) / 2;
+        const newHH = (unscaledH * newScaleY) / 2;
 
-        const centerOffsetX = (dirU * newHW) * cos - (dirV * newHH) * sin;
-        const centerOffsetY = (dirU * newHW) * sin + (dirV * newHH) * cos;
+        const centerOffsetX = (affectsWidth ? dirU * newHW : 0) * cos - (affectsLength ? dirV * newHH : 0) * sin;
+        const centerOffsetY = (affectsWidth ? dirU * newHW : 0) * sin + (affectsLength ? dirV * newHH : 0) * cos;
 
         const newCenterXpx = anchorPxX + centerOffsetX;
         const newCenterYpx = anchorPxY + centerOffsetY;
@@ -903,29 +1745,42 @@ function createFloorStudio(opts) {
         newYpct = Math.max(2, Math.min(98, (newCenterYpx / canvasRect.height) * 100));
       }
 
+      const nextX = Math.round(newXpct * 10) / 10;
+      const nextY = Math.round(newYpct * 10) / 10;
+      if (Math.abs((Number(table.x) || 0) - nextX) > 0.001 || Math.abs((Number(table.y) || 0) - nextY) > 0.001) commitTablePosition(table, tableEl);
+      if (checkpoint(Math.abs(origScaleX - newScaleX) > 0.001 || Math.abs(origScaleY - newScaleY) > 0.001 ||
+          Math.abs((Number(table.x) || 0) - nextX) > 0.001 || Math.abs((Number(table.y) || 0) - nextY) > 0.001)) hasMoved = true;
       table.scale = newScale;
-      table.x = Math.round(newXpct * 10) / 10;
-      table.y = Math.round(newYpct * 10) / 10;
+      table.scaleX = newScaleX;
+      table.scaleY = newScaleY;
+      table.x = nextX;
+      table.y = nextY;
 
       // به‌روزرسانی آنی DOM بدون ری‌رندر کل بوم
       const rot = table.rotation || 0;
       tableEl.style.left = `${table.x}%`;
       tableEl.style.top = `${table.y}%`;
-      tableEl.style.transform = `translate(-50%, -50%) rotate(${rot}deg) scale(${newScale})`;
+      tableEl.style.transform = `translate(-50%, -50%) rotate(${rot}deg) scale(${newScaleX}, ${newScaleY})`;
       tableEl.style.setProperty('--table-scale', newScale);
+      tableEl.style.setProperty('--table-label-inverse-x', String(1 / newScaleX));
+      tableEl.style.setProperty('--table-label-inverse-y', String(1 / newScaleY));
 
-      updateHud(newScale, ev);
+      updateHud(newScaleX, newScaleY, ev);
     };
 
     const onPointerUp = (ev) => {
+      if (!isActiveFloorPointerEvent(ev, e.pointerId)) return;
       window.removeEventListener('pointermove', onPointerMove);
       window.removeEventListener('pointerup', onPointerUp);
       window.removeEventListener('pointercancel', onPointerUp);
       handleEl.classList.remove('is-resizing');
       try { handleEl.releasePointerCapture(ev.pointerId || e.pointerId); } catch {}
       if (hudEl) { hudEl.remove(); hudEl = null; }
-      pushHistory();
-      debouncedSaveFloor();
+      if (isCancelledFloorPointerEvent(ev)) {
+        rollbackCancelledLayoutGesture(hasMoved, wasDirtyBeforeGesture);
+        return;
+      }
+      if (hasMoved) debouncedSaveFloor();
     };
 
     window.addEventListener('pointermove', onPointerMove);
@@ -937,7 +1792,7 @@ function createFloorStudio(opts) {
   const handleZoneResize = (e, handleEl) => {
     const zoneId = handleEl.dataset.zoneId;
     const handleDir = handleEl.dataset.handle;
-    const zone = floorZones.find((z) => z.id === zoneId);
+    const zone = entitiesForFloor(floorZones, activeFloorId).find((z) => z.id === zoneId);
     if (!zone) return;
 
     selectedZoneId = zoneId;
@@ -950,11 +1805,15 @@ function createFloorStudio(opts) {
     const startX = e.clientX; const startY = e.clientY;
     const origX = zone.x; const origY = zone.y;
     const origW = zone.w; const origH = zone.h;
+    let hasMoved = false;
+    const wasDirtyBeforeGesture = isLayoutDirty;
+    const checkpoint = createHistoryCheckpoint(pushHistory, setUnsavedStatus);
 
     handleEl.classList.add('is-resizing');
     try { handleEl.setPointerCapture(e.pointerId); } catch {}
 
     const onPointerMove = (ev) => {
+      if (!isActiveFloorPointerEvent(ev, e.pointerId)) return;
       const dx = ((ev.clientX - startX) / rect.width) * 100;
       const dy = ((ev.clientY - startY) / rect.height) * 100;
 
@@ -974,7 +1833,7 @@ function createFloorStudio(opts) {
       }
 
       // Magnetic snapping به zone های مجاور
-      floorZones.forEach((other) => {
+      entitiesForFloor(floorZones, floorEntityId(zone)).forEach((other) => {
         if (other.id === zone.id) return;
         if (handleDir.includes('e') && Math.abs((newX + newW) - other.x) <= 2) newW = other.x - newX;
         if (handleDir.includes('w') && Math.abs(newX - (other.x + other.w)) <= 2) { const tx = other.x + other.w; newW = (newX + newW) - tx; newX = tx; }
@@ -982,10 +1841,16 @@ function createFloorStudio(opts) {
         if (handleDir.includes('n') && Math.abs(newY - (other.y + other.h)) <= 2) { const ty = other.y + other.h; newH = (newY + newH) - ty; newY = ty; }
       });
 
-      zone.x = Math.max(0, Math.min(100, Math.round(newX * 10) / 10));
-      zone.y = Math.max(0, Math.min(100, Math.round(newY * 10) / 10));
-      zone.w = Math.max(8, Math.min(100, Math.round(newW * 10) / 10));
-      zone.h = Math.max(8, Math.min(100, Math.round(newH * 10) / 10));
+      const nextX = Math.max(0, Math.min(100, Math.round(newX * 10) / 10));
+      const nextY = Math.max(0, Math.min(100, Math.round(newY * 10) / 10));
+      const nextW = Math.max(8, Math.min(100, Math.round(newW * 10) / 10));
+      const nextH = Math.max(8, Math.min(100, Math.round(newH * 10) / 10));
+      if (checkpoint(Math.abs((Number(zone.x) || 0) - nextX) > 0.001 || Math.abs((Number(zone.y) || 0) - nextY) > 0.001 ||
+          Math.abs((Number(zone.w) || 0) - nextW) > 0.001 || Math.abs((Number(zone.h) || 0) - nextH) > 0.001)) hasMoved = true;
+      zone.x = nextX;
+      zone.y = nextY;
+      zone.w = nextW;
+      zone.h = nextH;
 
       if (zoneEl) {
         zoneEl.style.left = `${zone.x}%`;
@@ -996,15 +1861,22 @@ function createFloorStudio(opts) {
     };
 
     const onPointerUp = (ev) => {
+      if (!isActiveFloorPointerEvent(ev, e.pointerId)) return;
       window.removeEventListener('pointermove', onPointerMove);
       window.removeEventListener('pointerup', onPointerUp);
       window.removeEventListener('pointercancel', onPointerUp);
       handleEl.classList.remove('is-resizing');
       if (zoneEl) zoneEl.classList.remove('is-resizing');
       try { handleEl.releasePointerCapture(ev.pointerId || e.pointerId); } catch {}
+      if (isCancelledFloorPointerEvent(ev)) {
+        rollbackCancelledLayoutGesture(hasMoved, wasDirtyBeforeGesture);
+        return;
+      }
       selectedZoneId = zone.id;
-      debouncedSaveFloor();
-      render();
+      if (hasMoved) {
+        debouncedSaveFloor();
+        render();
+      }
     };
 
     window.addEventListener('pointermove', onPointerMove);
@@ -1042,13 +1914,14 @@ function createFloorStudio(opts) {
   };
 
   // ─── Render Helpers ──────────────────────────────────────────────────
-  const renderSvgConnectors = () => {
+  const renderSvgConnectors = (canvasTables = tables) => {
     let lines = '';
-    tables.forEach((t) => {
+    const canvasTableIds = new Set(canvasTables.map((table) => String(table.id)));
+    canvasTables.forEach((t) => {
       if (t.mergedWith && Array.isArray(t.mergedWith)) {
         t.mergedWith.forEach((subId) => {
           const sub = tableById(subId);
-          if (sub && (t.floorId || 'floor-ground') === (sub.floorId || 'floor-ground') && (activeFloorId === (t.floorId || 'floor-ground'))) {
+          if (sub && canvasTableIds.has(String(sub.id)) && floorEntityId(t) === floorEntityId(sub) && activeFloorId === floorEntityId(t)) {
             lines += `<line x1="${t.x}%" y1="${t.y}%" x2="${sub.x}%" y2="${sub.y}%" class="plan-table-connector-line" stroke="#38bdf8" stroke-width="3" stroke-dasharray="6,4" opacity="0.85" />`;
           }
         });
@@ -1103,8 +1976,11 @@ function createFloorStudio(opts) {
 
   const renderPlanTableItem = (table) => {
     const isSelected = Number(selectedTableId) === Number(table.id) || selectedTableIds.has(Number(table.id));
+    const isOutsideActiveZone = activeZone !== 'all' && normalizeTableZoneValue(table.zone, normalizeZone) !== activeZone;
     const shape = table.shape || 'rectangle';
-    const seats = Math.max(1, Math.min(24, Number(table.seats) || 4));
+    const tableScaleX = Math.max(0.5, Number(table.scaleX ?? table.scale) || 1);
+    const tableScaleY = Math.max(0.5, Number(table.scaleY ?? table.scale) || 1);
+    const seats = normalizeSeatCapacity(table.seats);
     const chairModel = table.chairModel || (shape === 'bar_stool' || shape === 'wall_counter' ? 'bar_stool' : shape === 'lounge_takht' ? 'bolster' : 'standard');
     const chairClass = `plan-chair plan-chair--${chairModel}`;
     let chairsHtml = '';
@@ -1217,6 +2093,9 @@ function createFloorStudio(opts) {
       }
     }
 
+    const sharedSeatLayout = window.WestoFloorChairLayout?.layout({ shape, seats, chairModel, chairScale: table.chairScale });
+    if (sharedSeatLayout) chairsHtml = sharedSeatLayout.markup;
+
     const timerHtml = table.serviceEndsAt && !table.autoReleased && ['busy', 'attention'].includes(table.state)
       ? `<time class="plan-table-timer" data-service-ends="${esc(table.serviceEndsAt)}">${floorCountdownLabel(table.serviceEndsAt)}</time>` : '';
 
@@ -1229,15 +2108,19 @@ function createFloorStudio(opts) {
       mergeBadgeHtml = `<span class="plan-table-merge-badge is-sub" title="میز فرعی پیوندخورده">🔗 متصل به میز ${esc(table.mergedInto)}</span>`;
     }
 
-    const standardZones = ['سالن', 'تراس', 'ویژه'];
-    const existingZones = Array.from(new Set(tables.map((t) => normalizeZone(t.zone)).filter(Boolean)));
-    const allZonesList = Array.from(new Set([...standardZones, ...existingZones]));
-    const zoneOptions = allZonesList.map((z) => `<option value="${esc(z)}" ${normalizeZone(table.zone) === z ? 'selected' : ''}>${esc(z)}</option>`).join('');
+    const existingZones = Array.from(new Set([
+      ...entitiesForFloor(floorZones, activeFloorId).map((zone) => normalizeZone(zone.name)),
+      ...entitiesForFloor(tables, activeFloorId).map((item) => normalizeTableZoneValue(item.zone, normalizeZone)),
+    ].filter(Boolean)));
+    const zoneOptions = existingZones.map((z) => `<option value="${esc(z)}" ${normalizeTableZoneValue(table.zone, normalizeZone) === z ? 'selected' : ''}>${esc(z)}</option>`).join('');
 
     const isNearTop = Number(table.y) < 22;
     const isNearLeft = Number(table.x) < 25;
     const isNearRight = Number(table.x) > 75;
     const alignX = isNearLeft ? 'left' : isNearRight ? 'right' : 'center';
+    const suggestedPositionHtml = table._floorStudioSuggestedPosition
+      ? '<span class="floor-table-position-status" title="مختصات ثبت‌شده ندارند؛ جایگاه نشان‌داده‌شده موقت است و تا جانمایی اپراتور ذخیره نمی‌شود" style="display:block;margin-top:2px;color:#fbbf24;font-size:10px">جانمایی پیشنهادی، ذخیره‌نشده</span>'
+      : '';
 
     const isMerged = isMergedParent || isMergedSub;
     const paletteHtml = (isSelected && isEditMode && Number(selectedTableId) === Number(table.id)) ? `
@@ -1262,136 +2145,147 @@ function createFloorStudio(opts) {
         </select>
         <button type="button" class="palette-btn" data-table-action="toggle-shape" title="چرخش فرم هندسی">⊞ فرم</button>
         <div class="palette-more-wrapper">
-          <button type="button" class="palette-btn palette-btn--more" data-table-action="toggle-more" title="عملیات بیشتر">⋯</button>
-          <div class="palette-more-menu" id="palette-more-menu-${table.id}" style="display:none;">
-            <button type="button" data-table-action="toggle-active" style="color:${table.active !== false ? '#34d399' : '#94a3b8'}">
+          <button type="button" class="palette-btn palette-btn--more" data-table-action="toggle-more" title="عملیات بیشتر" aria-expanded="false" aria-controls="palette-more-menu-${table.id}">⋯</button>
+          <div class="palette-more-menu" id="palette-more-menu-${table.id}" role="menu" style="display:none;">
+            <button type="button" role="menuitem" data-table-action="toggle-active" style="color:${table.active !== false ? '#34d399' : '#94a3b8'}">
               ${table.active !== false ? '🟢 میز فعال است' : '⚪ میز خاموش است'}
             </button>
-            <button type="button" data-table-action="rename">✏️ تغییر نام و کد میز</button>
-            <button type="button" data-table-action="merge" style="color:${isMerged ? '#fbbf24' : '#38bdf8'}">
+            <button type="button" role="menuitem" data-table-action="rename">✏️ تغییر نام و کد میز</button>
+            <button type="button" role="menuitem" data-table-action="merge" style="color:${isMerged ? '#fbbf24' : '#38bdf8'}">
               ${isMerged ? '🔗 تفکیک پیوند' : '🔗 ادغام میزها'}
             </button>
-            <button type="button" data-table-action="move-floor">🏢 انتقال به طبقه</button>
-            <button type="button" data-table-action="duplicate" style="color:#38bdf8">⧉ کپی میز</button>
-            <button type="button" class="is-delete" data-table-action="delete" style="color:#f43f5e">🗑️ حذف این میز</button>
+            <button type="button" role="menuitem" data-table-action="move-floor">🏢 انتقال به طبقه</button>
+            <button type="button" role="menuitem" data-table-action="duplicate" style="color:#38bdf8">⧉ کپی میز</button>
+            <button type="button" role="menuitem" class="is-delete" data-table-action="delete" style="color:#f43f5e">🗑️ حذف این میز</button>
           </div>
         </div>
         <button type="button" data-table-action="close" title="بستن پالت" style="background:transparent;border:none;color:#94a3b8;font-size:13px;padding:2px 6px;cursor:pointer">✕</button>
       </div>` : '';
 
     return `
-      <div class="plan-table plan-table--${esc(shape)} ${isSelected ? 'is-selected' : ''} ${isMergedParent ? 'is-merged-parent' : ''} ${isMergedSub ? 'is-merged-sub' : ''}"
+      <div class="plan-table plan-table--${esc(shape)} ${isSelected ? 'is-selected' : ''} ${isOutsideActiveZone ? 'is-zone-muted' : ''} ${isMergedParent ? 'is-merged-parent' : ''} ${isMergedSub ? 'is-merged-sub' : ''}"
            data-table="${esc(table.id)}"
            role="button" tabindex="0"
            data-state="${esc(table.state || (table.active === false ? 'inactive' : 'available'))}"
            data-seats="${seats}"
            ${table.autoReleased ? 'data-auto-released="true"' : ''}
-           style="left:${table.x}%; top:${table.y}%; transform: translate(-50%, -50%) rotate(${table.rotation || 0}deg) scale(${table.scale || 1}); --table-rot: ${table.rotation || 0}deg; --table-scale: ${table.scale || 1};"
-           title="${esc(tableTitle(table))} — ${esc(table.stateLabel || 'آزاد')}"
-           aria-label="${esc(tableTitle(table))} — ${esc(table.stateLabel || 'آزاد')}، ${fmtNum(seats)} صندلی">
+           style="left:${table.x}%; top:${table.y}%; transform: translate(-50%, -50%) rotate(${table.rotation || 0}deg) scale(${tableScaleX}, ${tableScaleY}); --table-rot: ${table.rotation || 0}deg; --table-scale: ${table.scale || 1}; --chair-scale: ${table.chairScale || 1}; --table-label-inverse-x: ${1 / tableScaleX}; --table-label-inverse-y: ${1 / tableScaleY};"
+           title="${esc(tableTitle(table))} — ${esc(table.stateLabel || 'آزاد')}${table._floorStudioSuggestedPosition ? ' — جانمایی پیشنهادی، ذخیره‌نشده' : ''}"
+           aria-label="${esc(tableTitle(table))} — ${esc(table.stateLabel || 'آزاد')}، ${fmtNum(seats)} صندلی${table._floorStudioSuggestedPosition ? '، جانمایی نشده' : ''}">
         ${chairsHtml}
         <div class="plan-table-surface">
-          <span class="plan-table-number">${esc(tableTitle(table))}</span>
-          <span class="plan-table-meta">${fmtNum(seats)} نفر · ${esc(normalizeZone(table.zone))}</span>
-          ${mergeBadgeHtml}
-          ${timerHtml}
+          <div class="plan-table-label">
+            <span class="plan-table-number">${esc(tableTitle(table))}</span>
+            <span class="plan-table-meta">${fmtNum(seats)} نفر · ${esc(normalizeTableZoneValue(table.zone, normalizeZone))}</span>
+            ${suggestedPositionHtml}
+            ${mergeBadgeHtml}
+            ${timerHtml}
+          </div>
         </div>
         ${paletteHtml}
         ${isEditMode && isSelected ? `
           <div class="table-resize-handle table-resize-handle--nw" data-resize-corner="nw" data-table-resize="${esc(table.id)}"></div>
           <div class="table-resize-handle table-resize-handle--ne" data-resize-corner="ne" data-table-resize="${esc(table.id)}"></div>
           <div class="table-resize-handle table-resize-handle--sw" data-resize-corner="sw" data-table-resize="${esc(table.id)}"></div>
-          <div class="table-resize-handle table-resize-handle--se" data-resize-corner="se" data-table-resize="${esc(table.id)}"></div>` : ''}
+          <div class="table-resize-handle table-resize-handle--se" data-resize-corner="se" data-table-resize="${esc(table.id)}"></div>
+          <div class="table-resize-handle table-resize-handle--n" data-resize-corner="n" title="تغییر طول میز" data-table-resize="${esc(table.id)}"></div>
+          <div class="table-resize-handle table-resize-handle--s" data-resize-corner="s" title="تغییر طول میز" data-table-resize="${esc(table.id)}"></div>
+          <div class="table-resize-handle table-resize-handle--e" data-resize-corner="e" title="تغییر عرض میز" data-table-resize="${esc(table.id)}"></div>
+          <div class="table-resize-handle table-resize-handle--w" data-resize-corner="w" title="تغییر عرض میز" data-table-resize="${esc(table.id)}"></div>` : ''}
       </div>`;
   };
 
   // ─── Main Render ─────────────────────────────────────────────────────
   const render = () => {
-    if (currentView === 'map') { renderMapView(); }
-    else { renderCardsView(); }
+    if (!isCurrentStudio()) return;
+    if (currentView === 'cards' && cardsViewAvailable) { renderCardsView(); }
+    else { renderMapView(); }
   };
 
   const renderMapView = () => {
-    const currentFloorTables = tables.filter((t) => (t.floorId || 'floor-ground') === activeFloorId);
-    const standardZones = ['سالن', 'تراس', 'ویژه'];
-    const existingZones = Array.from(new Set(currentFloorTables.map((t) => normalizeZone(t.zone)).filter(Boolean)));
-    const allZonesList = Array.from(new Set([...standardZones, ...existingZones]));
+    const currentFloorConfigured = floorExists(floorLevels, activeFloorId);
+    const canEditCurrentFloor = isEditMode && currentFloorConfigured;
+    const showUnassignedFloor = hasUnassignedFloorEntities(tables, floorZones, floorFixtures);
+    const currentFloorTables = entitiesForFloor(tables, activeFloorId);
+    const currentFloorZones = entitiesForFloor(floorZones, activeFloorId);
+    const tableZoneNames = currentFloorTables.map((table) => normalizeTableZoneValue(table.zone, normalizeZone));
+    const allZonesList = Array.from(new Set([
+      ...currentFloorZones.map((zone) => normalizeZone(zone.name)),
+      ...tableZoneNames,
+    ].filter(Boolean)));
     const zonesList = ['all', ...allZonesList];
-    const zoneTitle = (z) => ({ all: 'همه بخش‌ها', سالن: 'سالن اصلی 🛋️', تراس: 'تراس و فضای باز 🌿', ویژه: 'سالن اختصاصی ویژه 👑' }[z] || z);
+    const zoneTitle = (z) => ({ all: 'همهٔ داده‌های این طبقه', 'بدون بخش': 'بدون بخش' }[z] || z);
 
-    const visibleTables = activeZone === 'all'
+    let visibleTables = activeZone === 'all'
       ? currentFloorTables
-      : currentFloorTables.filter((t) => normalizeZone(t.zone) === activeZone);
-    const visibleFixtures = floorFixtures.filter((f) => (f.floorId || 'floor-ground') === activeFloorId);
+      : currentFloorTables.filter((t) => normalizeTableZoneValue(t.zone, normalizeZone) === activeZone);
+    if (tableSearchQuery && tableSearchQuery.trim()) {
+      const q = normalizeFloorTableReference(tableSearchQuery);
+      visibleTables = visibleTables.filter((t) => {
+        const title = normalizeFloorTableReference(tableTitle(t));
+        const idStr = normalizeFloorTableReference(t.id);
+        const zoneStr = normalizeFloorTableReference(normalizeTableZoneValue(t.zone, normalizeZone));
+        return title.includes(q) || idStr.includes(q) || zoneStr.includes(q);
+      });
+    }
+    const visibleFixtures = entitiesForFloor(floorFixtures, activeFloorId);
+    const focusedZone = activeZone === 'all' ? null : currentFloorZones.find((zone) => normalizeZone(zone.name) === activeZone);
+    const canvasTables = activeZone === 'all'
+      ? currentFloorTables
+      : currentFloorTables.filter((table) => normalizeTableZoneValue(table.zone, normalizeZone) === activeZone);
+    const canvasFixtures = activeZone === 'all' ? (isEditMode || showOverviewFixtures ? visibleFixtures : []) : focusedZone
+      ? visibleFixtures.filter((fixture) => {
+          const centerX = Number(fixture.x) + Number(fixture.w || 0) / 2;
+          const centerY = Number(fixture.y) + Number(fixture.h || 0) / 2;
+          return centerX >= focusedZone.x && centerX <= focusedZone.x + focusedZone.w
+            && centerY >= focusedZone.y && centerY <= focusedZone.y + focusedZone.h;
+        })
+      : [];
+    const outsideZoneCount = focusedZone
+      ? canvasTables.filter((table) => !isTableInsideZone(table, focusedZone)).length
+      : 0;
+    const zoneMembershipChanges = planFloorZoneMembershipSync(currentFloorTables, currentFloorZones, activeFloorId, normalizeZone);
+    const canUseStarterTemplate = currentFloorConfigured && isFloorLayoutEmpty({
+      tables: currentFloorTables, zones: currentFloorZones, fixtures: visibleFixtures,
+    });
+    const firstFloorNoticeHtml = floorLevels.length === 0 ? `
+      <aside class="floor-first-setup" role="status">
+        <div><strong>هنوز طبقه‌ای برای این شعبه ثبت نشده است</strong><span>برای شروع، یک طبقهٔ واقعی بسازید. میزهای ثبت‌شدهٔ بدون طبقه حفظ می‌شوند.</span></div>
+        <button type="button" class="btn btn-sm btn-primary" id="map-create-first-floor">＋ تعریف اولین طبقه</button>
+      </aside>` : '';
 
-    const busyCount = currentFloorTables.filter((t) => t.state === 'busy').length;
-    const attnCount = currentFloorTables.filter((t) => t.state === 'attention').length;
-    const freeCount = currentFloorTables.filter((t) => t.state === 'available' || !t.state).length;
-    const totalSeats = currentFloorTables.reduce((acc, t) => acc + (Number(t.seats) || 0), 0);
+    const busyCount = canvasTables.filter((t) => t.state === 'busy').length;
+    const attnCount = canvasTables.filter((t) => t.state === 'attention').length;
+    const freeCount = canvasTables.filter((t) => t.state === 'available' || !t.state).length;
 
-    const renderedZonesHtml = floorZones.map((z) => {
-      if (activeZone !== 'all' && activeZone !== z.name) return '';
-      const isFullView = activeZone === z.name;
+    const renderedZonesHtml = currentFloorZones.map((z) => {
+      if (activeZone !== 'all' && normalizeZone(z.name) !== activeZone) return '';
       const legacyClass = z.id === 'zone-main' ? 'plan-zone--main' : z.id === 'zone-terrace' ? 'plan-zone--terrace' : z.id === 'zone-vip' ? 'plan-zone--vip' : 'plan-zone--custom';
       const themeClass = `plan-zone--${z.color || 'blue'}`;
-      const zoneTables = currentFloorTables.filter((t) => normalizeZone(t.zone) === z.name);
-      const lM = z.lengthM || 10; const wM = z.widthM || 3;
-      const areaM = z.areaSqM || Math.round(lM * wM * 10) / 10;
+      const zoneTables = currentFloorTables.filter((t) => normalizeTableZoneValue(t.zone, normalizeZone) === normalizeZone(z.name));
+      const isSharedE = currentFloorZones.some((o) => o.id !== z.id && Math.abs(o.x - (z.x + z.w)) <= 3.5 && Math.max(z.y, o.y) < Math.min(z.y + z.h, o.y + o.h));
+      const isSharedW = currentFloorZones.some((o) => o.id !== z.id && Math.abs((o.x + o.w) - z.x) <= 3.5 && Math.max(z.y, o.y) < Math.min(z.y + z.h, o.y + o.h));
+      const isSharedS = currentFloorZones.some((o) => o.id !== z.id && Math.abs(o.y - (z.y + z.h)) <= 3.5 && Math.max(z.x, o.x) < Math.min(z.x + z.w, o.x + o.w));
+      const isSharedN = currentFloorZones.some((o) => o.id !== z.id && Math.abs((o.y + o.h) - z.y) <= 3.5 && Math.max(z.x, o.x) < Math.min(z.x + z.w, o.x + o.w));
+      const styleAttr = `left:${z.x}%; top:${z.y}%; width:${z.w}%; height:${z.h}%;`;
 
-      const isSharedE = floorZones.some((o) => o.id !== z.id && Math.abs(o.x - (z.x + z.w)) <= 3.5 && Math.max(z.y, o.y) < Math.min(z.y + z.h, o.y + o.h));
-      const isSharedW = floorZones.some((o) => o.id !== z.id && Math.abs((o.x + o.w) - z.x) <= 3.5 && Math.max(z.y, o.y) < Math.min(z.y + z.h, o.y + o.h));
-      const isSharedS = floorZones.some((o) => o.id !== z.id && Math.abs(o.y - (z.y + z.h)) <= 3.5 && Math.max(z.x, o.x) < Math.min(z.x + z.w, o.x + o.w));
-      const isSharedN = floorZones.some((o) => o.id !== z.id && Math.abs((o.y + o.h) - z.y) <= 3.5 && Math.max(z.x, o.x) < Math.min(z.x + z.w, o.x + o.w));
-      const palettePlacementClass = z.y < 7 ? (z.y + z.h > 85 ? 'is-inside-top' : 'is-flipped-down') : '';
-      const styleAttr = isFullView ? '' : `left:${z.x}%; top:${z.y}%; width:${z.w}%; height:${z.h}%;`;
-
-      const architecturePalette = (isEditMode && studioMode === 'architecture' && !isFullView && selectedZoneId === z.id) ? `
-        <div class="zone-floating-palette ${palettePlacementClass}" data-zone-id="${esc(z.id)}">
-          <span class="zone-floating-palette__title">${esc(z.icon || '🏷️')} ${esc(z.name)} (📐 ${fmtNum(lM)}×${fmtNum(wM)}م)</span>
-          <button type="button" data-zone-action="dimensions" data-zone-id="${esc(z.id)}" title="تنظیم متراژ و ابعاد">📏 متراژ</button>
-          <button type="button" data-zone-action="rename" data-zone-id="${esc(z.id)}" title="تغییر نام فضا">✏️ نام</button>
-          <button type="button" data-zone-action="color" data-zone-id="${esc(z.id)}" title="تغییر رنگ فضا">🎨 رنگ</button>
-          <button type="button" data-zone-action="split" data-zone-id="${esc(z.id)}" title="تقسیم فضا به دو بخش">⊞ تقسیم</button>
-          <button type="button" class="is-delete" data-zone-action="delete" data-zone-id="${esc(z.id)}" title="حذف کامل این فضا">🗑️ حذف فضا</button>
-          <button type="button" data-zone-action="close" data-zone-id="${esc(z.id)}" title="بستن">✕</button>
-        </div>` : '';
-
-      const borderDelete = (isEditMode && studioMode === 'architecture' && !isFullView) ? `
-        <button type="button" class="plan-zone__border-delete" data-zone-action="delete" data-zone-id="${esc(z.id)}" title="حذف این فضا (${esc(z.name)})">
-          <span style="font-size:12px">🗑️</span>
-          <span>حذف فضا</span>
-        </button>` : '';
-
-      const headerContent = isFullView ? `
-        <div class="floor-fullzone-banner">
-          <div class="floor-fullzone-banner__info">
-            <span class="floor-fullzone-banner__tag">${esc(z.icon || '🏷️')} فضای اختصاصی بخش «${esc(z.name)}»</span>
-            <span class="floor-fullzone-banner__dims">📐 ابعاد: <b>${fmtNum(lM)}</b> متر طول × <b>${fmtNum(wM)}</b> متر عرض · مساحت: <b>${fmtNum(areaM)}</b> مترمربع · فرم: <b>${shapeLabel(z.shape)}</b></span>
-          </div>
-          <div class="floor-fullzone-banner__actions">
-            <button type="button" class="plan-zone__act-btn" data-zone-action="dimensions" data-zone-id="${esc(z.id)}">📏 تنظیم ابعاد و متراژ</button>
-            <button type="button" class="plan-zone__act-btn" data-zone-action="rename" data-zone-id="${esc(z.id)}">✏️ تغییر نام</button>
-            <button type="button" class="plan-zone__act-btn" data-zone-action="color" data-zone-id="${esc(z.id)}">🎨 تغییر رنگ</button>
-            <button type="button" class="plan-zone__act-btn is-delete" data-zone-action="delete" data-zone-id="${esc(z.id)}">🗑️ حذف این بخش</button>
-          </div>
-        </div>` : `
+      const headerContent = `
         <div class="plan-zone__header">
           <div class="plan-zone__tag-group">
             <span class="plan-zone__tag">${esc(z.icon || '🏷️')} ${esc(z.name)}</span>
             <span class="plan-zone__count-badge">${fmtNum(zoneTables.length)} میز</span>
-            <span class="plan-zone__count-badge" style="color:#94a3b8;background:rgba(255,255,255,0.06);border-color:rgba(255,255,255,0.1)">📐 ${fmtNum(lM)}×${fmtNum(wM)}م (${fmtNum(areaM)}م²)</span>
           </div>
-          ${(isEditMode && studioMode === 'architecture') ? `
+          ${(isEditMode && studioMode === 'architecture' && selectedZoneId === z.id) ? `
             <div class="plan-zone__actions">
-              <button type="button" class="plan-zone__act-btn" data-zone-action="dimensions" data-zone-id="${esc(z.id)}" title="تنظیم متراژ">📏</button>
-              <button type="button" class="plan-zone__act-btn" data-zone-action="rename" data-zone-id="${esc(z.id)}" title="تغییر نام">✏️</button>
-              <button type="button" class="plan-zone__act-btn" data-zone-action="color" data-zone-id="${esc(z.id)}" title="تغییر رنگ">🎨</button>
-              <button type="button" class="plan-zone__act-btn" data-zone-action="split" data-zone-id="${esc(z.id)}" title="تقسیم">⊞</button>
-              <button type="button" class="plan-zone__act-btn is-delete" data-zone-action="delete" data-zone-id="${esc(z.id)}" title="حذف بخش">🗑️ حذف فضا</button>
+              <button type="button" class="plan-zone__act-btn" data-zone-action="dimensions" data-zone-id="${esc(z.id)}" title="تنظیم ابعاد و متراژ">ابعاد</button>
+              <button type="button" class="plan-zone__act-btn" data-zone-action="rename" data-zone-id="${esc(z.id)}" title="تغییر نام بخش">نام</button>
+              <button type="button" class="plan-zone__act-btn" data-zone-action="color" data-zone-id="${esc(z.id)}" title="تغییر رنگ بخش">رنگ</button>
+              <button type="button" class="plan-zone__act-btn" data-zone-action="split" data-zone-id="${esc(z.id)}" title="تقسیم بخش">تقسیم</button>
+              <button type="button" class="plan-zone__act-btn is-delete" data-zone-action="delete" data-zone-id="${esc(z.id)}" title="حذف بخش">حذف</button>
             </div>` : ''}
         </div>`;
 
-      const handles = (isEditMode && studioMode === 'architecture' && !isFullView) ? `
+      const handles = isEditMode ? `
         <div class="zone-handle zone-handle--n ${isSharedN ? 'is-shared' : ''}" data-handle="n" data-zone-id="${esc(z.id)}"></div>
         <div class="zone-handle zone-handle--s ${isSharedS ? 'is-shared' : ''}" data-handle="s" data-zone-id="${esc(z.id)}"></div>
         <div class="zone-handle zone-handle--e ${isSharedE ? 'is-shared' : ''}" data-handle="e" data-zone-id="${esc(z.id)}"></div>
@@ -1402,12 +2296,10 @@ function createFloorStudio(opts) {
         <div class="zone-handle zone-handle--sw" data-handle="sw" data-zone-id="${esc(z.id)}"></div>` : '';
 
       return `
-        <div class="plan-zone plan-zone--interactive ${legacyClass} ${themeClass} ${isFullView ? 'is-full-view' : ''} ${selectedZoneId === z.id ? 'is-selected' : ''} ${isSharedE ? 'has-shared-e' : ''} ${isSharedW ? 'has-shared-w' : ''} ${isSharedS ? 'has-shared-s' : ''} ${isSharedN ? 'has-shared-n' : ''}"
+        <div class="plan-zone plan-zone--interactive ${legacyClass} ${themeClass} is-zone-focused ${selectedZoneId === z.id ? 'is-selected' : ''} ${isSharedE ? 'has-shared-e' : ''} ${isSharedW ? 'has-shared-w' : ''} ${isSharedS ? 'has-shared-s' : ''} ${isSharedN ? 'has-shared-n' : ''}"
              data-zone-id="${esc(z.id)}"
              data-zone-name="${esc(z.name)}"
-             style="${styleAttr}">
-          ${architecturePalette}
-          ${borderDelete}
+             style="${styleAttr}touch-action:${isEditMode && studioMode === 'architecture' ? 'none' : 'auto'};">
           ${headerContent}
           ${handles}
         </div>`;
@@ -1421,7 +2313,7 @@ function createFloorStudio(opts) {
       const stateLabel = inspectorTable.stateLabel || (inspectorTable.active === false ? 'غیرفعال' : 'آزاد');
       const isBusy = stateClass === 'busy';
       const isAttn = stateClass === 'attention';
-      const timerStr = inspectorTable.serviceEndsAt ? floorCountdownLabel(inspectorTable.serviceEndsAt) : null;
+      const timerStr = isBusy && inspectorTable.serviceEndsAt ? floorCountdownLabel(inspectorTable.serviceEndsAt) : null;
       inspectorHtml = `
         <div class="floor-table-inspector" id="floor-inspector-card">
           <div class="floor-table-inspector__head">
@@ -1432,7 +2324,7 @@ function createFloorStudio(opts) {
             <button type="button" class="floor-table-inspector__close" id="floor-inspector-close" title="بستن">✕</button>
           </div>
           <div class="floor-table-inspector__body">
-            <div class="floor-table-inspector__row"><span>بخش سالن:</span><strong>${esc(normalizeZone(inspectorTable.zone))}</strong></div>
+            <div class="floor-table-inspector__row"><span>بخش سالن:</span><strong>${esc(normalizeTableZoneValue(inspectorTable.zone, normalizeZone))}</strong></div>
             <div class="floor-table-inspector__row"><span>ظرفیت پذیرایی:</span><strong>${fmtNum(inspectorTable.seats || 4)} نفر</strong></div>
             <div class="floor-table-inspector__row"><span>وضعیت سفارش:</span><strong>${isBusy ? (inspectorTable.serviceOrderId ? `سفارش #${inspectorTable.serviceOrderId}` : 'مشغول سرویس') : isAttn ? '⚠️ فراخوان گارسون' : 'آزاد برای پذیرش'}</strong></div>
             ${timerStr ? `<div class="floor-table-inspector__row"><span>زمان سرویس باقیمانده:</span><strong dir="ltr" style="color:#38bdf8">${timerStr}</strong></div>` : ''}
@@ -1441,10 +2333,52 @@ function createFloorStudio(opts) {
             ${isAttn ? `<button type="button" class="floor-table-inspector__btn floor-table-inspector__btn--resolve" id="floor-inspector-resolve">✓ ثبت رسیدگی و بستن فراخوان</button>` : ''}
             <a class="floor-table-inspector__btn" href="${esc(qrAssetUrl(inspectorTable, { download: true }))}" download="westo-table-${inspectorTable.id}.png">🔲 دانلود رمزینه QR</a>
             <a class="floor-table-inspector__btn" href="${esc(tableDestination(inspectorTable))}" target="_blank" rel="noopener">📱 مشاهده منوی دیجیتال این میز</a>
-            <button type="button" class="floor-table-inspector__btn" id="floor-inspector-switch-edit">📐 ویرایش و تنظیم مکان این میز</button>
+            ${currentFloorConfigured ? '<button type="button" class="floor-table-inspector__btn" id="floor-inspector-switch-edit">ویرایش چیدمان این میز</button>' : '<p class="floor-inspector-note">این میز هنوز به طبقه‌ای وصل نیست. برای ویرایش مکان، ابتدا طبقهٔ آن را در تنظیمات چیدمان تعیین کنید.</p>'}
           </div>
         </div>`;
     }
+
+    const mobileEditorTable = (isEditMode && selectedTableId) ? tableById(selectedTableId) : null;
+    const mobileEditorHtml = mobileEditorTable ? `
+      <section class="floor-mobile-table-editor" id="floor-mobile-table-editor" data-table-id="${esc(mobileEditorTable.id)}" aria-label="ویرایش ${esc(tableTitle(mobileEditorTable))}">
+        <div class="floor-mobile-table-editor__head">
+          <div>
+            <small>ویرایش سریع میز</small>
+            <strong>${esc(tableTitle(mobileEditorTable))}</strong>
+          </div>
+          <button type="button" data-mobile-table-action="close" aria-label="بستن ویرایش میز">✕</button>
+        </div>
+        <div class="floor-mobile-table-editor__grid">
+          <div class="floor-mobile-table-editor__stepper" aria-label="تعداد صندلی">
+            <button type="button" data-mobile-table-action="dec-seats" aria-label="کاهش صندلی">−</button>
+            <span><b>${fmtNum(mobileEditorTable.seats || 4)}</b> صندلی</span>
+            <button type="button" data-mobile-table-action="inc-seats" aria-label="افزایش صندلی">＋</button>
+          </div>
+          <div class="floor-mobile-table-editor__stepper" aria-label="عرض میز">
+            <button type="button" data-mobile-table-action="dec-width" aria-label="کم کردن عرض">−</button>
+            <span><b>${(Number(mobileEditorTable.scaleX ?? mobileEditorTable.scale) || 1).toFixed(1)}×</b> عرض</span>
+            <button type="button" data-mobile-table-action="inc-width" aria-label="زیاد کردن عرض">＋</button>
+          </div>
+          <div class="floor-mobile-table-editor__stepper" aria-label="طول میز">
+            <button type="button" data-mobile-table-action="dec-length" aria-label="کم کردن طول">−</button>
+            <span><b>${(Number(mobileEditorTable.scaleY ?? mobileEditorTable.scale) || 1).toFixed(1)}×</b> طول</span>
+            <button type="button" data-mobile-table-action="inc-length" aria-label="زیاد کردن طول">＋</button>
+          </div>
+          <button type="button" class="floor-mobile-table-editor__action" data-mobile-table-action="furniture-modal">${shapeIcon(mobileEditorTable.shape)} انتخاب میز و صندلی</button>
+          <button type="button" class="floor-mobile-table-editor__action" data-mobile-table-action="rotate">↻ چرخش ۴۵ درجه</button>
+          <label class="floor-mobile-table-editor__zone">
+            <span>بخش سالن</span>
+            <select data-mobile-table-action="zone-select">
+              ${allZonesList.map((z) => `<option value="${esc(z)}" ${normalizeTableZoneValue(mobileEditorTable.zone, normalizeZone) === z ? 'selected' : ''}>${esc(zoneTitle(z))}</option>`).join('')}
+            </select>
+          </label>
+          <div class="floor-mobile-table-editor__history" role="group" aria-label="تاریخچه تغییرات">
+            <button type="button" data-mobile-table-action="undo" ${layoutHistory.undoCount === 0 ? 'disabled' : ''}>↩ بازگشت</button>
+            <button type="button" data-mobile-table-action="redo" ${layoutHistory.redoCount === 0 ? 'disabled' : ''}>↪ بازانجام</button>
+          </div>
+          <button type="button" class="floor-mobile-table-editor__done" data-mobile-table-action="save-exit">✓ ذخیره و پایان ویرایش</button>
+        </div>
+      </section>` : '';
 
     const batchToolbarHtml = (isEditMode && selectedTableIds.size > 1) ? `
       <div class="floor-batch-toolbar" id="admin-batch-toolbar">
@@ -1470,206 +2404,389 @@ function createFloorStudio(opts) {
         </div>
       </div>` : '';
 
-    const currentActiveZoneObj = activeZone !== 'all'
-      ? floorZones.find((z) => z.name === activeZone || normalizeZone(z.name) === normalizeZone(activeZone))
-      : null;
+    const currentActiveZoneObj = focusedZone;
 
     main.innerHTML = `
-      <div class="admin-floor-page ${isEditMode ? 'is-edit-mode' : 'is-live-mode'} ${isEditMode ? (studioMode === 'architecture' ? 'is-architecture-mode' : 'is-furniture-mode') : 'is-live-mode'}">
-        <!-- ═══ 1. Studio Application Header / Global Action Bar ═══ -->
-        <header class="admin-qr-page__head floor-studio-head">
-          <div class="floor-head-primary">
-            <div class="admin-qr-page__titles">
-              <span class="admin-qr-kicker">🏛️ مرکز معماری و چیدمان سالن وستو</span>
-              <h1 style="margin:2px 0 6px">استودیوی نقشه و چیدمان سالن</h1>
+      <div class="admin-floor-page floor-simple floor-studio-v2 ${isEditMode ? 'is-edit-mode' : 'is-live-mode'} ${isEditMode ? (studioMode === 'architecture' ? 'is-architecture-mode' : 'is-furniture-mode') : 'is-live-mode'}">
+        <!-- ═══ Top Studio Command Bar ═══ -->
+        <header class="floor-studio-header">
+          <div class="floor-studio-header__left">
+            <div class="floor-studio-branding">
+              <span class="floor-studio-badge">WESTO ARCHITECTURAL STUDIO</span>
+              <h1 class="floor-studio-title">نقشه و چیدمان سالن</h1>
             </div>
-            <!-- Multi-Floor Level Switcher embedded neatly in header -->
-            <div class="floor-levels-bar" aria-label="مدیریت و انتخاب طبقات و فضاهای رستوران">
-              <div class="floor-levels-bar__list">
-                ${floorLevels.map((fl) => `
-                  <button type="button" class="floor-level-pill ${activeFloorId === fl.id ? 'is-active' : ''}" data-floor-pill="${esc(fl.id)}">
-                    <span class="floor-level-pill__icon">${esc(fl.icon || '🏛️')}</span>
-                    <span class="floor-level-pill__name">${esc(fl.name)}</span>
-                    <span class="floor-level-pill__count">${fmtNum(tables.filter((t) => (t.floorId || 'floor-ground') === fl.id).length)} میز</span>
-                    ${floorLevels.length > 1 ? `<span class="floor-level-pill__settings" data-edit-floor-pill="${esc(fl.id)}" title="تنظیمات طبقه">⚙️</span>` : ''}
-                  </button>`).join('')}
-                <button type="button" class="floor-level-pill floor-level-pill--add" id="map-add-floor" title="تعریف طبقه یا فضای جدید رستوران">
-                  <span>＋ افزودن طبقه…</span>
-                </button>
-              </div>
+
+            <!-- Floor Levels Switcher Pills -->
+            <div class="floor-levels-pills-bar" role="tablist" aria-label="مدیریت و انتخاب طبقات">
+              ${floorLevels.map((fl) => `
+                <button type="button" class="floor-level-pill ${activeFloorId === fl.id ? 'is-active' : ''}" data-floor-pill="${esc(fl.id)}">
+                  <span class="floor-level-pill__icon">${esc(fl.icon || '🏛️')}</span>
+                  <span class="floor-level-pill__name">${esc(fl.name)}</span>
+                  <span class="floor-level-pill__count">${fmtNum(entitiesForFloor(tables, fl.id).length)}</span>
+                  ${floorLevels.length > 1 ? `<span class="floor-level-pill__settings" data-edit-floor-pill="${esc(fl.id)}" title="تنظیمات طبقه">⚙️</span>` : ''}
+                </button>`).join('')}
+              ${showUnassignedFloor ? `
+                <button type="button" class="floor-level-pill floor-level-pill--unassigned ${activeFloorId === UNASSIGNED_FLOOR_ID ? 'is-active' : ''}" data-floor-pill="${UNASSIGNED_FLOOR_ID}" aria-label="بدون طبقه">
+                  <span class="floor-level-pill__icon">⌖</span>
+                  <span class="floor-level-pill__name">بدون طبقه</span>
+                </button>` : ''}
+              ${isEditMode ? `
+                <button type="button" class="floor-level-pill floor-level-pill--add" id="map-add-floor" title="تعریف طبقه یا فضای جدید" ${isEditMode ? '' : 'disabled'}>
+                  <span>＋ افزودن طبقه</span>
+                </button>` : ''}
             </div>
           </div>
 
-          <div class="admin-qr-page__actions floor-head-actions">
-            <div class="floor-segmented" role="tablist" aria-label="انتخاب نمای کاربری">
-              <button type="button" class="floor-segmented__btn active" id="view-mode-map">📐 نقشه سالن</button>
-              <button type="button" class="floor-segmented__btn" id="view-mode-cards">🔲 رمزینه‌ها و لیست</button>
+          <!-- Live Telemetry Status Strip -->
+          <div class="floor-studio-telemetry">
+            <div class="floor-stat-chip floor-stat-chip--avail" title="میزهای آزاد و آماده پذیرش">
+              <span class="floor-stat-dot"></span>
+              <span class="floor-stat-label">آزاد:</span>
+              <strong>${fmtNum(freeCount)}</strong>
             </div>
-            <div class="floor-head-utility-btns">
-              <button type="button" class="btn btn-sm btn-ghost" id="map-templates-btn" title="الگوها و چیدمان‌های آماده رستوران">📋 قالب‌های آماده</button>
-              <button type="button" class="btn btn-sm btn-ghost" id="map-floor-settings" title="ابعاد مهندسی، متراژ و تنظیمات نقشه">⚙️ تنظیمات پلان</button>
-              <button type="button" class="btn btn-sm btn-ghost" id="map-export-json" title="دریافت فایل پشتیبان چیدمان (JSON)">💾 پشتیبان</button>
-              <button type="button" class="btn btn-sm btn-ghost" id="map-import-json" title="درون‌ریزی فایل چیدمان (JSON)">📂 بازیابی</button>
+            <div class="floor-stat-chip floor-stat-chip--busy" title="میزهای مشغول سرویس">
+              <span class="floor-stat-dot"></span>
+              <span class="floor-stat-label">سرویس:</span>
+              <strong>${fmtNum(busyCount)}</strong>
             </div>
-            <div class="floor-save-status" id="map-save-status"><span>✓ چیدمان ذخیره است</span></div>
-            <button class="btn btn-sm btn-primary" id="map-save-layout" type="button">✓ ذخیره چیدمان نقشه</button>
+            ${attnCount > 0 ? `
+            <div class="floor-stat-chip floor-stat-chip--attn" title="میزهای دارای فراخوان گارسون">
+              <span class="floor-stat-dot"></span>
+              <span class="floor-stat-label">فراخوان:</span>
+              <strong>${fmtNum(attnCount)}</strong>
+            </div>` : ''}
+          </div>
+
+          <!-- Top Actions -->
+          <div class="floor-studio-header__actions">
+            <button type="button" class="floor-sidebar-toggle" id="floor-sidebar-toggle" aria-controls="floor-studio-sidebar" aria-expanded="${!isSidebarCollapsed}" aria-label="${isSidebarCollapsed ? 'بازکردن پنل فضاها و میزها' : 'جمع‌کردن پنل فضاها و میزها'}" title="${isSidebarCollapsed ? 'بازکردن پنل فضاها و میزها' : 'جمع‌کردن پنل فضاها و میزها'}">
+              <span aria-hidden="true">${isSidebarCollapsed ? '▤' : '▥'}</span><span>${isSidebarCollapsed ? 'نمایش پنل' : 'جمع‌کردن پنل'}</span>
+            </button>
+            <span class="floor-save-status ${isLayoutDirty ? 'is-dirty' : ''}" id="map-save-status">${isLayoutDirty ? '● تغییرات ذخیره‌نشده' : '✓ چیدمان ذخیره است'}</span>
+            <button type="button" class="floor-edit-toggle ${isEditMode ? 'is-editing' : ''}" id="map-toggle-edit">${isEditMode ? '✓ پایان و خروج' : '✏️ ویرایش چیدمان'}</button>
+            <button class="btn btn-sm btn-primary" id="map-save-layout" type="button" ${isEditMode && isLayoutDirty ? '' : 'disabled'}>💾 ذخیره اکنون</button>
           </div>
         </header>
 
-        <!-- ═══ 2. Compact Live Ops Strip (High-Density Telemetry Ticker) ═══ -->
-        <div class="ops-metrics" aria-label="وضعیت زنده سالن">
-          <span class="ops-metric-title">📊 آمار زنده این طبقه:</span>
-          <article class="ops-metric"><strong>${fmtNum(currentFloorTables.length)}</strong><span>میز تعریف‌شده</span></article>
-          <article class="ops-metric is-accent"><strong>${fmtNum(busyCount)}</strong><span>در حال سرویس</span></article>
-          <article class="ops-metric"><strong>${fmtNum(floorData?.summary?.reservations || 0)}</strong><span>رزرو امروز</span></article>
-          <article class="ops-metric ${attnCount ? 'is-warn' : ''}"><strong>${fmtNum(attnCount)}</strong><span>فراخوان گارسون</span></article>
-          <article class="ops-metric"><strong>${fmtNum(totalSeats)}</strong><span>ظرفیت پذیرایی (${fmtNum(totalSeats)} نفر)</span></article>
-        </div>
-
-        <!-- ═══ 3. Professional CAD Unified Tool Ribbon (ALL TOOLS IN ONE ROW) ═══ -->
-        <div class="floor-toolbar" role="toolbar" aria-label="نوار ابزار حرفه‌ای طراحی و ویرایش سالن">
-          <!-- Group A: Edit Mode Toggle & Sub-mode Switcher -->
-          <div class="floor-toolbar__group">
-            <button type="button" class="floor-edit-toggle ${isEditMode ? 'is-editing' : ''}" id="map-toggle-edit" title="فعال یا غیرفعال کردن حالت ویرایش چیدمان">
-              <span>${isEditMode ? '✏️ حالت ویرایش فعال' : '🔒 قفل (حالت نمایش)'}</span>
-            </button>
-            <div class="floor-studio-mode-switcher" id="map-studio-mode-switcher" style="${isEditMode ? '' : 'display:none;'}">
-              <button type="button" class="floor-studio-mode-btn ${studioMode === 'furniture' ? 'is-active' : ''}" id="map-mode-furniture" title="حالت چیدمان میزها و صندلی‌ها">
-                <span>🛋️ مبلمان</span>
-              </button>
-              <button type="button" class="floor-studio-mode-btn ${studioMode === 'architecture' ? 'is-active' : ''}" id="map-mode-architecture" title="حالت معماری و تفکیک فضاها">
-                <span>📐 فضاها</span>
-              </button>
-            </div>
+        ${isEditMode ? `
+        <div class="floor-studio-dock" role="toolbar" aria-label="ابزارهای طراحی سالن">
+          <div class="dock-segment">
+            <button type="button" class="dock-btn ${studioMode === 'furniture' ? 'is-active' : ''}" id="map-mode-furniture" aria-pressed="${studioMode === 'furniture'}" title="حالت چیدمان میزها و مبلمان">🪑 میزها</button>
+            <button type="button" class="dock-btn ${studioMode === 'architecture' ? 'is-active' : ''}" id="map-mode-architecture" aria-pressed="${studioMode === 'architecture'}" title="حالت معماری و تفکیک فضاها">📐 فضاها</button>
           </div>
-
-          <div class="floor-toolbar__divider"></div>
-
-          <!-- Group B: Element Creation & Insertion Palette (Insert) -->
-          <div class="floor-toolbar__group">
-            <button class="floor-tool-btn floor-tool-btn--primary" id="map-add-table" type="button" title="افزودن میز پذیرایی جدید به سالن">
-              <span>＋ 🪑 میز جدید</span>
-            </button>
-            <button class="floor-tool-btn" id="map-add-fixture" type="button" title="افزودن سازه معماری، پیشخوان، بار، آشپزخانه، پله یا سرویس">
-              <span>＋ 🏛️ سازه معماری</span>
-            </button>
-            <button class="floor-tool-btn ${isDrawingZone ? 'is-active' : ''}" id="map-draw-zone" type="button" title="ترسیم محدوده بخش جدید با ماوس روی نقشه">
-              <span>＋ 📐 ترسیم بخش</span>
-            </button>
+          <div class="dock-divider"></div>
+          <div class="dock-segment">
+            <button class="dock-btn dock-btn--accent" id="map-add-table" type="button" title="افزودن میز جدید به سالن" ${canEditCurrentFloor ? '' : 'disabled'}>＋ میز</button>
+            <button class="dock-btn" id="map-add-fixture" type="button" title="افزودن سازه معماری (پیشخوان، بار، پله، ستون)" ${canEditCurrentFloor ? '' : 'disabled'}>🏛️ سازه</button>
+            <button class="dock-btn ${isDrawingZone ? 'is-active' : ''}" id="map-draw-zone" type="button" title="ترسیم محدوده فضا با ماوس روی نقشه" ${canEditCurrentFloor ? '' : 'disabled'}>✏️ ترسیم فضا</button>
           </div>
-
-          <div class="floor-toolbar__divider"></div>
-
-          <!-- Group C: Precision Snapping & CAD Alignment -->
-          <div class="floor-toolbar__group">
-            <button class="floor-tool-btn" id="map-auto-align" type="button" title="مرتب‌سازی خودکار میزها در هر بخش">
-              <span>↺ تراز خودکار</span>
-            </button>
-            <div class="floor-snapping-ctrl" style="display:inline-flex;align-items:center;gap:3px">
-              <span class="floor-toolbar__label" title="تنظیم دقت پرش به شبکه (Grid Snapping)">🧲 شبکه:</span>
+          <div class="dock-divider"></div>
+          <div class="dock-segment">
+            <button class="dock-btn" id="map-auto-align" type="button" title="مرتب‌سازی خودکار میزها" ${canEditCurrentFloor ? '' : 'disabled'}>↺ تراز خودکار</button>
+            <div class="floor-snapping-ctrl" title="تنظیم دقت پرش به شبکه">
+              <span class="snap-label">🧲 شبکه:</span>
               <button type="button" class="floor-snap-pill ${snapGridStep === 0.5 ? 'is-active' : ''}" data-snap-val="0.5">آزاد</button>
               <button type="button" class="floor-snap-pill ${snapGridStep === 2 ? 'is-active' : ''}" data-snap-val="2">۲٪</button>
               <button type="button" class="floor-snap-pill ${snapGridStep === 5 ? 'is-active' : ''}" data-snap-val="5">۵٪</button>
             </div>
           </div>
-
-          <div class="floor-toolbar__divider"></div>
-
-          <!-- Group D: History (Undo / Redo) -->
-          <div class="floor-toolbar__group floor-history-buttons">
-            <button type="button" class="floor-tool-btn" id="map-history-undo" title="بازگشت تغییر قبلی (Ctrl+Z)" ${layoutHistory.length === 0 ? 'disabled' : ''}>↩</button>
-            <button type="button" class="floor-tool-btn" id="map-history-redo" title="بازانجام تغییر (Ctrl+Y)" ${layoutRedoHistory.length === 0 ? 'disabled' : ''}>↪</button>
+          <div class="dock-divider"></div>
+          <div class="dock-segment">
+            <button type="button" class="dock-btn" id="map-history-undo" aria-label="بازگشت تغییر قبلی" title="بازگشت تغییر قبلی (Ctrl+Z)" ${layoutHistory.undoCount === 0 ? 'disabled' : ''}>↩ بازگشت</button>
+            <button type="button" class="dock-btn" id="map-history-redo" aria-label="بازانجام تغییر" title="بازانجام تغییر (Ctrl+Y)" ${layoutHistory.redoCount === 0 ? 'disabled' : ''}>↪ بازانجام</button>
           </div>
+          <div class="dock-divider"></div>
+          <div class="dock-segment">
+            <button type="button" class="dock-btn" id="map-floor-settings" title="تنظیمات ابعاد و مقیاس پلان" ${canEditCurrentFloor ? '' : 'disabled'}>⚙️ پلان</button>
+            <button type="button" class="dock-btn" id="map-export-json" title="پشتیبان‌گیری از چیدمان سالن">💾 پشتیبان</button>
+            <button type="button" class="dock-btn" id="map-import-json" title="بازیابی چیدمان از فایل" ${canEditCurrentFloor ? '' : 'disabled'}>📂 بازیابی</button>
+          </div>
+        </div>` : ''}
 
-          <div class="floor-toolbar__divider"></div>
+        ${firstFloorNoticeHtml}
 
-          <!-- Group E: Zone Filtering & Active Zone Management -->
-          <div class="floor-toolbar__group floor-toolbar__group--zones">
-            <span class="floor-toolbar__label">بخش:</span>
-            <div class="floor-zone-pills">
-              ${zonesList.map((z) => `
-                <button type="button" class="floor-zone-pill ${activeZone === z ? 'active' : ''}" data-zone-pill="${esc(z)}">
-                  <span>${esc(zoneTitle(z))}</span>
-                  <small>${fmtNum(z === 'all' ? currentFloorTables.length : currentFloorTables.filter((t) => normalizeZone(t.zone) === z).length)}</small>
-                  ${z !== 'all' ? `<span class="floor-zone-pill__del" data-delete-zone-pill="${esc(z)}" title="حذف بخش «${esc(z)}»" role="button">✕</span>` : ''}
-                </button>`).join('')}
-              <button type="button" class="floor-zone-pill floor-zone-pill--add" id="map-add-zone" title="تعریف بخش اختصاصی جدید">＋ بخش…</button>
+        <!-- ═══ Two-Column Studio Ecosystem (Sidebar + Canvas) ═══ -->
+        <div class="floor-studio-body ${isSidebarCollapsed ? 'is-sidebar-collapsed' : ''}">
+          <!-- Sidebar: Zones + Tables + Inspector -->
+          <aside class="floor-studio-sidebar" id="floor-studio-sidebar" aria-label="مدیریت فضاهای سالن و میزها" ${isSidebarCollapsed ? 'hidden' : ''}>
+            <!-- Zones Navigation Section -->
+            <div class="floor-sidebar-section floor-sidebar-zones">
+              <div class="floor-sidebar-header">
+                <span class="floor-sidebar-title">بخش‌های سالن (${fmtNum(allZonesList.length)})</span>
+                ${isEditMode ? `<button type="button" class="btn btn-xs btn-ghost" id="map-add-zone" ${canEditCurrentFloor ? '' : 'disabled'}>＋ فضا</button>` : ''}
+              </div>
+              <div class="floor-zone-pills-row">
+                ${zonesList.map((z) => `
+                  <button type="button" class="floor-zone-pill ${activeZone === z ? 'active' : ''}" data-zone-pill="${esc(z)}" aria-pressed="${activeZone === z}">
+                    <span>${esc(z === 'all' ? 'همه بخش‌ها' : zoneTitle(z))}</span>
+                    <span class="zone-badge-num">${fmtNum(z === 'all' ? currentFloorTables.length : currentFloorTables.filter((t) => normalizeTableZoneValue(t.zone, normalizeZone) === z).length)}</span>
+                  </button>`).join('')}
+              </div>
             </div>
-            ${currentActiveZoneObj ? `
-              <div class="floor-active-zone-strip">
-                <span class="floor-active-zone-strip__dims">📐 ${fmtNum(currentActiveZoneObj.lengthM || 10)}×${fmtNum(currentActiveZoneObj.widthM || 3)}م</span>
-                <button type="button" class="floor-active-zone-strip__btn" id="map-active-zone-dims" title="تنظیم متراژ و ابعاد معماری">📏 ابعاد</button>
-                <button type="button" class="floor-active-zone-strip__btn" id="map-active-zone-rename" title="تغییر نام این بخش">✏️ نام</button>
-                <button type="button" class="floor-active-zone-strip__btn" id="map-active-zone-color" title="تغییر رنگ این بخش">🎨 رنگ</button>
-                <button type="button" class="floor-active-zone-strip__btn floor-active-zone-strip__btn--danger" id="map-active-zone-delete" title="حذف کامل این بخش">🗑️</button>
+
+            <!-- Active Table Quick Actions & Inspector -->
+            ${inspectorHtml ? `
+              <div class="floor-sidebar-section floor-sidebar-inspector">
+                ${inspectorHtml}
               </div>` : ''}
-          </div>
-        </div>
 
-        <!-- ═══ 4. Quick Status Key Strip ═══ -->
-        <div class="floor-canvas-legend floor-canvas-legend--top" aria-label="راهنمای وضعیت میزها">
-          <strong>وضعیت میزها:</strong>
-          <span class="leg-item"><i class="leg-dot leg-dot--avail"></i> آزاد (${fmtNum(freeCount)})</span>
-          <span class="leg-item"><i class="leg-dot leg-dot--busy"></i> در سرویس (${fmtNum(busyCount)})</span>
-          <span class="leg-item"><i class="leg-dot leg-dot--attn"></i> فراخوان (${fmtNum(attnCount)})</span>
-          <span class="leg-item"><i class="leg-dot leg-dot--res"></i> رزرو</span>
-          <span class="leg-item"><i class="leg-dot" style="background:#94a3b8"></i> غیرفعال</span>
-        </div>
+            ${mobileEditorHtml ? `
+              <div class="floor-sidebar-section floor-sidebar-mobile-editor">
+                ${mobileEditorHtml}
+              </div>` : ''}
 
-        <div class="architectural-canvas-wrap ${isEditMode ? 'is-edit-mode' : ''} ${isDrawingZone ? 'is-drawing-zone' : ''} studio-mode--${isEditMode ? studioMode : 'live'} floor-theme--${floorSettings.bgTheme || 'slate-blueprint'}" id="admin-floor-canvas">
-          ${floorSettings.showRulers !== false ? `
-            <div class="floor-canvas-ruler-x" id="admin-ruler-x">${renderRulerTicksX(floorSettings.lengthM || 20)}</div>
-            <div class="floor-canvas-ruler-y" id="admin-ruler-y">${renderRulerTicksY(floorSettings.widthM || 15)}</div>` : ''}
-
-          <div class="admin-floor-canvas-scaler" id="admin-canvas-scaler" style="transform: translate(${canvasPanX}px, ${canvasPanY}px) scale(${canvasZoom}); transform-origin: center center;">
-            ${renderedZonesHtml}
-
-            <svg class="floor-canvas-connectors" style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:2">
-              ${renderSvgConnectors()}
-            </svg>
-
-            <div class="plan-fixtures-layer" id="admin-fixtures-layer">
-              ${visibleFixtures.length > 0 ? visibleFixtures.map((f) => renderFixtureItem(f)).join('') : `
-                <div class="plan-fixture plan-fixture--entrance" title="ورودی اصلی رستوران"></div>
-                <div class="plan-fixture plan-fixture--bar">☕ بار گرم و سرد</div>
-                <div class="plan-fixture plan-fixture--kitchen">🍳 تحویل غذا</div>
-                <div class="plan-fixture plan-fixture--cashier">💳 صندوق و پذیرش</div>
-                <div class="plan-fixture plan-fixture--restroom">🚻 سرویس</div>`}
+            <!-- Tables Cards List -->
+            <div class="floor-sidebar-section floor-sidebar-tables">
+              <div class="floor-sidebar-header">
+                <span class="floor-sidebar-title">میزهای ${esc(activeZone === 'all' ? 'این طبقه' : zoneTitle(activeZone))} (${fmtNum(visibleTables.length)})</span>
+                ${isEditMode ? `<button type="button" class="btn btn-xs btn-primary" id="map-add-table-sidebar" ${canEditCurrentFloor ? '' : 'disabled'}>＋ میز</button>` : ''}
+              </div>
+              <div class="floor-table-search-box">
+                <input type="text" id="map-table-search" class="floor-search-input" placeholder="🔍 جستجوی شماره یا نام میز..." value="${esc(tableSearchQuery)}" />
+                ${tableSearchQuery ? `<button type="button" class="floor-search-clear" id="map-table-search-clear" title="پاک‌کردن جستجو">✕</button>` : ''}
+              </div>
+              <div class="floor-sidebar-tables-list">
+                ${visibleTables.length ? visibleTables.map((t) => `
+                  <button type="button" class="floor-table-card-v2 ${Number(selectedTableId) === Number(t.id) ? 'is-selected' : ''}" data-mobile-select-table="${esc(t.id)}" aria-pressed="${Number(selectedTableId) === Number(t.id)}">
+                    <div class="floor-table-card-v2__main">
+                      <div class="floor-table-card-v2__head">
+                        <span class="floor-table-card-v2__title">${esc(tableTitle(t))}</span>
+                        <span class="floor-table-status-pill status--${esc(t.state || 'available')}">
+                          <span class="status-indicator-dot"></span>
+                          ${esc(t.stateLabel || (t.active === false ? 'غیرفعال' : 'آزاد'))}
+                        </span>
+                      </div>
+                      <div class="floor-table-card-v2__meta">
+                        <span>👥 ${fmtNum(t.seats || 4)} صندلی</span>
+                        <span>📍 ${esc(normalizeTableZoneValue(t.zone, normalizeZone))}</span>
+                        ${t.mergedWith?.length ? `<span class="badge-merge">🔗 ادغام ${fmtNum(t.mergedWith.length + 1)}</span>` : ''}
+                      </div>
+                    </div>
+                  </button>
+                `).join('') : '<p class="floor-table-empty">در این بخش میزی ثبت نشده است.</p>'}
+              </div>
             </div>
+          </aside>
 
-            <div class="plan-tables-layer" id="admin-tables-layer">
-              ${visibleTables.map((t) => renderPlanTableItem(t)).join('')}
+          <!-- Main Architectural Canvas Stage -->
+          <main class="floor-studio-canvas-stage">
+            <div class="floor-zone-focus-bar" aria-live="polite">
+              <label class="floor-zone-mobile-picker" for="map-zone-mobile">
+                <span>بخش نقشه</span>
+                <select id="map-zone-mobile" aria-label="انتخاب بخش روی نقشه">
+                  ${zonesList.map((zone) => `<option value="${esc(zone)}" ${activeZone === zone ? 'selected' : ''}>${esc(zone === 'all' ? 'همهٔ بخش‌ها' : zoneTitle(zone))}</option>`).join('')}
+                </select>
+              </label>
+              <div class="floor-zone-focus-bar__identity">
+                <strong>${activeZone === 'all' ? 'نقشهٔ کامل طبقه' : esc(activeZone)}</strong>
+                <span>${activeZone === 'all' ? `${fmtNum(currentFloorTables.length)} میز · ${fmtNum(currentFloorZones.length)} بخش` : `${fmtNum(canvasTables.length)} میز در این بخش`}</span>
+                ${outsideZoneCount ? `<span class="floor-zone-focus-bar__warning">${fmtNum(outsideZoneCount)} میز بیرون از محدودهٔ ترسیمی</span>` : ''}
+              </div>
+              <div class="floor-zone-focus-bar__actions">
+                <span id="map-layout-collision-warning" class="floor-zone-focus-bar__collision-warning" role="status" hidden>
+                  <span id="map-layout-collision-message"></span>
+                  <button type="button" id="map-focus-layout-collisions" hidden>ویرایش میز قرمز</button>
+                </span>
+                ${isEditMode && activeZone === 'all' && zoneMembershipChanges.length ? `<button type="button" class="floor-zone-focus-bar__button" id="map-sync-table-zones">هماهنگ‌سازی ${fmtNum(zoneMembershipChanges.length)} میز با بخش‌ها</button>` : ''}
+                ${activeZone === 'all' && !isEditMode && visibleFixtures.length ? `<button type="button" class="floor-zone-focus-bar__button" id="map-toggle-fixtures" aria-pressed="${showOverviewFixtures}">${showOverviewFixtures ? 'پنهان‌کردن سازه‌ها' : `نمایش سازه‌ها (${fmtNum(visibleFixtures.length)})`}</button>` : ''}
+                ${activeZone !== 'all' ? `<button type="button" class="floor-zone-focus-bar__button" id="map-show-all-zones">همهٔ بخش‌ها</button>` : ''}
+                ${isEditMode && currentActiveZoneObj ? `
+                  <button type="button" class="floor-zone-focus-bar__button" id="map-active-zone-rename">تغییر نام</button>
+                  <button type="button" class="floor-zone-focus-bar__button" id="map-active-zone-dims">متراژ ثبت‌شده</button>
+                  <span class="floor-zone-focus-bar__hint">برای تغییر اندازه، لبهٔ نقطه‌چین را بکشید</span>` : ''}
+              </div>
             </div>
-          </div>
+            <!-- Hidden selects to preserve legacy event listeners compatibility -->
+            <select id="map-floor-select" style="display:none;" aria-hidden="true">
+              ${floorLevels.map((floor) => `<option value="${esc(floor.id)}" ${activeFloorId === floor.id ? 'selected' : ''}>${esc(floor.name)}</option>`).join('')}
+              ${showUnassignedFloor ? `<option value="${UNASSIGNED_FLOOR_ID}" ${activeFloorId === UNASSIGNED_FLOOR_ID ? 'selected' : ''}>بدون طبقه</option>` : ''}
+            </select>
+            <select id="map-zone-select" style="display:none;" aria-hidden="true">
+              ${zonesList.map((zone) => `<option value="${esc(zone)}" ${activeZone === zone ? 'selected' : ''}>${esc(zone === 'all' ? 'همهٔ فضاها' : zoneTitle(zone))}</option>`).join('')}
+            </select>
 
-          ${batchToolbarHtml}
-          ${inspectorHtml}
+            <!-- Architectural Canvas Wrap -->
+            <div class="architectural-canvas-wrap ${isEditMode ? 'is-edit-mode' : ''} ${isDrawingZone ? 'is-drawing-zone' : ''} studio-mode--${isEditMode ? studioMode : 'live'} floor-theme--${floorSettings.bgTheme || 'slate-blueprint'}" id="admin-floor-canvas">
+              ${floorSettings.showRulers !== false ? `
+                <div class="floor-canvas-ruler-x" id="admin-ruler-x">${renderRulerTicksX(floorSettings.lengthM || 20)}</div>
+                <div class="floor-canvas-ruler-y" id="admin-ruler-y">${renderRulerTicksY(floorSettings.widthM || 15)}</div>` : ''}
 
-          <div class="floor-canvas-controls">
-            <button type="button" id="map-zoom-out" title="کوچک‌نمایی">－</button>
-            <span class="zoom-indicator" id="map-zoom-label">${Math.round(canvasZoom * 100)}٪</span>
-            <button type="button" id="map-zoom-in" title="بزرگ‌نمایی">＋</button>
-            <button type="button" id="map-zoom-reset" title="اندازه پیش‌فرض (۱۰۰٪)">۱۰۰٪</button>
-          </div>
-        </div>
+              <div class="admin-floor-canvas-scaler" id="admin-canvas-scaler" style="transform: translate(${canvasPanX}px, ${canvasPanY}px) scale(${canvasZoom}); transform-origin: center center;">
+                ${renderedZonesHtml}
 
-        <div class="floor-legend">
-          <div><strong>راهنمای استودیوی معماری و نقشه سالن وستو:</strong>
-          با Drag & Drop میزها و سازه‌های معماری را جابجا کنید. با انتخاب هر میز می‌توانید فرم هندسی آن را به ۷ حالت تغییر دهید، میزها را ادغام یا تفکیک کنید، تعداد صندلی را تغییر دهید، بین طبقات جابجا نمایید یا تکثیر کنید. همچنین با درگ ماوس روی پس‌زمینه نقشه، چند میز را انتخاب کرده و از نوار هم‌ترازی CAD استفاده کنید.</div>
+                <svg class="floor-canvas-connectors" style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:2">
+                  ${renderSvgConnectors(canvasTables)}
+                </svg>
+
+                <div class="plan-fixtures-layer" id="admin-fixtures-layer">
+                  ${canvasFixtures.map((f) => renderFixtureItem(f)).join('')}
+                </div>
+
+                <div class="plan-tables-layer" id="admin-tables-layer">
+                  ${canvasTables.map((t) => renderPlanTableItem(t)).join('')}
+                </div>
+                ${activeZone === 'all' && currentFloorTables.length === 0 && currentFloorZones.length === 0 && visibleFixtures.length === 0 ? `
+                  <div class="floor-studio-empty-state" role="status" style="position:absolute;inset:20% 12%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;text-align:center;pointer-events:auto;color:#cbd5e1">
+                    <strong style="font-size:18px">برای این طبقه هنوز چیدمانی ثبت نشده است</strong>
+                    <span>${currentFloorConfigured ? 'میزها و صندلی‌ها از دادهٔ واقعی شعبه اضافه می‌شوند.' : 'پس از تعریف طبقه، چیدمان را به‌صورت دستی یا با الگوی اختیاری بسازید.'}</span>
+                    ${canUseStarterTemplate && isEditMode ? `<button type="button" class="btn btn-sm btn-ghost" id="map-use-starter-template">انتخاب الگوی شروع (اختیاری)</button>` : ''}
+                  </div>` : ''}
+                ${activeZone !== 'all' && !focusedZone && canvasTables.length === 0 ? `
+                  <div class="floor-zone-canvas-empty" role="status">در این بخش هنوز نقشه یا میزی ثبت نشده است. برای ساخت بخش، ویرایش چیدمان را روشن کنید.</div>` : ''}
+              </div>
+
+              ${batchToolbarHtml}
+
+              <!-- Floating Zoom Controls -->
+              <div class="floor-canvas-controls">
+                <button type="button" id="map-zoom-out" title="کوچک‌نمایی">－</button>
+                <span class="zoom-indicator" id="map-zoom-label">${Math.round(canvasZoom * 100)}٪</span>
+                <button type="button" id="map-zoom-in" title="بزرگ‌نمایی">＋</button>
+                <button type="button" id="map-zoom-reset" title="اندازه پیش‌فرض (۱۰۰٪)">۱۰۰٪</button>
+              </div>
+
+            </div>
+          </main>
         </div>
       </div>`;
 
     // بعد از render، event delegation را bind می‌کنیم
     bindMapEventDelegation();
+    document.getElementById('map-focus-layout-collisions')?.addEventListener('click', () => {
+      const ids = Array.from(document.querySelectorAll('#admin-tables-layer .plan-table.has-collision'))
+        .map((table) => Number(table.dataset.table)).filter(Boolean);
+      if (!ids.length) return;
+      activeZone = 'all';
+      isEditMode = true;
+      studioMode = 'furniture';
+      selectedZoneId = null;
+      selectedTableId = ids[0];
+      selectedTableIds.clear();
+      render();
+    });
+    requestAnimationFrame(() => {
+      const layer = document.getElementById('admin-tables-layer');
+      const result = window.WestoFloorChairLayout?.resolveCollisions(layer);
+      const warning = document.getElementById('map-layout-collision-warning');
+      if (warning && result?.tableCollisions) {
+        warning.hidden = false;
+        const message = document.getElementById('map-layout-collision-message');
+        if (message) message.textContent = `⚠️ ${fmtNum(result.tableCollisions)} برخورد بین میزها؛ میزهای قرمز را در حالت ویرایش از هم فاصله دهید.`;
+        const action = document.getElementById('map-focus-layout-collisions');
+        if (action) action.hidden = false;
+      }
+    });
+  };
+
+  const focusActiveZoneOnCanvas = () => {
+    const stage = document.getElementById('admin-floor-canvas');
+    const scaler = document.getElementById('admin-canvas-scaler');
+    if (!stage || !scaler) return;
+    if (activeZone === 'all') {
+      canvasPanX = 0; canvasPanY = 0;
+    } else {
+      const zone = entitiesForFloor(floorZones, activeFloorId)
+        .find((item) => normalizeZone(item.name) === activeZone);
+      const zoneTables = entitiesForFloor(tables, activeFloorId)
+        .filter((table) => normalizeTableZoneValue(table.zone, normalizeZone) === activeZone);
+      const pan = calculateZoneFocusPan(zone, zoneTables, stage.clientWidth, stage.clientHeight, canvasZoom);
+      canvasPanX = pan.x; canvasPanY = pan.y;
+    }
+    scaler.style.transform = `translate(${canvasPanX}px, ${canvasPanY}px) scale(${canvasZoom})`;
+  };
+
+  const chooseActiveZone = (nextZone) => {
+    if (activeZone !== nextZone) {
+      selectedTableId = null;
+      selectedFixtureId = null;
+      selectedZoneId = null;
+      selectedTableIds.clear();
+      tableSearchQuery = '';
+    }
+    activeZone = nextZone;
+    render();
+    focusActiveZoneOnCanvas();
   };
 
   // ─── Event Delegation — جایگزین bindMapEvents ────────────────────────
   // همه event ها روی یک canvas — بدون هزاران listener جداگانه
   const bindMapEventDelegation = () => {
+    // render() replaces the whole studio DOM. Abort every handler attached to
+    // the previous tree before wiring the new one, otherwise each render adds
+    // another keyboard/document listener and actions fire repeatedly.
+    _renderCtrl.abort();
+    _renderCtrl = new AbortController();
     const canvas = document.getElementById('admin-floor-canvas');
     if (!canvas) return;
 
-    const sig = signal();
+    const sig = _renderCtrl.signal;
+    document.getElementById('floor-sidebar-toggle')?.addEventListener('click', () => {
+      isSidebarCollapsed = !isSidebarCollapsed;
+      try { localStorage.setItem(SIDEBAR_PREF_KEY, isSidebarCollapsed ? '1' : '0'); } catch {}
+      const sidebar = document.getElementById('floor-studio-sidebar');
+      const toggle = document.getElementById('floor-sidebar-toggle');
+      main.querySelector('.floor-studio-body')?.classList.toggle('is-sidebar-collapsed', isSidebarCollapsed);
+      if (sidebar) sidebar.hidden = isSidebarCollapsed;
+      if (toggle) {
+        const label = isSidebarCollapsed ? 'بازکردن پنل فضاها و میزها' : 'جمع‌کردن پنل فضاها و میزها';
+        toggle.setAttribute('aria-expanded', String(!isSidebarCollapsed));
+        toggle.setAttribute('aria-label', label);
+        toggle.title = label;
+        toggle.querySelector('span[aria-hidden]')?.replaceChildren(isSidebarCollapsed ? '▤' : '▥');
+        const caption = toggle.querySelector('span:last-child');
+        if (caption) caption.textContent = isSidebarCollapsed ? 'نمایش پنل' : 'جمع‌کردن پنل';
+      }
+      focusActiveZoneOnCanvas();
+    }, { signal: sig });
+    main.querySelector('.floor-advanced-tools')?.addEventListener('toggle', (event) => {
+      advancedOpen = event.currentTarget.open;
+    }, { signal: sig });
+    // Search input
+    const searchInput = document.getElementById('map-table-search');
+    searchInput?.addEventListener('input', (e) => {
+      tableSearchQuery = e.target.value;
+      render();
+      const nextInput = document.getElementById('map-table-search');
+      if (nextInput) {
+        nextInput.focus();
+        nextInput.selectionStart = nextInput.selectionEnd = nextInput.value.length;
+      }
+    }, { signal: sig });
+    document.getElementById('map-table-search-clear')?.addEventListener('click', () => {
+      tableSearchQuery = '';
+      render();
+    }, { signal: sig });
+
+    main.querySelectorAll('[data-mobile-select-table]').forEach((button) => {
+      button.addEventListener('click', () => {
+        const tId = Number(button.dataset.mobileSelectTable);
+        selectedTableId = tId;
+        selectedZoneId = null;
+        selectedFixtureId = null;
+        render();
+        const canvasTable = document.querySelector(`.plan-table[data-table="${tId}"]`);
+        if (canvasTable) {
+          canvasTable.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
+        }
+      }, { signal: sig });
+    });
+    main.addEventListener('click', (event) => {
+      const actionButton = event.target.closest('[data-floor-conflict-action]');
+      if (!actionButton) return;
+      if (actionButton.dataset.floorConflictAction === 'export') {
+        exportLayoutJson();
+        return;
+      }
+      if (actionButton.dataset.floorConflictAction === 'reload') {
+        showFloorModal({
+          title: 'بارگیری آخرین نسخهٔ نقشه؟',
+          confirmText: 'بارگیری نسخهٔ سرور',
+          confirmClass: 'btn-danger',
+          bodyHtml: '<p role="alert">این کار تغییرات ذخیره‌نشدهٔ همین دستگاه را کنار می‌گذارد. برای نگه‌داشتنشان، ابتدا «دانلود نسخهٔ من» را بزنید.</p>',
+          onConfirm: reloadLatestLayoutAfterConflict,
+        });
+      }
+    }, { signal: sig });
 
     // ── View mode switchers ──
     document.getElementById('view-mode-map')?.addEventListener('click', () => setViewMode('map'), { signal: sig });
@@ -1678,28 +2795,74 @@ function createFloorStudio(opts) {
     // ── Zoom controls (direct DOM — بدون render) ──
     const scaler = document.getElementById('admin-canvas-scaler');
     const zoomLabel = document.getElementById('map-zoom-label');
-    const updateZoomUi = () => {
+    const getCanvasPanLimits = () => {
+      const width = canvas?.clientWidth || 0;
+      const height = canvas?.clientHeight || 0;
+      let centerX = 0;
+      let centerY = 0;
+      if (activeZone !== 'all') {
+        const zone = entitiesForFloor(floorZones, activeFloorId)
+          .find((item) => normalizeZone(item.name) === activeZone);
+        const zoneTables = entitiesForFloor(tables, activeFloorId)
+          .filter((table) => normalizeTableZoneValue(table.zone, normalizeZone) === activeZone);
+        const focus = calculateZoneFocusPan(zone, zoneTables, width, height, canvasZoom);
+        centerX = focus.x;
+        centerY = focus.y;
+      }
+      const contentWidth = scaler?.offsetWidth || width;
+      const contentHeight = scaler?.offsetHeight || height;
+      const overflowX = Math.max(0, (contentWidth * canvasZoom - width) / 2);
+      const overflowY = Math.max(0, (contentHeight * canvasZoom - height) / 2);
+      return { minX: centerX - overflowX, maxX: centerX + overflowX, minY: centerY - overflowY, maxY: centerY + overflowY };
+    };
+    const clampCanvasPan = () => {
+      const limits = getCanvasPanLimits();
+      canvasPanX = Math.max(limits.minX, Math.min(limits.maxX, canvasPanX));
+      canvasPanY = Math.max(limits.minY, Math.min(limits.maxY, canvasPanY));
+    };
+    const updateZoomUi = (keepMapInBounds = false) => {
+      if (keepMapInBounds) clampCanvasPan();
       if (scaler) scaler.style.transform = `translate(${canvasPanX}px, ${canvasPanY}px) scale(${canvasZoom})`;
       if (zoomLabel) zoomLabel.textContent = `${Math.round(canvasZoom * 100)}٪`;
     };
-    document.getElementById('map-zoom-in')?.addEventListener('click', () => { canvasZoom = Math.min(2.0, Math.round((canvasZoom + 0.1) * 10) / 10); updateZoomUi(); }, { signal: sig });
-    document.getElementById('map-zoom-out')?.addEventListener('click', () => { canvasZoom = Math.max(0.5, Math.round((canvasZoom - 0.1) * 10) / 10); updateZoomUi(); }, { signal: sig });
-    document.getElementById('map-zoom-reset')?.addEventListener('click', () => { canvasZoom = 1.0; canvasPanX = 0; canvasPanY = 0; updateZoomUi(); }, { signal: sig });
+    document.getElementById('map-zoom-in')?.addEventListener('click', () => { canvasZoom = Math.min(2.0, Math.round((canvasZoom + 0.1) * 10) / 10); updateZoomUi(true); }, { signal: sig });
+    document.getElementById('map-zoom-out')?.addEventListener('click', () => { canvasZoom = Math.max(0.5, Math.round((canvasZoom - 0.1) * 10) / 10); updateZoomUi(true); }, { signal: sig });
+    document.getElementById('map-zoom-reset')?.addEventListener('click', () => { canvasZoom = 1.0; focusActiveZoneOnCanvas(); updateZoomUi(); }, { signal: sig });
 
-    // ── CAD Wheel Zoom (Ctrl/Cmd + Wheel یا Pinch روی تاچ‌پد) ──
+    // ── Trackpad: two-finger scroll pans; Ctrl/Cmd + wheel pinches around pointer ──
     canvas.addEventListener('wheel', (e) => {
+      const rect = canvas.getBoundingClientRect();
+      const oldZoom = canvasZoom;
       if (e.ctrlKey || e.metaKey) {
         e.preventDefault();
         const delta = e.deltaY < 0 ? 0.08 : -0.08;
-        canvasZoom = Math.max(0.4, Math.min(2.5, Math.round((canvasZoom + delta) * 100) / 100));
-        updateZoomUi();
+        canvasZoom = Math.max(0.5, Math.min(2.0, Math.round((oldZoom + delta) * 100) / 100));
+        const anchorX = e.clientX - rect.left - rect.width / 2;
+        const anchorY = e.clientY - rect.top - rect.height / 2;
+        canvasPanX = anchorX - ((anchorX - canvasPanX) / oldZoom) * canvasZoom;
+        canvasPanY = anchorY - ((anchorY - canvasPanY) / oldZoom) * canvasZoom;
+        updateZoomUi(true);
+        return;
       }
+      const deltaFactor = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? Math.max(1, canvas.clientHeight) : 1;
+      const deltaX = e.deltaX * deltaFactor;
+      const deltaY = e.deltaY * deltaFactor;
+      if (!deltaX && !deltaY) return;
+      e.preventDefault();
+      canvasPanX = Math.round(canvasPanX - deltaX);
+      canvasPanY = Math.round(canvasPanY - deltaY);
+      updateZoomUi(true);
     }, { passive: false, signal: sig });
 
     // ── CAD Pan with Spacebar or Middle Mouse Button ──
     let isSpaceDown = false;
     window.addEventListener('keydown', (e) => {
-      if (e.code === 'Space' && !['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName)) {
+      const activeElement = document.activeElement;
+      const spaceActivatesControl = ['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON', 'A'].includes(activeElement?.tagName)
+        || activeElement?.isContentEditable
+        || activeElement?.closest?.('[role="button"]');
+      if (e.code === 'Space' && !spaceActivatesControl) {
+        e.preventDefault();
         isSpaceDown = true;
         if (canvas) canvas.style.cursor = 'grab';
       }
@@ -1734,27 +2897,50 @@ function createFloorStudio(opts) {
       }
     }, { signal: sig });
 
+    canvas.addEventListener('keydown', (e) => {
+      const tableEl = e.target.closest('.plan-table[role="button"][tabindex="0"]');
+      if (!tableEl || e.target !== tableEl || (e.key !== 'Enter' && e.key !== ' ')) return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (!e.repeat) tableEl.click();
+    }, { signal: sig });
+
     // ── Canvas pointerdown — Event Delegation برای table/fixture/zone/handle ──
     canvas.addEventListener('pointerdown', (e) => {
-      // Spacebar + Pan or Middle Mouse Button (button 1) Pan
-      if (isSpaceDown || e.button === 1) {
+      const architectureBackgroundPan = isEditMode && studioMode === 'architecture' && e.button === 0 &&
+        !e.target.closest('.plan-zone--interactive, .plan-fixture, .zone-handle, .zone-floating-palette, .fixture-floating-palette, .plan-zone__actions, [data-zone-action], .floor-canvas-controls, .floor-table-inspector');
+      // Space / middle click always pans; in architecture mode, blank-canvas drag pans too.
+      if (isSpaceDown || e.button === 1 || architectureBackgroundPan) {
         e.preventDefault();
+        const initialPanX = canvasPanX;
+        const initialPanY = canvasPanY;
         const startX = e.clientX - canvasPanX;
         const startY = e.clientY - canvasPanY;
+        canvas?.classList.add('is-panning');
         if (canvas) canvas.style.cursor = 'grabbing';
 
         const onPanMove = (me) => {
+          if (!isActiveFloorPointerEvent(me, e.pointerId)) return;
           canvasPanX = Math.round(me.clientX - startX);
           canvasPanY = Math.round(me.clientY - startY);
-          updateZoomUi();
+          updateZoomUi(true);
         };
-        const onPanUp = () => {
+        const onPanUp = (upEvent) => {
+          if (!isActiveFloorPointerEvent(upEvent, e.pointerId)) return;
           window.removeEventListener('pointermove', onPanMove);
           window.removeEventListener('pointerup', onPanUp);
+          window.removeEventListener('pointercancel', onPanUp);
+          if (isCancelledFloorPointerEvent(upEvent)) {
+            canvasPanX = initialPanX;
+            canvasPanY = initialPanY;
+            updateZoomUi(true);
+          }
+          canvas?.classList.remove('is-panning');
           if (canvas) canvas.style.cursor = isSpaceDown ? 'grab' : '';
         };
         window.addEventListener('pointermove', onPanMove);
         window.addEventListener('pointerup', onPanUp);
+        window.addEventListener('pointercancel', onPanUp);
         return;
       }
 
@@ -1802,6 +2988,16 @@ function createFloorStudio(opts) {
           handleFixtureDrag(e, fixEl);
           return;
         }
+
+        const zoneEl = e.target.closest('.plan-zone--interactive');
+        if (studioMode === 'architecture' && zoneEl &&
+            !e.target.closest('.zone-floating-palette') && !e.target.closest('.plan-zone__actions') &&
+            !e.target.closest('[data-zone-action]') && !e.target.closest('.zone-handle')) {
+          e.stopPropagation();
+          e.preventDefault();
+          handleZoneDrag(e, zoneEl);
+          return;
+        }
       }
 
       // Drawing zone
@@ -1826,9 +3022,13 @@ function createFloorStudio(opts) {
       if (tableEl) {
         e.stopPropagation();
         const tableId = Number(tableEl.dataset.table);
+        const clickedTable = tableById(tableId);
+        const clickedZone = clickedTable ? normalizeTableZoneValue(clickedTable.zone, normalizeZone) : activeZone;
+        const zoneChanged = activeZone !== 'all' && clickedZone !== activeZone;
+        if (zoneChanged) activeZone = clickedZone;
         selectedZoneId = null;
         selectedFixtureId = null;
-        if (Number(selectedTableId) !== tableId) {
+        if (Number(selectedTableId) !== tableId || zoneChanged) {
           selectedTableId = tableId;
           render();
         }
@@ -1851,40 +3051,92 @@ function createFloorStudio(opts) {
         promptTableFurnitureModal(table);
       } else if (action === 'toggle-more') {
         const menu = paletteEl.querySelector('.palette-more-menu');
-        if (menu) menu.style.display = (menu.style.display === 'none' || !menu.style.display) ? 'flex' : 'none';
+        if (menu) {
+          const shouldOpen = menu.style.display === 'none' || !menu.style.display;
+          canvas.querySelectorAll('.palette-more-menu').forEach((otherMenu) => {
+            if (otherMenu === menu) return;
+            otherMenu.style.display = 'none';
+            otherMenu.removeAttribute('data-placement');
+            otherMenu.removeAttribute('data-align');
+            otherMenu.closest('.palette-more-wrapper')?.querySelector('[data-table-action="toggle-more"]')?.setAttribute('aria-expanded', 'false');
+          });
+
+          if (!shouldOpen) {
+            menu.style.display = 'none';
+            menu.removeAttribute('data-placement');
+            menu.removeAttribute('data-align');
+            btn.setAttribute('aria-expanded', 'false');
+            return;
+          }
+
+          menu.dataset.placement = 'bottom';
+          menu.dataset.align = 'right';
+          menu.style.display = 'flex';
+          btn.setAttribute('aria-expanded', 'true');
+
+          requestAnimationFrame(() => {
+            if (!menu.isConnected || menu.style.display === 'none') return;
+            const canvasRect = canvas.getBoundingClientRect();
+            const triggerRect = btn.getBoundingClientRect();
+            const menuRect = menu.getBoundingClientRect();
+            const edgeGap = 10;
+            const gap = 8;
+            const spaceAbove = Math.max(0, triggerRect.top - canvasRect.top - gap);
+            const spaceBelow = Math.max(0, canvasRect.bottom - triggerRect.bottom - gap);
+            const placement = spaceBelow >= menuRect.height || spaceBelow >= spaceAbove ? 'bottom' : 'top';
+            const spaceLeft = Math.max(0, triggerRect.right - canvasRect.left - edgeGap);
+            const spaceRight = Math.max(0, canvasRect.right - triggerRect.left - edgeGap);
+            const align = spaceLeft >= menuRect.width ? 'right'
+              : spaceRight >= menuRect.width ? 'left'
+                : spaceRight >= spaceLeft ? 'left' : 'right';
+            menu.dataset.placement = placement;
+            menu.dataset.align = align;
+          });
+        }
       } else if (action === 'rotate') {
-        table.rotation = ((Number(table.rotation) || 0) + 45) % 360;
+        pushHistory();
+        table.rotation = normalizeFloorRotation((Number(table.rotation) || 0) + 45);
         const el = canvas.querySelector(`.plan-table[data-table="${table.id}"]`);
         if (el) {
           const sc = table.scale || 1;
-          el.style.transform = `translate(-50%, -50%) rotate(${table.rotation}deg) scale(${sc})`;
+          el.style.transform = `translate(-50%, -50%) rotate(${table.rotation}deg) scale(${table.scaleX || sc}, ${table.scaleY || sc})`;
           el.style.setProperty('--table-rot', `${table.rotation}deg`);
         }
         debouncedSaveFloor();
       } else if (action === 'toggle-shape') {
+        pushHistory();
         const shapeCycle = ['rectangle', 'conference', 'semi_circle', 'wall_counter', 'circle', 'square', 'oval', 'booth', 'round_booth', 'bar_stool', 'lounge_takht'];
         const currIdx = shapeCycle.indexOf(table.shape || 'rectangle');
         table.shape = shapeCycle[(currIdx + 1) % shapeCycle.length];
         render(); debouncedSaveFloor();
       } else if (action === 'inc-seats') {
-        table.seats = Math.min(24, (Number(table.seats) || 4) + 1);
+        if ((Number(table.seats) || 4) >= 24) return;
         pushHistory();
+        table.seats = Math.min(24, (Number(table.seats) || 4) + 1);
         render(); debouncedSaveFloor();
       } else if (action === 'dec-seats') {
-        table.seats = Math.max(1, (Number(table.seats) || 4) - 1);
+        if ((Number(table.seats) || 4) <= 1) return;
         pushHistory();
+        table.seats = Math.max(1, (Number(table.seats) || 4) - 1);
         render(); debouncedSaveFloor();
       } else if (action === 'inc-scale') {
         const curScale = Number(table.scale) || 1;
-        table.scale = Math.min(3.0, Math.round((curScale + 0.1) * 10) / 10);
+        if (curScale >= 3) return;
         pushHistory();
+        table.scale = Math.min(3.0, Math.round((curScale + 0.1) * 10) / 10);
+        table.scaleX = Math.min(3, (Number(table.scaleX) || curScale) + 0.1);
+        table.scaleY = Math.min(3, (Number(table.scaleY) || curScale) + 0.1);
         render(); debouncedSaveFloor();
       } else if (action === 'dec-scale') {
         const curScale = Number(table.scale) || 1;
-        table.scale = Math.max(0.5, Math.round((curScale - 0.1) * 10) / 10);
+        if (curScale <= 0.5) return;
         pushHistory();
+        table.scale = Math.max(0.5, Math.round((curScale - 0.1) * 10) / 10);
+        table.scaleX = Math.max(0.5, (Number(table.scaleX) || curScale) - 0.1);
+        table.scaleY = Math.max(0.5, (Number(table.scaleY) || curScale) - 0.1);
         render(); debouncedSaveFloor();
       } else if (action === 'toggle-active') {
+        pushHistory();
         table.active = table.active === false ? true : false;
         render(); debouncedSaveFloor();
         showToast(`میز ${tableTitle(table)} ${table.active ? 'فعال' : 'غیرفعال'} شد.`, 'info');
@@ -1896,12 +3148,15 @@ function createFloorStudio(opts) {
       } else if (action === 'duplicate') {
         const nextId = (tables.reduce((max, t) => Math.max(max, Number(t.id) || 0), 0)) + 1;
         const copy = { ...table, id: nextId, label: `${table.label || `میز ${table.id}`} (کپی)`, x: Math.min(92, (Number(table.x) || 50) + 5), y: Math.min(92, (Number(table.y) || 50) + 5), active: true };
+        markTablePositioned(copy);
         ensureTableGeometry(copy, tables.length);
+        pushHistory();
         tables.push(copy);
         selectedTableId = copy.id;
-        await saveFloorLayout(true);
+        const saved = await saveFloorLayout(true);
         render();
-        showToast(`میز «${copy.label}» تکثیر شد.`, 'success');
+        if (saved) showToast(`میز «${copy.label}» تکثیر شد.`, 'success');
+        else showLayoutSaveFailure();
       } else if (action === 'rename') {
         promptRenameTable(table);
       } else if (action === 'delete') {
@@ -1921,7 +3176,9 @@ function createFloorStudio(opts) {
         if (!paletteEl) return;
         const table = tableById(Number(paletteEl.dataset.paletteFor));
         if (!table) return;
-        table.zone = normalizeZone(e.target.value);
+        if (normalizeTableZoneValue(table.zone, normalizeZone) === normalizeTableZoneValue(e.target.value, normalizeZone)) return;
+        pushHistory();
+          markTableZoneAssigned(table, e.target.value, normalizeZone);
         render(); debouncedSaveFloor();
       }
     }, { signal: sig });
@@ -1933,7 +3190,7 @@ function createFloorStudio(opts) {
       e.stopPropagation();
       const action = btn.dataset.zoneAction;
       const zoneId = btn.dataset.zoneId;
-      const zone = floorZones.find((z) => z.id === zoneId);
+      const zone = entitiesForFloor(floorZones, activeFloorId).find((z) => z.id === zoneId);
       if (!zone) return;
       if (action === 'rename') promptRenameZone(zone);
       else if (action === 'dimensions') promptZoneDimensions(zone);
@@ -1945,10 +3202,13 @@ function createFloorStudio(opts) {
 
     // ── Zone click (select) ──
     canvas.addEventListener('click', (e) => {
+      if (justDragged) return;
       if (e.target.closest('[data-zone-action]') || e.target.closest('.zone-handle') || e.target.closest('.plan-table') || e.target.closest('.plan-fixture')) return;
       const zoneEl = e.target.closest('.plan-zone--interactive');
       if (!zoneEl || !isEditMode) return;
       if (studioMode === 'architecture' || e.target.closest('.plan-zone__header')) {
+        const clickedZone = normalizeZone(zoneEl.dataset.zoneName);
+        if (activeZone !== 'all' && clickedZone !== activeZone) activeZone = clickedZone;
         selectedZoneId = zoneEl.dataset.zoneId;
         selectedTableId = null;
         selectedFixtureId = null;
@@ -1977,7 +3237,8 @@ function createFloorStudio(opts) {
       if (!fixture) return;
       const action = actBtn.dataset.fixtureAction;
       if (action === 'rotate') {
-        fixture.rotation = ((Number(fixture.rotation) || 0) + 45) % 360;
+        pushHistory();
+        fixture.rotation = normalizeFloorRotation((Number(fixture.rotation) || 0) + 45);
         const el = canvas.querySelector(`.plan-fixture[data-fixture-id="${fId}"]`);
         if (el) el.style.transform = `rotate(${fixture.rotation}deg)`;
         debouncedSaveFloor();
@@ -1990,19 +3251,17 @@ function createFloorStudio(opts) {
 
     // ── Zone pills ──
     main.querySelectorAll('[data-zone-pill]').forEach((pill) => {
-      pill.addEventListener('click', (e) => {
-        if (e.target.closest('[data-delete-zone-pill]')) {
-          e.stopPropagation();
-          const delName = e.target.closest('[data-delete-zone-pill]').dataset.deleteZonePill;
-          deleteZone(delName); return;
-        }
-        activeZone = pill.dataset.zonePill;
-        render();
-      }, { signal: sig });
+      pill.addEventListener('click', () => chooseActiveZone(pill.dataset.zonePill), { signal: sig });
     });
+    document.getElementById('map-show-all-zones')?.addEventListener('click', () => chooseActiveZone('all'), { signal: sig });
+    document.getElementById('map-toggle-fixtures')?.addEventListener('click', () => {
+      showOverviewFixtures = !showOverviewFixtures;
+      render();
+    }, { signal: sig });
+    document.getElementById('map-zone-mobile')?.addEventListener('change', (event) => chooseActiveZone(event.target.value), { signal: sig });
 
     // ── Active zone strip buttons ──
-    const curActiveZone = activeZone !== 'all' ? floorZones.find((z) => z.name === activeZone || normalizeZone(z.name) === normalizeZone(activeZone)) : null;
+    const curActiveZone = activeZone !== 'all' ? entitiesForFloor(floorZones, activeFloorId).find((z) => z.name === activeZone || normalizeZone(z.name) === normalizeZone(activeZone)) : null;
     if (curActiveZone) {
       document.getElementById('map-active-zone-dims')?.addEventListener('click', () => promptZoneDimensions(curActiveZone), { signal: sig });
       document.getElementById('map-active-zone-rename')?.addEventListener('click', () => promptRenameZone(curActiveZone), { signal: sig });
@@ -2011,6 +3270,20 @@ function createFloorStudio(opts) {
     }
 
     // ── Studio controls ──
+    document.getElementById('map-zone-select')?.addEventListener('change', (event) => {
+      chooseActiveZone(event.target.value);
+      document.getElementById('map-zone-select')?.focus({ preventScroll: true });
+    }, { signal: sig });
+    document.getElementById('map-floor-select')?.addEventListener('change', (event) => {
+      activeFloorId = event.target.value;
+      activeZone = 'all';
+      selectedTableId = null;
+      selectedFixtureId = null;
+      selectedZoneId = null;
+      selectedTableIds.clear();
+      render();
+      document.getElementById('map-floor-select')?.focus({ preventScroll: true });
+    }, { signal: sig });
     const floorToolbarEl = main.querySelector('.floor-toolbar');
     if (floorToolbarEl) {
       floorToolbarEl.addEventListener('wheel', (e) => {
@@ -2020,16 +3293,94 @@ function createFloorStudio(opts) {
         }
       }, { passive: false, signal: sig });
     }
-    document.getElementById('map-add-zone')?.addEventListener('click', promptAddZone, { signal: sig });
+    main.querySelectorAll('#map-add-zone, #map-add-zone-sidebar').forEach((btn) => btn.addEventListener('click', promptAddZone, { signal: sig }));
+    document.getElementById('map-use-starter-template')?.addEventListener('click', showTemplateModal, { signal: sig });
     document.getElementById('map-mode-furniture')?.addEventListener('click', () => { studioMode = 'furniture'; isEditMode = true; selectedZoneId = null; render(); showToast('حالت چیدمان مبلمان و میزها فعال شد.', 'info'); }, { signal: sig });
     document.getElementById('map-mode-architecture')?.addEventListener('click', () => { studioMode = 'architecture'; isEditMode = true; selectedTableId = null; render(); showToast('حالت معماری و تفکیک فضاها فعال شد.', 'info'); }, { signal: sig });
-    document.getElementById('map-toggle-edit')?.addEventListener('click', () => { isEditMode = !isEditMode; render(); showToast(isEditMode ? 'حالت ویرایش چیدمان فعال گردید.' : 'حالت ویرایش چیدمان ذخیره و بسته شد.', 'info'); }, { signal: sig });
-    document.getElementById('map-add-table')?.addEventListener('click', addTableToMap, { signal: sig });
-    document.getElementById('map-auto-align')?.addEventListener('click', autoAlignTables, { signal: sig });
-    document.getElementById('map-save-layout')?.addEventListener('click', () => saveFloorLayout(false), { signal: sig });
+    document.getElementById('map-toggle-edit')?.addEventListener('click', async () => {
+      isEditMode = !isEditMode;
+      if (!isEditMode) {
+        queuedSaveFloor.cancel?.();
+        isDrawingZone = false;
+        selectedTableId = null;
+        selectedFixtureId = null;
+        selectedZoneId = null;
+        selectedTableIds.clear();
+      }
+      render();
+      if (isEditMode) {
+        showToast('حالت ویرایش چیدمان فعال گردید.', 'info');
+        return;
+      }
+      if (!isLayoutDirty) {
+        showToast('حالت نمایش فعال شد؛ تغییری برای ذخیره نبود.', 'info');
+        return;
+      }
+      const saved = await saveFloorLayout(true);
+      showToast(saved ? 'تغییرات ذخیره شد و حالت نمایش فعال گردید.' : 'حالت نمایش فعال شد، اما ذخیره انجام نشد.', saved ? 'success' : 'error');
+    }, { signal: sig });
+    main.querySelectorAll('#map-add-table, #map-add-table-sidebar').forEach((btn) => btn.addEventListener('click', addTableToMap, { signal: sig }));
+    document.getElementById('map-auto-align')?.addEventListener('click', () => {
+      if (!isEditMode || !requireConfiguredFloor('تراز خودکار میزها')) return;
+      autoAlignTables();
+    }, { signal: sig });
+    document.getElementById('map-sync-table-zones')?.addEventListener('click', () => {
+      if (!isEditMode || !requireConfiguredFloor('هماهنگ‌سازی بخش میزها')) return;
+      const changes = planFloorZoneMembershipSync(
+        entitiesForFloor(tables, activeFloorId),
+        entitiesForFloor(floorZones, activeFloorId),
+        activeFloorId,
+        normalizeZone,
+      );
+      if (!changes.length) {
+        render();
+        showToast('همهٔ میزها از قبل در بخش ترسیمی خود هستند.', 'info');
+        return;
+      }
+      const tablesById = new Map(tables.map((table) => [String(table.id), table]));
+      const preview = changes.map((change) => {
+        const table = tablesById.get(String(change.tableId));
+        return `<li><strong>${esc(table ? tableTitle(table) : `میز ${change.tableId}`)}</strong>: از «${esc(change.fromZone)}» به «${esc(change.toZone)}»</li>`;
+      }).join('');
+      showFloorModal({
+        title: 'هماهنگ‌سازی میزها با بخش‌های نقشه',
+        confirmText: 'تطبیق و ذخیره',
+        bodyHtml: `<p>${fmtNum(changes.length)} میز در محدودهٔ یک بخش ترسیمی قرار دارند، اما برچسب بخششان متفاوت است.</p><p>جای میز و صندلی‌ها تغییر نمی‌کند؛ فقط بخش هر میز بر اساس مرکز میز و مرز ترسیمی اصلاح می‌شود:</p><ul class="floor-zone-sync-preview">${preview}</ul><p>پیش از اصلاح، نسخهٔ فعلی در تاریخچه ثبت می‌شود و با «بازگشت» قابل برگشت است.</p>`,
+        onConfirm: async () => {
+          const latestChanges = planFloorZoneMembershipSync(
+            entitiesForFloor(tables, activeFloorId),
+            entitiesForFloor(floorZones, activeFloorId),
+            activeFloorId,
+            normalizeZone,
+          );
+          if (!latestChanges.length) {
+            showToast('تغییری باقی نمانده؛ نقشه از قبل هماهنگ است.', 'info');
+            return true;
+          }
+          queuedSaveFloor.cancel?.();
+          pushHistory();
+          const updatedCount = applyFloorZoneMembershipSync(tables, latestChanges, normalizeZone);
+          if (!updatedCount) return false;
+          render();
+          const saved = await saveFloorLayout(true);
+          if (saved) {
+            showToast(`عضویت بخش ${fmtNum(updatedCount)} میز با مرزهای نقشه هماهنگ شد.`, 'success');
+          } else {
+            showLayoutSaveFailure();
+          }
+          return true;
+        },
+      });
+    }, { signal: sig });
+    document.getElementById('map-save-layout')?.addEventListener('click', () => {
+      if (!isEditMode || !isLayoutDirty) return;
+      queuedSaveFloor.cancel?.();
+      saveFloorLayout(false);
+    }, { signal: sig });
 
     // ── Draw zone button ──
     document.getElementById('map-draw-zone')?.addEventListener('click', () => {
+      if (!requireConfiguredFloor('ترسیم بخش')) return;
       isDrawingZone = !isDrawingZone;
       if (isDrawingZone) { isEditMode = true; studioMode = 'architecture'; }
       render();
@@ -2038,7 +3389,17 @@ function createFloorStudio(opts) {
 
     // ── Floor pills ──
     main.querySelectorAll('[data-floor-pill]').forEach((pill) => {
-      pill.addEventListener('click', () => { activeFloorId = pill.dataset.floorPill; render(); }, { signal: sig });
+      pill.addEventListener('click', () => {
+        const nextFloorId = pill.dataset.floorPill;
+        if (nextFloorId === activeFloorId) return;
+        activeFloorId = nextFloorId;
+        activeZone = 'all';
+        selectedTableId = null;
+        selectedFixtureId = null;
+        selectedZoneId = null;
+        selectedTableIds.clear();
+        render();
+      }, { signal: sig });
     });
     main.querySelectorAll('[data-edit-floor-pill]').forEach((btn) => {
       btn.addEventListener('click', (e) => {
@@ -2048,8 +3409,16 @@ function createFloorStudio(opts) {
       }, { signal: sig });
     });
     document.getElementById('map-add-floor')?.addEventListener('click', promptAddFloor, { signal: sig });
-    document.getElementById('map-floor-settings')?.addEventListener('click', promptFloorSettings, { signal: sig });
-    document.getElementById('map-templates-btn')?.addEventListener('click', showTemplateModal, { signal: sig });
+    document.getElementById('map-create-first-floor')?.addEventListener('click', () => {
+      if (floorLevels.length > 0) return;
+      isEditMode = true;
+      render();
+      promptAddFloor();
+    }, { signal: sig });
+    document.getElementById('map-floor-settings')?.addEventListener('click', () => {
+      if (!isEditMode) return;
+      promptFloorSettings();
+    }, { signal: sig });
     document.getElementById('map-export-json')?.addEventListener('click', exportLayoutJson, { signal: sig });
     document.getElementById('map-import-json')?.addEventListener('click', importLayoutJson, { signal: sig });
 
@@ -2071,16 +3440,7 @@ function createFloorStudio(opts) {
           if (act === 'batch-clear') { selectedTableIds.clear(); render(); }
           else if (act === 'batch-delete') { batchDeleteSelectedTables(); }
           else if (act === 'batch-merge') {
-            if (selectedTableIds.size >= 2) {
-              const arr = Array.from(selectedTableIds);
-              const parentTable = tableById(arr[0]);
-              if (parentTable) {
-                parentTable.mergedWith = arr.slice(1);
-                arr.slice(1).forEach((sid) => { const st = tableById(sid); if (st) st.mergedInto = arr[0]; });
-                debouncedSaveFloor(); render();
-                showToast(`${fmtNum(arr.length)} میز با موفقیت ادغام شدند.`, 'success');
-              }
-            }
+            mergeTablesGroup(selectedTableIds);
           } else if (act.startsWith('align-')) alignSelectedTables(act.replace('align-', ''));
           else if (act.startsWith('distribute-')) distributeSelectedTables(act.replace('distribute-', ''));
         }, { signal: sig });
@@ -2089,22 +3449,103 @@ function createFloorStudio(opts) {
 
     // ── Inspector drawer ──
     document.getElementById('floor-inspector-close')?.addEventListener('click', () => { selectedTableId = null; render(); }, { signal: sig });
-    document.getElementById('floor-inspector-switch-edit')?.addEventListener('click', () => { isEditMode = true; render(); showToast('حالت ویرایش چیدمان فعال گردید.', 'info'); }, { signal: sig });
+    document.getElementById('floor-inspector-switch-edit')?.addEventListener('click', () => {
+      isEditMode = true;
+      render();
+      document.querySelector('.floor-map-disclosure')?.scrollIntoView({ block: 'start' });
+      showToast('حالت ویرایش چیدمان فعال گردید.', 'info');
+    }, { signal: sig });
     document.getElementById('floor-inspector-resolve')?.addEventListener('click', async () => {
       const inspTable = tableById(selectedTableId);
       if (!inspTable) return;
       try {
         let callId = inspTable.waiterCallId;
         if (!callId) {
-          const callsData = await api(`/api/waiter/calls${branchQs()}`);
+          const callsData = await api(`/api/waiter/calls${branchQuery()}`);
           const openCalls = Array.isArray(callsData?.calls) ? callsData.calls : Array.isArray(callsData) ? callsData : [];
-          const matching = openCalls.find((c) => (c.status === 'open' || c.status === 'new') && (String(c.tableNo).includes(String(inspTable.id)) || String(c.tableNo).includes(String(inspTable.label))));
+          const matching = openCalls.find((c) => (c.status === 'open' || c.status === 'new') && isWaiterCallForTable(c, inspTable, tables));
           if (matching) callId = matching.id;
         }
-        if (callId) { await api(`/api/waiter/calls/${callId}`, { method: 'PATCH', body: JSON.stringify({ status: 'done' }) }); showToast('رسیدگی به فراخوان میز با موفقیت ثبت شد.', 'success'); }
-        else showToast('فراخوان بازی برای این میز یافت نشد.', 'info');
-        await loadFloorData(); render();
+        if (!callId) {
+          showToast('فراخوان بازی برای این میز یافت نشد.', 'info');
+          return;
+        }
+        await api(`/api/waiter/calls/${callId}`, { method: 'PATCH', body: JSON.stringify({ status: 'done' }) });
+        const refreshed = await loadFloorData();
+        render();
+        if (hasLayoutRevisionConflict) {
+          showToast('وضعیت میز به‌روز شد، اما نسخهٔ نقشه هم‌زمان تغییر کرده است؛ چیدمان محلی حفظ شد و ذخیره تا بررسی تعارض متوقف است.', 'warning');
+        } else {
+          const notice = floorRefreshNotice(refreshed);
+          showToast(notice.message, notice.type);
+        }
       } catch (err) { showToast(err.message || 'خطا در ثبت رسیدگی به فراخوان', 'error'); }
+    }, { signal: sig });
+
+    // ── Mobile table editor — outside the scaled canvas for reliable touch ──
+    const mobileEditor = document.getElementById('floor-mobile-table-editor');
+    mobileEditor?.addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-mobile-table-action]');
+      if (!btn || btn.tagName === 'SELECT') return;
+      const table = tableById(Number(mobileEditor.dataset.tableId));
+      if (!table) return;
+      const action = btn.dataset.mobileTableAction;
+
+      if (action === 'close') {
+        selectedTableId = null;
+        render();
+        return;
+      }
+      if (action === 'undo') {
+        undoLayout();
+        return;
+      }
+      if (action === 'redo') {
+        redoLayout();
+        return;
+      }
+      if (action === 'save-exit') {
+        queuedSaveFloor.cancel?.();
+        const hasChanges = isLayoutDirty;
+        isEditMode = false;
+        isDrawingZone = false;
+        selectedTableId = null;
+        selectedFixtureId = null;
+        selectedZoneId = null;
+        selectedTableIds.clear();
+        render();
+        if (!hasChanges) {
+          showToast('حالت نمایش فعال شد؛ تغییری برای ذخیره نبود.', 'info');
+          return;
+        }
+        saveFloorLayout(true).then((saved) => {
+          showToast(saved ? 'چیدمان ذخیره شد و حالت نمایش فعال گردید.' : 'ذخیره چیدمان انجام نشد.', saved ? 'success' : 'error');
+        });
+        return;
+      }
+      if (action === 'furniture-modal') {
+        promptTableFurnitureModal(table);
+        return;
+      }
+
+      const adjustment = calculateMobileTableAdjustment(table, action);
+      if (!adjustment.changed) return;
+      pushHistory();
+      table[adjustment.key] = adjustment.value;
+
+      render();
+      debouncedSaveFloor();
+    }, { signal: sig });
+
+    mobileEditor?.addEventListener('change', (e) => {
+      const select = e.target.closest('select[data-mobile-table-action="zone-select"]');
+      if (!select) return;
+      const table = tableById(Number(mobileEditor.dataset.tableId));
+      if (!table) return;
+      pushHistory();
+      markTableZoneAssigned(table, select.value, normalizeZone);
+      render();
+      debouncedSaveFloor();
     }, { signal: sig });
 
     // ── Countdown timer — بر خلاف قبل، این timer cleanup می‌شود ──
@@ -2146,6 +3587,7 @@ function createFloorStudio(opts) {
     scaleEl.appendChild(drawBox);
 
     const onMove = (ev) => {
+      if (!isActiveFloorPointerEvent(ev, e.pointerId)) return;
       if (!drawStart) return;
       const curX = ((ev.clientX - drawStart.rect.left) / drawStart.rect.width) * 100;
       const curY = ((ev.clientY - drawStart.rect.top) / drawStart.rect.height) * 100;
@@ -2161,8 +3603,14 @@ function createFloorStudio(opts) {
     };
 
     const onUp = (ev) => {
+      if (!isActiveFloorPointerEvent(ev, e.pointerId)) return;
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
+      if (isCancelledFloorPointerEvent(ev)) {
+        drawBox.remove();
+        return;
+      }
       const curX = ((ev.clientX - drawStart.rect.left) / drawStart.rect.width) * 100;
       const curY = ((ev.clientY - drawStart.rect.top) / drawStart.rect.height) * 100;
       const x = Math.round(Math.max(0, Math.min(100, Math.min(drawStart.x, curX))));
@@ -2175,6 +3623,7 @@ function createFloorStudio(opts) {
 
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onUp);
   };
 
   // ─── Marquee Selection ────────────────────────────────────────────────
@@ -2191,6 +3640,7 @@ function createFloorStudio(opts) {
     scaleEl.appendChild(marqueeBox);
 
     const onMove = (ev) => {
+      if (!isActiveFloorPointerEvent(ev, e.pointerId)) return;
       const curX = ((ev.clientX - marqueeStart.rect.left) / marqueeStart.rect.width) * 100;
       const curY = ((ev.clientY - marqueeStart.rect.top) / marqueeStart.rect.height) * 100;
       const x = Math.max(0, Math.min(100, Math.min(marqueeStart.x, curX)));
@@ -2201,8 +3651,14 @@ function createFloorStudio(opts) {
     };
 
     const onUp = (ev) => {
+      if (!isActiveFloorPointerEvent(ev, e.pointerId)) return;
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
+      if (isCancelledFloorPointerEvent(ev)) {
+        marqueeBox.remove();
+        return;
+      }
       const curX = ((ev.clientX - marqueeStart.rect.left) / marqueeStart.rect.width) * 100;
       const curY = ((ev.clientY - marqueeStart.rect.top) / marqueeStart.rect.height) * 100;
       const minX = Math.min(marqueeStart.x, curX); const maxX = Math.max(marqueeStart.x, curX);
@@ -2210,7 +3666,7 @@ function createFloorStudio(opts) {
       marqueeBox.remove();
       if (Math.abs(maxX - minX) > 2 && Math.abs(maxY - minY) > 2) {
         if (!ev.shiftKey) selectedTableIds.clear();
-        tables.filter((t) => !activeFloorId || t.floorId === activeFloorId).forEach((t) => {
+        entitiesForFloor(tables, activeFloorId).forEach((t) => {
           const tx = Number(t.x) || 50; const ty = Number(t.y) || 50;
           if (tx >= minX && tx <= maxX && ty >= minY && ty <= maxY) selectedTableIds.add(Number(t.id));
         });
@@ -2220,12 +3676,13 @@ function createFloorStudio(opts) {
 
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onUp);
   };
 
   // ─── View Mode ────────────────────────────────────────────────────────
   const setViewMode = (mode) => {
-    currentView = mode;
-    try { localStorage.setItem(VIEW_PREFS_KEY, mode); } catch {}
+    currentView = resolveFloorViewMode(mode, cardsViewAvailable);
+    try { localStorage.setItem(VIEW_PREFS_KEY, currentView); } catch {}
     render();
   };
 
@@ -2246,11 +3703,16 @@ function createFloorStudio(opts) {
 
   // ─── CRUD Operations ─────────────────────────────────────────────────
   const addTableToMap = async () => {
+    if (!floorExists(floorLevels, activeFloorId)) {
+      showToast('ابتدا یک طبقهٔ واقعی بسازید؛ افزودن میز به بخش بدون طبقه مجاز نیست.', 'warning');
+      return;
+    }
     const nextId = (tables.reduce((max, t) => Math.max(max, Number(t.id) || 0), 0)) + 1;
-    const targetZone = activeZone === 'all' ? 'سالن' : activeZone;
-    const standardZones = ['سالن', 'تراس', 'ویژه'];
-    const existingZones = Array.from(new Set(tables.map((t) => normalizeZone(t.zone)).filter(Boolean)));
-    const allZonesList = Array.from(new Set([...standardZones, ...existingZones]));
+    const currentFloorZones = entitiesForFloor(floorZones, activeFloorId).map((zone) => normalizeZone(zone.name));
+    const tableZoneNames = entitiesForFloor(tables, activeFloorId).map((table) => normalizeTableZoneValue(table.zone, normalizeZone));
+    const allZonesList = Array.from(new Set([...currentFloorZones, ...tableZoneNames].filter(Boolean)));
+    if (!allZonesList.length) allZonesList.push('بدون بخش');
+    const targetZone = activeZone === 'all' ? (allZonesList[0] || 'بدون بخش') : activeZone;
     const defaultLabel = `میز ${nextId}`;
 
     showFloorModal({
@@ -2276,7 +3738,7 @@ function createFloorStudio(opts) {
         </div>
         <div class="floor-studio-modal__field">
           <label for="fm-table-seats">تعداد صندلی (ظرفیت پذیرایی):</label>
-          <input id="fm-table-seats" type="number" min="1" max="20" value="4" required />
+          <input id="fm-table-seats" type="number" min="1" max="24" value="4" required />
         </div>
         <div class="floor-studio-modal__field">
           <label>فرم هندسی میز:</label>
@@ -2293,8 +3755,8 @@ function createFloorStudio(opts) {
       onConfirm: async (form) => {
         const chosenLabel = form.querySelector('#fm-table-label')?.value?.trim() || defaultLabel;
         const chosenFloor = form.querySelector('#fm-table-floor')?.value || activeFloorId;
-        const chosenZone = form.querySelector('#fm-table-zone')?.value?.trim() || targetZone;
-        const chosenSeats = Math.max(1, Math.min(20, Number(form.querySelector('#fm-table-seats')?.value) || 4));
+        const chosenZone = normalizeTableZoneValue(form.querySelector('#fm-table-zone')?.value || targetZone, normalizeZone);
+        const chosenSeats = normalizeSeatCapacity(form.querySelector('#fm-table-seats')?.value);
         const activeShapeBtn = form.querySelector('#fm-table-shapes .is-active');
         const chosenShape = activeShapeBtn?.dataset?.shape || 'rectangle';
 
@@ -2317,9 +3779,10 @@ function createFloorStudio(opts) {
           tables.push(created);
           selectedTableId = created.id;
           activeFloorId = chosenFloor;
-          await saveFloorLayout(true);
+          const saved = await saveFloorLayout(true);
           render();
-          showToast(`میز جدید (${created.label}) به نقشه اضافه شد.`, 'success');
+          if (saved) showToast(`میز جدید (${created.label}) به نقشه اضافه شد.`, 'success');
+          else showLayoutSaveFailure();
           return true;
         } catch (err) {
           showToast(err.message || 'خطا در ساخت میز جدید', 'error');
@@ -2338,48 +3801,146 @@ function createFloorStudio(opts) {
     }, 60);
   };
 
+  const deleteFloorTables = async (requestedIds) => {
+    const ids = [...new Set((Array.isArray(requestedIds) ? requestedIds : [])
+      .map(Number).filter((id) => Number.isSafeInteger(id) && id > 0))];
+    if (!ids.length) return { ok: false, reason: 'invalid_request' };
+    if (hasLayoutRevisionConflict) {
+      showLayoutSaveFailure();
+      return { ok: false, reason: 'revision_conflict' };
+    }
+    if (isLayoutDirty) {
+      queuedSaveFloor.cancel?.();
+      const saved = await saveFloorLayout(true);
+      if (!saved) {
+        showLayoutSaveFailure();
+        return { ok: false, reason: 'layout_save_failed' };
+      }
+    }
+    if (!Number.isSafeInteger(floorData?.layoutRevision) || floorData.layoutRevision < 0) {
+      showToast('نسخهٔ نقشه در دسترس نیست؛ ابتدا صفحه را دوباره بارگیری کنید.', 'error');
+      return { ok: false, reason: 'revision_unavailable' };
+    }
+
+    try {
+      const fresh = await api(`/api/admin/v2/floor${branchQuery()}`);
+      if (!isUsableFloorDataSnapshot(fresh)) {
+        showToast('وضعیت تازهٔ سالن تأیید نشد؛ برای ایمنی هیچ میزی حذف نشد.', 'error');
+        return { ok: false, reason: 'floor_refresh_failed' };
+      }
+      if (fresh.layoutRevision !== floorData.layoutRevision) {
+        hasLayoutRevisionConflict = true;
+        updateSaveStatus(false);
+        showToast('نسخهٔ نقشه تغییر کرده است؛ نسخهٔ تازه را آگاهانه بارگیری کنید. هیچ میزی حذف نشد.', 'error');
+        return { ok: false, reason: 'revision_conflict' };
+      }
+      const latestTables = new Map(fresh.tables.map((table) => [Number(table.id), table]));
+      tables = tables.map((table) => ({ ...table, ...(latestTables.get(Number(table.id)) || {}) }));
+      const activeCallIds = activeWaiterCallTableIds(fresh.tables, ids);
+      if (activeCallIds.length) {
+        activeCallIds.forEach((id) => selectedTableIds.add(Number(id)));
+        showToast('برای این میز یا یکی از میزهای متصل، فراخوان ویتر باز است؛ تا رسیدگی به آن حذف انجام نمی‌شود.', 'warning');
+        return { ok: false, reason: 'active_waiter_call', ids: activeCallIds };
+      }
+      floorData = fresh;
+      const response = await api(`/api/admin/v2/floor/tables/delete${branchQuery()}`, {
+        method: 'POST',
+        body: JSON.stringify({
+          branchId: currentBranchId(),
+          expectedLayoutRevision: floorData.layoutRevision,
+          tableIds: ids,
+        }),
+      });
+      const result = validateFloorTableDeleteResponse(response, ids);
+      if (!result.ok) {
+        showToast('پاسخ حذف میزها کامل یا معتبر نبود؛ نقشهٔ محلی تغییر نکرد.', 'error');
+        return result;
+      }
+
+      const removed = new Set([...result.deletedIds, ...result.alreadyAbsentIds]);
+      floorData = result.floor;
+      const freshTables = new Map(result.floor.tables.map((table) => [Number(table.id), table]));
+      removed.forEach((id) => selectedTableIds.delete(Number(id)));
+      tables = tables
+        .filter((table) => !removed.has(String(Number(table.id))))
+        .map((table) => ({ ...table, ...(freshTables.get(Number(table.id)) || {}) }));
+      if (selectedTableId != null && removed.has(String(Number(selectedTableId)))) selectedTableId = null;
+      layoutHistory.clear();
+      isLayoutDirty = false;
+      updateSaveStatus(false);
+      return { ...result, ok: true };
+    } catch (error) {
+      if (isFloorLayoutRevisionConflict(error)) {
+        hasLayoutRevisionConflict = true;
+        updateSaveStatus(false);
+        showToast('نقشه در دستگاه دیگری تغییر کرده است؛ هیچ میزی حذف نشد. نسخهٔ تازه را آگاهانه بارگیری کنید.', 'error');
+        return { ok: false, reason: 'revision_conflict' };
+      }
+      showToast(error?.message || 'حذف میزها تأیید نشد؛ وضعیت محلی حفظ شد.', 'error');
+      return { ok: false, reason: 'request_failed' };
+    }
+  };
+
+  const tableDeleteReasonLabel = (reason) => ({
+    table_in_active_use: 'سفارش باز دارد',
+    table_reserved: 'رزرو فعال دارد',
+    open_waiter_call: 'فراخوان باز دارد',
+    table_not_found: 'در این شعبه پیدا نشد',
+  }[reason] || 'حذف نشد و نیازمند بررسی است');
+
+  const showDeleteOutcome = (result, requestedCount) => {
+    const completed = result.deletedIds.length + result.alreadyAbsentIds.length;
+    if (result.rejected.length) {
+      const reasons = [...new Set(result.rejected.map(({ reason }) => tableDeleteReasonLabel(reason)))].join('، ');
+      showToast(`${fmtNum(completed)} میز حذف/تأیید شد؛ ${fmtNum(result.rejected.length)} میز باقی ماند (${reasons}).`, 'warning');
+    } else if (completed === requestedCount) {
+      showToast(`${fmtNum(result.deletedIds.length)} میز با تأیید سرور حذف شد.`, 'success');
+    } else {
+      showToast('نتیجهٔ حذف کامل نیست؛ موارد باقی‌مانده را دوباره بررسی کنید.', 'warning');
+    }
+  };
+
   const deleteTableFromMap = async (tableId) => {
     const table = tableById(tableId);
     if (!table) return;
     showFloorModal({
-      title: '🗑️ تایید حذف میز از سالن',
-      confirmText: 'بله، حذف شود',
+      title: '🗑️ تأیید حذف میز از سالن',
+      confirmText: 'حذف میز',
       confirmClass: 'btn-danger',
       bodyHtml: `
-        <p style="font-size:14px;color:#f8fafc;margin:0 0 8px">آیا از حذف «<strong>${esc(tableTitle(table))}</strong>» از نقشه سالن و لیست میزها اطمینان دارید؟</p>
-        <p style="font-size:12px;color:#f43f5e;margin:0">این عملیات غیرقابل بازگشت است و رمزینه مربوطه نیز از دسترس خارج می‌شود.</p>`,
+        <p style="font-size:15px;color:#f8fafc;margin:0 0 8px">حذف «<strong>${esc(tableTitle(table))}</strong>» از همین شعبه بررسی می‌شود.</p>
+        <p style="font-size:13px;color:#94a3b8;margin:0">اگر میز سفارش باز یا رزرو فعال داشته باشد، سرور حذف را رد می‌کند. پاسخ سرور مرجع نهایی است.</p>`,
       onConfirm: async () => {
-        try {
-          await api(`/api/admin/tables/${tableId}${branchQs()}`, { method: 'DELETE' });
-          tables = tables.filter((t) => Number(t.id) !== Number(tableId));
-          if (Number(selectedTableId) === Number(tableId)) selectedTableId = null;
-          render();
-          showToast('میز از نقشه حذف گردید.', 'success');
-          return true;
-        } catch (err) {
-          showToast(err.message || 'خطا در حذف میز', 'error');
-          return false;
-        }
-      }
+        const result = await deleteFloorTables([tableId]);
+        if (!result.ok) return false;
+        result.rejected.forEach(({ id }) => selectedTableIds.add(Number(id)));
+        render();
+        showDeleteOutcome(result, 1);
+        return true;
+      },
     });
   };
 
   const batchDeleteSelectedTables = () => {
     if (selectedTableIds.size === 0) return;
     showFloorModal({
-      title: `🗑️ حذف گروهی ${fmtNum(selectedTableIds.size)} میز انتخاب‌شده`,
-      confirmText: 'حذف تمامی میزهای انتخاب‌شده',
+      title: `🗑️ حذف ${fmtNum(selectedTableIds.size)} میز انتخاب‌شده`,
+      confirmText: 'بررسی و حذف در سرور',
       confirmClass: 'btn-danger',
-      bodyHtml: `<p style="font-size:13px;color:#f8fafc">آیا از حذف دائم ${fmtNum(selectedTableIds.size)} میز انتخاب‌شده از پلان سالن اطمینان دارید؟</p>`,
+      bodyHtml: `<p style="font-size:14px;color:#f8fafc">حذف برای هر میز در همین شعبه، با نسخهٔ فعلی نقشه بررسی می‌شود. میز دارای سفارش باز یا رزرو فعال باقی می‌ماند.</p>`,
       onConfirm: async () => {
         const idsToDelete = Array.from(selectedTableIds);
+        const result = await deleteFloorTables(idsToDelete);
+        if (!result.ok) return false;
         selectedTableIds.clear();
-        tables = tables.filter((t) => !idsToDelete.includes(Number(t.id)));
-        selectedTableId = null;
-        await saveFloorLayout(true);
+        result.rejected.forEach(({ id }) => selectedTableIds.add(Number(id)));
+        if (selectedTableId != null && !result.rejected.some(({ id }) => Number(id) === Number(selectedTableId))) {
+          selectedTableId = null;
+        }
         render();
-        showToast(`${fmtNum(idsToDelete.length)} میز با موفقیت حذف شدند.`, 'success');
-      }
+        showDeleteOutcome(result, idsToDelete.length);
+        return true;
+      },
     });
   };
 
@@ -2392,6 +3953,8 @@ function createFloorStudio(opts) {
       onConfirm: (form) => {
         const newName = form.querySelector('#fm-rename-input')?.value?.trim();
         if (!newName) return false;
+        if (newName === table.label) return true;
+        pushHistory();
         table.label = newName;
         debouncedSaveFloor(); render();
         showToast(`نام میز به «${table.label}» تغییر یافت.`, 'success');
@@ -2401,18 +3964,27 @@ function createFloorStudio(opts) {
   };
 
   const mergeTablesGroup = (tableIds) => {
-    const ids = Array.from(tableIds).map(Number).filter(Boolean);
-    if (ids.length < 2) { showToast('برای ادغام، حداقل ۲ میز را انتخاب کنید.', 'warning'); return; }
-    const groupTables = tables.filter((t) => ids.includes(Number(t.id)));
-    if (groupTables.length < 2) return;
+    const plan = planTableMerge(tables, tableIds, activeFloorId);
+    if (!plan.ok) {
+      const message = plan.reason === 'different_floor'
+        ? 'فقط میزهای یک طبقه را می‌توان با هم ادغام کرد.'
+        : plan.reason === 'already_merged'
+          ? 'ابتدا پیوند ادغام قبلی را از میزهای انتخاب‌شده جدا کنید.'
+          : plan.reason === 'minimum_tables'
+            ? 'برای ادغام، حداقل ۲ میز را انتخاب کنید.'
+            : 'یکی از میزهای انتخاب‌شده دیگر در این چیدمان وجود ندارد؛ انتخاب را تازه کنید.';
+      showToast(message, 'warning');
+      return false;
+    }
+
+    const tableByStringId = new Map(tables.map((table) => [String(table.id), table]));
+    const groupTables = plan.memberIds.map((id) => tableByStringId.get(String(id))).filter(Boolean);
+    if (groupTables.length < 2) return false;
     pushHistory();
-    const master = groupTables[0];
-    const subTables = groupTables.slice(1);
-    master.mergedWith = subTables.map((t) => t.id);
-    master.mergedInto = null;
-    subTables.forEach((st) => { st.mergedInto = master.id; st.mergedWith = null; });
+    if (!applyTableMergePlan(tables, plan)) return false;
     debouncedSaveFloor(); render();
     showToast(`میزهای [${groupTables.map((t) => tableTitle(t)).join(' + ')}] با موفقیت ادغام شدند.`, 'success');
+    return true;
   };
 
   const unmergeTable = (table) => {
@@ -2440,6 +4012,7 @@ function createFloorStudio(opts) {
     const list = tables.filter((t) => ids.includes(Number(t.id)));
     if (list.length < 2) return;
     pushHistory();
+    list.forEach(markTablePositioned);
     if (alignment === 'left') { const minX = Math.min(...list.map((t) => t.x)); list.forEach((t) => { t.x = minX; }); }
     else if (alignment === 'right') { const maxX = Math.max(...list.map((t) => t.x)); list.forEach((t) => { t.x = maxX; }); }
     else if (alignment === 'top') { const minY = Math.min(...list.map((t) => t.y)); list.forEach((t) => { t.y = minY; }); }
@@ -2456,6 +4029,7 @@ function createFloorStudio(opts) {
     const list = tables.filter((t) => ids.includes(Number(t.id)));
     if (list.length < 3) return;
     pushHistory();
+    list.forEach(markTablePositioned);
     if (axis === 'h') {
       list.sort((a, b) => a.x - b.x);
       const step = (list[list.length - 1].x - list[0].x) / (list.length - 1);
@@ -2470,6 +4044,10 @@ function createFloorStudio(opts) {
   };
 
   const autoAlignTables = async () => {
+    if (!entitiesForFloor(tables, activeFloorId).length) {
+      showToast('در این طبقه میزی برای مرتب‌سازی وجود ندارد.', 'info');
+      return;
+    }
     showFloorModal({
       title: '↺ مرتب‌سازی خودکار و مهندسی چیدمان',
       confirmText: 'اجرای مرتب‌سازی',
@@ -2478,8 +4056,9 @@ function createFloorStudio(opts) {
         <p style="font-size:14px;color:#f8fafc;margin:0 0 8px">آیا مایل به مرتب‌سازی خودکار و معماری میزها در بخش‌های سالن هستید؟</p>
         <p style="font-size:12px;color:#94a3b8;margin:0">میزهای سالن، تراس و سالن ویژه با فاصله‌گذاری استاندارد ۲ ستونه و فرم مهندسی بازچینی خواهند شد.</p>`,
       onConfirm: async () => {
-        const byZone = {};
-        tables.forEach((t) => { const z = normalizeZone(t.zone) || 'سالن'; if (!byZone[z]) byZone[z] = []; byZone[z].push(t); });
+        pushHistory();
+        const byZone = groupTablesByZoneForFloor(tables, activeFloorId, (zone) => normalizeTableZoneValue(zone, normalizeZone));
+        Array.from(byZone.values()).flat().forEach(markTablePositioned);
 
         const layoutZone = (list, xCols, baseX, baseY, yRange) => {
           const cols = xCols.length;
@@ -2492,17 +4071,18 @@ function createFloorStudio(opts) {
           });
         };
 
-        if (byZone['سالن']) layoutZone(byZone['سالن'], [18, 36], 18, 20, 64);
-        if (byZone['تراس']) layoutZone(byZone['تراس'], [62, 82], 62, 18, 32);
-        if (byZone['ویژه']) { layoutZone(byZone['ویژه'], [62, 82], 62, 72, 24); byZone['ویژه'].forEach((t) => { t.shape = 'booth'; }); }
-        Object.keys(byZone).forEach((z) => {
+        if (byZone.has('سالن')) layoutZone(byZone.get('سالن'), [18, 36], 18, 20, 64);
+        if (byZone.has('تراس')) layoutZone(byZone.get('تراس'), [62, 82], 62, 18, 32);
+        if (byZone.has('ویژه')) { layoutZone(byZone.get('ویژه'), [62, 82], 62, 72, 24); byZone.get('ویژه').forEach((t) => { t.shape = 'booth'; }); }
+        Array.from(byZone.keys()).forEach((z) => {
           if (['سالن', 'تراس', 'ویژه'].includes(z)) return;
-          byZone[z].forEach((t, i) => { t.x = 48 + ((i % 3) * 16); t.y = 45 + (Math.floor(i / 3) * 18); });
+          byZone.get(z).forEach((t, i) => { t.x = 48 + ((i % 3) * 16); t.y = 45 + (Math.floor(i / 3) * 18); });
         });
 
-        await saveFloorLayout(false);
+        const saved = await saveFloorLayout(true);
         render();
-        showToast('چیدمان میزها با موفقیت مرتب گردید.', 'success');
+        if (saved) showToast('چیدمان میزها با موفقیت مرتب گردید.', 'success');
+        else showLayoutSaveFailure();
         return true;
       }
     });
@@ -2517,21 +4097,23 @@ function createFloorStudio(opts) {
   };
 
   const deleteZone = (zoneIdOrName) => {
-    const zone = floorZones.find((z) => z.id === zoneIdOrName || z.name === zoneIdOrName || normalizeZone(z.name) === normalizeZone(zoneIdOrName));
-    const zoneName = zone ? zone.name : zoneIdOrName;
+    const currentFloorZones = entitiesForFloor(floorZones, activeFloorId);
+    const zone = currentFloorZones.find((z) => z.id === zoneIdOrName || z.name === zoneIdOrName || normalizeZone(z.name) === normalizeZone(zoneIdOrName));
+    if (!zone) return;
+    const zoneName = zone.name;
     if (!zoneName) return;
-    if (floorZones.length <= 1) { showToast('حداقل یک بخش باید در سالن باقی بماند.', 'warning'); return; }
     showFloorModal({
       title: `🗑️ حذف بخش «${esc(zoneName)}»`,
       confirmText: 'حذف بخش',
       confirmClass: 'btn-danger',
       bodyHtml: `
         <p style="font-size:14px;color:#f8fafc;margin:0 0 8px">آیا از حذف این بخش از نقشه سالن اطمینان دارید؟</p>
-        <p style="font-size:12px;color:#94a3b8;margin:0">میزهای متعلق به این بخش حذف نمی‌شوند و به طور خودکار به بخش «سالن اصلی» منتقل خواهند شد.</p>`,
+        <p style="font-size:12px;color:#94a3b8;margin:0">میزهای این بخش حذف نمی‌شوند و پس از حذف، بدون بخش باقی می‌مانند.</p>`,
       onConfirm: () => {
         const deletedName = zoneName;
-        floorZones = floorZones.filter((z) => z.id !== zone?.id && z.name !== deletedName && normalizeZone(z.name) !== normalizeZone(deletedName));
-        tables.forEach((t) => { if (normalizeZone(t.zone) === normalizeZone(deletedName)) t.zone = 'سالن'; });
+        pushHistory();
+        const result = removeZoneAndReassignTablesOnFloor(floorZones, tables, zone.id, 'بدون بخش', normalizeZone);
+        if (result) floorZones = result.zones;
         if (activeZone === deletedName || normalizeZone(activeZone) === normalizeZone(deletedName)) activeZone = 'all';
         if (selectedZoneId === zone?.id || selectedZoneId === zoneIdOrName) selectedZoneId = null;
         debouncedSaveFloor(); render();
@@ -2544,20 +4126,25 @@ function createFloorStudio(opts) {
   const cycleZoneColor = (zone) => {
     const colors = ['blue', 'emerald', 'purple', 'amber', 'rose', 'cyan', 'slate'];
     const idx = colors.indexOf(zone.color || 'blue');
+    pushHistory();
     zone.color = colors[(idx + 1) % colors.length];
     debouncedSaveFloor(); render();
     showToast(`رنگ بخش «${zone.name}» تغییر یافت.`, 'info');
   };
 
   const splitZone = (zone) => {
+    pushHistory();
+    let splitNameIndex = 2;
+    while (isFloorZoneNameTaken(floorZones, `${zone.name} (بخش ${splitNameIndex})`, floorEntityId(zone), normalizeZone)) splitNameIndex += 1;
+    const splitName = `${zone.name} (بخش ${splitNameIndex})`;
     if (zone.w >= zone.h) {
       const halfW = Math.round((zone.w / 2) * 10) / 10;
-      const newZone = { ...zone, id: `zone-${Date.now()}`, name: `${zone.name} (بخش ۲)`, x: zone.x + halfW, w: halfW, color: 'amber', icon: '🏷️' };
+      const newZone = { ...zone, id: `zone-${Date.now()}`, name: splitName, x: zone.x + halfW, w: halfW, color: 'amber', icon: '🏷️' };
       zone.w = halfW;
       floorZones.push(newZone);
     } else {
       const halfH = Math.round((zone.h / 2) * 10) / 10;
-      const newZone = { ...zone, id: `zone-${Date.now()}`, name: `${zone.name} (بخش ۲)`, y: zone.y + halfH, h: halfH, color: 'amber', icon: '🏷️' };
+      const newZone = { ...zone, id: `zone-${Date.now()}`, name: splitName, y: zone.y + halfH, h: halfH, color: 'amber', icon: '🏷️' };
       zone.h = halfH;
       floorZones.push(newZone);
     }
@@ -2575,8 +4162,14 @@ function createFloorStudio(opts) {
         const newName = form.querySelector('#fm-zone-rename')?.value?.trim();
         if (!newName) return false;
         const oldName = zone.name;
-        zone.name = newName;
-        tables.forEach((t) => { if (normalizeZone(t.zone) === normalizeZone(oldName)) t.zone = newName; });
+        if (newName === oldName) return true;
+        if (isFloorZoneNameTaken(floorZones, newName, floorEntityId(zone), normalizeZone, zone.id)) {
+          showToast('در همین طبقه بخشی با این نام وجود دارد.', 'warning');
+          return false;
+        }
+        pushHistory();
+        renameZoneAndTablesOnFloor(floorZones, tables, zone.id, newName, normalizeZone);
+        if (normalizeZone(activeZone) === normalizeZone(oldName)) activeZone = newName;
         debouncedSaveFloor(); render();
         showToast(`نام بخش به «${newName}» تغییر یافت.`, 'success');
         return true;
@@ -2586,10 +4179,11 @@ function createFloorStudio(opts) {
 
   const promptZoneDimensions = (zone) => {
     showFloorModal({
-      title: `📏 ابعاد و متراژ بخش «${esc(zone.name)}»`,
+      title: `📏 متراژ ثبت‌شدهٔ بخش «${esc(zone.name)}»`,
       confirmText: 'ذخیره ابعاد',
       confirmClass: 'btn-primary',
       bodyHtml: `
+        <p class="floor-zone-metrics-note">این اعداد متراژ واقعیِ ثبت‌شده‌اند. برای کوچک و بزرگ کردن محدودهٔ ترسیمی روی نقشه، لبه‌های نقطه‌چین را در حالت ویرایش بکشید.</p>
         <div class="floor-studio-modal__dim-row">
           <div class="floor-studio-modal__field">
             <label for="fm-zdim-len">طول بخش (متر):</label>
@@ -2607,6 +4201,8 @@ function createFloorStudio(opts) {
       onConfirm: (form) => {
         const lengthM = parseFloat(form.querySelector('#fm-zdim-len')?.value) || 10;
         const widthM = parseFloat(form.querySelector('#fm-zdim-wid')?.value) || 3;
+        if (Number(zone.lengthM) === lengthM && Number(zone.widthM) === widthM) return true;
+        pushHistory();
         zone.lengthM = lengthM;
         zone.widthM = widthM;
         zone.areaSqM = Math.round(lengthM * widthM * 10) / 10;
@@ -2631,6 +4227,7 @@ function createFloorStudio(opts) {
   };
 
   const promptCreateZone = (x, y, w, h) => {
+    if (!requireConfiguredFloor('ترسیم بخش')) return;
     showFloorModal({
       title: '🌿 نام‌گذاری بخش جدید ترسیم‌شده',
       confirmText: 'ثبت بخش جدید',
@@ -2654,8 +4251,13 @@ function createFloorStudio(opts) {
       onConfirm: (form) => {
         const name = form.querySelector('#fm-newzone-name')?.value?.trim();
         if (!name) return false;
+        if (isFloorZoneNameTaken(floorZones, name, activeFloorId, normalizeZone)) {
+          showToast('در همین طبقه بخشی با این نام وجود دارد.', 'warning');
+          return false;
+        }
         const color = form.querySelector('#fm-newzone-colors .is-active')?.dataset.color || 'blue';
-        const newZone = { id: `zone-${Date.now()}`, name, x, y, w, h, color, icon: '🏷️', shape: 'rectangle' };
+        const newZone = { id: `zone-${Date.now()}`, name, x, y, w, h, color, icon: '🏷️', shape: 'rectangle', floorId: activeFloorId };
+        pushHistory();
         floorZones.push(newZone);
         debouncedSaveFloor(); render();
         showToast(`بخش «${name}» ایجاد شد.`, 'success');
@@ -2672,13 +4274,19 @@ function createFloorStudio(opts) {
 
   // promptAddZone, promptAddFloor, promptEditFloor, deleteFloor, promptMoveTableFloor,
   // promptAddFixture, promptFloorSettings, promptTableFurnitureModal,
-  // exportLayoutJson, importLayoutJson, showTemplateModal
+  // exportLayoutJson, importLayoutJson
   // — همه از admin.js موجود استفاده می‌شوند از طریق opts.legacyActions
   const {
     promptAddZone, promptAddFloor, promptEditFloor, deleteFloor, promptMoveTableFloor,
     promptAddFixture, promptFloorSettings, promptTableFurnitureModal,
     exportLayoutJson, importLayoutJson, showTemplateModal,
   } = buildLegacyActions();
+
+  const requireConfiguredFloor = (actionLabel) => {
+    if (floorExists(floorLevels, activeFloorId)) return true;
+    showToast(`برای ${actionLabel} ابتدا یک طبقهٔ واقعی بسازید یا یکی را انتخاب کنید.`, 'warning');
+    return false;
+  };
 
   function buildLegacyActions() {
     // این توابع کد یکسان با admin.js قبل را دارند
@@ -2708,8 +4316,9 @@ function createFloorStudio(opts) {
 
     // PromptAddZone
     const promptAddZone = la.promptAddZone
-      ? () => la.promptAddZone(ctx)
+      ? () => { if (requireConfiguredFloor('افزودن بخش')) return la.promptAddZone(ctx); }
       : () => {
+          if (!requireConfiguredFloor('افزودن بخش')) return;
           showFloorModal({
             title: '🌿 تعریف بخش جدید در سالن و تعیین متراژ',
             confirmText: 'ایجاد و چیدمان بخش',
@@ -2717,57 +4326,32 @@ function createFloorStudio(opts) {
             bodyHtml: `
               <div class="floor-studio-modal__field">
                 <label for="fm-zone-name">نام بخش جدید سالن:</label>
-                <input id="fm-zone-name" type="text"
-                  placeholder="مثال: تراس و فضای باز، روف گاردن، سالن VIP"
-                  value="تراس و فضای باز" required autofocus />
-                <div class="floor-studio-modal__presets">
-                  <span style="font-size:11px;color:#94a3b8;margin-left:4px">پیشنهادها:</span>
-                  <button type="button" class="floor-studio-modal__preset-pill"
-                    data-preset-name="تراس و فضای باز" data-preset-icon="🌿"
-                    data-preset-l="10" data-preset-w="3" data-preset-color="emerald" data-preset-shape="open-terrace">
-                    🌿 تراس (۱۰×۳م)
-                  </button>
-                  <button type="button" class="floor-studio-modal__preset-pill"
-                    data-preset-name="روف‌گاردن و بام" data-preset-icon="☀️"
-                    data-preset-l="12" data-preset-w="8" data-preset-color="cyan" data-preset-shape="open-terrace">
-                    ☀️ روف‌گاردن (۱۲×۸م)
-                  </button>
-                  <button type="button" class="floor-studio-modal__preset-pill"
-                    data-preset-name="سالن اختصاصی VIP" data-preset-icon="👑"
-                    data-preset-l="8" data-preset-w="5" data-preset-color="purple" data-preset-shape="rectangle">
-                    👑 سالن VIP (۸×۵م)
-                  </button>
-                  <button type="button" class="floor-studio-modal__preset-pill"
-                    data-preset-name="کافه بار و پیشخوان" data-preset-icon="☕"
-                    data-preset-l="6" data-preset-w="2.5" data-preset-color="amber" data-preset-shape="corridor">
-                    ☕ کافه بار (۶×۲.۵م)
-                  </button>
-                </div>
+                <input id="fm-zone-name" type="text" placeholder="نام بخش" required autofocus />
               </div>
 
               <div class="floor-studio-modal__dim-row">
                 <div class="floor-studio-modal__field">
                   <label for="fm-zone-len">طول بخش (متر):</label>
-                  <input id="fm-zone-len" type="number" min="1" max="200" step="0.5" value="10" required />
+                  <input id="fm-zone-len" type="number" min="1" max="200" step="0.5" required />
                 </div>
                 <div class="floor-studio-modal__field">
                   <label for="fm-zone-wid">عرض بخش (متر):</label>
-                  <input id="fm-zone-wid" type="number" min="1" max="200" step="0.5" value="3" required />
+                  <input id="fm-zone-wid" type="number" min="1" max="200" step="0.5" required />
                 </div>
               </div>
 
               <div class="floor-studio-modal__area-badge" id="fm-zone-area-badge">
                 <span>📐 مساحت محاسبه‌شده فضا:</span>
-                <strong id="fm-zone-area-val">۳۰ متر مربع</strong>
+                <strong id="fm-zone-area-val">۰ متر مربع</strong>
               </div>
 
               <div class="floor-studio-modal__field" style="margin-top:12px">
                 <label>فرم هندسی و نوع معماری بخش:</label>
                 <div class="floor-studio-modal__shape-grid" id="fm-zone-shapes">
-                  <button type="button" class="floor-studio-modal__shape-btn is-active" data-shape="open-terrace">
+                  <button type="button" class="floor-studio-modal__shape-btn" data-shape="open-terrace">
                     <span style="font-size:18px">🌿</span><span>تراس و فضای باز</span>
                   </button>
-                  <button type="button" class="floor-studio-modal__shape-btn" data-shape="rectangle">
+                  <button type="button" class="floor-studio-modal__shape-btn is-active" data-shape="rectangle">
                     <span style="font-size:18px">⬛</span><span>مستطیل استاندارد</span>
                   </button>
                   <button type="button" class="floor-studio-modal__shape-btn" data-shape="l-shape">
@@ -2782,8 +4366,8 @@ function createFloorStudio(opts) {
               <div class="floor-studio-modal__field" style="margin-top:12px">
                 <label>پوسته رنگی بخش:</label>
                 <div class="floor-studio-modal__shape-grid" id="fm-zone-colors">
-                  <button type="button" class="floor-studio-modal__shape-btn" data-color="blue"><span style="color:#38bdf8">🟦</span><span>آبی دریا</span></button>
-                  <button type="button" class="floor-studio-modal__shape-btn is-active" data-color="emerald"><span style="color:#4ade80">🟩</span><span>سبز زمردی</span></button>
+                  <button type="button" class="floor-studio-modal__shape-btn is-active" data-color="blue"><span style="color:#38bdf8">🟦</span><span>آبی دریا</span></button>
+                  <button type="button" class="floor-studio-modal__shape-btn" data-color="emerald"><span style="color:#4ade80">🟩</span><span>سبز زمردی</span></button>
                   <button type="button" class="floor-studio-modal__shape-btn" data-color="purple"><span style="color:#c084fc">🟪</span><span>بنفش سلطنتی</span></button>
                   <button type="button" class="floor-studio-modal__shape-btn" data-color="amber"><span style="color:#fbbf24">🟧</span><span>کهربایی گرم</span></button>
                   <button type="button" class="floor-studio-modal__shape-btn" data-color="rose"><span style="color:#fb7185">🟥</span><span>سرخ رز</span></button>
@@ -2793,46 +4377,35 @@ function createFloorStudio(opts) {
             onConfirm: (form) => {
               const name = form.querySelector('#fm-zone-name')?.value?.trim();
               if (!name) return false;
-              const lengthM = parseFloat(form.querySelector('#fm-zone-len')?.value) || 10;
-              const widthM  = parseFloat(form.querySelector('#fm-zone-wid')?.value) || 3;
+              if (isFloorZoneNameTaken(floorZones, name, activeFloorId, normalizeZone)) {
+                showToast('در همین طبقه بخشی با این نام وجود دارد.', 'warning');
+                return false;
+              }
+              const lengthM = parseFloat(form.querySelector('#fm-zone-len')?.value);
+              const widthM  = parseFloat(form.querySelector('#fm-zone-wid')?.value);
+              if (!Number.isFinite(lengthM) || lengthM < 1 || !Number.isFinite(widthM) || widthM < 1) {
+                showToast('طول و عرض بخش را وارد کنید.', 'warning');
+                return false;
+              }
               const areaSqM = Math.round(lengthM * widthM * 10) / 10;
-              const shape = form.querySelector('#fm-zone-shapes .is-active')?.dataset.shape || 'open-terrace';
-              const color = form.querySelector('#fm-zone-colors .is-active')?.dataset.color || 'emerald';
+              const shape = form.querySelector('#fm-zone-shapes .is-active')?.dataset.shape || 'rectangle';
+              const color = form.querySelector('#fm-zone-colors .is-active')?.dataset.color || 'blue';
               const icon  = shape === 'open-terrace' ? '🌿' : shape === 'corridor' ? '▭' : name.includes('ویژه') ? '👑' : '🏷️';
 
-              // یافتن موقعیت آزاد روی canvas
+              // بخش جدید نباید بی‌اجازه روی بخش موجود بیفتد یا اندازهٔ آن را عوض کند.
               const calcW = Math.max(14, Math.min(85, Math.round((lengthM / 20) * 80)));
               const calcH = Math.max(10, Math.min(85, Math.round((widthM / 15) * 60)));
-              let freeSlot = null;
-
-              for (let y = 3; y <= 97 - calcH && !freeSlot; y += 3) {
-                for (let x = 2; x <= 98 - calcW && !freeSlot; x += 3) {
-                  const collides = floorZones.some((z) =>
-                    Math.max(x, z.x) < Math.min(x + calcW, z.x + z.w) - 0.5 &&
-                    Math.max(y, z.y) < Math.min(y + calcH, z.y + z.h) - 0.5);
-                  if (!collides) freeSlot = { x, y, w: calcW, h: calcH };
-                }
-              }
-
+              const currentFloorZones = entitiesForFloor(floorZones, activeFloorId);
+              const freeSlot = findFloorZonePlacement(currentFloorZones, calcW, calcH);
               if (!freeSlot) {
-                const largest = [...floorZones].sort((a, b) => (b.w * b.h) - (a.w * a.h))[0];
-                if (largest && largest.w >= 24) {
-                  const halfW = Math.round((largest.w / 2) * 10) / 10;
-                  largest.w = halfW;
-                  freeSlot = { x: Math.round((largest.x + halfW) * 10) / 10, y: largest.y, w: halfW, h: largest.h };
-                } else if (largest && largest.h >= 24) {
-                  const halfH = Math.round((largest.h / 2) * 10) / 10;
-                  largest.h = halfH;
-                  freeSlot = { x: largest.x, y: Math.round((largest.y + halfH) * 10) / 10, w: largest.w, h: halfH };
-                } else {
-                  freeSlot = { x: 50, y: 50, w: calcW, h: calcH };
-                }
+                showToast('برای این ابعاد فضای خالی کافی نیست؛ ابعاد را کم کنید یا ابتدا بخش‌ها را جابه‌جا کنید.', 'warning');
+                return false;
               }
-
+              pushHistory();
               const newZone = {
                 id: `zone-${Date.now()}`, name,
                 x: freeSlot.x, y: freeSlot.y, w: freeSlot.w, h: freeSlot.h,
-                color, icon, lengthM, widthM, areaSqM, shape,
+                color, icon, lengthM, widthM, areaSqM, shape, floorId: activeFloorId,
               };
               floorZones.push(newZone);
               activeZone = name;
@@ -2854,26 +4427,6 @@ function createFloorStudio(opts) {
             };
             lInput?.addEventListener('input', updateArea);
             wInput?.addEventListener('input', updateArea);
-
-            document.querySelectorAll('.floor-studio-modal__preset-pill').forEach((pill) => {
-              pill.addEventListener('click', () => {
-                const nameEl = document.getElementById('fm-zone-name');
-                if (nameEl && pill.dataset.presetName) nameEl.value = pill.dataset.presetName;
-                if (lInput && pill.dataset.presetL) lInput.value = pill.dataset.presetL;
-                if (wInput && pill.dataset.presetW) wInput.value = pill.dataset.presetW;
-                updateArea();
-                if (pill.dataset.presetShape) {
-                  const sg = document.getElementById('fm-zone-shapes');
-                  sg?.querySelectorAll('.floor-studio-modal__shape-btn').forEach((b) =>
-                    b.classList.toggle('is-active', b.dataset.shape === pill.dataset.presetShape));
-                }
-                if (pill.dataset.presetColor) {
-                  const cg = document.getElementById('fm-zone-colors');
-                  cg?.querySelectorAll('.floor-studio-modal__shape-btn').forEach((b) =>
-                    b.classList.toggle('is-active', b.dataset.color === pill.dataset.presetColor));
-                }
-              });
-            });
 
             // radio selection grids
             ['fm-zone-shapes', 'fm-zone-colors'].forEach((gridId) => {
@@ -2921,15 +4474,16 @@ function createFloorStudio(opts) {
             onConfirm: async (form) => {
               const name = form.querySelector('#fm-floor-name')?.value?.trim();
               if (!name) return false;
-              const level = parseInt(form.querySelector('#fm-floor-level')?.value, 10) || nextLevel;
+              const level = parseFloorLevel(form.querySelector('#fm-floor-level')?.value, nextLevel);
               const icon = form.querySelector('#fm-floor-icon')?.value || '🏛️';
               const id = `floor-${Date.now()}`;
               pushHistory();
-              floorLevels.push({ id, name, level, icon, isDefault: false });
+              floorLevels.push({ id, name, level, icon, isDefault: floorLevels.length === 0 });
               activeFloorId = id;
-              await saveFloorLayout(true);
+              const saved = await saveFloorLayout(true);
               render();
-              showToast(`طبقه «${name}» ایجاد و نقشه آن فعال شد.`, 'success');
+              if (saved) showToast(`طبقه «${name}» ایجاد و نقشه آن فعال شد.`, 'success');
+              else showLayoutSaveFailure();
               return true;
             }
           });
@@ -2961,13 +4515,19 @@ function createFloorStudio(opts) {
             onConfirm: async (form) => {
               const name = form.querySelector('#fm-floor-edit-name')?.value?.trim();
               if (!name) return false;
-              floor.name = name;
-              floor.level = parseInt(form.querySelector('#fm-floor-edit-level')?.value, 10) || 0;
-              floor.icon = form.querySelector('#fm-floor-edit-icon')?.value?.trim() || '🏛️';
+              const nextFloor = {
+                ...floor,
+                name,
+                level: parseFloorLevel(form.querySelector('#fm-floor-edit-level')?.value, Number(floor.level) || 0),
+                icon: form.querySelector('#fm-floor-edit-icon')?.value?.trim() || '🏛️',
+              };
+              if (nextFloor.name === floor.name && nextFloor.level === floor.level && nextFloor.icon === floor.icon) return true;
               pushHistory();
-              await saveFloorLayout(true);
+              Object.assign(floor, nextFloor);
+              const saved = await saveFloorLayout(true);
               render();
-              showToast('مشخصات طبقه ذخیره گردید.', 'success');
+              if (saved) showToast('مشخصات طبقه ذخیره گردید.', 'success');
+              else showLayoutSaveFailure();
               return true;
             }
           });
@@ -2986,18 +4546,19 @@ function createFloorStudio(opts) {
             title: `🗑️ حذف طبقه «${esc(floor.name)}»`,
             confirmText: 'بله، حذف شود',
             confirmClass: 'btn-danger',
-            bodyHtml: `<p style="font-size:14px;color:#f8fafc;margin:0 0 8px">آیا از حذف این طبقه اطمینان دارید؟</p><p style="font-size:12px;color:#94a3b8;margin:0">میزها و سازه‌های متعلق به این طبقه به طور خودکار به طبقه همکف منتقل خواهند شد.</p>`,
+            bodyHtml: `<p style="font-size:14px;color:#f8fafc;margin:0 0 8px">آیا از حذف این طبقه اطمینان دارید؟</p><p style="font-size:12px;color:#94a3b8;margin:0">میزها و سازه‌های متعلق به این طبقه به اولین طبقهٔ باقی‌مانده منتقل خواهند شد.</p>`,
             onConfirm: async () => {
               pushHistory();
-              const fallbackFloorId = floorLevels.find((fl) => fl.id !== floorId)?.id || 'floor-ground';
-              tables.forEach((t) => { if (t.floorId === floorId) t.floorId = fallbackFloorId; });
-              floorFixtures.forEach((f) => { if (f.floorId === floorId) f.floorId = fallbackFloorId; });
-              floorZones.forEach((z) => { if (z.floorId === floorId) z.floorId = fallbackFloorId; });
+              const fallbackFloorId = floorLevels.find((fl) => fl.id !== floorId)?.id || UNASSIGNED_FLOOR_ID;
+              tables.forEach((t) => { if (floorEntityId(t) === floorId) t.floorId = fallbackFloorId; });
+              floorFixtures.forEach((f) => { if (floorEntityId(f) === floorId) f.floorId = fallbackFloorId; });
+              floorZones.forEach((z) => { if (floorEntityId(z) === floorId) z.floorId = fallbackFloorId; });
               floorLevels = floorLevels.filter((fl) => fl.id !== floorId);
               if (activeFloorId === floorId) activeFloorId = fallbackFloorId;
-              await saveFloorLayout(true);
+              const saved = await saveFloorLayout(true);
               render();
-              showToast(`طبقه «${floor.name}» حذف گردید.`, 'success');
+              if (saved) showToast(`طبقه «${floor.name}» حذف گردید.`, 'success');
+              else showLayoutSaveFailure();
               return true;
             }
           });
@@ -3006,25 +4567,63 @@ function createFloorStudio(opts) {
     const promptMoveTableFloor = la.promptMoveTableFloor
       ? (table) => la.promptMoveTableFloor(table, ctx)
       : (table) => {
+          const initialFloorId = floorEntityId(table);
+          const initialZones = floorZoneOptionsForMove(floorZones, tables, initialFloorId, normalizeZone);
+          const initialZone = preferredFloorZone(initialZones, table.zone, normalizeZone);
           showFloorModal({
             title: `🏢 انتقال ${tableTitle(table)} به طبقه دیگر`,
             confirmText: 'انتقال میز',
             confirmClass: 'btn-primary',
-            bodyHtml: `<div class="floor-studio-modal__field"><label for="fm-target-floor">طبقه مقصد را انتخاب کنید:</label><select id="fm-target-floor">${floorLevels.map((fl) => `<option value="${esc(fl.id)}" ${(table.floorId || 'floor-ground') === fl.id ? 'selected' : ''}>${esc(fl.icon || '🏛️')} ${esc(fl.name)}</option>`).join('')}</select></div>`,
+            bodyHtml: `
+              <div class="floor-studio-modal__field">
+                <label for="fm-target-floor">طبقه مقصد:</label>
+                <select id="fm-target-floor">${floorLevels.map((fl) => `<option value="${esc(fl.id)}" ${initialFloorId === fl.id ? 'selected' : ''}>${esc(fl.icon || '🏛️')} ${esc(fl.name)}</option>`).join('')}</select>
+              </div>
+              <div class="floor-studio-modal__field">
+                <label for="fm-target-zone">بخش در طبقه مقصد:</label>
+                <select id="fm-target-zone">${initialZones.map((zone) => `<option value="${esc(zone)}" ${zone === initialZone ? 'selected' : ''}>${esc(zone)}</option>`).join('')}</select>
+                <small>اگر بخش هم‌نام در مقصد نباشد، میز به «بدون بخش» منتقل می‌شود.</small>
+              </div>
+              <p role="note">میزِ در سرویس، رزروشده یا دارای فراخوان را پس از پایان عملیات جابه‌جا کنید.</p>`,
             onConfirm: async (form) => {
               const targetFloorId = form.querySelector('#fm-target-floor')?.value;
-              if (!targetFloorId || targetFloorId === (table.floorId || 'floor-ground')) return true;
-              pushHistory(); table.floorId = targetFloorId; activeFloorId = targetFloorId;
-              await saveFloorLayout(true); render();
-              showToast(`${tableTitle(table)} به طبقه انتخابی منتقل شد.`, 'success');
+              const targetZone = form.querySelector('#fm-target-zone')?.value || 'بدون بخش';
+              if (!targetFloorId) return false;
+              if (['busy', 'reserved', 'attention'].includes(String(table.state || '')) || table.waiterCallId) {
+                showToast('این میز در سرویس، رزرو یا فراخوان فعال است؛ پس از پایان عملیات آن را جابه‌جا کنید.', 'warning');
+                return false;
+              }
+              if (targetFloorId === floorEntityId(table)
+                  && normalizeZone(targetZone) === normalizeZone(normalizeTableZoneValue(table.zone, normalizeZone))) return true;
+              pushHistory();
+              table.floorId = targetFloorId;
+              markTableZoneAssigned(table, targetZone, normalizeZone);
+              activeFloorId = targetFloorId;
+              const saved = await saveFloorLayout(true); render();
+              if (saved) showToast(`${tableTitle(table)} به طبقه انتخابی منتقل شد.`, 'success');
+              else showLayoutSaveFailure();
               return true;
             }
           });
+          setTimeout(() => {
+            const floorSelect = document.getElementById('fm-target-floor');
+            const zoneSelect = document.getElementById('fm-target-zone');
+            const refreshZones = () => {
+              if (!floorSelect || !zoneSelect) return;
+              const choices = floorZoneOptionsForMove(floorZones, tables, floorSelect.value, normalizeZone);
+              const preferred = floorSelect.value === initialFloorId ? table.zone : '';
+              const selected = preferredFloorZone(choices, preferred, normalizeZone);
+              zoneSelect.innerHTML = choices.map((zone) => `<option value="${esc(zone)}" ${zone === selected ? 'selected' : ''}>${esc(zone)}</option>`).join('');
+            };
+            floorSelect?.addEventListener('change', refreshZones);
+            refreshZones();
+          }, 50);
         };
 
     const promptAddFixture = la.promptAddFixture
-      ? () => la.promptAddFixture(ctx)
+      ? () => { if (requireConfiguredFloor('افزودن المان')) return la.promptAddFixture(ctx); }
       : () => {
+          if (!requireConfiguredFloor('افزودن المان')) return;
           const fixturePresets = [
             { type: 'entrance',  name: 'ورودی اصلی',               icon: '🚪', color: 'emerald', w: 7,  h: 10 },
             { type: 'exit',      name: 'درب خروج اضطراری',          icon: '🚪', color: 'rose',    w: 6,  h: 8  },
@@ -3095,9 +4694,10 @@ function createFloorStudio(opts) {
               };
               floorFixtures.push(newFixture);
               selectedFixtureId = newFixture.id;
-              await saveFloorLayout(true);
+              const saved = await saveFloorLayout(true);
               render();
-              showToast(`سازه «${name}» به نقشه افزوده شد.`, 'success');
+              if (saved) showToast(`سازه «${name}» به نقشه افزوده شد.`, 'success');
+              else showLayoutSaveFailure();
               return true;
             },
           });
@@ -3120,8 +4720,9 @@ function createFloorStudio(opts) {
         };
 
     const promptFloorSettings = la.promptFloorSettings
-      ? () => la.promptFloorSettings(ctx)
+      ? () => { if (requireConfiguredFloor('تنظیمات پلان')) return la.promptFloorSettings(ctx); }
       : () => {
+          if (!requireConfiguredFloor('تنظیمات پلان')) return;
           showFloorModal({
             title: '⚙️ تنظیمات معماری و مقیاس نقشه سالن',
             confirmText: 'ذخیره تنظیمات',
@@ -3153,7 +4754,7 @@ function createFloorStudio(opts) {
                 </label>
               </div>`,
             onConfirm: async (form) => {
-              floorSettings = {
+              const nextSettings = {
                 ...floorSettings,
                 lengthM: parseFloat(form.querySelector('#fm-sett-len')?.value) || 20,
                 widthM: parseFloat(form.querySelector('#fm-sett-wid')?.value) || 15,
@@ -3161,8 +4762,12 @@ function createFloorStudio(opts) {
                 showRulers: form.querySelector('#fm-sett-rulers')?.checked,
                 showGrid: form.querySelector('#fm-sett-grid')?.checked,
               };
-              await saveFloorLayout(true); render();
-              showToast('تنظیمات مقیاس و ظاهر نقشه سالن به‌روز شد.', 'success');
+              if (JSON.stringify(nextSettings) === JSON.stringify(floorSettings)) return true;
+              pushHistory();
+              floorSettings = nextSettings;
+              const saved = await saveFloorLayout(true); render();
+              if (saved) showToast('تنظیمات مقیاس و ظاهر نقشه سالن به‌روز شد.', 'success');
+              else showLayoutSaveFailure();
               return true;
             }
           });
@@ -3178,7 +4783,7 @@ function createFloorStudio(opts) {
               : curShape === 'lounge_takht' ? 'bolster'
                 : 'standard'
           );
-          let curSeats = Math.max(1, Math.min(24, Number(table.seats) || 4));
+          let curSeats = normalizeSeatCapacity(table.seats);
 
           const shapesDef = [
             { id: 'rectangle',    name: 'مستطیل استاندارد',         icon: '⬛', desc: 'کلاسیک رستورانی، ۲ تا ۱۲ نفر' },
@@ -3207,11 +4812,11 @@ function createFloorStudio(opts) {
               <span class="furniture-grid-group__title">📐 انتخاب فرم هندسی میز:</span>
               <div class="furniture-shapes-grid" id="fm-shapes-grid">
                 ${shapesDef.map((s) => `
-                  <div class="furniture-shape-card ${curShape === s.id ? 'is-active' : ''}" data-shape-choice="${esc(s.id)}">
+                  <button type="button" class="furniture-shape-card ${curShape === s.id ? 'is-active' : ''}" data-shape-choice="${esc(s.id)}" aria-pressed="${curShape === s.id}">
                     <span class="furniture-shape-card__icon">${s.icon}</span>
                     <span class="furniture-shape-card__name">${esc(s.name)}</span>
                     <span class="furniture-shape-card__desc">${esc(s.desc)}</span>
-                  </div>
+                  </button>
                 `).join('')}
               </div>
             </div>
@@ -3220,10 +4825,10 @@ function createFloorStudio(opts) {
               <span class="furniture-grid-group__title">🪑 مدل و استایل صندلی‌ها:</span>
               <div class="furniture-chairs-row" id="fm-chairs-row">
                 ${chairsDef.map((c) => `
-                  <div class="furniture-chair-pill ${curChair === c.id ? 'is-active' : ''}" data-chair-choice="${esc(c.id)}">
+                  <button type="button" class="furniture-chair-pill ${curChair === c.id ? 'is-active' : ''}" data-chair-choice="${esc(c.id)}" aria-pressed="${curChair === c.id}">
                     <span>${c.icon}</span>
                     <span>${esc(c.name)}</span>
-                  </div>
+                  </button>
                 `).join('')}
               </div>
             </div>
@@ -3232,14 +4837,14 @@ function createFloorStudio(opts) {
               <span class="furniture-grid-group__title">👥 ظرفیت صندلی‌ها:</span>
               <div class="furniture-seats-stepper">
                 <button type="button" class="palette-mini-btn" id="fm-seat-dec">−</button>
-                <input type="number" id="fm-seats-input" min="1" max="24" value="${curSeats}"
+                <input type="number" id="fm-seats-input" min="1" max="24" value="${curSeats}" aria-label="ظرفیت صندلی میز"
                   style="width:55px;text-align:center;background:#1e293b;border:1px solid rgba(255,255,255,0.2);color:#fff;border-radius:6px;font-weight:900">
                 <button type="button" class="palette-mini-btn" id="fm-seat-inc">＋</button>
                 <span style="font-size:11px;color:#94a3b8">نفر</span>
               </div>
               <div class="furniture-seats-presets">
                 ${[1, 2, 4, 6, 8, 10, 12, 16, 20, 24].map((cnt) => `
-                  <button type="button" class="furniture-seat-preset ${curSeats === cnt ? 'is-active' : ''}" data-seat-preset="${cnt}">
+                  <button type="button" class="furniture-seat-preset ${curSeats === cnt ? 'is-active' : ''}" data-seat-preset="${cnt}" aria-pressed="${curSeats === cnt}">
                     ${fmtNum(cnt)} نفره
                   </button>
                 `).join('')}
@@ -3273,12 +4878,19 @@ function createFloorStudio(opts) {
             modalEl.querySelectorAll('[data-shape-choice]').forEach((card) => {
               card.addEventListener('click', () => {
                 curShape = card.dataset.shapeChoice;
-                modalEl.querySelectorAll('[data-shape-choice]').forEach((c) => c.classList.toggle('is-active', c === card));
+                modalEl.querySelectorAll('[data-shape-choice]').forEach((c) => {
+                  const selected = c === card;
+                  c.classList.toggle('is-active', selected);
+                  c.setAttribute('aria-pressed', String(selected));
+                });
                 // auto-select مناسب‌ترین مدل صندلی
                 if (curShape === 'bar_stool' || curShape === 'wall_counter') curChair = 'bar_stool';
                 else if (curShape === 'lounge_takht') curChair = 'bolster';
-                modalEl.querySelectorAll('[data-chair-choice]').forEach((c) =>
-                  c.classList.toggle('is-active', c.dataset.chairChoice === curChair));
+                modalEl.querySelectorAll('[data-chair-choice]').forEach((c) => {
+                  const selected = c.dataset.chairChoice === curChair;
+                  c.classList.toggle('is-active', selected);
+                  c.setAttribute('aria-pressed', String(selected));
+                });
               });
             });
 
@@ -3286,17 +4898,24 @@ function createFloorStudio(opts) {
             modalEl.querySelectorAll('[data-chair-choice]').forEach((pill) => {
               pill.addEventListener('click', () => {
                 curChair = pill.dataset.chairChoice;
-                modalEl.querySelectorAll('[data-chair-choice]').forEach((p) => p.classList.toggle('is-active', p === pill));
+                modalEl.querySelectorAll('[data-chair-choice]').forEach((p) => {
+                  const selected = p === pill;
+                  p.classList.toggle('is-active', selected);
+                  p.setAttribute('aria-pressed', String(selected));
+                });
               });
             });
 
             // stepper تعداد نفر
             const seatInp = modalEl.querySelector('#fm-seats-input');
             const syncSeats = (val) => {
-              curSeats = Math.max(1, Math.min(24, Number(val) || 1));
+              curSeats = normalizeSeatCapacity(val, 1);
               if (seatInp) seatInp.value = curSeats;
-              modalEl.querySelectorAll('[data-seat-preset]').forEach((b) =>
-                b.classList.toggle('is-active', Number(b.dataset.seatPreset) === curSeats));
+              modalEl.querySelectorAll('[data-seat-preset]').forEach((b) => {
+                const selected = Number(b.dataset.seatPreset) === curSeats;
+                b.classList.toggle('is-active', selected);
+                b.setAttribute('aria-pressed', String(selected));
+              });
             };
 
             modalEl.querySelector('#fm-seat-dec')?.addEventListener('click', () => syncSeats(curSeats - 1));
@@ -3313,7 +4932,7 @@ function createFloorStudio(opts) {
     const exportLayoutJson = la.exportLayoutJson
       ? () => la.exportLayoutJson(ctx)
       : () => {
-          const data = { version: '1.2.0', exportTimestamp: new Date().toISOString(), branchId: currentBranchId(), settings: floorSettings, floors: floorLevels, zones: floorZones, fixtures: floorFixtures, tables: tables.map((t) => ({ id: t.id, label: t.label, seats: t.seats, zone: t.zone, floorId: t.floorId || 'floor-ground', shape: t.shape || 'rectangle', x: t.x, y: t.y, rotation: t.rotation || 0, active: t.active !== false, mergedWith: t.mergedWith || null, mergedInto: t.mergedInto || null, tags: t.tags || [] })) };
+          const data = { version: '1.3.0', exportTimestamp: new Date().toISOString(), branchId: currentBranchId(), settings: floorSettings, floors: floorLevels, zones: floorZones, fixtures: floorFixtures, tables: tables.map((t) => ({ id: t.id, label: t.label, seats: t.seats, ...tableZoneForSave(t, normalizeZone), ...floorIdForPersistence(t), shape: t.shape || 'rectangle', chairModel: t.chairModel || null, chairScale: t.chairScale || 1, tableScale: t.scale || t.tableScale || 1, tableScaleX: t.scaleX ?? t.tableScaleX ?? t.scale ?? t.tableScale ?? 1, tableScaleY: t.scaleY ?? t.tableScaleY ?? t.scale ?? t.tableScale ?? 1, ...tableCoordinatesForSave(t), rotation: t.rotation || 0, active: t.active !== false, mergedWith: t.mergedWith || null, mergedInto: t.mergedInto || null, tags: t.tags || [] })) };
           const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
           const url = URL.createObjectURL(blob);
           const a = document.createElement('a'); a.href = url; a.download = `westo-floor-plan-branch-${currentBranchId() || 'default'}-${new Date().toISOString().slice(0, 10)}.json`;
@@ -3358,28 +4977,48 @@ function createFloorStudio(opts) {
                 if (!parsed || (!Array.isArray(parsed.tables) && !Array.isArray(parsed.zones))) {
                   throw new Error('فرمت فایل پشتیبان معتبر نیست.');
                 }
+                if (!isLayoutImportBranchCompatible(parsed.branchId, currentBranchId())) {
+                  throw new Error('این فایل پشتیبان برای شعبهٔ دیگری است؛ برای جلوگیری از جایگزینی چیدمان، بازیابی متوقف شد.');
+                }
+
+                const isRecord = (row) => Boolean(row && typeof row === 'object' && !Array.isArray(row));
+                for (const key of ['tables', 'zones', 'fixtures', 'floors']) {
+                  if (Array.isArray(parsed[key]) && !parsed[key].every(isRecord)) {
+                    throw new Error(`ساختار بخش «${key}» در فایل پشتیبان معتبر نیست.`);
+                  }
+                }
+                if (parsed.settings != null && (!isRecord(parsed.settings))) {
+                  throw new Error('ساختار تنظیمات در فایل پشتیبان معتبر نیست.');
+                }
+
+                const importedFloors = Array.isArray(parsed.floors) ? parsed.floors.map((floor) => ({ ...floor })) : null;
+                const importedZones = Array.isArray(parsed.zones) ? parsed.zones.map((zone) => ({ ...zone })) : null;
+                const importedFixtures = Array.isArray(parsed.fixtures) ? parsed.fixtures.map((fixture) => ({ ...fixture })) : null;
+                const importedTables = Array.isArray(parsed.tables) ? parsed.tables.map((table, index) => {
+                  const copy = { ...table };
+                  ensureTableGeometry(copy, index);
+                  return copy;
+                }) : null;
+
                 pushHistory();
-                if (Array.isArray(parsed.floors) && parsed.floors.length > 0) {
-                  floorLevels = parsed.floors;
+                if (importedFloors && importedFloors.length > 0) {
+                  floorLevels = importedFloors;
                   activeFloorId = floorLevels[0].id;
                 }
-                if (Array.isArray(parsed.zones)) {
-                  floorZones = parsed.zones;
+                if (importedZones) {
+                  floorZones = importedZones;
                 }
-                if (Array.isArray(parsed.fixtures)) {
-                  floorFixtures = parsed.fixtures;
+                if (importedFixtures) {
+                  floorFixtures = importedFixtures;
                 }
                 if (parsed.settings && typeof parsed.settings === 'object') {
                   floorSettings = { ...floorSettings, ...parsed.settings };
                 }
-                if (Array.isArray(parsed.tables)) {
-                  tables = parsed.tables.map((t) => {
-                    const copy = { ...t };
-                    ensureTableGeometry(copy, tables.length);
-                    return copy;
-                  });
+                if (importedTables) {
+                  tables = importedTables;
                 }
-                await saveFloorLayout(false);
+                const saved = await saveFloorLayout(true);
+                if (!saved) return false;
                 render();
                 showToast('چیدمان نقشه با موفقیت از فایل بازیابی شد.', 'success');
                 return true;
@@ -3404,10 +5043,19 @@ function createFloorStudio(opts) {
           }, 50);
         };
 
-    const showTemplateModal = la.showTemplateModal
-      ? () => la.showTemplateModal(ctx)
-      : () => {
-          const templates = [
+    const showTemplateModal = () => {
+          if (!floorExists(floorLevels, activeFloorId)
+              || !isFloorLayoutEmpty({
+                tables: entitiesForFloor(tables, activeFloorId),
+                zones: entitiesForFloor(floorZones, activeFloorId),
+                fixtures: entitiesForFloor(floorFixtures, activeFloorId),
+              })) {
+            showToast('الگوی شروع فقط برای یک طبقهٔ خالی در دسترس است؛ داده‌های فعلی دست‌نخورده می‌مانند.', 'warning');
+            return;
+          }
+          const templates = FLOOR_LAYOUT_TEMPLATES;
+          /* الگوهای قدیمیِ نمونه از رابط کاربری حذف شده‌اند و استفاده نمی‌شوند.
+          const legacyTemplates = [
             {
               id: 'modern-cafe',
               title: 'کافه تریا و بار مدرن',
@@ -3577,75 +5225,72 @@ function createFloorStudio(opts) {
                 { label: 'میز ۱۰۹', seats: 8, shape: 'circle', zone: 'تالار اصلی ضیافت', x: 65, y: 70 },
               ]
             }
-          ];
+          ]; */
 
           showFloorModal({
-            title: '📋 انتخاب قالب و الگوی معماری آماده رستوران',
-            confirmText: 'اعمال این قالب روی سالن',
+            title: 'انتخاب الگوی شروع',
+            confirmText: 'استفاده از این الگو',
             confirmClass: 'btn-primary',
             modalClass: 'floor-studio-modal--wide',
             bodyHtml: `
-              <p style="font-size:13px;color:#94a3b8;margin:0 0 12px">یک قالب استاندارد را برای چیدمان فوری و حرفه‌ای رستوران انتخاب کنید:</p>
-              <div class="floor-template-grid" id="fm-templates-grid">
-                ${templates.map((tpl, idx) => `
-                  <div class="floor-template-card ${idx === 0 ? 'is-selected' : ''}" data-tpl-id="${tpl.id}">
+              <p style="font-size:14px;color:#94a3b8;margin:0 0 12px">الگو فقط بخش‌ها و المان‌های قابل ویرایش را می‌سازد؛ میز یا رزرو نمونه ایجاد نمی‌شود.</p>
+              <div class="floor-template-grid" id="fm-templates-grid" role="radiogroup" aria-label="الگوی شروع چیدمان">
+                ${templates.map((tpl) => `
+                  <label class="floor-template-card" data-tpl-id="${tpl.id}">
+                    <input type="radio" name="floor-layout-template" value="${tpl.id}" required />
                     <div class="floor-template-card__head">
-                      <span style="font-size:24px">${tpl.icon}</span>
-                      <strong style="font-size:14px;color:#f8fafc">${esc(tpl.title)}</strong>
+                      <span style="font-size:24px" aria-hidden="true">${tpl.icon}</span>
+                      <strong style="font-size:15px;color:#f8fafc">${esc(tpl.title)}</strong>
                     </div>
-                    <p style="font-size:11px;color:#94a3b8;margin:6px 0 10px;line-height:1.5">${esc(tpl.desc)}</p>
-                    <div style="font-size:11px;color:#38bdf8;font-weight:700">
-                      <span>📐 ${fmtNum(tpl.tables.length)} میز · ${fmtNum(tpl.fixtures.length)} سازه معماری</span>
+                    <p style="font-size:13px;color:#94a3b8;margin:6px 0 10px;line-height:1.6">${esc(tpl.desc)}</p>
+                    <div style="font-size:12px;color:#38bdf8;font-weight:700">
+                      <span>📐 ${fmtNum(tpl.zones.length)} بخش · ${fmtNum(tpl.fixtures.length)} المان</span>
                     </div>
-                  </div>
+                  </label>
                 `).join('')}
               </div>
-              <p style="font-size:12px;color:#fb7185;margin:12px 0 0">توجه: اعمال قالب، میزها، بخش‌ها و سازه‌های معماری فعلی این شعبه را جایگزین خواهد کرد. قبل از اعمال، تاریخچه قبلی ذخیره می‌گردد.</p>
+              <p style="font-size:13px;color:#94a3b8;margin:12px 0 0">این انتخاب فقط روی طبقهٔ خالی جاری اعمال می‌شود؛ میزهای واقعی، رزروها و سایر طبقات تغییر نمی‌کنند.</p>
             `,
             onConfirm: async (form) => {
-              const selectedEl = form.querySelector('.floor-template-card.is-selected');
-              const tplId = selectedEl?.dataset?.tplId;
+              const tplId = form.querySelector('input[name="floor-layout-template"]:checked')?.value;
               const tpl = templates.find((t) => t.id === tplId);
-              if (!tpl) return false;
+              if (!tpl) {
+                showToast('برای ادامه یک الگوی شروع را انتخاب کنید.', 'warning');
+                return false;
+              }
+              const targetFloorId = activeFloorId;
+              if (!floorExists(floorLevels, targetFloorId)
+                  || !isFloorLayoutEmpty({
+                    tables: entitiesForFloor(tables, targetFloorId),
+                    zones: entitiesForFloor(floorZones, targetFloorId),
+                    fixtures: entitiesForFloor(floorFixtures, targetFloorId),
+                  })) {
+                showToast('این طبقه دیگر خالی نیست؛ هیچ داده‌ای جایگزین نشد.', 'warning');
+                return false;
+              }
+              const materialized = materializeFloorTemplate(tpl, targetFloorId, `starter-${Date.now()}`);
+              if (!materialized) return false;
 
               pushHistory();
-              floorZones = tpl.zones.map((z) => ({ ...z }));
-              floorFixtures = tpl.fixtures.map((f) => ({ ...f }));
-              tables = tpl.tables.map((t, idx) => {
-                const item = {
-                  id: idx + 1,
-                  label: t.label,
-                  seats: t.seats,
-                  zone: t.zone,
-                  shape: t.shape,
-                  x: t.x,
-                  y: t.y,
-                  rotation: 0,
-                  active: true,
-                  floorId: 'floor-ground',
-                  state: 'available',
-                  stateLabel: 'آزاد',
-                  branchId: currentBranchId(),
-                  tags: [],
-                };
-                ensureTableGeometry(item, idx);
-                return item;
-              });
+              floorZones.push(...materialized.zones);
+              floorFixtures.push(...materialized.fixtures);
 
               activeZone = 'all';
-              await saveFloorLayout(false);
+              const saved = await saveFloorLayout(true);
               render();
-              showToast(`قالب «${tpl.title}» با موفقیت روی نقشه سالن اعمال گردید.`, 'success');
+              if (saved) showToast(`الگوی «${tpl.title}» روی طبقهٔ خالی اعمال شد.`, 'success');
+              else showLayoutSaveFailure();
               return true;
             }
           });
 
           setTimeout(() => {
             const grid = document.getElementById('fm-templates-grid');
-            grid?.querySelectorAll('.floor-template-card').forEach((card) => {
-              card.addEventListener('click', () => {
-                grid.querySelectorAll('.floor-template-card').forEach((c) => c.classList.remove('is-selected'));
-                card.classList.add('is-selected');
+            grid?.querySelectorAll('.floor-template-card input').forEach((input) => {
+              input.addEventListener('change', () => {
+                grid.querySelectorAll('.floor-template-card').forEach((card) => card.classList.toggle(
+                  'is-selected', Boolean(card.querySelector('input')?.checked),
+                ));
               });
             });
           }, 50);
@@ -3656,35 +5301,63 @@ function createFloorStudio(opts) {
 
   // ─── mount — entry point ──────────────────────────────────────────────
   const mount = async () => {
+    isMounted = true;
+    document.body.classList.add('admin-floor-active');
+
     // بارگذاری داده‌ها
     let [d, freshFloorData] = await Promise.all([
-      api(`/api/admin/tables${branchQs()}`),
-      api(`/api/admin/v2/floor${branchQs()}`),
+      api(`/api/admin/tables${branchQuery()}`),
+      api(`/api/admin/v2/floor${branchQuery()}`),
     ]);
+
+    if (!isCurrentStudio()) return;
 
     floorData = freshFloorData;
 
     // تنظیم floorLevels
-    floorLevels = Array.isArray(floorData?.floors) && floorData.floors.length > 0
-      ? floorData.floors.map((fl) => ({ id: String(fl.id || 'floor-ground'), name: String(fl.name || 'سالن اصلی (همکف)'), level: Number(fl.level) || 0, icon: fl.icon || '🏛️', isDefault: Boolean(fl.isDefault) }))
-      : [{ id: 'floor-ground', name: 'سالن اصلی (همکف)', level: 0, icon: '🏛️', isDefault: true }];
+    floorLevels = floorCollection(floorData, 'floors')
+      .filter((fl) => String(fl?.id || '').trim())
+      .map((fl) => ({ id: String(fl.id), name: String(fl.name || 'طبقه بدون نام'), level: Number(fl.level) || 0, icon: fl.icon || '🏛️', isDefault: Boolean(fl.isDefault) }));
 
-    activeFloorId = floorLevels[0]?.id || 'floor-ground';
+    const defaultFloorId = floorLevels[0]?.id;
+    activeFloorId = defaultFloorId || UNASSIGNED_FLOOR_ID;
 
     // تنظیم floorFixtures
-    floorFixtures = Array.isArray(floorData?.fixtures) && floorData.fixtures.length > 0
-      ? floorData.fixtures.map((f, i) => ({ id: String(f.id || `fix-${i}`), type: String(f.type || 'fixture'), name: String(f.name || 'المان سالن'), x: Number(f.x) || 10, y: Number(f.y) || 10, w: Number(f.w) || 10, h: Number(f.h) || 8, rotation: Number(f.rotation) || 0, color: f.color || 'slate', icon: f.icon || '🏷️', floorId: f.floorId || 'floor-ground' }))
-      : DEFAULT_FLOOR_FIXTURES;
+    floorFixtures = floorCollection(floorData, 'fixtures').map((f, i) => ({
+      id: String(f.id || `fix-${i}`),
+      type: String(f.type || 'fixture'),
+      name: String(f.name || 'المان'),
+      x: Number(f.x) || 0,
+      y: Number(f.y) || 0,
+      w: Number(f.w) || 2,
+      h: Number(f.h) || 2,
+      rotation: Number(f.rotation) || 0,
+      color: f.color || 'slate',
+      icon: f.icon || '🏷️',
+      floorId: f.floorId ? String(f.floorId) : defaultFloorId || null,
+    }));
 
     // تنظیم floorSettings
     floorSettings = floorData?.settings || { widthM: 20, lengthM: 25, gridStep: 0.5, bgTheme: 'blueprint', wallThickness: 0.4, showRulers: true, showGrid: true };
 
     // تنظیم floorZones
-    floorZones = sanitizeNonOverlappingZones(
-      Array.isArray(floorData?.zones) && floorData.zones.length > 0
-        ? floorData.zones.map((z) => ({ id: String(z.id || `zone-${Math.random().toString(36).slice(2, 7)}`), name: normalizeZone(z.name), x: Number(z.x) || 0, y: Number(z.y) || 0, w: Number(z.w) || 30, h: Number(z.h) || 30, color: z.color || 'blue', icon: z.icon || '🏷️' }))
-        : DEFAULT_FLOOR_ZONES
-    );
+    floorZones = sanitizeNonOverlappingZones(dedupeFloorZones(
+      floorCollection(floorData, 'zones').map((z) => ({
+        id: String(z.id || `zone-${Math.random().toString(36).slice(2, 7)}`),
+        name: normalizeZone(z.name),
+        x: Number(z.x) || 0,
+        y: Number(z.y) || 0,
+        w: Number(z.w) || 30,
+        h: Number(z.h) || 30,
+        color: z.color || 'blue',
+        icon: z.icon || '🏷️',
+        lengthM: Number(z.lengthM) || undefined,
+        widthM: Number(z.widthM) || undefined,
+        areaSqM: Number(z.areaSqM) || undefined,
+        shape: z.shape || 'rectangle',
+        floorId: z.floorId ? String(z.floorId) : defaultFloorId || null,
+      }))
+    ));
 
     // تنظیم QR prefs
     try { qrPrefs = { ...defaultQrPrefs, ...JSON.parse(localStorage.getItem(QR_PREFS_KEY) || '{}') }; }
@@ -3693,16 +5366,9 @@ function createFloorStudio(opts) {
 
     // بارگذاری tables
     tables = Array.isArray(d.tables) ? d.tables : [];
-    tables.forEach((t) => { t.zone = normalizeZone(t.zone); });
-
-    // Ensure custom zones
-    const existingZoneNames = new Set(floorZones.map((z) => normalizeZone(z.name)));
     tables.forEach((t) => {
-      const zn = normalizeZone(t.zone);
-      if (zn && !existingZoneNames.has(zn)) {
-        existingZoneNames.add(zn);
-        floorZones.push({ id: `zone-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, name: zn, x: 35, y: 35, w: 30, h: 30, color: 'amber', icon: '🏷️' });
-      }
+      t.zone = normalizeTableZoneValue(t.zone, normalizeZone);
+      if (!t.floorId && defaultFloorId) t.floorId = defaultFloorId;
     });
 
     // Apply floorData to tables
@@ -3714,7 +5380,10 @@ function createFloorStudio(opts) {
         if (typeof f.y === 'number') table.y = f.y;
         if (f.shape) table.shape = f.shape;
         if (typeof f.rotation === 'number') table.rotation = f.rotation;
-        if (f.zone) table.zone = normalizeZone(f.zone);
+        if (f.zone) table.zone = normalizeTableZoneValue(f.zone, normalizeZone);
+        if (typeof f.x === 'number' && typeof f.y === 'number') markTablePositioned(table);
+        if (f.floorId) table.floorId = f.floorId;
+        else if (!table.floorId && defaultFloorId) table.floorId = defaultFloorId;
         table.state = f.state || table.state;
         table.stateLabel = f.stateLabel || table.stateLabel;
         table.serviceEndsAt = f.serviceEndsAt || null;
@@ -3723,6 +5392,14 @@ function createFloorStudio(opts) {
       }
       ensureTableGeometry(table, index);
     });
+
+    if (hasUnassignedFloorEntities(tables, floorZones, floorFixtures)) {
+      activeFloorId = UNASSIGNED_FLOOR_ID;
+    } else {
+      activeFloorId = defaultFloorId || UNASSIGNED_FLOOR_ID;
+    }
+
+    activeZone = 'all';
 
     // اولین render
     render();
@@ -3733,7 +5410,25 @@ function createFloorStudio(opts) {
 
 // Export برای استفاده در admin.js
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { createFloorStudio };
+  module.exports = { createFloorStudio, __test: {
+    createLayoutHistory, createHistoryCheckpoint, createLayoutRevision, createSerializedSaveRunner,
+    resolveFloorViewMode,
+    isActiveFloorPointerEvent, isCancelledFloorPointerEvent,
+    createFloorBranchContext,
+    isLayoutImportBranchCompatible, calculateZoneDragPosition, normalizeSeatCapacity,
+    calculateMobileTableAdjustment, normalizeFloorRotation, suggestedTablePosition, tableCoordinatesForSave,
+    mergeFloorOperationalState, findFloorZonePlacement, findFloorZoneAtPosition,
+    planFloorZoneMembershipSync, applyFloorZoneMembershipSync,
+    markTablePositioned, normalizeTableZoneValue, tableZoneForSave, markTableZoneAssigned,
+    isTableInsideZone, calculateZoneFocusPan,
+    UNASSIGNED_FLOOR_ID, floorCollection, floorEntityId, entitiesForFloor, zonesShareLayoutSpace, floorExists, parseFloorLevel,
+    hasUnassignedFloorEntities, floorIdForPersistence, isFloorLayoutEmpty, FLOOR_LAYOUT_TEMPLATES,
+    materializeFloorTemplate, validateFloorTableDeleteResponse, planTableMerge,
+    applyTableMergePlan, groupTablesByZoneForFloor, isFloorZoneNameTaken,
+    renameZoneAndTablesOnFloor, removeZoneAndReassignTablesOnFloor, floorZoneOptionsForMove, preferredFloorZone,
+    isFloorLayoutRevisionConflict, isUsableFloorDataSnapshot, isCompleteFloorLayoutSnapshot, floorRefreshNotice,
+    normalizeFloorTableReference, isWaiterCallForTable,
+  } };
 } else if (typeof window !== 'undefined') {
   window.createFloorStudio = createFloorStudio;
 }

@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 500" role="img" aria-labelledby="title desc">
+  <title id="title">SALSA modular S mark v2</title>
+  <desc id="desc">A traced, flat vector master of the SALSA three-part S mark. The three independent shapes share one optical curve language.</desc>
+  <g fill="#C62828" fill-rule="nonzero">
+    <path d="M 148 115 L 130 136 L 122 159 L 126 192 L 143 220 L 161 237 L 185 253 L 262 286 L 299 309 L 316 334 L 317 371 L 334 371 L 355 357 L 369 340 L 378 315 L 376 288 L 359 256 L 341 238 L 318 223 L 242 192 L 208 172 L 192 155 L 184 139 L 184 107 L 181 103 L 167 103 Z"/>
+    <path d="M 122 361 L 123 377 L 130 391 L 144 403 L 157 407 L 266 406 L 278 401 L 290 390 L 298 367 L 296 353 L 288 339 L 280 332 L 264 326 L 154 327 L 143 331 L 131 341 Z"/>
+    <path d="M 203 103 L 204 118 L 212 133 L 223 142 L 237 147 L 348 146 L 368 134 L 378 115 L 378 100 L 373 87 L 360 74 L 344 68 L 235 69 L 212 83 Z"/>
+  </g>
+</svg>

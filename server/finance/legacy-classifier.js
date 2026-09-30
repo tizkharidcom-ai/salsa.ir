@@ -7,7 +7,10 @@ const TRUST_PRIORITY = Object.freeze({ verified: 1, inferred_needs_approval: 2, 
 
 function list(value) { return Array.isArray(value) ? value : []; }
 function clone(value) { return JSON.parse(JSON.stringify(value == null ? null : value)); }
-function paid(order) { return order?.paymentStatus === 'paid' || PAID_STATUSES.has(String(order?.status || '')); }
+function paid(order) {
+  if (order?.paymentStatus === 'unpaid' || order?.paymentStatus === 'pending') return false;
+  return order?.paymentStatus === 'paid' || PAID_STATUSES.has(String(order?.status || ''));
+}
 function amountIrrFromLegacyToman(value) { return Math.round(Number(value) || 0) * 10; }
 function digest(value) { return crypto.createHash('sha256').update(String(value)).digest('hex'); }
 function stableUuid(value) {

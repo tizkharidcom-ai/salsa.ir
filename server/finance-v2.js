@@ -7,6 +7,12 @@ const breakEvenEngine = require('./finance/break-even-engine');
 const orderCosting = require('./finance/order-costing');
 const inventoryOperations = require('./finance/inventory-operations');
 const legacyClassifier = require('./finance/legacy-classifier');
+const { RESTAURANT_COST_BEHAVIOR } = require('./finance/restaurant-cost-classifier');
+const financeContracts = require('./finance/domain-contracts');
+const valueContracts = require('./finance/value-contracts');
+const { buildCutoverRunbook } = require('./finance/cutover-runbook');
+const financeAuditEngine = require('./finance/audit-engine');
+const { buildRefundReconciliationMatch, normalizeIdempotencyKey } = require('./settlement-reference');
 const { branchScopeForUser } = require('./command-center');
 
 const PAID_STATUSES = new Set(['paid', 'preparing', 'ready', 'dispatched', 'picked_up', 'delivered', 'done']);
@@ -20,10 +26,43 @@ const TENDER_ACCOUNTS = Object.freeze({
   online: '1310',
   gateway: '1310',
   credit: '1510',
-  wallet: '2400',
-  customer_wallet: '2400',
+  // Customer wallet balances are a customer-deposit liability, not a gift
+  // card liability. Keep the V2 mapping aligned with the canonical COA and
+  // the legacy accounting engine (2500). Gift cards remain on 2400.
+  wallet: '2500',
+  customer_wallet: '2500',
   gift_card: '2400',
 });
+// Wallet top-ups are deposits, not sales.  The debit side is selected from a
+// closed allow-list so a client cannot redirect a top-up to an arbitrary COA
+// account.  Online PSP receipts remain a clearing asset until settlement;
+// settlement reconciliation can subsequently move them to the bank account.
+const WALLET_TOPUP_PAYMENT_ACCOUNTS = Object.freeze({
+  cash: '1110',
+  cash_in_store: '1110',
+  in_store_staff: '1110',
+  pos: '1320',
+  card: '1320',
+  manual_card: '1320',
+  pos_card: '1320',
+  online: '1310',
+  online_gateway: '1310',
+  gateway: '1310',
+  bank: '1210',
+  // Non-cash campaign credits are funded by marketing expense, never by a
+  // fictitious bank receipt. They still increase the same customer-deposit
+  // liability and therefore require an official journal.
+  marketing_bonus: '6400',
+  referral_bonus: '6400',
+  referral_welcome: '6400',
+  birthday_gift: '6400',
+  winback_incentive: '6400',
+});
+const WALLET_LIABILITY_ACCOUNT = '2500';
+// The bonus is a customer-acquisition/promotion cost incurred when credit is
+// granted.  Keeping it explicit makes the policy auditable and prevents the
+// bonus from being mistaken for cash received or restaurant revenue.
+const WALLET_BONUS_EXPENSE_ACCOUNT = '6400';
 const SALES_ACCOUNTS = new Set(['4110', '4120', '4130', '4140', '4210', '4220', '4300', '4400', '4500']);
 const DEFAULT_BANK_ACCOUNTS = Object.freeze([
   { code: '1210', name: 'بانک جاری اصلی' },
@@ -72,45 +111,96 @@ const OPERATING_EXPENSE_CATEGORIES = Object.freeze({
   bank_fees: { label: 'کارمزد بانکی و کارتخوان', expenseAccount: '6950' },
   other: { label: 'سایر هزینه‌ها', expenseAccount: '6990' },
 });
-const RESTAURANT_COST_BEHAVIOR = Object.freeze({
-  5100: { behavior: 'variable', label: 'مواد اولیه و بهای فروش' },
-  5200: { behavior: 'variable', label: 'مواد اولیه نوشیدنی و قهوه' },
-  5300: { behavior: 'variable', label: 'ظروف و ملزومات بیرون‌بر' },
-  5400: { behavior: 'variable', label: 'ضایعات آشپزخانه' },
-  5500: { behavior: 'variable', label: 'کسری و مازاد صندوق' },
-  5110: { behavior: 'variable', label: 'ضایعات مواد اولیه' },
-  5120: { behavior: 'variable', label: 'کسری شمارش موجودی' },
-  5130: { behavior: 'variable', label: 'افت تولید بچ' },
-  6100: { behavior: 'fixed', label: 'حقوق و دستمزد' },
-  6110: { behavior: 'fixed', label: 'حقوق آشپزخانه و بار' },
-  6120: { behavior: 'fixed', label: 'حقوق سالن و صندوق' },
-  6130: { behavior: 'fixed', label: 'اضافه‌کاری، پاداش و عیدی' },
-  6140: { behavior: 'fixed', label: 'بیمه سهم کارفرما' },
-  6200: { behavior: 'fixed', label: 'اجاره' },
-  6300: { behavior: 'fixed', label: 'آب، برق، گاز و اینترنت' },
-  6400: { behavior: 'fixed', label: 'تبلیغات و بازاریابی' },
-  6500: { behavior: 'fixed', label: 'تعمیرات و نگهداری' },
-  6600: { behavior: 'variable', label: 'نظافت و بهداشت' },
-  6700: { behavior: 'fixed', label: 'ملزومات اداری' },
-  6800: { behavior: 'fixed', label: 'بیمه کسب‌وکار' },
-  6900: { behavior: 'fixed', label: 'مجوز و عوارض' },
-  6950: { behavior: 'variable', label: 'کارمزد بانکی و کارتخوان' },
-  6970: { behavior: 'variable', label: 'کمیسیون پلتفرم فروش' },
-  6980: { behavior: 'fixed', label: 'استهلاک' },
-});
 const TEHRAN_DATE_FORMATTER = new Intl.DateTimeFormat('en-US', {
   timeZone: 'Asia/Tehran', year: 'numeric', month: '2-digit', day: '2-digit',
 });
 
 function list(value) { return Array.isArray(value) ? value : []; }
-function int(value) { return Number.isFinite(Number(value)) ? Math.round(Number(value)) : 0; }
+function numeric(value) {
+  try {
+    return valueContracts.parseDecimal(value, { emptyValue: 0, label: 'عدد' });
+  } catch {
+    return NaN;
+  }
+}
+function int(value) { const parsed = numeric(value); return Number.isFinite(parsed) ? Math.round(parsed) : 0; }
+function strictLegacyTomanIrr(value, code) {
+  const toman = numeric(value);
+  if (!Number.isSafeInteger(toman) || toman < 0 || !Number.isSafeInteger(toman * 10)) {
+    throw Object.assign(new Error('مبلغ ذخیره‌شده به تومان باید عدد صحیح و در محدودهٔ امن باشد.'), { code, status: 409 });
+  }
+  return toman * 10;
+}
 function safeIrr(value, code = 'amount_irr_invalid') {
-  const amount = Number(value);
-  if (!Number.isSafeInteger(amount) || amount < 0) throw Object.assign(new Error('مبلغ ریالی باید عدد صحیح نامنفی و در محدودهٔ امن باشد.'), { code });
-  return amount;
+  try {
+    return valueContracts.parseIrr(value, { allowNegative: false });
+  } catch {
+    throw Object.assign(new Error('مبلغ ریالی باید عدد صحیح نامنفی و در محدودهٔ امن باشد.'), { code });
+  }
 }
 function irrFromLegacyToman(value) { return int(value) * 10; }
+function orderTaxAmountIrr(order) {
+  const taxSnapshot = order?.taxSnapshot ?? order?.tax_snapshot;
+  const snapshotAmount = (snapshot) => {
+    if (Array.isArray(snapshot)) {
+      return snapshot.reduce((sum, row) => {
+        const raw = row?.taxAmountIrr ?? row?.tax_amount_irr ?? row?.taxAmount ?? row?.tax_amount;
+        if (raw == null) throw Object.assign(new Error('ردیف تصویر مالیاتی فاقد مبلغ مالیات است.'), { code: 'tax_snapshot_invalid', status: 409 });
+        const next = sum + safeIrr(raw, 'tax_total_invalid');
+        if (!Number.isSafeInteger(next)) throw Object.assign(new Error('جمع تصویر مالیاتی از محدودهٔ امن خارج است.'), { code: 'tax_total_invalid', status: 409 });
+        return next;
+      }, 0);
+    }
+    if (snapshot && typeof snapshot === 'object') {
+      const raw = snapshot.totalTaxIrr ?? snapshot.total_tax_irr ?? snapshot.totalTax ?? snapshot.total_tax;
+      if (raw == null) throw Object.assign(new Error('تصویر مالیاتی قطعی فاقد مبلغ کل مالیات است.'), { code: 'tax_snapshot_invalid', status: 409 });
+      return safeIrr(raw, 'tax_total_invalid');
+    }
+    if (snapshot == null) return null;
+    throw Object.assign(new Error('ساختار تصویر مالیاتی قطعی معتبر نیست.'), { code: 'tax_snapshot_invalid', status: 409 });
+  };
+  const snapIrr = snapshotAmount(taxSnapshot);
+  const explicitIrr = order?.taxAmountIrr ?? order?.totalTaxIrr ?? order?.total_tax_irr;
+  const legacyToman = order?.taxAmount ?? order?.tax ?? order?.vatAmount;
+  let legacyIrr = null;
+  if (legacyToman != null) {
+    legacyIrr = strictLegacyTomanIrr(legacyToman, 'tax_total_invalid');
+  }
+  if (snapIrr != null) {
+    if (explicitIrr != null && safeIrr(explicitIrr, 'tax_total_invalid') !== snapIrr) {
+      throw Object.assign(new Error('مبلغ مالیات با تصویر مالیاتی قطعی سفارش یکسان نیست.'), {
+        code: 'tax_snapshot_conflict', status: 409,
+      });
+    }
+    if (legacyIrr != null && legacyIrr !== snapIrr) {
+      throw Object.assign(new Error('مبلغ مالیات تاریخی با تصویر مالیاتی قطعی سفارش یکسان نیست.'), {
+        code: 'tax_snapshot_conflict', status: 409,
+      });
+    }
+    return snapIrr;
+  }
+  if (explicitIrr != null) return safeIrr(explicitIrr, 'tax_total_invalid');
+  return legacyIrr ?? 0;
+}
 function now() { return new Date().toISOString(); }
+function isoDateOnly(value) {
+  const text = valueContracts.parseDateOnly(value);
+  return text ? new Date(`${text}T12:00:00.000Z`) : null;
+}
+function isoTimestamp(value, code, message) {
+  try {
+    return valueContracts.requireTimestamp(value, { code, message });
+  } catch (error) {
+    throw Object.assign(error, { code, status: 400 });
+  }
+}
+function optionalCalendarDate(value, code, message) {
+  if (value == null || String(value).trim() === '') return null;
+  const dateOnly = valueContracts.parseDateOnly(value);
+  if (dateOnly) return dateOnly;
+  const timestamp = isoTimestamp(value, code, message);
+  return tehranDateKey(timestamp);
+}
 function tehranDateKey(value = new Date()) {
   const date = value instanceof Date ? value : new Date(value);
   if (!Number.isFinite(date.getTime())) return null;
@@ -132,11 +222,26 @@ function canonicalJson(value) {
   return JSON.stringify(value === undefined ? null : value);
 }
 function sha256(value) { return crypto.createHash('sha256').update(String(value)).digest('hex'); }
+function financeEventPayloadFingerprint(event) {
+  const payload = event?.payload && typeof event.payload === 'object' ? event.payload : {};
+  return sha256(canonicalJson({
+    source: String(event?.source || '').trim(),
+    sourceId: String(event?.sourceId || '').trim(),
+    sourceVersion: Number(event?.sourceVersion ?? 1),
+    branchId: branchDimension(event),
+    occurredAt: event?.occurredAt || null,
+    amountIrr: safeIrr(event?.amountIrr == null ? 0 : event.amountIrr, 'finance_event_amount_invalid'),
+    payload,
+  }));
+}
 function accountCodesForDb(db) {
   const accounts = list(db?.accounting?.accounts);
   return accounts.length ? new Set(accounts.map((account) => String(account?.code || account?.accountCode || '').trim()).filter(Boolean)) : null;
 }
-function paid(order) { return order?.paymentStatus === 'paid' || PAID_STATUSES.has(String(order?.status || '')); }
+function paid(order) {
+  if (typeof order?.paymentStatus === 'string') return order.paymentStatus === 'paid';
+  return PAID_STATUSES.has(String(order?.status || ''));
+}
 function sameBranch(row, branchId) { return !branchId || Number(row?.branchId) === Number(branchId); }
 function branchDimension(value) {
   const raw = value && typeof value === 'object' ? value.branchId : value;
@@ -145,20 +250,101 @@ function branchDimension(value) {
 }
 function sameExactBranch(left, right) { return branchDimension(left) === branchDimension(right); }
 
+function inventoryQuantityExceeds(requested, available) {
+  // Ignore only floating-point representation noise. A fixed 1e-9 allowance
+  // becomes a real stock overdraft for small decimal quantities.
+  const tolerance = Math.min(
+    1e-9,
+    Number.EPSILON * Math.max(Math.abs(requested), Math.abs(available)) * 4,
+  );
+  return requested - available > tolerance;
+}
+
+function strictBranchRouteId(value) {
+  const raw = String(value ?? '').trim();
+  const branchId = Number(raw);
+  if (!/^\d+$/.test(raw) || !Number.isSafeInteger(branchId) || branchId <= 0) {
+    throw Object.assign(new Error('شناسهٔ شعبه معتبر نیست.'), { code: 'finance_branch_id_invalid', status: 400 });
+  }
+  return branchId;
+}
+
+// A malformed or unknown branch query must not look like a valid empty
+// workspace.  The UI uses an empty result to mean "no activity", so accepting
+// branchId=999 here would hide a broken/stale branch link and make operators
+// believe the selected branch has no data.  Keep fixtures without a branch
+// catalog usable, but enforce the operational catalog whenever it exists.
+function assertFinanceBranchQuery(db, req) {
+  const raw = req.query?.branchId;
+  if (raw == null || raw === '') return;
+  const branchId = Number(raw);
+  if (!Number.isSafeInteger(branchId) || branchId <= 0) {
+    throw Object.assign(new Error('شناسهٔ شعبه معتبر نیست.'), { code: 'finance_branch_id_invalid', status: 400 });
+  }
+  const branches = list(db?.branches);
+  if (branches.length && !branches.some((branch) => Number(branch?.id) === branchId && branch?.active !== false)) {
+    throw Object.assign(new Error('شعبهٔ انتخاب‌شده یافت نشد یا غیرفعال است.'), { code: 'finance_branch_not_found', status: 404 });
+  }
+}
+
+// Mutation responses must advertise the same effective branch scope that was
+// validated for the operation. Most Finance V2 writes carry branchId in the
+// JSON body (while reads carry it in the query string); leaving req.query
+// untouched made the otherwise standard envelope report meta.branchId=null.
+// Normalize only a single, positive integer scope so malformed or mixed
+// branch payloads remain governed by their domain validators.
+function applyFinanceResponseScope(req) {
+  const query = req.query || (req.query = {});
+  if (query.branchId != null && query.branchId !== '') return;
+  const candidates = [req.body?.branchId, req.params?.branchId]
+    .map((value) => Number(value))
+    .filter((value) => Number.isSafeInteger(value) && value > 0);
+  const unique = [...new Set(candidates)];
+  if (unique.length === 1) query.branchId = unique[0];
+}
+
 function cloneForRollback(value) {
   return value === undefined ? undefined : JSON.parse(JSON.stringify(value));
 }
 
+function restoreArray(target, snapshot) {
+  if (!Array.isArray(target) || !Array.isArray(snapshot)) return false;
+  const existing = target.slice(0, snapshot.length);
+  target.length = snapshot.length;
+  snapshot.forEach((value, index) => {
+    const current = existing[index];
+    if (current && value && typeof current === 'object' && typeof value === 'object') restoreObject(current, value);
+    else target[index] = cloneForRollback(value);
+  });
+  return true;
+}
+
 function restoreObject(target, snapshot) {
   if (!target || !snapshot || typeof target !== 'object' || typeof snapshot !== 'object') return;
-  for (const key of Object.keys(target)) delete target[key];
-  Object.assign(target, cloneForRollback(snapshot));
+  for (const key of Object.keys(target)) {
+    if (!Object.prototype.hasOwnProperty.call(snapshot, key)) delete target[key];
+  }
+  for (const [key, value] of Object.entries(snapshot)) {
+    if (Array.isArray(target[key]) && Array.isArray(value)) restoreArray(target[key], value);
+    else if (target[key] && value && typeof target[key] === 'object' && typeof value === 'object' && !Array.isArray(target[key]) && !Array.isArray(value)) restoreObject(target[key], value);
+    else target[key] = cloneForRollback(value);
+  }
+}
+
+function restoreRollbackValue(target, snapshot) {
+  if (Array.isArray(target) && Array.isArray(snapshot)) return restoreArray(target, snapshot);
+  if (target && snapshot && typeof target === 'object' && typeof snapshot === 'object') {
+    restoreObject(target, snapshot);
+    return true;
+  }
+  return false;
 }
 
 function withFinanceAtomicity(db, operation, { keys = null, objects = [] } = {}) {
   const hadFinanceState = Object.prototype.hasOwnProperty.call(db, 'financeV2') && db.financeV2 !== undefined;
   const state = db.financeV2;
   const snapshotKeys = keys || Object.keys(state || {});
+  const financeTargets = Object.fromEntries(snapshotKeys.map((key) => [key, state?.[key]]));
   const financeSnapshot = Object.fromEntries(snapshotKeys.map((key) => [
     key,
     Object.prototype.hasOwnProperty.call(state || {}, key) ? cloneForRollback(state[key]) : undefined,
@@ -173,6 +359,7 @@ function withFinanceAtomicity(db, operation, { keys = null, objects = [] } = {})
       if (!db.financeV2 || typeof db.financeV2 !== 'object') db.financeV2 = state;
       for (const [key, before] of Object.entries(financeSnapshot)) {
         if (before === undefined) delete db.financeV2[key];
+        else if (financeTargets[key] && restoreRollbackValue(financeTargets[key], before)) db.financeV2[key] = financeTargets[key];
         else db.financeV2[key] = cloneForRollback(before);
       }
     } else {
@@ -196,6 +383,7 @@ function approvalEntityBranch(state, approval) {
     payroll_payment: 'payrollPayments',
     recipe_version: 'recipeVersions',
     finance_branch_rollout: 'branchRollouts',
+    fiscal_period: 'fiscalPeriods',
   };
   const collection = collectionByType[approval.entityType];
   return collection ? list(state?.[collection]).find((row) => row.id === approval.entityId)?.branchId ?? null : null;
@@ -203,9 +391,24 @@ function approvalEntityBranch(state, approval) {
 
 function approvalMatchesBranch(state, approval, branchId) {
   if (!branchId) return true;
-  if (approval?.entityType === 'fiscal_period') return true;
   const entityBranchId = approvalEntityBranch(state, approval);
   return entityBranchId != null && Number(entityBranchId) === Number(branchId);
+}
+
+function assertApprovalBranchScope(state, approval, branchId) {
+  if (branchId == null || branchId === '') return;
+  const entityBranchId = approvalEntityBranch(state, approval);
+  if (entityBranchId == null) {
+    throw Object.assign(new Error('شعبهٔ درخواست تأیید مشخص نیست؛ تصمیم‌گیری متوقف شد.'), {
+      code: 'approval_branch_missing', status: 409,
+    });
+  }
+  if (Number(entityBranchId) !== Number(branchId)) {
+    throw Object.assign(new Error('درخواست تأیید به شعبهٔ انتخاب‌شده تعلق ندارد.'), {
+      code: 'approval_branch_mismatch', status: 409,
+      details: { approvalBranchId: Number(entityBranchId), selectedBranchId: Number(branchId) },
+    });
+  }
 }
 
 function requestFingerprint(req) {
@@ -234,10 +437,23 @@ function inRange(row, from, to, field = 'occurredAt') {
   return true;
 }
 
+// Finance V2 posts an order sale at paidAt (the event's occurredAt), so
+// period reports must use the same accounting timestamp as the ledger. The
+// operational createdAt is still useful for intake/queue views, but using it
+// for financial reconciliation splits orders paid across a period boundary.
+function orderAccountingDate(order) {
+  return order?.paidAt || order?.createdAt || order?.date || null;
+}
+
+function orderInAccountingRange(order, from, to) {
+  return inRange({ occurredAt: orderAccountingDate(order) }, from, to);
+}
+
 function ensureFinanceV2(db) {
   if (!db.financeV2 || typeof db.financeV2 !== 'object') {
     db.financeV2 = {
       schemaVersion: 2,
+      eventContractVersion: financeContracts.EVENT_CONTRACT_VERSION,
       mode: 'shadow',
       createdAt: now(),
       cutover: { status: 'shadow', startedAt: null, approvedAt: null, approvedBy: null },
@@ -284,6 +500,8 @@ function ensureFinanceV2(db) {
   }
   const state = db.financeV2;
   state.schemaVersion = 2;
+  state.eventContractVersion = financeContracts.EVENT_CONTRACT_VERSION;
+  state.valueContractVersion = valueContracts.VALUE_CONTRACT_VERSION;
   state.mode = state.mode || 'shadow';
   state.cutover = state.cutover || { status: 'shadow' };
   state.rollout = { captureEnabled: true, enabledBranchIds: [], cutoverBranchIds: [], ...(state.rollout || {}) };
@@ -307,12 +525,12 @@ function validateRecipeVersionInput(db, input = {}, { ignoreRecipeVersionId = nu
   const menuItem = list(db.menuItems).find((row) => String(row.id) === menuItemId && row.active !== false);
   if (!menuItem) throw Object.assign(new Error('محصول فعال منو برای دستور تهیه یافت نشد.'), { code: 'recipe_menu_item_not_found', status: 404 });
   const recipeId = `menu:${menuItemId}:branch:${branchId}`;
-  const effectiveDate = String(input.effectiveFrom || '').slice(0, 10);
-  const effectiveAt = new Date(`${effectiveDate}T00:00:00.000Z`);
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(effectiveDate) || !Number.isFinite(effectiveAt.getTime()) || effectiveAt.toISOString().slice(0, 10) !== effectiveDate) {
-    throw Object.assign(new Error('تاریخ شروع اثر دستور تهیه معتبر نیست.'), { code: 'recipe_effective_date_invalid', status: 400 });
-  }
-  const yieldQuantity = Number(input.yieldQuantity ?? input.servings);
+  // Stored recipe versions use an ISO timestamp; accept its date portion on
+  // approval-time revalidation while still validating the calendar date.
+  const effectiveDate = valueContracts.requireDateOnly(String(input.effectiveFrom || '').slice(0, 10), {
+    code: 'recipe_effective_date_invalid', message: 'تاریخ شروع اثر دستور تهیه معتبر نیست.',
+  });
+  const yieldQuantity = numeric(input.yieldQuantity ?? input.servings);
   if (!Number.isFinite(yieldQuantity) || yieldQuantity <= 0 || yieldQuantity > 100000) {
     throw Object.assign(new Error('تعداد خروجی یا پرس دستور تهیه باید بزرگ‌تر از صفر باشد.'), { code: 'recipe_yield_invalid', status: 400 });
   }
@@ -327,31 +545,31 @@ function validateRecipeVersionInput(db, input = {}, { ignoreRecipeVersionId = nu
       throw Object.assign(new Error(`مادهٔ ردیف ${index + 1} نامعتبر یا تکراری است.`), { code: itemId ? 'recipe_ingredient_duplicate' : 'recipe_ingredient_item_required', status: 409, details: { lineNo: index + 1, itemId: itemId || null } });
     }
     itemIds.add(itemId);
-    const item = list(db.accounting?.inventoryItems).find((row) => String(row.id) === itemId && sameBranch(row, branchId));
+    const item = inventoryOperations.resolveInventoryItemForBranch(db.accounting?.inventoryItems, itemId, branchId);
     if (!item) throw Object.assign(new Error(`کالای انبار ردیف ${index + 1} در این شعبه یافت نشد.`), { code: 'recipe_ingredient_item_not_found', status: 404, details: { lineNo: index + 1, itemId } });
-    const quantity = Number(ingredient.quantity ?? ingredient.qty);
-    const unit = String(ingredient.unit || item.unit || '').trim();
+    const quantity = numeric(ingredient.quantity ?? ingredient.qty);
+    const unit = restaurantIntelligence.canonicalUnit(ingredient.unit || item.unit) || '';
     const converted = restaurantIntelligence.convertQuantity(quantity, unit, item.unit, item.conversions);
     if (!converted.ok || quantity <= 0) {
       throw Object.assign(new Error(`مقدار یا واحد مادهٔ ردیف ${index + 1} با واحد پایه انبار سازگار نیست.`), { code: converted.code || 'recipe_ingredient_quantity_invalid', status: 400, details: { lineNo: index + 1, itemId, unit } });
     }
     const quantityBasis = String(ingredient.quantityBasis || 'raw');
     if (!['raw', 'usable'].includes(quantityBasis)) throw Object.assign(new Error('مبنای مقدار دستور تهیه معتبر نیست.'), { code: 'recipe_quantity_basis_invalid', status: 400, details: { lineNo: index + 1 } });
-    const yieldPercent = Number(ingredient.yieldPercent ?? 100);
+    const yieldPercent = numeric(ingredient.yieldPercent ?? 100);
     if (!Number.isFinite(yieldPercent) || yieldPercent <= 0 || yieldPercent > 100) {
       throw Object.assign(new Error(`درصد بازده مادهٔ ردیف ${index + 1} باید بین صفر و صد باشد.`), { code: 'recipe_ingredient_yield_invalid', status: 400, details: { lineNo: index + 1 } });
     }
     return {
-      id: ingredient.id || id(), lineNo: index + 1, itemId, itemName: item.name || itemId,
-      quantity, unit, quantityBasis, yieldPercent, baseUnit: item.unit,
+      id: ingredient.id || id(), lineNo: index + 1, itemId: item.id, itemName: item.name || itemId,
+      quantity, unit, quantityBasis, yieldPercent, baseUnit: restaurantIntelligence.canonicalUnit(item.unit) || item.unit,
       convertedQuantityBase: converted.value,
     };
   });
   const outputItemId = input.outputItemId == null || input.outputItemId === '' ? null : String(input.outputItemId);
   if (outputItemId) {
-    const output = list(db.accounting?.inventoryItems).find((row) => String(row.id) === outputItemId && sameBranch(row, branchId));
+    const output = inventoryOperations.resolveInventoryItemForBranch(db.accounting?.inventoryItems, outputItemId, branchId);
     if (!output) throw Object.assign(new Error('کالای خروجی دستور تولید در این شعبه یافت نشد.'), { code: 'recipe_output_item_not_found', status: 404 });
-    if (itemIds.has(outputItemId)) throw Object.assign(new Error('کالای خروجی نمی‌تواند هم‌زمان مادهٔ مصرفی همان دستور تهیه باشد.'), { code: 'recipe_output_is_ingredient', status: 409 });
+    if (itemIds.has(outputItemId) || itemIds.has(output.id)) throw Object.assign(new Error('کالای خروجی نمی‌تواند هم‌زمان مادهٔ مصرفی همان دستور تهیه باشد.'), { code: 'recipe_output_is_ingredient', status: 409 });
   }
   const siblings = state.recipeVersions.filter((row) => row.id !== ignoreRecipeVersionId && row.recipeId === recipeId);
   if (siblings.some((row) => row.status === 'pending_approval')) {
@@ -364,6 +582,7 @@ function validateRecipeVersionInput(db, input = {}, { ignoreRecipeVersionId = nu
     branchId, version, yieldQuantity, servings: yieldQuantity,
     effectiveFrom: `${effectiveDate}T00:00:00.000Z`, effectiveTo: null,
     outputItemId, ingredients,
+    notes: input.notes ? String(input.notes).slice(0, 1000) : null,
   };
 }
 
@@ -387,7 +606,7 @@ function requestRecipeVersion(db, input, actor) {
   return { recipeVersion, approval };
 }
 
-function inventoryItemsView(db, query = {}) {
+function inventoryItemsView(db, query = {}, { hideFinancial = false } = {}) {
   const state = ensureFinanceV2(db);
   const branchId = query.branchId ? Number(query.branchId) : null;
   const items = list(db.accounting?.inventoryItems).filter((row) => sameBranch(row, branchId));
@@ -395,15 +614,30 @@ function inventoryItemsView(db, query = {}) {
     items: items.map((item) => {
       const available = orderCosting.physicalAvailable(item, state, branchId);
       const recipeCount = restaurantIntelligence.recipeCatalog(db, branchId, { includePending: true })
-        .filter((recipe) => list(recipe.ingredients).some((ingredient) => String(ingredient.itemId) === String(item.id))).length;
+        .filter((recipe) => list(recipe.ingredients).some((ingredient) => {
+          const ingId = String(ingredient.itemId || '');
+          const itemId = String(item.id || '');
+          return ingId === itemId || ingId === itemId.replace(/-b\d+$/, '');
+        })).length;
+      const safeItem = { ...item };
+      if (hideFinancial) {
+        delete safeItem.avgCostIrr;
+        delete safeItem.unitCostIrr;
+        delete safeItem.avgCost;
+        delete safeItem.unitCost;
+        delete safeItem.cost;
+        delete safeItem.accountCode;
+        delete safeItem.inventoryAccountCode;
+        delete safeItem.expenseAccountCode;
+      }
       return {
-        ...item,
+        ...safeItem,
         availableQuantity: available.ok ? available.value : null,
         availabilityStatus: available.ok ? (available.value < 0 ? 'negative' : 'known') : 'unknown',
         recipeCount,
       };
     }),
-    units: ['عدد', 'گرم', 'کیلوگرم', 'میلی‌لیتر', 'لیتر', 'بسته', 'بطری'],
+    units: ['عدد', 'گرم', 'کیلوگرم', 'میلی‌لیتر', 'لیتر'],
     categories: [...new Set(items.map((item) => String(item.category || '').trim()).filter(Boolean))],
   };
 }
@@ -416,11 +650,13 @@ function createInventoryItemV2(db, input = {}, actor = 'system') {
     throw Object.assign(new Error('شعبهٔ مادهٔ انبار یافت نشد یا غیرفعال است.'), { code: 'inventory_branch_not_found', status: 404 });
   }
   const name = String(input.name || '').trim().slice(0, 180);
-  const unit = String(input.unit || '').trim().slice(0, 40);
+  const rawUnit = String(input.unit ?? '').trim();
+  const unit = restaurantIntelligence.canonicalUnit(rawUnit) || '';
   const sku = String(input.sku || '').trim().slice(0, 80);
   const category = String(input.category || '').trim().slice(0, 80) || 'سایر';
   if (name.length < 2) throw Object.assign(new Error('نام مادهٔ انبار الزامی است.'), { code: 'inventory_name_required', status: 400 });
-  if (unit.length < 1) throw Object.assign(new Error('واحد پایهٔ مادهٔ انبار الزامی است.'), { code: 'inventory_unit_required', status: 400 });
+  if (rawUnit.length < 1) throw Object.assign(new Error('واحد پایهٔ مادهٔ انبار الزامی است.'), { code: 'inventory_unit_required', status: 400 });
+  if (unit.length < 1) throw Object.assign(new Error('واحد پایهٔ مادهٔ انبار پشتیبانی نمی‌شود؛ گرم، کیلوگرم، میلی‌لیتر، لیتر یا عدد را انتخاب کنید.'), { code: 'inventory_unit_invalid', status: 400 });
   const items = list(db.accounting?.inventoryItems);
   if (items.some((item) => sameBranch(item, branchId) && String(item.name || '').trim().toLowerCase() === name.toLowerCase())) {
     throw Object.assign(new Error('ماده‌ای با این نام در شعبهٔ انتخاب‌شده وجود دارد.'), { code: 'inventory_name_duplicate', status: 409 });
@@ -428,12 +664,19 @@ function createInventoryItemV2(db, input = {}, actor = 'system') {
   if (sku && items.some((item) => sameBranch(item, branchId) && String(item.sku || '').trim().toLowerCase() === sku.toLowerCase())) {
     throw Object.assign(new Error('کد کالا در این شعبه تکراری است.'), { code: 'inventory_sku_duplicate', status: 409 });
   }
-  const qtyOnHand = Number(input.qtyOnHand ?? input.openingQuantity ?? 0);
-  const minStock = Number(input.minStock ?? 0);
-  const avgCostIrr = Number(input.avgCostIrr ?? 0);
+  const qtyOnHand = numeric(input.qtyOnHand ?? input.openingQuantity ?? 0);
+  const minStock = numeric(input.minStock ?? 0);
+  const rawCost = input.avgCostIrr ?? input.unitCostIrr;
+  const hasCost = rawCost !== undefined && rawCost !== null && String(rawCost).trim() !== '';
+  let avgCostIrr = null;
+  if (hasCost) {
+    try { avgCostIrr = valueContracts.parseIrr(rawCost, { allowNegative: false }); } catch {
+      throw Object.assign(new Error('بهای میانگین باید عدد صحیح ریالی نامنفی باشد.'), { code: 'inventory_cost_invalid', status: 400 });
+    }
+  }
   if (!Number.isFinite(qtyOnHand) || qtyOnHand < 0) throw Object.assign(new Error('موجودی اولیه معتبر نیست.'), { code: 'inventory_quantity_invalid', status: 400 });
   if (!Number.isFinite(minStock) || minStock < 0) throw Object.assign(new Error('حداقل موجودی معتبر نیست.'), { code: 'inventory_min_stock_invalid', status: 400 });
-  if (!Number.isSafeInteger(avgCostIrr) || avgCostIrr < 0) throw Object.assign(new Error('بهای میانگین باید عدد صحیح ریالی نامنفی باشد.'), { code: 'inventory_cost_invalid', status: 400 });
+  if (hasCost && (!Number.isSafeInteger(avgCostIrr) || avgCostIrr < 0)) throw Object.assign(new Error('بهای میانگین باید عدد صحیح ریالی نامنفی باشد.'), { code: 'inventory_cost_invalid', status: 400 });
   const item = {
     id: id('inv'), sku: sku || `INV-${String(items.length + 1).padStart(4, '0')}`,
     name, category, unit, qtyOnHand, avgCostIrr, minStock, branchId,
@@ -452,7 +695,7 @@ function updateInventoryItemV2(db, itemId, input = {}, actor = 'system') {
   const nextName = input.name === undefined ? item.name : String(input.name || '').trim().slice(0, 180);
   const nextSku = input.sku === undefined ? item.sku : String(input.sku || '').trim().slice(0, 80);
   const nextCategory = input.category === undefined ? item.category : String(input.category || '').trim().slice(0, 80) || 'سایر';
-  const nextMinStock = input.minStock === undefined ? Number(item.minStock || 0) : Number(input.minStock);
+  const nextMinStock = input.minStock === undefined ? numeric(item.minStock || 0) : numeric(input.minStock);
   if (nextName.length < 2) throw Object.assign(new Error('نام مادهٔ انبار الزامی است.'), { code: 'inventory_name_required', status: 400 });
   if (!Number.isFinite(nextMinStock) || nextMinStock < 0) throw Object.assign(new Error('حداقل موجودی معتبر نیست.'), { code: 'inventory_min_stock_invalid', status: 400 });
   const items = list(db.accounting?.inventoryItems);
@@ -499,13 +742,21 @@ function createOperatingExpenseV2(db, input = {}, actor = 'system') {
   if (String(input.expenseType || 'operating') === 'capital') {
     throw Object.assign(new Error('هزینهٔ سرمایه‌ای را باید از بخش دارایی ثابت ثبت کنید تا استهلاک و سند آن درست ثبت شود.'), { code: 'capital_expense_use_fixed_asset', status: 409 });
   }
-  const amountRaw = input.amountIrr !== undefined && input.amountIrr !== '' ? input.amountIrr : Number(input.amountToman) * 10;
-  const amountIrr = Number(amountRaw);
-  if (!Number.isSafeInteger(amountIrr) || amountIrr <= 0) throw Object.assign(new Error('مبلغ هزینه باید عدد صحیح ریالی بزرگ‌تر از صفر باشد.'), { code: 'expense_amount_invalid', status: 400 });
-  const dateOnly = String(input.date || now()).slice(0, 10);
-  const dateAt = new Date(`${dateOnly}T12:00:00.000Z`);
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateOnly) || !Number.isFinite(dateAt.getTime())) throw Object.assign(new Error('تاریخ هزینه معتبر نیست.'), { code: 'expense_date_invalid', status: 400 });
-  const periodCheck = validateOpenPeriod(db, dateAt.toISOString());
+  let amountIrr;
+  try {
+    amountIrr = input.amountIrr !== undefined && input.amountIrr !== ''
+      ? valueContracts.parseIrr(input.amountIrr, { allowNegative: false })
+      : valueContracts.parseToman(input.amountToman, { allowNegative: false });
+  } catch {
+    throw Object.assign(new Error('مبلغ هزینه باید عدد صحیح ریالی بزرگ‌تر از صفر باشد.'), { code: 'expense_amount_invalid', status: 400 });
+  }
+  if (amountIrr <= 0) throw Object.assign(new Error('مبلغ هزینه باید عدد صحیح ریالی بزرگ‌تر از صفر باشد.'), { code: 'expense_amount_invalid', status: 400 });
+  const dateOnly = valueContracts.requireDateOnly(String(input.date || now()).slice(0, 10), {
+    code: 'expense_date_invalid', message: 'تاریخ هزینه معتبر نیست.',
+  });
+  const dateAt = isoDateOnly(dateOnly);
+  if (!dateAt) throw Object.assign(new Error('تاریخ هزینه معتبر نیست.'), { code: 'expense_date_invalid', status: 400 });
+  const periodCheck = validateOpenPeriod(db, dateAt.toISOString(), branchId);
   if (!periodCheck.ok) throw Object.assign(new Error(periodCheck.message), { code: periodCheck.code, status: 409 });
   const category = Object.prototype.hasOwnProperty.call(OPERATING_EXPENSE_CATEGORIES, String(input.category || ''))
     ? String(input.category) : 'other';
@@ -541,45 +792,226 @@ function createOperatingExpenseV2(db, input = {}, actor = 'system') {
   return { expense, journalEntry: entry, approval: submitted.approval, idempotentReplay: false };
 }
 
+function financeV2CaptureEnabledForBranch(db, branchId) {
+  const rollout = ensureFinanceV2(db).rollout;
+  const enabledBranchIds = Array.isArray(rollout.enabledBranchIds) ? rollout.enabledBranchIds.map(Number) : [];
+  return rollout.captureEnabled !== false
+    && (!enabledBranchIds.length || enabledBranchIds.includes(Number(branchId)));
+}
+
 function menuItemUsesInventoryV2(db, menuItemId, branchId, soldAt = now()) {
+  if (!financeV2CaptureEnabledForBranch(db, branchId)) return false;
   const recipe = restaurantIntelligence.effectiveRecipeForSale(
     restaurantIntelligence.recipeCatalog(db, branchId), menuItemId, soldAt,
   );
   return Boolean(recipe);
 }
 
-function menuItemAvailability(db, menuItemId, branchId, requestedQuantity = 1, soldAt = now()) {
-  const recipes = restaurantIntelligence.recipeCatalog(db, branchId);
-  const recipe = restaurantIntelligence.effectiveRecipeForSale(recipes, menuItemId, soldAt);
-  if (!recipe) return { ok: true, available: true, tracked: false, reason: 'recipe_missing', capacity: null, issues: [] };
-  const state = ensureFinanceV2(db);
-  const quantity = Number(requestedQuantity);
-  const requested = Number.isFinite(quantity) && quantity > 0 ? quantity : 1;
+function recipeIngredientRequirements(db, recipe, branchId) {
   const items = list(db.accounting?.inventoryItems).filter((row) => sameBranch(row, branchId));
-  const itemMap = new Map(items.map((item) => [String(item.id), item]));
+  const numBranch = Number(branchId);
+  const branchSuffix = numBranch ? `-b${numBranch}`.toLowerCase() : null;
+  const itemMap = new Map();
+  for (const item of items) {
+    const idStr = String(item.id || '').trim();
+    const skuStr = String(item.sku || '').trim();
+    if (idStr) {
+      itemMap.set(idStr, item);
+      itemMap.set(idStr.toLowerCase(), item);
+      if (branchSuffix && idStr.toLowerCase().endsWith(branchSuffix)) {
+        const base = idStr.slice(0, -branchSuffix.length);
+        if (base && !itemMap.has(base)) {
+          itemMap.set(base, item);
+          itemMap.set(base.toLowerCase(), item);
+        }
+      }
+    }
+    if (skuStr) {
+      itemMap.set(skuStr, item);
+      itemMap.set(skuStr.toLowerCase(), item);
+      itemMap.set(`sku:${skuStr}`, item);
+      itemMap.set(`sku:${skuStr.toLowerCase()}`, item);
+      if (branchSuffix && skuStr.toLowerCase().endsWith(branchSuffix)) {
+        const baseSku = skuStr.slice(0, -branchSuffix.length);
+        if (baseSku && !itemMap.has(`sku:${baseSku}`)) {
+          itemMap.set(`sku:${baseSku}`, item);
+          itemMap.set(`sku:${baseSku.toLowerCase()}`, item);
+          itemMap.set(baseSku, item);
+          itemMap.set(baseSku.toLowerCase(), item);
+        }
+      }
+    }
+  }
   const requirements = new Map();
   const issues = [];
   for (const ingredient of list(recipe.ingredients)) {
-    const item = itemMap.get(String(ingredient.itemId));
+    const key = String(ingredient.itemId || '').trim();
+    const item = itemMap.get(key)
+      || itemMap.get(key.toLowerCase())
+      || itemMap.get(`sku:${key}`)
+      || itemMap.get(`sku:${key.toLowerCase()}`)
+      || (branchSuffix ? (itemMap.get(`${key}${branchSuffix}`) || itemMap.get(`${key.toLowerCase()}${branchSuffix}`)) : null);
     if (!item) { issues.push({ code: 'ingredient_item_missing', itemId: ingredient.itemId || null }); continue; }
     const required = restaurantIntelligence.ingredientRequirement(ingredient, recipe, item);
     if (!required.ok || !Number.isFinite(required.value) || required.value <= 0) {
       issues.push({ code: required.code || 'ingredient_quantity_invalid', itemId: item.id });
       continue;
     }
-    const row = requirements.get(String(item.id)) || { item, requiredPerSale: 0 };
+    const row = requirements.get(String(item.id)) || { item, requiredPerSale: 0, recipeVersionIds: new Set() };
     row.requiredPerSale += required.value;
+    row.recipeVersionIds.add(String(recipe.id ?? recipe.versionId ?? recipe.version ?? 'unknown'));
     requirements.set(String(item.id), row);
   }
+  if (!requirements.size && !issues.length) issues.push({ code: 'recipe_ingredients_missing' });
+  return { requirements, issues };
+}
+
+function buildOrderInventoryReservationSnapshot(db, lines, branchId, reservedAt = now()) {
+  const aggregated = new Map();
+  const issues = [];
+  if (!Number.isSafeInteger(Number(branchId)) || Number(branchId) <= 0) {
+    return { ok: false, version: 1, branchId: null, reservedAt, items: [], issues: [{ code: 'branch_missing' }] };
+  }
+  const at = new Date(reservedAt);
+  if (!Number.isFinite(at.getTime())) {
+    return { ok: false, version: 1, branchId: Number(branchId), reservedAt: null, items: [], issues: [{ code: 'inventory_reservation_date_invalid' }] };
+  }
+  for (const [index, line] of list(lines).entries()) {
+    const quantity = Number(line?.qty ?? line?.quantity);
+    if (!Number.isFinite(quantity) || quantity <= 0) {
+      issues.push({ code: 'order_line_quantity_invalid', line: index + 1 });
+      continue;
+    }
+    if (!financeV2CaptureEnabledForBranch(db, branchId)) continue;
+    const recipe = restaurantIntelligence.effectiveRecipeForSale(
+      restaurantIntelligence.recipeCatalog(db, branchId), line?.menuItemId ?? line?.itemId, reservedAt,
+    );
+    if (!recipe) continue;
+    const resolved = recipeIngredientRequirements(db, recipe, branchId);
+    issues.push(...resolved.issues.map((issue) => ({ ...issue, line: index + 1 })));
+    for (const [itemId, row] of resolved.requirements) {
+      const requiredQuantity = row.requiredPerSale * quantity;
+      if (!Number.isFinite(requiredQuantity) || requiredQuantity <= 0) {
+        issues.push({ code: 'inventory_reservation_quantity_invalid', itemId, line: index + 1 });
+        continue;
+      }
+      const aggregate = aggregated.get(itemId) || {
+        itemId, quantityBase: 0, unit: row.item.unit || null, recipeVersionIds: new Set(),
+      };
+      aggregate.quantityBase += requiredQuantity;
+      row.recipeVersionIds.forEach((versionId) => aggregate.recipeVersionIds.add(versionId));
+      aggregated.set(itemId, aggregate);
+    }
+  }
+  const items = [...aggregated.values()].map((row) => ({
+    itemId: row.itemId,
+    quantityBase: row.quantityBase,
+    unit: row.unit,
+    recipeVersionIds: [...row.recipeVersionIds].sort(),
+  }));
+  if (items.some((row) => !Number.isFinite(row.quantityBase) || row.quantityBase <= 0)) {
+    issues.push({ code: 'inventory_reservation_quantity_invalid' });
+  }
+  return {
+    ok: issues.length === 0,
+    version: 1,
+    branchId: Number(branchId),
+    reservedAt: at.toISOString(),
+    items,
+    issues,
+  };
+}
+
+function committedOrderInventoryConsumption(db, order) {
+  const state = ensureFinanceV2(db);
+  return state.events.some((event) => {
+    if (event.source !== 'order.cogs' || String(event.sourceId) !== String(order?.id)
+      || !sameExactBranch(event, order) || event.status !== 'posted' || !event.journalEntryId) return false;
+    const entry = state.journalEntries.find((row) => String(row.id) === String(event.journalEntryId));
+    return entry?.status === 'posted' && !entry.reversedById;
+  });
+}
+
+function openOrderInventoryReservations(db, branchId, { excludeOrderId = null } = {}) {
+  const quantities = new Map();
+  const issues = [];
+  const seen = new Set();
+  for (const order of list(db.orders)) {
+    const orderId = String(order?.id ?? '');
+    if (!orderId || seen.has(orderId) || String(excludeOrderId ?? '') === orderId
+      || Number(order?.branchId) !== Number(branchId)
+      || ['cancelled', 'rejected'].includes(String(order?.status || '').toLowerCase())) continue;
+    seen.add(orderId);
+    if (committedOrderInventoryConsumption(db, order)) continue;
+
+    let reservationItems;
+    const snapshot = order.inventoryReservationSnapshot;
+    if (snapshot !== undefined) {
+      if (!snapshot || snapshot.version !== 1 || Number(snapshot.branchId) !== Number(order.branchId)
+        || !Array.isArray(snapshot.items)) {
+        issues.push({ code: 'inventory_reservation_invalid', orderId });
+        continue;
+      }
+      reservationItems = snapshot.items;
+    } else {
+      // Compatibility for orders created before reservation snapshots existed:
+      // derive a hold from the recipe version effective when the order was placed.
+      const derived = buildOrderInventoryReservationSnapshot(db, order.items, order.branchId, order.createdAt || now());
+      if (!derived.ok) {
+        issues.push({ code: 'inventory_reservation_unresolved', orderId });
+        continue;
+      }
+      reservationItems = derived.items;
+    }
+
+    for (const reservation of reservationItems) {
+      const itemId = String(reservation?.itemId || '').trim();
+      const quantity = Number(reservation?.quantityBase);
+      if (!itemId || !Number.isFinite(quantity) || quantity <= 0) {
+        issues.push({ code: 'inventory_reservation_invalid', orderId });
+        break;
+      }
+      const next = (quantities.get(itemId) || 0) + quantity;
+      if (!Number.isFinite(next)) {
+        issues.push({ code: 'inventory_reservation_quantity_invalid', orderId, itemId });
+        break;
+      }
+      quantities.set(itemId, next);
+    }
+  }
+  return { quantities, issues };
+}
+
+function menuItemAvailability(db, menuItemId, branchId, requestedQuantity = 1, soldAt = now(), { excludeOrderId = null } = {}) {
+  if (!financeV2CaptureEnabledForBranch(db, branchId)) {
+    return { ok: true, available: true, tracked: false, reason: 'finance_v2_feature_flag_disabled', capacity: null, issues: [] };
+  }
+  const recipe = restaurantIntelligence.effectiveRecipeForSale(
+    restaurantIntelligence.recipeCatalog(db, branchId), menuItemId, soldAt,
+  );
+  if (!recipe) return { ok: true, available: true, tracked: false, reason: 'recipe_missing', capacity: null, issues: [] };
+  const state = ensureFinanceV2(db);
+  const quantity = Number(requestedQuantity);
+  const requested = Number.isFinite(quantity) && quantity > 0 ? quantity : 1;
+  const { requirements, issues } = recipeIngredientRequirements(db, recipe, branchId);
+  const reservations = openOrderInventoryReservations(db, branchId, { excludeOrderId });
+  issues.push(...reservations.issues);
   let capacity = Infinity;
-  for (const { item, requiredPerSale } of requirements.values()) {
+  for (const [itemId, { item, requiredPerSale }] of requirements) {
     const available = orderCosting.physicalAvailable(item, state, branchId);
     if (!available.ok) { issues.push({ code: available.code, itemId: item.id }); continue; }
+    const reserved = reservations.quantities.get(itemId) || 0;
+    const reservationExceedsAvailable = inventoryQuantityExceeds(reserved, available.value);
+    const rawSellable = available.value - reserved;
+    const sellable = reservationExceedsAvailable ? rawSellable : Math.max(0, rawSellable);
+    if (reservationExceedsAvailable) {
+      issues.push({ code: 'inventory_reservations_exceed_available', itemId: item.id, reservedQuantity: reserved, availableQuantity: available.value });
+    }
     const needed = requiredPerSale * requested;
-    const itemCapacity = Math.max(0, Math.floor(available.value / requiredPerSale));
+    const itemCapacity = Math.max(0, Math.floor(Math.max(0, sellable) / requiredPerSale));
     capacity = Math.min(capacity, itemCapacity);
-    if (available.value + 1e-9 < needed) {
-      issues.push({ code: 'inventory_shortage', itemId: item.id, itemName: item.name, requiredQuantity: needed, availableQuantity: available.value });
+    if (inventoryQuantityExceeds(needed, sellable)) {
+      issues.push({ code: 'inventory_shortage', itemId: item.id, itemName: item.name, requiredQuantity: needed, availableQuantity: Math.max(0, sellable), reservedQuantity: reserved });
     }
   }
   if (!requirements.size && !issues.length) issues.push({ code: 'recipe_ingredients_missing' });
@@ -590,42 +1022,61 @@ function menuItemAvailability(db, menuItemId, branchId, requestedQuantity = 1, s
   };
 }
 
-function periodForDate(db, date) {
+function periodForDate(db, date, branchId = null) {
   const at = new Date(date);
   if (!Number.isFinite(at.getTime())) return null;
   const v2Periods = ensureFinanceV2(db).fiscalPeriods;
   const periods = v2Periods.length ? v2Periods : list(db.accounting?.fiscalPeriods);
-  return periods.find((period) => {
+  const candidates = periods.filter((period) => {
     const start = new Date(`${String(period.startDate || '').slice(0, 10)}T00:00:00.000Z`);
     const end = new Date(`${String(period.endDate || '').slice(0, 10)}T23:59:59.999Z`);
-    return Number.isFinite(start.getTime()) && Number.isFinite(end.getTime()) && start <= at && end >= at;
-  }) || null;
+    return Number.isFinite(start.getTime()) && Number.isFinite(end.getTime()) && start <= at && end >= at
+      && (branchId == null || period.branchId == null || Number(period.branchId) === Number(branchId));
+  });
+  if (!candidates.length) return null;
+  // A branch-specific period wins over a global fallback. Ambiguous periods
+  // fail closed instead of silently selecting whichever row was inserted first.
+  const specific = branchId == null ? [] : candidates.filter((period) => period.branchId != null);
+  const selected = specific.length ? specific : candidates.filter((period) => period.branchId == null);
+  return selected.length === 1 ? selected[0] : null;
 }
 
 function createFiscalPeriod(db, input, actor) {
   const state = ensureFinanceV2(db);
-  const startDate = String(input.startDate || '').slice(0, 10);
-  const endDate = String(input.endDate || '').slice(0, 10);
+  const branchId = input.branchId == null || input.branchId === '' ? null : Number(input.branchId);
+  if (branchId != null && (!Number.isSafeInteger(branchId) || branchId <= 0)) {
+    throw Object.assign(new Error('شعبهٔ دورهٔ مالی معتبر نیست.'), { code: 'fiscal_period_branch_invalid', status: 400 });
+  }
+  const startDate = valueContracts.requireDateOnly(input.startDate, {
+    code: 'fiscal_period_date_invalid', message: 'تاریخ شروع دوره معتبر نیست.',
+  });
+  const endDate = valueContracts.requireDateOnly(input.endDate, {
+    code: 'fiscal_period_date_invalid', message: 'تاریخ پایان دوره معتبر نیست.',
+  });
   const start = new Date(`${startDate}T00:00:00.000Z`);
   const end = new Date(`${endDate}T00:00:00.000Z`);
   if (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime()) || start > end) throw Object.assign(new Error('محدودهٔ دوره معتبر نیست.'), { code: 'fiscal_period_range_invalid' });
-  const overlapping = state.fiscalPeriods.find((period) => new Date(period.startDate) <= end && new Date(period.endDate) >= start);
+  const scopedPeriods = state.fiscalPeriods.filter((period) => period.branchId == null || branchId == null || Number(period.branchId) === branchId);
+  const overlapping = scopedPeriods.find((period) => new Date(period.startDate) <= end && new Date(period.endDate) >= start);
   if (overlapping) throw Object.assign(new Error(`دوره با «${overlapping.name}» هم‌پوشانی دارد.`), { code: 'fiscal_period_overlap', status: 409 });
-  const sorted = state.fiscalPeriods.slice().sort((a, b) => new Date(a.startDate) - new Date(b.startDate));
+  const sorted = scopedPeriods.slice().sort((a, b) => new Date(a.startDate) - new Date(b.startDate));
   const previous = sorted.filter((period) => new Date(period.endDate) < start).at(-1);
   const next = sorted.find((period) => new Date(period.startDate) > end);
   const dayMs = 86400000;
   if (previous && Math.round((start - new Date(previous.endDate)) / dayMs) !== 1) throw Object.assign(new Error('بین دورهٔ قبلی و دورهٔ جدید فاصله وجود دارد.'), { code: 'fiscal_period_gap', status: 409 });
   if (next && Math.round((new Date(next.startDate) - end) / dayMs) !== 1) throw Object.assign(new Error('بین دورهٔ جدید و دورهٔ بعدی فاصله وجود دارد.'), { code: 'fiscal_period_gap', status: 409 });
-  const period = { id: id(), name: String(input.name || '').trim().slice(0, 120) || `${startDate} تا ${endDate}`, startDate, endDate, status: 'open', createdBy: actor, createdAt: now(), closedBy: null, closedAt: null, reopenedBy: null, reopenedAt: null };
+  const period = { id: id(), name: String(input.name || '').trim().slice(0, 120) || `${startDate} تا ${endDate}`, startDate, endDate, branchId, status: 'open', createdBy: actor, createdAt: now(), closedBy: null, closedAt: null, reopenedBy: null, reopenedAt: null };
   state.fiscalPeriods.push(period);
   return period;
 }
 
-function closeFiscalPeriod(db, periodId, actor, { preliminary = true } = {}) {
+function closeFiscalPeriod(db, periodId, actor, { preliminary = true, branchId = null } = {}) {
   const state = ensureFinanceV2(db);
   const period = state.fiscalPeriods.find((item) => String(item.id) === String(periodId));
   if (!period) throw Object.assign(new Error('دورهٔ مالی یافت نشد.'), { code: 'fiscal_period_not_found', status: 404 });
+  if (branchId != null && period.branchId != null && Number(period.branchId) !== Number(branchId)) {
+    throw Object.assign(new Error('دسترسی به دورهٔ مالی این شعبه مجاز نیست.'), { code: 'fiscal_period_branch_mismatch', status: 403 });
+  }
   const allowedStatuses = preliminary ? ['open', 'reopened'] : ['open', 'reopened', 'soft_closed'];
   if (!allowedStatuses.includes(period.status)) throw Object.assign(new Error('این دوره در وضعیت قابل بستن نیست.'), { code: 'fiscal_period_not_open', status: 409 });
   if (preliminary) {
@@ -636,6 +1087,7 @@ function closeFiscalPeriod(db, periodId, actor, { preliminary = true } = {}) {
   }
   const review = ledgerClose(db, {
     periodId: period.id,
+    branchId: period.branchId ?? branchId,
     from: `${period.startDate}T00:00:00.000Z`,
     to: `${period.endDate}T23:59:59.999Z`,
     page: 1,
@@ -659,19 +1111,21 @@ function requestPeriodReopen(db, periodId, actor, reason) {
   const period = state.fiscalPeriods.find((item) => String(item.id) === String(periodId));
   if (!period) throw Object.assign(new Error('دورهٔ مالی یافت نشد.'), { code: 'fiscal_period_not_found', status: 404 });
   if (!['closed', 'soft_closed'].includes(period.status)) throw Object.assign(new Error('فقط دورهٔ بسته قابل درخواست بازگشایی است.'), { code: 'fiscal_period_not_closed', status: 409 });
+  const normalizedReason = String(reason || '').trim();
+  if (normalizedReason.length < 3) throw Object.assign(new Error('علت بازگشایی دوره باید حداقل ۳ کاراکتر داشته باشد.'), { code: 'period_reopen_reason_required', status: 400 });
   const existing = state.approvals.find((item) => item.entityType === 'fiscal_period' && String(item.entityId) === String(period.id) && item.operation === 'reopen_fiscal_period' && item.status === 'pending');
   if (existing) return { approval: existing, idempotentReplay: true };
   const approval = {
     id: id(), operation: 'reopen_fiscal_period', entityType: 'fiscal_period', entityId: period.id,
     amountIrr: null, status: 'pending', createdBy: actor, createdAt: now(), decidedBy: null, decidedAt: null,
-    history: [{ action: 'submitted', by: actor, at: now(), comment: String(reason || '').trim().slice(0, 300) || null }],
+    history: [{ action: 'submitted', by: actor, at: now(), comment: normalizedReason.slice(0, 300) }],
   };
   state.approvals.push(approval);
   return { approval, idempotentReplay: false };
 }
 
-function validateOpenPeriod(db, date) {
-  const period = periodForDate(db, date);
+function validateOpenPeriod(db, date, branchId = null) {
+  const period = periodForDate(db, date, branchId);
   if (!period) return { ok: false, code: 'fiscal_period_missing', message: 'برای تاریخ رویداد، دورهٔ مالی تعریف نشده است.' };
   if (!['open', 'reopened'].includes(period.status)) {
     return { ok: false, code: 'fiscal_period_closed', message: `دورهٔ «${period.name || period.id}» باز نیست.`, period };
@@ -680,17 +1134,35 @@ function validateOpenPeriod(db, date) {
 }
 
 function normalizeTenderRows(order) {
-  const payments = list(order?.partialPayments)
-    .filter((payment) => int(payment.amount) > 0)
-    .map((payment) => ({
-      tender: String(payment.tender || '').trim(),
-      amountIrr: irrFromLegacyToman(payment.amount),
-      paymentId: payment.id == null ? null : String(payment.id),
-      occurredAt: payment.at || order.paidAt || order.createdAt,
-      provider: payment.provider || null,
-      providerReference: payment.reference || payment.providerReference || null,
-    }));
-  if (payments.length) return payments;
+  const sourcePayments = list(order?.partialPayments);
+  if (sourcePayments.length) {
+    return sourcePayments.map((payment) => {
+      let grossAmountIrr = null;
+      let refundedAmountIrr = null;
+      try {
+        grossAmountIrr = strictLegacyTomanIrr(payment.amount, 'order_payment_amount_invalid');
+        refundedAmountIrr = strictLegacyTomanIrr(payment.refundedAmount ?? 0, 'order_payment_refund_invalid');
+        if (refundedAmountIrr > grossAmountIrr) throw new RangeError('Refund exceeds payment');
+      } catch (_) {
+        grossAmountIrr = null;
+        refundedAmountIrr = null;
+      }
+      if (grossAmountIrr != null && grossAmountIrr === refundedAmountIrr) return null;
+      return {
+        tender: String(payment.tender || '').trim(),
+        amountIrr: grossAmountIrr == null ? null : grossAmountIrr - refundedAmountIrr,
+        grossAmountIrr,
+        refundedAmountIrr,
+        paymentId: payment.id == null ? null : String(payment.id),
+        occurredAt: payment.at || order.paidAt || order.createdAt,
+        provider: payment.provider || null,
+        providerReference: payment.reference || payment.providerReference || null,
+        cashSessionId: payment.cashSessionId || null,
+        receiptEventId: payment.financeReceiptEventId || null,
+        receiptJournalEntryId: payment.financeReceiptJournalEntryId || null,
+      };
+    }).filter(Boolean);
+  }
   const tender = String(order?.paymentTender || order?.paymentMethod || '').trim();
   if (!TENDER_ACCOUNTS[tender] || tender === 'cashier') return [];
   return [{ tender, amountIrr: irrFromLegacyToman(order.total), paymentId: null, occurredAt: order.paidAt || order.createdAt, provider: null, providerReference: null }];
@@ -698,10 +1170,16 @@ function normalizeTenderRows(order) {
 
 function reliableTenderRows(rows, totalIrr) {
   const total = Number(totalIrr);
-  const tenderRows = list(rows).map((row) => ({ tender: String(row?.tender || '').trim(), amountIrr: Number(row?.amountIrr) }));
+  const tenderRows = list(rows).map((row) => ({
+    tender: String(row?.tender || '').trim(), amountIrr: Number(row?.amountIrr),
+    grossAmountIrr: row?.grossAmountIrr == null ? Number(row?.amountIrr) : Number(row.grossAmountIrr),
+    refundedAmountIrr: Number(row?.refundedAmountIrr || 0),
+  }));
   const sum = tenderRows.reduce((amount, row) => amount + row.amountIrr, 0);
   return Number.isSafeInteger(total) && total >= 0 && tenderRows.length > 0
-    && tenderRows.every((row) => TENDER_ACCOUNTS[row.tender] && Number.isSafeInteger(row.amountIrr) && row.amountIrr > 0)
+    && tenderRows.every((row) => TENDER_ACCOUNTS[row.tender] && Number.isSafeInteger(row.amountIrr) && row.amountIrr > 0
+      && Number.isSafeInteger(row.grossAmountIrr) && row.grossAmountIrr >= row.amountIrr
+      && Number.isSafeInteger(row.refundedAmountIrr) && row.grossAmountIrr - row.amountIrr === row.refundedAmountIrr)
     && Number.isSafeInteger(sum) && sum === total;
 }
 
@@ -709,10 +1187,56 @@ function reliableTenderSnapshot(rows, totalIrr) {
   if (!reliableTenderRows(rows, totalIrr)) return null;
   return list(rows).map((row) => ({
     tender: String(row?.tender || '').trim(), amountIrr: int(row?.amountIrr),
+    ...(row?.grossAmountIrr == null ? {} : { grossAmountIrr: int(row.grossAmountIrr) }),
+    ...(row?.refundedAmountIrr == null ? {} : { refundedAmountIrr: int(row.refundedAmountIrr) }),
     paymentId: row?.paymentId == null ? null : String(row.paymentId),
     occurredAt: row?.occurredAt || null, provider: row?.provider || null,
     providerReference: row?.providerReference || null,
+    cashSessionId: row?.cashSessionId || null,
+    ...(row?.receiptEventId ? { receiptEventId: String(row.receiptEventId) } : {}),
+    ...(row?.receiptJournalEntryId ? { receiptJournalEntryId: String(row.receiptJournalEntryId) } : {}),
   }));
+}
+
+function orderPaymentIdentity(order, row, index) {
+  const operationalPaymentId = row?.paymentId == null ? null : String(row.paymentId);
+  const sourceKey = operationalPaymentId || `tender-${index + 1}`;
+  return {
+    idempotencyKey: `order:${order.id}:payment:${sourceKey}`,
+    orderId: String(order.id),
+    branchId: branchDimension(order),
+    tender: String(row?.tender || '').trim(),
+    amountIrr: safeIrr(row?.grossAmountIrr == null ? row?.amountIrr : row.grossAmountIrr),
+    operationalPaymentId,
+    provider: row?.provider == null || String(row.provider).trim() === '' ? null : String(row.provider).trim(),
+    providerReference: row?.providerReference == null || String(row.providerReference).trim() === ''
+      ? null : String(row.providerReference).trim(),
+  };
+}
+
+function assertOrderPaymentIdentity(payment, identity) {
+  const storedOperationalPaymentId = payment?.payload?.operationalPaymentId == null
+    ? null : String(payment.payload.operationalPaymentId);
+  const storedProvider = payment?.provider == null || String(payment.provider).trim() === '' ? null : String(payment.provider).trim();
+  const storedProviderReference = payment?.providerReference == null || String(payment.providerReference).trim() === ''
+    ? null : String(payment.providerReference).trim();
+  const matches = payment
+    && String(payment.orderId) === identity.orderId
+    && sameExactBranch(payment, { branchId: identity.branchId })
+    && String(payment.tender || '').trim() === identity.tender
+    && Number(payment.amountIrr) === identity.amountIrr
+    && (storedOperationalPaymentId == null || storedOperationalPaymentId === identity.operationalPaymentId)
+    && (!storedProvider || !identity.provider || storedProvider === identity.provider)
+    && (!storedProviderReference || !identity.providerReference || storedProviderReference === identity.providerReference);
+  if (!matches) {
+    throw Object.assign(new Error('شناسهٔ پرداخت سفارش قبلاً با مبلغ، روش یا شعبهٔ دیگری ثبت شده است.'), {
+      code: 'order_payment_identity_conflict', status: 409,
+    });
+  }
+  // Optional processor metadata can arrive on a later callback. Enrich an
+  // empty field, but never overwrite a known value with a different one.
+  if (!storedProvider && identity.provider) payment.provider = identity.provider;
+  if (!storedProviderReference && identity.providerReference) payment.providerReference = identity.providerReference;
 }
 
 function eventTenderSnapshot(event) {
@@ -722,48 +1246,212 @@ function eventTenderSnapshot(event) {
 
 function materializeOrderPayments(db, order, tenderRows) {
   const state = ensureFinanceV2(db);
-  const branchId = Number(order.branchId) || null;
-  return list(tenderRows).map((row, index) => {
-    const sourceKey = row.paymentId || `tender-${index + 1}`;
-    const idempotencyKey = `order:${order.id}:payment:${sourceKey}`;
-    let payment = state.payments.find((item) => item.idempotencyKey === idempotencyKey);
+  const branchId = branchDimension(order);
+  const identities = list(tenderRows).map((row, index) => orderPaymentIdentity(order, row, index));
+  const identityKeys = new Set();
+  for (const identity of identities) {
+    if (identityKeys.has(identity.idempotencyKey)) {
+      throw Object.assign(new Error('شناسهٔ یک پرداخت بیش از یک بار در سفارش ثبت شده است.'), {
+        code: 'order_payment_identity_duplicate', status: 409,
+      });
+    }
+    identityKeys.add(identity.idempotencyKey);
+  }
+  return identities.map((identity, index) => {
+    const row = list(tenderRows)[index];
+    const { idempotencyKey } = identity;
+    if (identity.operationalPaymentId != null) {
+      // Cash and manual-card leg ids are allocated inside one order's
+      // partialPayments list; they are not tenant-global identifiers. Provider
+      // attempts and wallet ledger ids remain globally unique within their own
+      // tender namespace and must not be rebound to another order.
+      const orderLocalPaymentId = ['cash', 'manual_card'].includes(identity.tender);
+      const operationalMatches = state.payments.filter((item) =>
+        String(item?.payload?.operationalPaymentId ?? '') === identity.operationalPaymentId
+        && String(item?.tender || '').trim() === identity.tender
+        && (!orderLocalPaymentId || String(item?.orderId) === identity.orderId));
+      if (operationalMatches.some((item) => String(item.orderId) !== identity.orderId
+        || item.idempotencyKey !== idempotencyKey || !sameExactBranch(item, { branchId: identity.branchId }))) {
+        throw Object.assign(new Error('شناسهٔ عملیاتی پرداخت قبلاً به سفارش یا شعبهٔ دیگری متصل شده است.'), {
+          code: 'order_payment_source_identity_conflict', status: 409,
+        });
+      }
+      if (operationalMatches.length > 1) {
+        throw Object.assign(new Error('شناسهٔ عملیاتی پرداخت به چند ردیف مالی متصل است.'), {
+          code: 'order_payment_source_identity_ambiguous', status: 409,
+        });
+      }
+    }
+    const existing = state.payments.filter((item) => item.idempotencyKey === idempotencyKey);
+    if (existing.length > 1) {
+      throw Object.assign(new Error('برای شناسهٔ پرداخت سفارش چند ردیف مالی وجود دارد.'), {
+        code: 'order_payment_identity_ambiguous', status: 409,
+      });
+    }
+    let payment = existing[0] || null;
     if (!payment) {
       payment = {
-        id: id(), orderId: order.id, branchId, tender: row.tender, amountIrr: safeIrr(row.amountIrr),
-        status: 'succeeded', provider: row.provider || null, providerReference: row.providerReference || null,
+        id: id(), orderId: order.id, branchId, tender: identity.tender, amountIrr: identity.amountIrr,
+        status: 'succeeded', provider: identity.provider, providerReference: identity.providerReference,
+        cashSessionId: row.cashSessionId || null,
         idempotencyKey, paidAt: row.occurredAt || order.paidAt || order.createdAt,
-        refundedIrr: 0, payload: { operationalPaymentId: row.paymentId, orderNo: order.orderNo || null }, createdAt: now(),
+        refundedIrr: 0, payload: { operationalPaymentId: identity.operationalPaymentId, orderNo: order.orderNo || null }, createdAt: now(),
       };
       state.payments.push(payment);
-    }
-    if (['card', 'manual_card', 'card_on_file', 'online', 'gateway'].includes(payment.tender)
-      && !state.reconciliationItems.some((item) => item.kind === 'payment' && item.paymentId === payment.id)) {
-      state.reconciliationItems.push({
-        id: id(), kind: 'payment', branchId, orderId: order.id, paymentId: payment.id, cashSessionId: null,
+    } else assertOrderPaymentIdentity(payment, identity);
+    if (['card', 'manual_card', 'card_on_file', 'online', 'gateway'].includes(payment.tender)) {
+      const reconciliationItem = state.reconciliationItems.find((item) => item.kind === 'payment' && item.paymentId === payment.id);
+      if (reconciliationItem) {
+        if (!reconciliationItem.bankReference && payment.providerReference) reconciliationItem.bankReference = payment.providerReference;
+        if (!reconciliationItem.psp && payment.provider) reconciliationItem.psp = payment.provider;
+      } else state.reconciliationItems.push({
+        id: id(), kind: 'payment', branchId, orderId: order.id, paymentId: payment.id, cashSessionId: row.cashSessionId || payment.cashSessionId || null,
         bankReference: payment.providerReference || null, settlementReference: null, psp: payment.provider || null,
         terminalId: null, batchNo: null, journalEntryId: null, amountIrr: payment.amountIrr,
         status: 'unmatched', matchedAt: null, matchedBy: null,
-        details: { tender: payment.tender, orderNo: order.orderNo || null }, createdAt: now(),
+        details: { tender: payment.tender, orderNo: order.orderNo || null, occurredAt: payment.paidAt || order.paidAt || order.createdAt || null }, createdAt: now(),
       });
     }
     return payment;
   });
 }
 
+function paymentReceiptEvidence(db, order, row) {
+  const state = db?.financeV2 || {};
+  const paymentId = row?.paymentId == null ? null : String(row.paymentId);
+  const expectedSourceId = paymentId == null ? null : `${String(order?.id)}:${paymentId}`;
+  const relatedEvents = list(state.events).filter((event) => event.source === 'order.payment_received'
+    && String(event.sourceId) === expectedSourceId && sameExactBranch(event, order));
+  const eventId = row?.receiptEventId == null ? null : String(row.receiptEventId);
+  const journalEntryId = row?.receiptJournalEntryId == null ? null : String(row.receiptJournalEntryId);
+  if (!eventId && !journalEntryId) {
+    if (relatedEvents.length) return { ok: false, code: 'order_payment_receipt_marker_missing' };
+    return { ok: true, recorded: false };
+  }
+  if (!eventId || !journalEntryId || relatedEvents.length !== 1) {
+    return { ok: false, code: 'order_payment_receipt_evidence_invalid' };
+  }
+  const event = relatedEvents[0];
+  const entry = list(state.journalEntries).find((item) => String(item.id) === journalEntryId);
+  const grossAmountIrr = Number(row?.grossAmountIrr ?? row?.amountIrr);
+  const tender = String(row?.tender || '').trim();
+  const tenderAccount = TENDER_ACCOUNTS[tender];
+  if (event.id !== eventId || event.status !== 'posted' || !entry || entry.status !== 'posted'
+    || event.journalEntryId !== entry.id || entry.sourceEventId !== event.id
+    || entry.source !== 'order.payment_received' || String(entry.sourceId) !== expectedSourceId
+    || !sameExactBranch(event, order) || !sameExactBranch(entry, order)
+    || String(event.payload?.orderId) !== String(order?.id)
+    || String(event.payload?.paymentId) !== paymentId
+    || String(event.payload?.tender) !== tender
+    || Number(event.amountIrr) !== grossAmountIrr
+    || !Number.isSafeInteger(grossAmountIrr) || grossAmountIrr <= 0
+    || !tenderAccount || !Array.isArray(entry.lines) || entry.lines.length !== 2) {
+    return { ok: false, code: 'order_payment_receipt_evidence_invalid' };
+  }
+  const debit = entry.lines.find((line) => line.accountCode === tenderAccount && int(line.debitIrr) === grossAmountIrr && int(line.creditIrr) === 0);
+  const credit = entry.lines.find((line) => line.accountCode === WALLET_LIABILITY_ACCOUNT && int(line.creditIrr) === grossAmountIrr && int(line.debitIrr) === 0);
+  if (!debit || !credit) return { ok: false, code: 'order_payment_receipt_evidence_invalid' };
+  return { ok: true, recorded: true, event, journalEntry: entry };
+}
+
+function paymentReceiptDebitLines(db, order, tenderRows, branchId, costCenter) {
+  const lines = [];
+  for (const row of list(tenderRows)) {
+    const receipt = paymentReceiptEvidence(db, order, row);
+    if (!receipt.ok) return { ok: false, code: receipt.code, message: 'مدرک پیش‌دریافت سفارش با دفتر مالی هم‌خوان نیست.' };
+    const alreadyReceived = Boolean(receipt.recorded);
+    lines.push({
+      accountCode: alreadyReceived ? WALLET_LIABILITY_ACCOUNT : TENDER_ACCOUNTS[row.tender],
+      debitIrr: row.amountIrr,
+      creditIrr: 0,
+      branchId,
+      costCenter,
+      paymentMethod: alreadyReceived ? 'customer_deposit' : row.tender,
+      counterpartyId: null,
+      itemId: null,
+      recipeVersionId: null,
+      memo: alreadyReceived
+        ? `مصرف پیش‌دریافت سفارش ${order.orderNo || order.id}`
+        : `دریافت سفارش ${order.orderNo || order.id}`,
+    });
+  }
+  return { ok: true, lines };
+}
+
+function preSaleRefundOperationalLeg(db, order, payment) {
+  const operationalPaymentId = payment?.payload?.operationalPaymentId == null
+    ? null : String(payment.payload.operationalPaymentId);
+  const leg = operationalPaymentId == null ? null : list(order?.partialPayments)
+    .find((row) => String(row?.id) === operationalPaymentId);
+  if (!leg) {
+    throw Object.assign(new Error('پرداخت پیش از فروش به ردیف دریافت عملیاتی سفارش متصل نیست.'), {
+      code: 'refund_order_payment_link_missing', status: 409,
+    });
+  }
+  const normalized = normalizeTenderRows({ ...order, partialPayments: [leg] })[0];
+  const evidence = normalized && paymentReceiptEvidence(db, order, normalized);
+  if (!normalized || !evidence?.ok || !evidence.recorded
+    || !payment.receiptFinanceEventId || payment.receiptFinanceEventId !== evidence.event.id
+    || payment.receiptJournalEntryId !== evidence.journalEntry.id
+    || normalized.tender !== String(payment.tender || '').trim()
+    || normalized.grossAmountIrr !== int(payment.amountIrr)) {
+    throw Object.assign(new Error('برای برگشت پیش‌فروش، رسید و ردیف عملیاتی باید دقیقاً با سند پیش‌دریافت تطبیق داشته باشند.'), {
+      code: evidence?.code || 'refund_order_payment_receipt_missing', status: 409,
+    });
+  }
+  return leg;
+}
+
+function linkOrderPaymentsToSaleEvent(payments, event, journalEntry = null) {
+  for (const payment of list(payments)) {
+    payment.financeEventId = event?.id || null;
+    payment.financeEventVersion = event?.sourceVersion || null;
+    payment.journalEntryId = journalEntry?.id || null;
+    payment.saleFinanceEventId = event?.id || null;
+    payment.saleJournalEntryId = journalEntry?.id || null;
+    payment.payload = {
+      ...(payment.payload || {}),
+      financeEventId: event?.id || null,
+      financeEventVersion: event?.sourceVersion || null,
+      journalEntryId: journalEntry?.id || null,
+      saleFinanceEventId: event?.id || null,
+      saleJournalEntryId: journalEntry?.id || null,
+      source: event?.source || 'order.paid',
+    };
+  }
+  return payments;
+}
+
 function orderPaymentsMatch(state, orderId, branchId, tenderRows) {
-  const expected = new Map();
-  list(tenderRows).forEach((row) => {
-    const key = `${String(row.tender)}:${int(row.amountIrr)}`;
-    expected.set(key, (expected.get(key) || 0) + 1);
+  const expected = list(tenderRows).map((row, index) => orderPaymentIdentity(
+    { id: orderId, branchId }, row, index,
+  ));
+  const actual = list(state.payments).filter((payment) => String(payment.orderId) === String(orderId)
+    && sameBranch(payment, branchId) && ['succeeded', 'refunded'].includes(payment.status)
+    && int(payment.amountIrr) > int(payment.refundedIrr));
+  if (expected.length !== actual.length) return false;
+
+  const actualByKey = new Map();
+  for (const payment of actual) {
+    if (!payment.idempotencyKey || actualByKey.has(payment.idempotencyKey)) return false;
+    actualByKey.set(payment.idempotencyKey, payment);
+  }
+  return expected.every((identity) => {
+    const payment = actualByKey.get(identity.idempotencyKey);
+    if (!payment || String(payment.orderId) !== identity.orderId
+      || !sameExactBranch(payment, { branchId: identity.branchId })
+      || String(payment.tender || '').trim() !== identity.tender
+      || Number(payment.amountIrr) !== identity.amountIrr) return false;
+    const operationalPaymentId = payment?.payload?.operationalPaymentId == null
+      ? null : String(payment.payload.operationalPaymentId);
+    const provider = payment?.provider == null || String(payment.provider).trim() === ''
+      ? null : String(payment.provider).trim();
+    const providerReference = payment?.providerReference == null || String(payment.providerReference).trim() === ''
+      ? null : String(payment.providerReference).trim();
+    return (operationalPaymentId == null || operationalPaymentId === identity.operationalPaymentId)
+      && (!provider || !identity.provider || provider === identity.provider)
+      && (!providerReference || !identity.providerReference || providerReference === identity.providerReference);
   });
-  const actual = new Map();
-  list(state.payments).filter((payment) => String(payment.orderId) === String(orderId)
-    && sameBranch(payment, branchId) && ['succeeded', 'refunded'].includes(payment.status)).forEach((payment) => {
-    const key = `${String(payment.tender)}:${int(payment.amountIrr)}`;
-    actual.set(key, (actual.get(key) || 0) + 1);
-  });
-  if (expected.size !== actual.size) return false;
-  return [...expected.entries()].every(([key, count]) => actual.get(key) === count);
 }
 
 function repairPostedOrderEventPayments(db, event) {
@@ -779,31 +1467,37 @@ function repairPostedOrderEventPayments(db, event) {
   return materializeOrderPayments(db, order, tenders);
 }
 
-function salesLines(order) {
-  const totalIrr = irrFromLegacyToman(order.total);
+function salesLines(order, db = null) {
+  let totalIrr;
+  try {
+    totalIrr = strictLegacyTomanIrr(order.total, 'order_total_invalid');
+  } catch (error) {
+    return { ok: false, code: error.code, message: 'مبلغ قطعی سفارش باید تومان صحیح و در محدودهٔ امن باشد.' };
+  }
   const tenders = normalizeTenderRows(order);
   if (!tenders.length) return { ok: false, code: 'payment_tender_missing', message: 'روش پرداخت قابل اتکا ثبت نشده است.' };
+  const validTenderAmounts = tenders.every((row) => {
+    const amountIrr = Number(row?.amountIrr);
+    const grossAmountIrr = Number(row?.grossAmountIrr ?? row?.amountIrr);
+    const refundedAmountIrr = Number(row?.refundedAmountIrr ?? 0);
+    return TENDER_ACCOUNTS[row?.tender]
+      && Number.isSafeInteger(amountIrr) && amountIrr > 0
+      && Number.isSafeInteger(grossAmountIrr) && grossAmountIrr >= amountIrr
+      && Number.isSafeInteger(refundedAmountIrr) && refundedAmountIrr >= 0
+      && grossAmountIrr - amountIrr === refundedAmountIrr;
+  });
+  if (!validTenderAmounts) return { ok: false, code: 'payment_tender_invalid', message: 'مبلغ یا روش یکی از پرداخت‌های سفارش معتبر نیست.' };
   const receivedIrr = tenders.reduce((sum, row) => sum + row.amountIrr, 0);
-  if (receivedIrr !== totalIrr) {
+  if (!Number.isSafeInteger(receivedIrr) || receivedIrr !== totalIrr) {
     return { ok: false, code: 'payment_total_mismatch', message: 'جمع پرداخت‌ها با مبلغ قطعی سفارش برابر نیست.', details: { totalIrr, receivedIrr } };
   }
   const branchId = Number(order.branchId) || null;
   if (!branchId) return { ok: false, code: 'branch_missing', message: 'شعبهٔ سفارش مشخص نیست.' };
   const costCenter = `branch:${branchId}`;
-  const debitLines = tenders.map((row) => ({
-    accountCode: TENDER_ACCOUNTS[row.tender],
-    debitIrr: row.amountIrr,
-    creditIrr: 0,
-    branchId,
-    costCenter,
-    paymentMethod: row.tender,
-    counterpartyId: null,
-    itemId: null,
-    recipeVersionId: null,
-    memo: `دریافت سفارش ${order.orderNo || order.id}`,
-  }));
-  const storedTaxToman = order.taxAmount ?? order.tax ?? order.vatAmount;
-  const taxIrr = storedTaxToman == null ? 0 : Math.max(0, irrFromLegacyToman(storedTaxToman));
+  const paymentDebits = paymentReceiptDebitLines(db, order, tenders, branchId, costCenter);
+  if (!paymentDebits.ok) return paymentDebits;
+  const debitLines = paymentDebits.lines;
+  const taxIrr = orderTaxAmountIrr(order);
   if (taxIrr > totalIrr) return { ok: false, code: 'tax_total_invalid', message: 'مالیات ذخیره‌شده از مبلغ سفارش بیشتر است.' };
   const salesIrr = totalIrr - taxIrr;
   const salesAccount = order.fulfillment === 'pickup' ? '4120' : order.fulfillment === 'delivery' ? '4130' : '4110';
@@ -863,6 +1557,7 @@ function recordEvent(db, input) {
   const state = ensureFinanceV2(db);
   const source = String(input.source || '').trim();
   const sourceId = String(input.sourceId || '').trim();
+  const sourceContract = financeContracts.eventSourceContract(source);
   const sourceVersion = input.sourceVersion == null ? 1 : Number(input.sourceVersion);
   if (!Number.isSafeInteger(sourceVersion) || sourceVersion < 1) {
     throw Object.assign(new Error('نسخهٔ رویداد مالی باید عدد صحیح مثبت و امن باشد.'), { code: 'finance_event_version_invalid' });
@@ -876,23 +1571,47 @@ function recordEvent(db, input) {
       throw Object.assign(new Error('کلید تکرارنشدنی رویداد مالی قبلاً برای منبع دیگری مصرف شده است.'), { code: 'finance_event_idempotency_conflict' });
     }
     if (!sameExactBranch(keyMatch, { branchId })) {
-      throw Object.assign(new Error('رویداد مالی با همین کلید در شعبهٔ دیگری ثبت شده است.'), { code: 'finance_event_source_branch_conflict' });
+      throw Object.assign(new Error('رویداد مالی با همین کلید در شعبهٔ دیگری ثبت شده است.'), { code: 'finance_event_source_branch_conflict', status: 409 });
     }
-    return { event: keyMatch, idempotentReplay: true };
   }
   const sourceMatch = state.events.find((event) => event.source === source && event.sourceId === sourceId && event.sourceVersion === sourceVersion);
   if (sourceMatch) {
     if (!sameExactBranch(sourceMatch, { branchId })) {
-      throw Object.assign(new Error('رویداد مالی با همین منبع و نسخه در شعبهٔ دیگری ثبت شده است.'), { code: 'finance_event_source_branch_conflict' });
+      throw Object.assign(new Error('رویداد مالی با همین منبع و نسخه در شعبهٔ دیگری ثبت شده است.'), { code: 'finance_event_source_branch_conflict', status: 409 });
     }
-    return { event: sourceMatch, idempotentReplay: true };
+  }
+  const replay = keyMatch || sourceMatch;
+  // When occurredAt was implicit on the original write, use the persisted
+  // timestamp for a retry; generating a fresh `now()` would make an otherwise
+  // identical replay conflict. Explicitly changed timestamps remain part of
+  // the event's immutable payload and are rejected below.
+  const occurredAt = input.occurredAt || replay?.occurredAt || now();
+  const amountIrr = safeIrr(input.amountIrr == null ? 0 : input.amountIrr, 'finance_event_amount_invalid');
+  const payload = input.payload && typeof input.payload === 'object' ? input.payload : {};
+  const payloadFingerprint = financeEventPayloadFingerprint({
+    source, sourceId, sourceVersion, branchId, occurredAt, amountIrr, payload,
+  });
+  if (replay) {
+    const originalFingerprint = replay.payloadFingerprint || financeEventPayloadFingerprint(replay);
+    if (originalFingerprint !== payloadFingerprint) {
+      throw Object.assign(new Error('هویت این رویداد مالی قبلاً با مبلغ یا جزئیات دیگری ثبت شده است.'), {
+        code: 'finance_event_payload_conflict', status: 409,
+      });
+    }
+    return { event: replay, idempotentReplay: true };
   }
   const event = {
     id: id('fev'), source, sourceId, sourceVersion, idempotencyKey,
+    payloadFingerprint,
+    eventContractVersion: financeContracts.EVENT_CONTRACT_VERSION,
+    entityType: sourceContract.entityType,
+    eventType: sourceContract.eventType,
+    sourceRegistered: sourceContract.registered !== false,
+    sourceRef: { type: source, id: sourceId, version: sourceVersion, branchId },
     branchId,
-    occurredAt: input.occurredAt || now(),
-    amountIrr: safeIrr(input.amountIrr == null ? 0 : input.amountIrr, 'finance_event_amount_invalid'),
-    payload: input.payload && typeof input.payload === 'object' ? input.payload : {},
+    occurredAt,
+    amountIrr,
+    payload,
     status: input.status || 'pending',
     error: input.error || null,
     journalEntryId: null,
@@ -905,8 +1624,14 @@ function recordEvent(db, input) {
 
 function postEventJournal(db, event, lines, description, actor) {
   const state = ensureFinanceV2(db);
+  const eventBranchId = branchDimension(event);
+  if (list(lines).some((line) => branchDimension(line) !== eventBranchId)) {
+    throw Object.assign(new Error('شعبهٔ هر ردیف سند باید با شعبهٔ رویداد مالی یکسان باشد.'), {
+      code: 'journal_line_branch_mismatch', status: 409,
+    });
+  }
   if (event.journalEntryId) return state.journalEntries.find((entry) => entry.id === event.journalEntryId) || null;
-  const periodCheck = validateOpenPeriod(db, event.occurredAt);
+  const periodCheck = validateOpenPeriod(db, event.occurredAt, event.branchId);
   if (!periodCheck.ok) {
     event.status = 'blocked';
     event.error = { code: periodCheck.code, message: periodCheck.message };
@@ -914,11 +1639,27 @@ function postEventJournal(db, event, lines, description, actor) {
   }
   const totals = assertBalanced(lines, accountCodesForDb(db));
   const duplicate = state.journalEntries.find((entry) => sameExactBranch(entry, event)
-    && (entry.sourceEventId === event.id || (entry.source === event.source && entry.sourceId === event.sourceId && FINAL_ENTRY_STATUSES.has(entry.status))));
+    && entry.sourceEventId === event.id && FINAL_ENTRY_STATUSES.has(entry.status));
   const conflicting = state.journalEntries.find((entry) => !sameExactBranch(entry, event)
     && (entry.sourceEventId === event.id || (entry.source === event.source && entry.sourceId === event.sourceId && FINAL_ENTRY_STATUSES.has(entry.status))));
   if (conflicting) {
     throw Object.assign(new Error('سند مالی با همین منبع در شعبهٔ دیگری وجود دارد.'), { code: 'finance_journal_source_branch_conflict' });
+  }
+  const priorSourceEntry = state.journalEntries.find((entry) => sameExactBranch(entry, event)
+    && entry.source === event.source && entry.sourceId === event.sourceId
+    && FINAL_ENTRY_STATUSES.has(entry.status) && entry.sourceEventId !== event.id);
+  if (priorSourceEntry) {
+    const priorEvent = list(state.events).find((item) => item.id === priorSourceEntry.sourceEventId);
+    throw Object.assign(new Error('برای این منبع قبلاً سند قطعی وجود دارد؛ نسخهٔ جدید رویداد نمی‌تواند به سند قبلی متصل شود.'), {
+      code: 'finance_journal_source_version_conflict', status: 409,
+      details: {
+        source: event.source,
+        sourceId: event.sourceId,
+        postedEventVersion: priorEvent?.sourceVersion ?? null,
+        requestedEventVersion: event.sourceVersion ?? null,
+        journalEntryId: priorSourceEntry.id,
+      },
+    });
   }
   if (duplicate) {
     event.journalEntryId = duplicate.id;
@@ -939,11 +1680,356 @@ function postEventJournal(db, event, lines, description, actor) {
   return entry;
 }
 
+/**
+ * Record a wallet deposit as an official Finance V2 event and posted journal.
+ * Wallet credit is a customer-deposit liability; the cash/card/PSP side is
+ * the asset received. Promotional credit is recognised explicitly as a
+ * marketing expense so it cannot be mistaken for revenue.
+ */
+function recordWalletTopup(db, {
+  branchId,
+  amountToman,
+  bonusToman = 0,
+  paymentMethod = 'online_gateway',
+  reference,
+  actor = 'system',
+  occurredAt,
+  idempotencyKey,
+} = {}) {
+  const branch = branchDimension({ branchId });
+  if (!branch) throw Object.assign(new Error('شعبهٔ شارژ کیف پول الزامی است.'), { code: 'wallet_topup_branch_required', status: 400 });
+  const amount = Math.round(Number(amountToman));
+  const bonus = Math.round(Number(bonusToman) || 0);
+  if (!Number.isSafeInteger(amount) || amount <= 0) throw Object.assign(new Error('مبلغ شارژ کیف پول معتبر نیست.'), { code: 'wallet_topup_amount_invalid', status: 400 });
+  if (!Number.isSafeInteger(bonus) || bonus < 0) throw Object.assign(new Error('مبلغ هدیهٔ کیف پول معتبر نیست.'), { code: 'wallet_topup_bonus_invalid', status: 400 });
+  const paymentAccount = WALLET_TOPUP_PAYMENT_ACCOUNTS[String(paymentMethod || '').toLowerCase()];
+  if (!paymentAccount) throw Object.assign(new Error('روش دریافت وجه شارژ کیف پول پشتیبانی نمی‌شود.'), { code: 'wallet_topup_payment_method_invalid', status: 400 });
+  const sourceId = String(reference || '').trim();
+  if (!sourceId) throw Object.assign(new Error('مرجع شارژ کیف پول الزامی است.'), { code: 'wallet_topup_reference_required', status: 400 });
+  const totalIrr = (amount + bonus) * 10;
+  const lines = [
+    { accountCode: paymentAccount, debitIrr: amount * 10, creditIrr: 0, branchId: branch, paymentMethod, memo: `دریافت شارژ کیف پول ${sourceId}` },
+    { accountCode: WALLET_LIABILITY_ACCOUNT, debitIrr: 0, creditIrr: totalIrr, branchId: branch, paymentMethod: 'customer_wallet', memo: `تعهد کیف پول مشتری ${sourceId}` },
+  ];
+  if (bonus > 0) lines.splice(1, 0, {
+    accountCode: WALLET_BONUS_EXPENSE_ACCOUNT, debitIrr: bonus * 10, creditIrr: 0,
+    branchId: branch, costCenter: 'marketing', paymentMethod: 'wallet_bonus', memo: `هدیهٔ تبلیغاتی شارژ کیف پول ${sourceId}`,
+  });
+  const recorded = recordEvent(db, {
+    source: 'wallet.topup', sourceId, sourceVersion: 1,
+    idempotencyKey: idempotencyKey || `wallet-topup:${branch}:${sourceId}`,
+    branchId: branch, occurredAt: occurredAt || now(), amountIrr: totalIrr,
+    payload: { amountToman: amount, bonusToman: bonus, paymentMethod, reference: sourceId },
+  });
+  const journalEntry = postEventJournal(db, recorded.event, lines, `شارژ کیف پول مشتری ${sourceId}`, actor);
+  if (!journalEntry || journalEntry.status !== 'posted') {
+    throw Object.assign(new Error('شارژ کیف پول تا ثبت سند مالی قابل تکمیل نیست.'), {
+      code: recorded.event.error?.code || 'wallet_topup_finance_blocked', status: 409,
+      details: recorded.event.error || null,
+    });
+  }
+  return { event: recorded.event, journalEntry, idempotentReplay: recorded.idempotentReplay };
+}
+
 function capturePaidOrder(db, order, { actor = 'system', idempotencyKey } = {}) {
   if (paid(order)) ensureFinanceV2(db);
   return withFinanceAtomicity(db, () => capturePaidOrderAtomic(db, order, { actor, idempotencyKey }), {
     keys: ['events', 'payments', 'reconciliationItems', 'journalEntries', 'orderItemCostSnapshots', 'inventoryMovements', 'idempotency'],
   });
+}
+
+function captureOrderPaymentReceipt(db, order, operationalPayment, {
+  actor = 'system', cashSessionId = null,
+} = {}) {
+  const branchId = branchDimension(order);
+  if (order?.id == null || !branchId) {
+    throw Object.assign(new Error('سفارش و شعبه برای ثبت پیش‌دریافت معتبر نیست.'), { code: 'order_payment_receipt_source_invalid', status: 409 });
+  }
+  const paymentId = operationalPayment?.id == null ? '' : String(operationalPayment.id).trim();
+  if (!paymentId) throw Object.assign(new Error('شناسهٔ پرداخت عملیاتی برای ثبت مالی الزامی است.'), { code: 'order_payment_receipt_identity_missing', status: 409 });
+  const tender = String(operationalPayment?.tender || '').trim();
+  if (!['cash', 'manual_card', 'online'].includes(tender)) {
+    throw Object.assign(new Error('روش دریافت برای ثبت پیش‌دریافت Finance V2 معتبر نیست.'), { code: 'order_payment_receipt_tender_invalid', status: 409 });
+  }
+  if (tender === 'manual_card' && !String(operationalPayment.reference || operationalPayment.providerReference || '').trim()) {
+    throw Object.assign(new Error('مرجع رسید کارت‌خوان برای ثبت مالی الزامی است.'), { code: 'order_payment_receipt_reference_required', status: 409 });
+  }
+  let amountIrr;
+  try { amountIrr = strictLegacyTomanIrr(operationalPayment.amount, 'order_payment_amount_invalid'); }
+  catch (error) { throw Object.assign(error, { code: 'order_payment_amount_invalid', status: 409 }); }
+  if (amountIrr <= 0) throw Object.assign(new Error('مبلغ دریافت‌شده باید بزرگ‌تر از صفر باشد.'), { code: 'order_payment_amount_invalid', status: 409 });
+  const occurredAt = operationalPayment.at || order.paidAt || order.createdAt || now();
+  if (!valueContracts.parseTimestamp(occurredAt)) {
+    throw Object.assign(new Error('زمان دریافت وجه معتبر نیست.'), { code: 'order_payment_receipt_timestamp_invalid', status: 409 });
+  }
+  const resolvedCashSessionId = tender === 'cash'
+    ? (cashSessionId || operationalPayment.cashSessionId || null)
+    : null;
+  const sourceId = `${String(order.id)}:${paymentId}`;
+
+  return withFinanceAtomicity(db, () => {
+    const state = ensureFinanceV2(db);
+    if (state.rollout.captureEnabled === false
+      || (state.rollout.enabledBranchIds.length && !state.rollout.enabledBranchIds.map(Number).includes(branchId))) {
+      throw Object.assign(new Error('ثبت پیش‌دریافت تا فعال‌شدن Finance V2 برای این شعبه مجاز نیست.'), {
+        code: 'finance_v2_feature_flag_disabled', status: 409,
+      });
+    }
+    const recorded = recordEvent(db, {
+      source: 'order.payment_received', sourceId, sourceVersion: 1,
+      idempotencyKey: `order:${order.id}:payment:${paymentId}:receipt:v1`,
+      branchId, occurredAt, amountIrr,
+      payload: {
+        orderId: String(order.id), orderNo: order.orderNo || null,
+        paymentId, tender, cashSessionId: resolvedCashSessionId,
+        providerReference: operationalPayment.reference || operationalPayment.providerReference || null,
+      },
+    });
+    const event = recorded.event;
+    const tenderLabel = tender === 'cash' ? 'نقدی' : tender === 'online' ? 'درگاه آنلاین' : 'کارت‌خوان';
+    const lines = [
+      { accountCode: TENDER_ACCOUNTS[tender], debitIrr: amountIrr, creditIrr: 0, branchId, costCenter: `branch:${branchId}`, paymentMethod: tender, memo: `دریافت ${tenderLabel} سفارش ${order.orderNo || order.id}` },
+      { accountCode: WALLET_LIABILITY_ACCOUNT, debitIrr: 0, creditIrr: amountIrr, branchId, costCenter: `branch:${branchId}`, paymentMethod: 'customer_deposit', memo: `پیش‌دریافت سفارش ${order.orderNo || order.id}` },
+    ];
+    const journalEntry = postEventJournal(db, event, lines, `دریافت قسط سفارش ${order.orderNo || order.id}`, actor);
+    if (!journalEntry || journalEntry.status !== 'posted') {
+      throw Object.assign(new Error('دریافت وجه تا ثبت سند پیش‌دریافت در دفتر مالی قابل تکمیل نیست.'), {
+        code: event.error?.code || 'order_payment_receipt_finance_blocked', status: 409,
+        details: event.error || null,
+      });
+    }
+    const tenderRow = {
+      tender, amountIrr, grossAmountIrr: amountIrr, paymentId,
+      provider: operationalPayment.provider || null,
+      occurredAt, providerReference: operationalPayment.reference || operationalPayment.providerReference || null,
+      cashSessionId: resolvedCashSessionId,
+    };
+    const [financePayment] = materializeOrderPayments(db, order, [tenderRow]);
+    const receiptRow = {
+      ...tenderRow, receiptEventId: event.id, receiptJournalEntryId: journalEntry.id,
+    };
+    const evidence = paymentReceiptEvidence(db, order, receiptRow);
+    if (!evidence.ok || !evidence.recorded) {
+      throw Object.assign(new Error('زنجیرهٔ رویداد و سند پیش‌دریافت پس از ثبت قابل تأیید نیست.'), {
+        code: evidence.code || 'order_payment_receipt_evidence_invalid', status: 409,
+      });
+    }
+    if ((operationalPayment.financeReceiptEventId && operationalPayment.financeReceiptEventId !== event.id)
+      || (operationalPayment.financeReceiptJournalEntryId && operationalPayment.financeReceiptJournalEntryId !== journalEntry.id)) {
+      throw Object.assign(new Error('شناسهٔ رسید مالی پرداخت با رویداد ثبت‌شده هم‌خوان نیست.'), { code: 'order_payment_receipt_identity_conflict', status: 409 });
+    }
+    operationalPayment.cashSessionId = resolvedCashSessionId;
+    operationalPayment.financeReceiptEventId = event.id;
+    operationalPayment.financeReceiptJournalEntryId = journalEntry.id;
+    operationalPayment.financePaymentId = financePayment.id;
+    financePayment.financeEventId = event.id;
+    financePayment.financeEventVersion = event.sourceVersion;
+    financePayment.journalEntryId = journalEntry.id;
+    financePayment.receiptFinanceEventId = event.id;
+    financePayment.receiptJournalEntryId = journalEntry.id;
+    financePayment.payload = {
+      ...(financePayment.payload || {}),
+      financeEventId: event.id,
+      financeEventVersion: event.sourceVersion,
+      journalEntryId: journalEntry.id,
+      source: event.source,
+      receiptFinanceEventId: event.id,
+      receiptJournalEntryId: journalEntry.id,
+      cashSessionId: resolvedCashSessionId,
+    };
+    const reconciliationItem = state.reconciliationItems.find((item) => item.kind === 'payment' && item.paymentId === financePayment.id);
+    if (reconciliationItem) {
+      reconciliationItem.journalEntryId = journalEntry.id;
+      reconciliationItem.cashSessionId = resolvedCashSessionId;
+    }
+    return { event, journalEntry, payment: financePayment, idempotentReplay: recorded.idempotentReplay };
+  }, {
+    keys: ['events', 'payments', 'reconciliationItems', 'journalEntries', 'idempotency'],
+    objects: [operationalPayment],
+  });
+}
+
+/**
+ * Record a customer-wallet top-up as a Finance V2 event and posted journal,
+ * then apply the wallet credit as one atomic user-visible operation.
+ *
+ * A top-up is not a sale: actual cash/PSP consideration is debited, the
+ * customer-deposit liability (2500) is credited, and any promotional bonus is
+ * debited to the explicit marketing account (6400) while also increasing the
+ * same liability.  The callback is intentionally supplied by the HTTP layer
+ * so Finance V2 does not own customer-wallet storage.  It is called only after
+ * an open-period journal has been posted; blocked events never credit a wallet.
+ */
+function captureWalletTopup(db, input = {}, { actor = 'system', idempotencyKey, applyWallet } = {}) {
+  const state = ensureFinanceV2(db);
+  const branchId = branchDimension(input);
+  if (!branchId) throw Object.assign(new Error('شعبهٔ شارژ کیف پول الزامی است.'), { code: 'wallet_topup_branch_required', status: 400 });
+  const sourceId = String(input.sourceId || input.requestId || '').trim();
+  if (!sourceId) throw Object.assign(new Error('شناسهٔ درخواست شارژ کیف پول الزامی است.'), { code: 'wallet_topup_source_required', status: 400 });
+  const amountToman = Math.max(0, Math.round(Number(input.amountToman) || 0));
+  const bonusToman = Math.max(0, Math.round(Number(input.bonusToman) || 0));
+  if (!amountToman) throw Object.assign(new Error('مبلغ شارژ کیف پول معتبر نیست.'), { code: 'wallet_topup_amount_invalid', status: 400 });
+  if (bonusToman > amountToman * 2) {
+    throw Object.assign(new Error('مبلغ هدیهٔ کیف پول خارج از سیاست مجاز است.'), { code: 'wallet_topup_bonus_invalid', status: 400 });
+  }
+  const method = String(input.paymentMethod || input.paymentTender || '').trim().toLowerCase();
+  const debitAccountCode = WALLET_TOPUP_PAYMENT_ACCOUNTS[method];
+  if (!debitAccountCode) {
+    throw Object.assign(new Error('روش دریافت وجه شارژ کیف پول معتبر نیست.'), { code: 'wallet_topup_payment_method_invalid', status: 400 });
+  }
+  const amountIrr = safeIrr(irrFromLegacyToman(amountToman), 'wallet_topup_amount_invalid');
+  const bonusIrr = safeIrr(irrFromLegacyToman(bonusToman), 'wallet_topup_bonus_invalid');
+  const totalIrr = safeIrr(amountIrr + bonusIrr, 'wallet_topup_total_invalid');
+  const occurredAt = input.occurredAt || now();
+  const key = String(idempotencyKey || `wallet:${branchId}:${sourceId}:topup:v1`).trim();
+  if (!key) throw Object.assign(new Error('کلید تکرارنشدنی شارژ کیف پول الزامی است.'), { code: 'wallet_topup_idempotency_required', status: 400 });
+  const costCenter = `branch:${branchId}`;
+  const lines = [
+    {
+      accountCode: debitAccountCode, debitIrr: amountIrr, creditIrr: 0,
+      branchId, costCenter, paymentMethod: method,
+      counterpartyId: String(input.phone || '').trim() || null,
+      itemId: null, recipeVersionId: null,
+      memo: `دریافت شارژ کیف پول مشتری ${String(input.reference || sourceId).slice(0, 80)}`,
+    },
+  ];
+  if (bonusIrr > 0) lines.push({
+    accountCode: WALLET_BONUS_EXPENSE_ACCOUNT, debitIrr: bonusIrr, creditIrr: 0,
+    branchId, costCenter, paymentMethod: null,
+    counterpartyId: String(input.phone || '').trim() || null,
+    itemId: null, recipeVersionId: null,
+    memo: `هزینهٔ اعتبار هدیهٔ شارژ کیف پول (${String(input.packageId || 'tier').slice(0, 60)})`,
+  });
+  lines.push({
+    accountCode: WALLET_LIABILITY_ACCOUNT, debitIrr: 0, creditIrr: totalIrr,
+    branchId, costCenter, paymentMethod: null,
+    counterpartyId: String(input.phone || '').trim() || null,
+    itemId: null, recipeVersionId: null,
+    memo: `افزایش تعهد کیف پول مشتری ${String(input.phone || '').slice(0, 40)}`,
+  });
+
+  // Include the arrays mutated by the callback in the rollback boundary.  A
+  // journal that cannot be posted, or a durable wallet mutation failure, must
+  // leave both projections unchanged.
+  db.users = Array.isArray(db.users) ? db.users : [];
+  db.walletLedger = Array.isArray(db.walletLedger) ? db.walletLedger : [];
+  return withFinanceAtomicity(db, () => {
+    const recorded = recordEvent(db, {
+      source: 'wallet.topup', sourceId, sourceVersion: 1, idempotencyKey: key,
+      branchId, occurredAt, amountIrr: totalIrr,
+      payload: {
+        phone: String(input.phone || '').trim() || null,
+        amountToman, bonusToman, amountIrr, bonusIrr, totalIrr,
+        paymentMethod: method, paymentAccountCode: debitAccountCode,
+        walletLiabilityAccountCode: WALLET_LIABILITY_ACCOUNT,
+        bonusExpenseAccountCode: bonusIrr > 0 ? WALLET_BONUS_EXPENSE_ACCOUNT : null,
+        reference: input.reference || null, packageId: input.packageId || null,
+        policy: 'cash_or_psp_debit_plus_marketing_bonus_to_customer_deposit_liability',
+      },
+      status: 'pending', error: null,
+    });
+    const event = recorded.event;
+    const existingJournal = event.journalEntryId
+      ? state.journalEntries.find((entry) => entry.id === event.journalEntryId) || null
+      : null;
+    let journalEntry = existingJournal;
+    if (!journalEntry) journalEntry = postEventJournal(db, event, lines, `شارژ کیف پول مشتری ${String(input.phone || sourceId).slice(0, 60)}`, actor);
+    if (!journalEntry || journalEntry.status !== 'posted') {
+      return { event, journalEntry: null, walletResult: null, idempotentReplay: recorded.idempotentReplay, blocked: true };
+    }
+
+    // A retry after a successful persisted application must never double-credit
+    // the customer.  The wallet callback receives the event identity and is
+    // expected to put it in its ledger metadata.
+    const alreadyApplied = event.payload?.walletAppliedAt
+      || db.walletLedger.some((row) => row?.meta?.financeEventId === event.id);
+    let walletResult = null;
+    if (!alreadyApplied && typeof applyWallet === 'function') {
+      walletResult = applyWallet({ event, journalEntry });
+      event.payload = {
+        ...event.payload,
+        walletAppliedAt: now(),
+        walletLedgerIds: [walletResult?.topupEntry?.id, walletResult?.bonusEntry?.id].filter(Boolean),
+      };
+    }
+    return { event, journalEntry, walletResult, idempotentReplay: recorded.idempotentReplay, blocked: false };
+  }, {
+    keys: ['events', 'payments', 'reconciliationItems', 'journalEntries', 'idempotency'],
+    objects: [db.users, db.walletLedger],
+  });
+}
+
+/**
+ * Post a controlled manual wallet correction and apply it to the customer
+ * projection atomically. A positive correction is treated as an explicit
+ * promotion/adjustment expense (6400) against the customer-deposit liability
+ * (2500); a negative correction reverses that same effect. The HTTP layer is
+ * required to provide an Idempotency-Key so a retry cannot mint a second
+ * correction.
+ */
+function captureWalletAdjustment(db, input = {}, { actor = 'system', idempotencyKey, applyWallet } = {}) {
+  const state = ensureFinanceV2(db);
+  const branchId = branchDimension(input);
+  if (!branchId) throw Object.assign(new Error('شعبهٔ تعدیل کیف پول الزامی است.'), { code: 'wallet_adjust_branch_required', status: 400 });
+  const sourceId = String(input.sourceId || input.reference || '').trim();
+  if (!sourceId) throw Object.assign(new Error('مرجع تعدیل کیف پول الزامی است.'), { code: 'wallet_adjust_source_required', status: 400 });
+  const phone = String(input.phone || '').trim();
+  if (!phone) throw Object.assign(new Error('شماره مشتری برای تعدیل کیف پول الزامی است.'), { code: 'wallet_adjust_phone_required', status: 400 });
+  const user = list(db.users).find((item) => String(item?.phone || '').trim() === phone);
+  if (!user) throw Object.assign(new Error('کاربر کیف پول یافت نشد.'), { code: 'wallet_adjust_user_not_found', status: 404 });
+  const deltaToman = Math.round(Number(input.deltaToman));
+  if (!Number.isSafeInteger(deltaToman) || deltaToman === 0) {
+    throw Object.assign(new Error('مبلغ تعدیل کیف پول معتبر نیست.'), { code: 'wallet_adjust_amount_invalid', status: 400 });
+  }
+  const currentBalance = Math.max(0, Math.round(Number(user.walletBalanceToman ?? user.walletBalance) || 0));
+  if (currentBalance + deltaToman < 0) {
+    throw Object.assign(new Error('کاهش تعدیل از موجودی کیف پول بیشتر است.'), { code: 'wallet_adjust_insufficient_balance', status: 409, details: { currentBalance, requestedDelta: deltaToman } });
+  }
+  const key = String(idempotencyKey || '').trim();
+  if (!key) throw Object.assign(new Error('کلید تکرارنشدنی تعدیل کیف پول الزامی است.'), { code: 'wallet_adjust_idempotency_required', status: 400 });
+  const amountIrr = safeIrr(Math.abs(deltaToman) * 10, 'wallet_adjust_amount_invalid');
+  const costCenter = `branch:${branchId}`;
+  const positive = deltaToman > 0;
+  const lines = positive
+    ? [
+      { accountCode: WALLET_BONUS_EXPENSE_ACCOUNT, accountType: 'expense', debitIrr: amountIrr, creditIrr: 0, branchId, costCenter, paymentMethod: 'wallet_adjustment', counterpartyId: phone, memo: `افزایش دستی تعهد کیف پول ${phone}` },
+      { accountCode: WALLET_LIABILITY_ACCOUNT, accountType: 'liability', debitIrr: 0, creditIrr: amountIrr, branchId, costCenter, paymentMethod: 'customer_wallet', counterpartyId: phone, memo: `افزایش تعهد کیف پول ${phone}` },
+    ]
+    : [
+      { accountCode: WALLET_LIABILITY_ACCOUNT, accountType: 'liability', debitIrr: amountIrr, creditIrr: 0, branchId, costCenter, paymentMethod: 'customer_wallet', counterpartyId: phone, memo: `کاهش تعهد کیف پول ${phone}` },
+      { accountCode: WALLET_BONUS_EXPENSE_ACCOUNT, accountType: 'expense', debitIrr: 0, creditIrr: amountIrr, branchId, costCenter, paymentMethod: 'wallet_adjustment_reversal', counterpartyId: phone, memo: `برگشت هزینه تعدیل کیف پول ${phone}` },
+    ];
+  return withFinanceAtomicity(db, () => {
+    const recorded = recordEvent(db, {
+      source: 'wallet.adjustment', sourceId, sourceVersion: 1, idempotencyKey: key,
+      branchId, occurredAt: input.occurredAt || now(), amountIrr,
+      payload: { phone, deltaToman, amountIrr, direction: positive ? 'increase' : 'decrease', reason: String(input.reason || '').trim().slice(0, 160) || null },
+      status: 'pending', error: null,
+    });
+    const event = recorded.event;
+    const oldDelta = event.payload?.deltaToman;
+    const oldPhone = String(event.payload?.phone || '').trim();
+    if (recorded.idempotentReplay && (
+      (oldDelta != null && Number(oldDelta) !== deltaToman)
+      || (oldPhone && oldPhone !== phone)
+      || Number(event.branchId) !== branchId
+    )) {
+      throw Object.assign(new Error('کلید تعدیل کیف پول قبلاً برای مبلغ دیگری مصرف شده است.'), { code: 'wallet_adjust_idempotency_conflict', status: 409 });
+    }
+    let journalEntry = event.journalEntryId
+      ? state.journalEntries.find((entry) => entry.id === event.journalEntryId) || null
+      : null;
+    if (!journalEntry) journalEntry = postEventJournal(db, event, lines, `تعدیل کیف پول ${phone}`, actor);
+    if (!journalEntry || journalEntry.status !== 'posted') return { event, journalEntry: null, walletResult: null, blocked: true, idempotentReplay: recorded.idempotentReplay };
+    const alreadyApplied = event.payload?.walletAppliedAt
+      || list(db.walletLedger).some((row) => row?.meta?.financeEventId === event.id);
+    let walletResult = null;
+    if (!alreadyApplied && typeof applyWallet === 'function') {
+      walletResult = applyWallet({ event, journalEntry });
+      event.payload = { ...event.payload, walletAppliedAt: now(), walletLedgerId: walletResult?.adjustEntry?.id || null };
+    }
+    return { event, journalEntry, walletResult, blocked: false, idempotentReplay: recorded.idempotentReplay };
+  }, { keys: ['events', 'payments', 'reconciliationItems', 'journalEntries', 'idempotency'], objects: [db.users, db.walletLedger] });
 }
 
 function capturePaidOrderAtomic(db, order, { actor = 'system', idempotencyKey } = {}) {
@@ -952,8 +2038,13 @@ function capturePaidOrderAtomic(db, order, { actor = 'system', idempotencyKey } 
   if (rollout.captureEnabled === false || (rollout.enabledBranchIds.length && !rollout.enabledBranchIds.map(Number).includes(Number(order.branchId)))) {
     return { skipped: true, reason: 'finance_v2_feature_flag_disabled' };
   }
-  const built = salesLines(order);
-  const payments = built.ok ? materializeOrderPayments(db, order, built.tenders) : [];
+  const built = salesLines(order, db);
+  // Keep the payment projection coupled to the posted sale journal.  A
+  // closed/missing fiscal period can block the event without throwing; in
+  // that case materializing a succeeded finance payment would make the
+  // payment side look complete while the ledger is still empty.  Resolution
+  // (or a later retry) materializes the rows after the journal is posted.
+  let payments = [];
   const recorded = recordEvent(db, {
     source: 'order.paid', sourceId: order.id, sourceVersion: Math.max(1, int(order.paymentRevision || order.editRevision) || 1),
     idempotencyKey, branchId: order.branchId, occurredAt: order.paidAt || order.createdAt,
@@ -978,11 +2069,29 @@ function capturePaidOrderAtomic(db, order, { actor = 'system', idempotencyKey } 
     postEventJournal(db, recorded.event, built.lines, `فروش قطعی سفارش ${order.orderNo || order.id}`, actor);
   }
   const journalEntry = recorded.event.journalEntryId ? ensureFinanceV2(db).journalEntries.find((entry) => entry.id === recorded.event.journalEntryId) : null;
-  const costing = journalEntry ? captureOrderCogs(db, order, { actor }) : { skipped: true, reason: 'sales_journal_not_posted' };
+  if (journalEntry && built.ok) payments = materializeOrderPayments(db, order, built.tenders);
+  linkOrderPaymentsToSaleEvent(payments, recorded.event, journalEntry);
+  // This function is already running inside capturePaidOrder's atomic
+  // boundary. Keep the inner operation unwrapped so a single sale/payment/
+  // COGS transaction rolls back as one unit.
+  const costing = journalEntry ? captureOrderCogsAtomic(db, order, { actor }) : { skipped: true, reason: 'sales_journal_not_posted' };
+  if (journalEntry) {
+    try {
+      const accountingEngine = require('./accounting-engine');
+      accountingEngine.syncOrderSalesJournal(db, order);
+    } catch (_) {}
+  }
   return { ...recorded, journalEntry, costing, payments };
 }
 
 function captureOrderCogs(db, order, { actor = 'system' } = {}) {
+  ensureFinanceV2(db);
+  return withFinanceAtomicity(db, () => captureOrderCogsAtomic(db, order, { actor }), {
+    keys: ['events', 'journalEntries', 'orderItemCostSnapshots', 'inventoryMovements', 'idempotency'],
+  });
+}
+
+function captureOrderCogsAtomic(db, order, { actor = 'system' } = {}) {
   const state = ensureFinanceV2(db);
   const sourceId = String(order.id);
   const branchId = branchDimension(order);
@@ -991,16 +2100,31 @@ function captureOrderCogs(db, order, { actor = 'system' } = {}) {
   if (conflicting) {
     throw Object.assign(new Error('رویداد بهای تمام‌شدهٔ سفارش در شعبهٔ دیگری وجود دارد.'), { code: 'order_cogs_source_branch_conflict' });
   }
-  const existing = sourceEvents.find((event) => sameExactBranch(event, { branchId }));
-  if (existing?.journalEntryId) {
+  const branchEvents = sourceEvents.filter((event) => sameExactBranch(event, { branchId }));
+  const journaledEvents = branchEvents.filter((event) => event.journalEntryId);
+  if (journaledEvents.length > 1) {
+    throw Object.assign(new Error('برای سفارش بیش از یک رویداد بهای تمام‌شده به سند دفتر وصل است.'), {
+      code: 'order_cogs_event_identity_ambiguous', status: 409,
+    });
+  }
+  if (journaledEvents.length === 1) {
+    const postedEvent = journaledEvents[0];
     return {
-      event: existing,
-      journalEntry: state.journalEntries.find((entry) => entry.id === existing.journalEntryId) || null,
+      event: postedEvent,
+      journalEntry: state.journalEntries.find((entry) => entry.id === postedEvent.journalEntryId) || null,
       snapshots: state.orderItemCostSnapshots.filter((row) => String(row.orderId) === sourceId && sameExactBranch(row, { branchId })),
       movements: state.inventoryMovements.filter((row) => row.source === 'order.cogs' && String(row.sourceId) === sourceId && sameExactBranch(row, { branchId })),
       idempotentReplay: true,
     };
   }
+  const latestVersion = branchEvents.reduce((latest, event) => Math.max(latest, Number(event.sourceVersion) || 1), 0);
+  const latestEvents = branchEvents.filter((event) => (Number(event.sourceVersion) || 1) === latestVersion);
+  if (latestEvents.length > 1) {
+    throw Object.assign(new Error('برای نسخهٔ جاری بهای تمام‌شدهٔ سفارش چند رویداد وجود دارد.'), {
+      code: 'order_cogs_event_identity_ambiguous', status: 409,
+    });
+  }
+  const existing = latestEvents[0] || null;
   const salesEvent = state.events.find((event) => event.source === 'order.paid' && String(event.sourceId) === sourceId && sameExactBranch(event, { branchId }));
   if (salesEvent?.status !== 'posted' || !salesEvent.journalEntryId) {
     throw Object.assign(new Error('بهای تمام‌شده فقط پس از ثبت قطعی فروش همان سفارش قابل ثبت است.'), {
@@ -1009,16 +2133,58 @@ function captureOrderCogs(db, order, { actor = 'system' } = {}) {
   }
 
   const built = orderCosting.buildOrderCosting(db, order);
-  const recorded = existing
-    ? { event: existing, idempotentReplay: true }
-    : recordEvent(db, {
-      source: 'order.cogs', sourceId, sourceVersion: 1,
-      idempotencyKey: `order:${branchId || 'unscoped'}:${sourceId}:cogs:v1`, branchId,
-      occurredAt: order.paidAt || order.createdAt, amountIrr: built.totalCogsIrr || 0,
-      payload: { orderNo: order.orderNo || null, coverage: { coveredLines: built.snapshots.length, totalLines: list(order.items).length }, issues: built.issues },
-      status: built.ok ? 'pending' : 'blocked',
-      error: built.ok ? null : { code: built.code, message: built.message, details: { issues: built.issues } },
-    });
+  const occurredAt = order.paidAt || order.createdAt || existing?.occurredAt || now();
+  const eventPayload = {
+    orderNo: order.orderNo || null,
+    salesEventId: salesEvent.id,
+    salesJournalEntryId: salesEvent.journalEntryId,
+    coverage: { coveredLines: built.snapshots.length, totalLines: list(order.items).length },
+    issues: built.issues,
+  };
+  let sourceVersion = existing ? latestVersion : 1;
+  let eventInput = {
+    source: 'order.cogs', sourceId, sourceVersion,
+    idempotencyKey: `order:${branchId || 'unscoped'}:${sourceId}:cogs:v${sourceVersion}`, branchId,
+    occurredAt, amountIrr: built.totalCogsIrr || 0,
+    payload: eventPayload,
+    status: built.ok ? 'pending' : 'blocked',
+    error: built.ok ? null : { code: built.code, message: built.message, details: { issues: built.issues } },
+  };
+  let supersededEvents = [];
+  if (existing) {
+    const nextFingerprint = financeEventPayloadFingerprint(eventInput);
+    const existingFingerprint = existing.payloadFingerprint || financeEventPayloadFingerprint(existing);
+    if (nextFingerprint !== existingFingerprint) {
+      if (!Number.isSafeInteger(latestVersion + 1)) {
+        throw Object.assign(new Error('نسخهٔ رویداد بهای تمام‌شده از محدودهٔ امن خارج است.'), {
+          code: 'order_cogs_event_version_invalid', status: 409,
+        });
+      }
+      supersededEvents = branchEvents.filter((event) => !event.journalEntryId
+        && ['pending', 'blocked', 'failed'].includes(String(event.status)));
+      sourceVersion = latestVersion + 1;
+      eventInput = {
+        ...eventInput,
+        sourceVersion,
+        idempotencyKey: `order:${branchId || 'unscoped'}:${sourceId}:cogs:v${sourceVersion}`,
+        payload: { ...eventPayload, retryOfEventId: existing.id },
+      };
+    }
+  }
+  const recorded = recordEvent(db, eventInput);
+  if (supersededEvents.length && !recorded.idempotentReplay) {
+    for (const supersededEvent of supersededEvents) {
+      // `quarantined` is the schema-supported terminal status for an older
+      // blocked attempt once a new immutable COGS event version replaces it.
+      supersededEvent.status = 'quarantined';
+      supersededEvent.error = {
+        code: 'order_cogs_attempt_superseded',
+        message: 'این تلاش مسدود با نسخهٔ جدیدتر رویداد بهای تمام‌شده جایگزین شد.',
+      };
+      supersededEvent.processedAt = now();
+      supersededEvent.payload = { ...supersededEvent.payload, supersededByEventId: recorded.event.id };
+    }
+  }
 
   if (!built.ok) {
     recorded.event.status = 'blocked';
@@ -1035,6 +2201,8 @@ function captureOrderCogs(db, order, { actor = 'system' } = {}) {
     totalCogsIrr: built.totalCogsIrr,
     coverage: { coveredLines: built.snapshots.length, totalLines: list(order.items).length },
     recipeVersionIds: [...new Set(built.snapshots.map((row) => row.recipeVersionId))],
+    salesEventId: salesEvent.id,
+    salesJournalEntryId: salesEvent.journalEntryId,
   };
   const costCenter = `branch:${branchId}`;
   const lines = [{
@@ -1109,7 +2277,7 @@ function retryReadyOrderCogs(db, input = {}, actor = 'system') {
       continue;
     }
     try {
-      const retried = withFinanceAtomicity(db, () => captureOrderCogs(db, order, { actor }), {
+      const retried = withFinanceAtomicity(db, () => captureOrderCogsAtomic(db, order, { actor }), {
         keys: ['events', 'journalEntries', 'orderItemCostSnapshots', 'inventoryMovements', 'idempotency'],
       });
       result.processed += 1;
@@ -1138,6 +2306,89 @@ function retryReadyOrderCogs(db, input = {}, actor = 'system') {
   result.remainingBlocked = state.events
     .filter((event) => event.source === 'order.cogs' && event.status === 'blocked' && sameExactBranch(event, { branchId })).length;
   return result;
+}
+
+function reverseOrderCogsAndInventory(db, orderId, actor = 'system', reason = 'لغو سفارش و بازگشت به انبار', occurredAt = now()) {
+  ensureFinanceV2(db);
+  return withFinanceAtomicity(db, () => reverseOrderCogsAndInventoryAtomic(db, orderId, actor, reason, occurredAt), {
+    keys: ['events', 'journalEntries', 'inventoryMovements', 'idempotency'],
+  });
+}
+
+function reverseOrderCogsAndInventoryAtomic(db, orderId, actor = 'system', reason = 'لغو سفارش و بازگشت به انبار', occurredAt = now()) {
+  const state = ensureFinanceV2(db);
+  const sourceId = String(orderId);
+  const cogsEvents = state.events.filter((event) => event.source === 'order.cogs' && String(event.sourceId) === sourceId);
+  let reversedJournalEntry = null;
+
+  for (const cogsEvent of cogsEvents) {
+    if (cogsEvent.journalEntryId) {
+      const entry = state.journalEntries.find((row) => row.id === cogsEvent.journalEntryId);
+      if (entry && entry.status === 'posted' && !entry.reversedById) {
+        // Physical stock and its COGS journal form one business operation.
+        // If accounting refuses the reversal (for example, because the
+        // posting period is closed), propagate the error so the surrounding
+        // finance atomicity boundary rolls back instead of restoring stock
+        // while leaving the posted expense untouched.
+        reversedJournalEntry = reverseEntry(db, entry.id, actor, String(reason || 'لغو سفارش').slice(0, 180), occurredAt);
+      }
+    }
+  }
+
+  const movements = state.inventoryMovements.filter((row) => row.source === 'order.cogs' && String(row.sourceId) === sourceId);
+  const returnMovements = [];
+
+  for (const movement of movements) {
+    if (Number(movement.quantityBase) >= 0) continue;
+    const alreadyReversed = state.inventoryMovements.some((row) => row.reversalOfId === movement.id);
+    if (alreadyReversed) continue;
+
+    const returnMovement = {
+      ...movement,
+      id: id(),
+      movementType: 'return',
+      quantityBase: -Number(movement.quantityBase),
+      source: 'order.cogs.reversal',
+      sourceId,
+      reversalOfId: movement.id,
+      reason: String(reason || 'لغو سفارش و بازگشت مواد مصرفی به انبار').slice(0, 180),
+      occurredAt,
+      createdAt: now(),
+      createdBy: actor,
+    };
+    state.inventoryMovements.push(returnMovement);
+    returnMovements.push(returnMovement);
+
+    if (Array.isArray(db.accounting?.inventoryItems)) {
+      const invItem = inventoryOperations.resolveInventoryItemForBranch(db.accounting?.inventoryItems, movement.itemId, movement.branchId);
+      if (invItem) {
+        const avail = orderCosting.physicalAvailable(invItem, state, movement.branchId);
+        if (avail.ok) invItem.availableQuantity = avail.value;
+      }
+    }
+  }
+
+  if (returnMovements.length > 0 || reversedJournalEntry) {
+    const recorded = recordEvent(db, {
+      source: 'order.cogs.reversal',
+      sourceId,
+      sourceVersion: 1,
+      idempotencyKey: `order:cogs:reversal:${sourceId}:${Date.now()}`,
+      branchId: cogsEvents[0]?.branchId || null,
+      occurredAt,
+      amountIrr: reversedJournalEntry ? (reversedJournalEntry.lines?.[0]?.debitIrr || 0) : 0,
+      payload: {
+        orderId: sourceId,
+        reversedJournalEntryId: reversedJournalEntry?.id || null,
+        returnMovementIds: returnMovements.map((row) => row.id),
+        reason,
+      },
+      status: 'posted',
+    });
+    return { ok: true, reversedJournalEntry, returnMovements, event: recorded.event };
+  }
+
+  return { ok: true, reversedJournalEntry: null, returnMovements: [], event: null };
 }
 
 function inventoryOperationLines(kind, movements, branchId) {
@@ -1175,13 +2426,22 @@ function inventoryOperationLines(kind, movements, branchId) {
     const credits = consumed.map((movement) => ({
       accountCode: '1610', debitIrr: 0, creditIrr: int(movement.effectiveTotalCostIrr ?? movement.totalCostIrr),
       branchId, costCenter, itemId: movement.itemId, recipeVersionId: movement.recipeId || null,
-      memo: `مصرف بچ تولید ${movement.itemName}`,
+      memo: `مصرف دسته تولید ${movement.itemName}`,
     }));
     const debit = produced
-      ? { accountCode: '1610', debitIrr: consumedTotal, creditIrr: 0, branchId, costCenter, itemId: produced.itemId, recipeVersionId: produced.recipeId || null, memo: `محصول بچ ${produced.itemName}` }
-      : { accountCode: '5130', accountType: 'cogs', debitIrr: consumedTotal, creditIrr: 0, branchId, costCenter, memo: 'افت کامل بچ تولید' };
+      ? { accountCode: '1610', debitIrr: consumedTotal, creditIrr: 0, branchId, costCenter, itemId: produced.itemId, recipeVersionId: produced.recipeId || null, memo: `محصول دسته تولید ${produced.itemName}` }
+      : { accountCode: '5130', accountType: 'cogs', debitIrr: consumedTotal, creditIrr: 0, branchId, costCenter, memo: 'افت کامل دسته تولید' };
     return [debit, ...credits];
   }
+  if (kind === 'stock_issue') {
+    const movement = movements[0];
+    const amount = int(movement.effectiveTotalCostIrr ?? movement.totalCostIrr);
+    return [
+      { accountCode: '5130', accountType: 'cogs', debitIrr: amount, creditIrr: 0, branchId, costCenter, itemId: movement.itemId, memo: `خروج موجودی ${movement.itemName}` },
+      { accountCode: '1610', debitIrr: 0, creditIrr: amount, branchId, costCenter, itemId: movement.itemId, memo: `کسر موجودی ${movement.itemName}` },
+    ];
+  }
+  if (kind === 'stock_transfer') return [];
   throw Object.assign(new Error('قاعدهٔ مالی عملیات انبار تعریف نشده است.'), { code: 'inventory_operation_rule_missing' });
 }
 
@@ -1203,7 +2463,9 @@ function recordInventoryOperationV2Atomic(db, kind, input, actor, idempotencyKey
   };
   const builder = kind === 'waste' ? inventoryOperations.buildWaste
     : kind === 'stock_count' ? inventoryOperations.buildStockCount
-      : kind === 'production_batch' ? inventoryOperations.buildProductionBatch : null;
+      : kind === 'production_batch' ? inventoryOperations.buildProductionBatch
+        : kind === 'stock_issue' ? inventoryOperations.buildStockIssue
+          : kind === 'stock_transfer' ? inventoryOperations.buildStockTransfer : null;
   if (!builder) throw Object.assign(new Error('نوع عملیات انبار معتبر نیست.'), { code: 'inventory_operation_kind_invalid' });
   const result = builder(db, state, input, actor);
   if (!result.ok) throw Object.assign(new Error(result.message || 'عملیات انبار معتبر نیست.'), { code: result.code, status: 409, details: { issues: result.issues || [] } });
@@ -1213,7 +2475,7 @@ function recordInventoryOperationV2Atomic(db, kind, input, actor, idempotencyKey
     outputItemId: String(result.outputItem.id), plannedYield: result.plannedYield, actualYield: result.actualYield,
     status: 'completed', producedAt: result.occurredAt, createdBy: actor, idempotencyKey, createdAt: now(),
   });
-  const source = ({ waste: 'inventory.waste', stock_count: 'inventory.stock_count', production_batch: 'inventory.production_batch' })[kind];
+  const source = ({ waste: 'inventory.waste', stock_count: 'inventory.stock_count', production_batch: 'inventory.production_batch', stock_issue: 'inventory.stock_issue', stock_transfer: 'inventory.stock_transfer' })[kind];
   const valued = result.movements.every((movement) => movement.totalCostIrr != null);
   const zeroValueNoJournal = valued && result.movements.length > 0 && int(result.totalCostIrr) === 0;
   const recorded = recordEvent(db, {
@@ -1289,11 +2551,9 @@ function valueAndResolveInventoryEvent(db, event, actor) {
 }
 
 function captureOnlinePaidOrder(db, order, payment, { actor = 'system', occurredAt } = {}) {
-  if (order && payment && String(payment.orderId) === String(order.id)
-    && (payment.branchId == null || sameExactBranch(payment, order)) && payment.status === 'paid') ensureFinanceV2(db);
   return withFinanceAtomicity(db, () => captureOnlinePaidOrderAtomic(db, order, payment, { actor, occurredAt }), {
     keys: ['events', 'payments', 'reconciliationItems', 'journalEntries', 'orderItemCostSnapshots', 'inventoryMovements', 'idempotency'],
-    objects: [order],
+    objects: [order, payment],
   });
 }
 
@@ -1301,18 +2561,136 @@ function captureOnlinePaidOrderAtomic(db, order, payment, { actor = 'system', oc
   if (!order || !payment || String(payment.orderId) !== String(order.id)) {
     throw Object.assign(new Error('پرداخت آنلاین به سفارش معتبر متصل نیست.'), { code: 'online_payment_order_mismatch' });
   }
-  if (payment.branchId != null && !sameExactBranch(payment, order)) {
+  const branchId = branchDimension(order);
+  if (!branchId || payment.branchId == null || !sameExactBranch(payment, order)) {
     throw Object.assign(new Error('پرداخت آنلاین و سفارش به یک شعبه تعلق ندارند.'), { code: 'online_payment_branch_mismatch' });
   }
   if (payment.status !== 'paid') return { skipped: true, reason: 'online_payment_not_paid' };
+  if (String(order.paymentMethod || '').trim() !== 'online'
+    || [payment.tender, payment.paymentMethod, payment.method].some((value) => value != null && String(value).trim() !== 'online')) {
+    throw Object.assign(new Error('روش پرداخت capture با سفارش آنلاین هم‌خوان نیست.'), {
+      code: 'online_payment_tender_invalid', status: 409,
+    });
+  }
+  const paymentId = payment.id == null ? '' : String(payment.id).trim();
+  if (!paymentId) {
+    throw Object.assign(new Error('شناسهٔ capture آنلاین الزامی است.'), {
+      code: 'online_payment_identity_missing', status: 409,
+    });
+  }
+  let paymentAmountIrr;
+  try { paymentAmountIrr = strictLegacyTomanIrr(payment.amount, 'online_payment_amount_invalid'); }
+  catch (error) {
+    throw Object.assign(error, { code: 'online_payment_amount_invalid', status: 409 });
+  }
+  const paymentAmount = paymentAmountIrr / 10;
+  if (paymentAmount <= 0) {
+    throw Object.assign(new Error('مبلغ پرداخت آنلاین تأییدشده معتبر نیست.'), {
+      code: 'online_payment_amount_invalid', status: 409,
+    });
+  }
+  let orderTotalIrr;
+  try { orderTotalIrr = strictLegacyTomanIrr(order.total, 'online_order_total_invalid'); }
+  catch (error) {
+    throw Object.assign(error, { code: 'online_order_total_invalid', status: 409 });
+  }
+  const orderTotal = orderTotalIrr / 10;
+  if (orderTotal <= 0) {
+    throw Object.assign(new Error('مبلغ کل سفارش آنلاین معتبر نیست.'), {
+      code: 'online_order_total_invalid', status: 409,
+    });
+  }
   const paidAt = occurredAt || payment.updatedAt || payment.createdAt || now();
-  order.partialPayments = list(order.partialPayments);
-  const paymentId = String(payment.id);
-  let tenderRow = order.partialPayments.find((row) => String(row.paymentAttemptId ?? row.id) === paymentId);
+  if (!valueContracts.parseTimestamp(paidAt)) {
+    throw Object.assign(new Error('زمان capture آنلاین معتبر نیست.'), {
+      code: 'online_payment_timestamp_invalid', status: 409,
+    });
+  }
+  if (order.partialPayments != null && !Array.isArray(order.partialPayments)) {
+    throw Object.assign(new Error('ساختار سابقهٔ پرداخت سفارش معتبر نیست.'), {
+      code: 'online_payment_projection_invalid', status: 409,
+    });
+  }
+  if (!Array.isArray(order.partialPayments)) order.partialPayments = [];
+  const matchingRows = order.partialPayments.filter((row) => row && typeof row === 'object'
+    && String(row.paymentAttemptId ?? row.id ?? '') === paymentId);
+  if (matchingRows.length > 1) {
+    throw Object.assign(new Error('پرداخت آنلاین با این شناسه چند بار به سفارش پیوند خورده است.'), {
+      code: 'online_payment_identity_ambiguous', status: 409,
+    });
+  }
+  const seenCaptureIds = new Set();
+  let acceptedAmount = 0;
+  for (const row of order.partialPayments) {
+    if (!row || typeof row !== 'object' || Array.isArray(row)) {
+      throw Object.assign(new Error('سابقهٔ پرداخت سفارش معتبر نیست.'), { code: 'online_payment_projection_invalid', status: 409 });
+    }
+    const rowId = String(row.paymentAttemptId ?? row.id ?? '').trim();
+    if (row.paymentAttemptId != null && row.id != null && String(row.paymentAttemptId) !== String(row.id)) {
+      throw Object.assign(new Error('شناسهٔ پرداخت عملیاتی و شناسهٔ capture یکسان نیست.'), {
+        code: 'online_payment_projection_invalid', status: 409,
+      });
+    }
+    if (rowId) {
+      if (seenCaptureIds.has(rowId)) {
+        throw Object.assign(new Error('شناسهٔ پرداخت در سابقهٔ سفارش تکراری است.'), { code: 'online_payment_identity_ambiguous', status: 409 });
+      }
+      seenCaptureIds.add(rowId);
+    }
+    const rowTender = String(row.tender || '').trim();
+    if (!TENDER_ACCOUNTS[rowTender] || rowTender === 'cashier') {
+      throw Object.assign(new Error('روش یکی از پرداخت‌های قبلی سفارش معتبر نیست.'), { code: 'online_payment_projection_invalid', status: 409 });
+    }
+    let rowAmountIrr;
+    try { rowAmountIrr = strictLegacyTomanIrr(row.amount, 'online_payment_projection_invalid'); }
+    catch (error) {
+      throw Object.assign(error, { code: 'online_payment_projection_invalid', status: 409 });
+    }
+    if (rowAmountIrr <= 0 || !Number.isSafeInteger(acceptedAmount + rowAmountIrr / 10)) {
+      throw Object.assign(new Error('جمع سابقهٔ پرداخت سفارش معتبر نیست.'), { code: 'online_payment_projection_invalid', status: 409 });
+    }
+    acceptedAmount += rowAmountIrr / 10;
+  }
+  if (order.amountPaid != null) {
+    let projectedAmountIrr;
+    try { projectedAmountIrr = strictLegacyTomanIrr(order.amountPaid, 'online_payment_projection_invalid'); }
+    catch (error) {
+      throw Object.assign(error, { code: 'online_payment_projection_invalid', status: 409 });
+    }
+    if (projectedAmountIrr / 10 !== acceptedAmount) {
+      throw Object.assign(new Error('جمع پرداخت‌های سفارش با مبلغ پرداخت‌شدهٔ ثبت‌شده هم‌خوان نیست.'), {
+        code: 'online_payment_projection_mismatch', status: 409,
+      });
+    }
+  }
+  let tenderRow = matchingRows[0] || null;
+  if (tenderRow) {
+    const incomingProvider = payment.provider == null || String(payment.provider).trim() === '' ? null : String(payment.provider).trim();
+    const incomingReference = payment.reference == null || String(payment.reference).trim() === ''
+      ? (payment.providerReference == null || String(payment.providerReference).trim() === '' ? null : String(payment.providerReference).trim())
+      : String(payment.reference).trim();
+    const storedProvider = tenderRow.provider == null || String(tenderRow.provider).trim() === '' ? null : String(tenderRow.provider).trim();
+    const storedReference = tenderRow.reference == null || String(tenderRow.reference).trim() === ''
+      ? (tenderRow.providerReference == null || String(tenderRow.providerReference).trim() === '' ? null : String(tenderRow.providerReference).trim())
+      : String(tenderRow.reference).trim();
+    if (strictLegacyTomanIrr(tenderRow.amount, 'online_payment_identity_conflict') !== paymentAmountIrr
+      || String(tenderRow.tender || '') !== 'online'
+      || (storedProvider && incomingProvider && storedProvider !== incomingProvider)
+      || (storedReference && incomingReference && storedReference !== incomingReference)) {
+      throw Object.assign(new Error('شناسهٔ پرداخت آنلاین قبلاً با مبلغ یا مرجع دیگری ثبت شده است.'), {
+        code: 'online_payment_identity_conflict', status: 409,
+      });
+    }
+    if (!storedProvider && incomingProvider) tenderRow.provider = incomingProvider;
+    if (!storedReference && incomingReference) tenderRow.reference = incomingReference;
+  } else {
+    acceptedAmount += paymentAmount;
+  }
   if (!tenderRow) {
     tenderRow = {
-      id: payment.id, paymentAttemptId: payment.id, tender: 'online', amount: int(payment.amount),
-      reference: payment.reference || null, provider: payment.provider || null, at: paidAt, by: 'payment_gateway',
+      id: payment.id, paymentAttemptId: payment.id, tender: 'online', amount: paymentAmount,
+      reference: payment.reference || payment.providerReference || null,
+      provider: payment.provider || null, at: paidAt, by: 'payment_gateway',
     };
     order.partialPayments.push(tenderRow);
     order.paymentRevision = Math.max(1, int(order.paymentRevision) + 1);
@@ -1320,14 +2698,24 @@ function captureOnlinePaidOrderAtomic(db, order, payment, { actor = 'system', oc
   order.paymentMethod = 'online';
   order.paymentTender = 'online';
   order.paymentTenders = [...new Set(order.partialPayments.map((row) => row.tender).filter(Boolean))];
-  order.amountPaid = order.partialPayments.reduce((sum, row) => sum + int(row.amount), 0);
-  order.paymentStatus = order.amountPaid >= int(order.total) ? 'paid' : 'partial';
+  if (acceptedAmount > orderTotal) {
+    throw Object.assign(new Error('مجموع captureها از مبلغ سفارش بیشتر است.'), {
+      code: 'online_payment_amount_exceeds_due', status: 409,
+      details: { total: orderTotal, captured: acceptedAmount },
+    });
+  }
+  order.amountPaid = acceptedAmount;
+  order.paymentStatus = acceptedAmount === orderTotal ? 'paid' : 'partial';
   if (order.paymentStatus === 'paid' && !order.paidAt) order.paidAt = paidAt;
+  const receipt = captureOrderPaymentReceipt(db, order, tenderRow, { actor });
+  payment.financeReceiptEventId = receipt.event.id;
+  payment.financeReceiptJournalEntryId = receipt.journalEntry.id;
+  payment.financePaymentId = receipt.payment.id;
   return capturePaidOrder(db, order, { actor, idempotencyKey: `order:${branchDimension(order) || 'unscoped'}:${order.id}:online-payment:${payment.id}` });
 }
 
 function positiveQuantity(value, code = 'quantity_invalid') {
-  const quantity = Number(value);
+  const quantity = numeric(value);
   if (!Number.isFinite(quantity) || quantity <= 0) throw Object.assign(new Error('مقدار باید عددی بزرگ‌تر از صفر باشد.'), { code });
   return quantity;
 }
@@ -1338,6 +2726,21 @@ function createPurchaseOrderV2(db, input, actor) {
   const vendorId = String(input.vendorId || '').trim();
   if (!branchId) throw Object.assign(new Error('شعبهٔ سفارش خرید الزامی است.'), { code: 'branch_missing' });
   if (!vendorId) throw Object.assign(new Error('تأمین‌کننده الزامی است.'), { code: 'vendor_missing' });
+  const branches = list(db.branches);
+  if (branches.length && !branches.some((branch) => Number(branch.id) === branchId && branch.active !== false)) {
+    throw Object.assign(new Error('شعبهٔ سفارش خرید یافت نشد یا فعال نیست.'), { code: 'purchase_branch_not_found', status: 409 });
+  }
+  const vendors = list(db.accounting?.vendors);
+  if (vendors.length) {
+    const vendor = vendors.find((row) => String(row.id) === vendorId);
+    if (!vendor) throw Object.assign(new Error('تأمین‌کنندهٔ سفارش خرید یافت نشد.'), { code: 'purchase_vendor_not_found', status: 404 });
+    if (vendor.active === false) {
+      throw Object.assign(new Error('تأمین‌کنندهٔ غیرفعال قابل استفاده برای سفارش خرید نیست.'), { code: 'purchase_vendor_inactive', status: 409 });
+    }
+    if (vendor.branchId != null && Number(vendor.branchId) !== branchId) {
+      throw Object.assign(new Error('تأمین‌کننده به شعبهٔ سفارش خرید تعلق ندارد.'), { code: 'purchase_vendor_branch_mismatch', status: 409 });
+    }
+  }
   const rawLines = list(input.lines);
   if (!rawLines.length) throw Object.assign(new Error('حداقل یک ردیف خرید الزامی است.'), { code: 'purchase_order_lines_missing' });
   const inventoryItems = list(db.accounting?.inventoryItems);
@@ -1345,14 +2748,15 @@ function createPurchaseOrderV2(db, input, actor) {
   const lines = rawLines.map((line, index) => {
     const itemId = String(line.itemId || '').trim();
     if (!itemId) throw Object.assign(new Error(`کالای ردیف ${index + 1} مشخص نیست.`), { code: 'purchase_item_missing' });
-    const item = inventoryItems.find((row) => String(row.id) === itemId && sameBranch(row, branchId));
+    const item = inventoryOperations.resolveInventoryItemForBranch(inventoryItems, itemId, branchId);
     if (!item) throw Object.assign(new Error(`کالای ردیف ${index + 1} در انبار شعبه یافت نشد.`), { code: 'purchase_item_not_found' });
-    const canonicalUnit = String(item.unit || '').trim();
-    if (!canonicalUnit) throw Object.assign(new Error(`واحد پایهٔ کالای ردیف ${index + 1} در انبار مشخص نیست.`), { code: 'purchase_item_unit_missing' });
-    const requestedUnit = String(line.unit || '').trim();
-    if (requestedUnit && requestedUnit !== canonicalUnit) throw Object.assign(new Error(`واحد ردیف ${index + 1} باید واحد پایهٔ «${canonicalUnit}» باشد.`), { code: 'purchase_item_unit_mismatch' });
+    const baseUnit = restaurantIntelligence.canonicalUnit(item.unit);
+    if (!baseUnit) throw Object.assign(new Error(`واحد پایهٔ کالای ردیف ${index + 1} در انبار مشخص نیست یا پشتیبانی نمی‌شود.`), { code: 'purchase_item_unit_missing' });
+    const requestedUnit = line.unit == null || line.unit === '' ? null : restaurantIntelligence.canonicalUnit(line.unit);
+    if (line.unit && (!requestedUnit || requestedUnit !== baseUnit)) throw Object.assign(new Error(`واحد ردیف ${index + 1} باید واحد پایهٔ «${baseUnit}» باشد.`), { code: 'purchase_item_unit_mismatch' });
     const quantity = positiveQuantity(line.quantity ?? line.qty);
     const unitPriceIrr = safeIrr(line.unitPriceIrr, 'unit_price_irr_invalid');
+    if (unitPriceIrr <= 0) throw Object.assign(new Error(`قیمت واحد ردیف ${index + 1} باید بزرگ‌تر از صفر باشد.`), { code: 'purchase_unit_price_invalid' });
     const taxIrr = safeIrr(line.taxIrr ?? 0, 'tax_irr_invalid');
     const discountIrr = safeIrr(line.discountIrr ?? 0, 'discount_irr_invalid');
     const grossIrr = Math.round(quantity * unitPriceIrr);
@@ -1361,13 +2765,17 @@ function createPurchaseOrderV2(db, input, actor) {
     subtotalIrr += lineTotalIrr;
     return {
       id: id(), lineNo: index + 1, itemId, description: String(line.description || '').trim().slice(0, 180) || String(item.name || itemId),
-      quantity, receivedQuantity: 0, unit: canonicalUnit, unitPriceIrr, taxIrr, discountIrr, lineTotalIrr,
+      quantity, receivedQuantity: 0, unit: baseUnit, unitPriceIrr, taxIrr, discountIrr, lineTotalIrr,
     };
   });
   if (!Number.isSafeInteger(subtotalIrr)) throw Object.assign(new Error('جمع سفارش خرید از محدودهٔ امن ریال خارج است.'), { code: 'purchase_total_unsafe' });
+  const issueDate = input.issueDate == null || String(input.issueDate).trim() === ''
+    ? now()
+    : isoTimestamp(input.issueDate, 'purchase_issue_date_invalid', 'زمان سفارش خرید باید تاریخ ISO معتبر همراه منطقهٔ زمانی باشد.');
+  const expectedDate = optionalCalendarDate(input.expectedDate, 'purchase_expected_date_invalid', 'تاریخ تحویل مورد انتظار باید تاریخ تقویمی معتبر یا timestamp ISO همراه منطقهٔ زمانی باشد.');
   const po = {
     id: id(), number: `F2-PO-${String(state.purchaseOrders.length + 1).padStart(6, '0')}`,
-    branchId, vendorId, status: 'draft', issueDate: input.issueDate || now(), expectedDate: input.expectedDate || null,
+    branchId, vendorId, status: 'draft', issueDate, expectedDate,
     subtotalIrr, totalIrr: subtotalIrr, notes: String(input.notes || '').trim().slice(0, 300), lines,
     createdBy: actor, createdAt: now(), approvedBy: null, approvedAt: null,
   };
@@ -1376,6 +2784,11 @@ function createPurchaseOrderV2(db, input, actor) {
 }
 
 function submitPurchaseOrderV2(db, poId, actor) {
+  ensureFinanceV2(db);
+  return withFinanceAtomicity(db, () => submitPurchaseOrderV2Atomic(db, poId, actor), { keys: ['purchaseOrders', 'approvals'] });
+}
+
+function submitPurchaseOrderV2Atomic(db, poId, actor) {
   const state = ensureFinanceV2(db);
   const po = state.purchaseOrders.find((row) => row.id === poId);
   if (!po) throw Object.assign(new Error('سفارش خرید یافت نشد.'), { code: 'purchase_order_not_found', status: 404 });
@@ -1393,20 +2806,75 @@ function submitPurchaseOrderV2(db, poId, actor) {
 }
 
 function receiveGoodsV2(db, input, actor) {
+  ensureFinanceV2(db);
+  return withFinanceAtomicity(db, () => receiveGoodsV2Atomic(db, input, actor), {
+    keys: ['purchaseOrders', 'goodsReceipts', 'events', 'journalEntries', 'inventoryMovements', 'idempotency'],
+  });
+}
+
+function receiveGoodsV2Atomic(db, input, actor) {
   const state = ensureFinanceV2(db);
-  const po = state.purchaseOrders.find((row) => row.id === String(input.purchaseOrderId || input.poId || ''));
-  if (!po) throw Object.assign(new Error('سفارش خرید V2 یافت نشد.'), { code: 'purchase_order_not_found', status: 404 });
-  const requestedBranchId = Number(input.branchId) || null;
-  if (requestedBranchId && Number(po.branchId) !== requestedBranchId) {
+  let po = state.purchaseOrders.find((row) => row.id === String(input.purchaseOrderId || input.poId || ''));
+  const isSpot = !po && (!input.purchaseOrderId || ['spot', 'direct', 'daily'].includes(String(input.purchaseOrderId).toLowerCase()));
+  if (!po && !isSpot) throw Object.assign(new Error('سفارش خرید V2 یافت نشد.'), { code: 'purchase_order_not_found', status: 404 });
+
+  const rawLines = list(input.lines);
+  if (!rawLines.length) throw Object.assign(new Error('حداقل یک ردیف دریافت الزامی است.'), { code: 'goods_receipt_lines_missing' });
+
+  const requestedBranchId = Number(input.branchId) || (po ? Number(po.branchId) : 1);
+  if (po && requestedBranchId && Number(po.branchId) !== requestedBranchId) {
     throw Object.assign(new Error('سفارش خرید متعلق به شعبهٔ فعال نیست.'), { code: 'goods_receipt_branch_mismatch', status: 409 });
   }
+
+  if (isSpot) {
+    const vendorId = String(input.vendorId || '').trim() || (list(db.accounting?.vendors)[0]?.id || 'vendor-spot');
+    const poLines = rawLines.map((line, index) => {
+      const invItem = inventoryOperations.resolveInventoryItemForBranch(db.accounting?.inventoryItems, line.itemId, requestedBranchId);
+      if (!invItem) throw Object.assign(new Error(`کالای ردیف ${index + 1} در انبار شعبه یافت نشد.`), { code: 'purchase_item_not_found' });
+      const qty = positiveQuantity(line.quantity ?? line.receivedQuantity ?? line.qty);
+      const unitCostIrr = safeIrr(line.unitCostIrr ?? line.unitPriceIrr ?? invItem.avgCostIrr ?? invItem.unitCostIrr, 'unit_price_irr_invalid');
+      const grossIrr = Math.round(qty * unitCostIrr);
+      const poLineId = id();
+      line.purchaseOrderLineId = poLineId;
+      line.receivedQuantity = qty;
+      return {
+        id: poLineId,
+        lineNo: index + 1,
+        itemId: invItem.id,
+        quantity: qty,
+        unit: line.unit || invItem.unit || 'kg',
+        unitPriceIrr: unitCostIrr,
+        taxIrr: 0,
+        discountIrr: 0,
+        lineTotalIrr: grossIrr,
+        receivedQuantity: 0,
+        invoicedQuantity: 0,
+      };
+    });
+    const subtotalIrr = poLines.reduce((sum, l) => sum + l.lineTotalIrr, 0);
+    po = {
+      id: id(),
+      number: `F2-PO-SPOT-${String(state.purchaseOrders.length + 1).padStart(6, '0')}`,
+      branchId: requestedBranchId,
+      vendorId,
+      status: 'approved',
+      subtotalIrr,
+      totalIrr: subtotalIrr,
+      notes: String(input.notes || 'خرید مستقیم / روزانه').trim().slice(0, 300),
+      lines: poLines,
+      createdBy: actor,
+      createdAt: now(),
+      approvedBy: actor,
+      approvedAt: now(),
+    };
+    state.purchaseOrders.push(po);
+  }
+
   if (!['approved', 'partially_received'].includes(po.status)) throw Object.assign(new Error('سفارش خرید هنوز برای دریافت کالا تأیید نشده است.'), { code: 'purchase_order_not_approved', status: 409 });
   const deliveryNoteNumber = String(input.deliveryNoteNumber || '').trim().slice(0, 120);
   if (deliveryNoteNumber && state.goodsReceipts.some((row) => row.vendorId === po.vendorId && row.deliveryNoteNumber === deliveryNoteNumber)) {
     throw Object.assign(new Error('شماره حوالهٔ تأمین‌کننده قبلاً ثبت شده است.'), { code: 'goods_receipt_duplicate', status: 409 });
   }
-  const rawLines = list(input.lines);
-  if (!rawLines.length) throw Object.assign(new Error('حداقل یک ردیف دریافت الزامی است.'), { code: 'goods_receipt_lines_missing' });
   const seenPurchaseOrderLineIds = new Set();
   let totalValueIrr = 0;
   const lines = rawLines.map((line, index) => {
@@ -1426,7 +2894,7 @@ function receiveGoodsV2(db, input, actor) {
       unitCostIrr: poLine.unitPriceIrr, lineValueIrr,
     };
   });
-  const receivedAt = input.receivedAt || input.receivedDate || now();
+  const receivedAt = input.receivedAt || input.receivedDate ? isoTimestamp(input.receivedAt || input.receivedDate, 'goods_receipt_date_invalid', 'زمان دریافت کالا باید تاریخ ISO معتبر همراه منطقهٔ زمانی باشد.') : now();
   const grn = {
     id: id(), number: `F2-GRN-${String(state.goodsReceipts.length + 1).padStart(6, '0')}`,
     purchaseOrderId: po.id, purchaseOrderNumber: po.number, branchId: po.branchId, vendorId: po.vendorId,
@@ -1442,6 +2910,21 @@ function receiveGoodsV2(db, input, actor) {
       unitCostIrr: line.unitCostIrr, totalCostIrr: line.lineValueIrr, goodsReceiptId: grn.id,
       source: 'purchase.goods_received', sourceId: grn.id, occurredAt: receivedAt, createdAt: now(), reversalOfId: null,
     });
+    if (Array.isArray(db.accounting?.inventoryItems)) {
+      const invItem = inventoryOperations.resolveInventoryItemForBranch(db.accounting?.inventoryItems, line.itemId, po.branchId);
+      if (invItem) {
+        const availBefore = orderCosting.physicalAvailable(invItem, state, po.branchId);
+        const receivedQty = Number(line.acceptedQuantity || line.receivedQuantity || 0) || 0;
+        const currentAvail = availBefore.ok ? availBefore.value : (Number(invItem.qtyOnHand || 0) + receivedQty);
+        const prevQty = Math.max(0, currentAvail - receivedQty);
+        const prevAvg = Number(invItem.avgCostIrr ?? invItem.unitCostIrr ?? invItem.cost ?? 0) || 0;
+        const receivedCost = Number(line.lineValueIrr || (line.unitCostIrr * receivedQty) || 0) || 0;
+        invItem.availableQuantity = currentAvail;
+        if (currentAvail > 0 && receivedCost > 0) {
+          invItem.avgCostIrr = Math.round(((prevQty * prevAvg) + receivedCost) / (prevQty + receivedQty));
+        }
+      }
+    }
   }
   po.status = po.lines.every((line) => line.receivedQuantity >= line.quantity - 1e-9) ? 'received' : 'partially_received';
   const recorded = recordEvent(db, {
@@ -1476,7 +2959,7 @@ function postVendorInvoiceV2(db, invoice, actor) {
   const match = state.threeWayMatches.find((row) => row.vendorInvoiceId === invoice.id);
   const event = state.events.find((row) => row.source === 'purchase.vendor_invoice' && row.sourceId === invoice.id);
   if (!goodsReceipt || !match || !event) throw Object.assign(new Error('زنجیرهٔ تطبیق فاکتور کامل نیست.'), { code: 'three_way_match_chain_invalid', status: 409 });
-  const periodCheck = validateOpenPeriod(db, invoice.invoiceDate);
+  const periodCheck = validateOpenPeriod(db, invoice.invoiceDate, invoice.branchId);
   if (!periodCheck.ok) throw Object.assign(new Error(periodCheck.message), { code: periodCheck.code, status: 409 });
   event.status = 'pending';
   event.error = null;
@@ -1487,11 +2970,21 @@ function postVendorInvoiceV2(db, invoice, actor) {
 }
 
 function createVendorInvoiceV2(db, input, actor) {
+  ensureFinanceV2(db);
+  return withFinanceAtomicity(db, () => createVendorInvoiceV2Atomic(db, input, actor), {
+    keys: ['vendorInvoices', 'threeWayMatches', 'events', 'journalEntries', 'idempotency'],
+  });
+}
+
+function createVendorInvoiceV2Atomic(db, input, actor) {
   const state = ensureFinanceV2(db);
   const grn = state.goodsReceipts.find((row) => row.id === String(input.goodsReceiptId || input.grnId || ''));
   if (!grn) throw Object.assign(new Error('رسید کالای V2 یافت نشد.'), { code: 'goods_receipt_not_found', status: 404 });
   const po = state.purchaseOrders.find((row) => row.id === grn.purchaseOrderId);
   if (!po) throw Object.assign(new Error('سفارش خرید متصل یافت نشد.'), { code: 'purchase_order_not_found', status: 404 });
+  if (Number(po.branchId) !== Number(grn.branchId)) {
+    throw Object.assign(new Error('شعبهٔ سفارش خرید و رسید کالا یکسان نیست.'), { code: 'purchase_chain_branch_mismatch', status: 409 });
+  }
   const invoiceNumber = String(input.invoiceNumber || '').trim().slice(0, 120);
   if (!invoiceNumber) throw Object.assign(new Error('شماره فاکتور تأمین‌کننده الزامی است.'), { code: 'vendor_invoice_number_missing' });
   if (state.vendorInvoices.some((row) => row.vendorId === grn.vendorId && row.invoiceNumber.toLowerCase() === invoiceNumber.toLowerCase())) {
@@ -1517,6 +3010,7 @@ function createVendorInvoiceV2(db, input, actor) {
     const remainingReceived = receiptLine.acceptedQuantity - previouslyInvoiced;
     if (invoicedQuantity > remainingReceived + 1e-9) throw Object.assign(new Error(`مقدار فاکتور ردیف ${index + 1} از دریافت فاکتورنشده بیشتر است.`), { code: 'vendor_invoice_over_received_quantity' });
     const unitPriceIrr = safeIrr(line.unitPriceIrr, 'unit_price_irr_invalid');
+    if (unitPriceIrr <= 0) throw Object.assign(new Error(`قیمت واحد فاکتور ردیف ${index + 1} باید بزرگ‌تر از صفر باشد.`), { code: 'vendor_invoice_unit_price_invalid' });
     const lineTotalIrr = Math.round(invoicedQuantity * unitPriceIrr);
     if (!Number.isSafeInteger(lineTotalIrr)) throw Object.assign(new Error('جمع ردیف فاکتور از محدودهٔ امن خارج است.'), { code: 'vendor_invoice_line_total_unsafe' });
     const receiptLineValueIrr = Math.round(invoicedQuantity * receiptLine.unitCostIrr);
@@ -1537,12 +3031,19 @@ function createVendorInvoiceV2(db, input, actor) {
   const totalIrr = netAmountIrr + vatIrr;
   const suppliedTotal = input.totalIrr == null ? totalIrr : safeIrr(input.totalIrr, 'invoice_total_irr_invalid');
   if (suppliedTotal !== totalIrr) throw Object.assign(new Error('جمع فاکتور با ردیف‌ها و مالیات برابر نیست.'), { code: 'vendor_invoice_total_mismatch' });
+  const invoiceDate = input.invoiceDate || input.date
+    ? isoTimestamp(input.invoiceDate || input.date, 'vendor_invoice_date_invalid', 'زمان فاکتور تأمین‌کننده باید تاریخ ISO معتبر همراه منطقهٔ زمانی باشد.')
+    : now();
+  const dueDate = optionalCalendarDate(input.dueDate, 'vendor_invoice_due_date_invalid', 'سررسید فاکتور تأمین‌کننده باید تاریخ تقویمی معتبر یا timestamp ISO همراه منطقهٔ زمانی باشد.');
+  if (dueDate && dueDate < tehranDateKey(invoiceDate)) {
+    throw Object.assign(new Error('سررسید فاکتور نمی‌تواند قبل از تاریخ فاکتور باشد.'), { code: 'vendor_invoice_due_date_before_invoice', status: 400 });
+  }
   const priceVarianceIrr = netAmountIrr - receiptValueIrr;
   const matched = Math.abs(quantityVariance) <= 1e-9 && priceVarianceIrr === 0;
   const invoice = {
     id: id(), number: `F2-INV-${String(state.vendorInvoices.length + 1).padStart(6, '0')}`,
     invoiceNumber, vendorId: grn.vendorId, branchId: grn.branchId, purchaseOrderId: po.id, goodsReceiptId: grn.id,
-    invoiceDate: input.invoiceDate || input.date || now(), dueDate: input.dueDate || null,
+    invoiceDate, dueDate,
     netAmountIrr, vatIrr, totalIrr, paidAmountIrr: 0, status: matched ? 'open' : 'match_exception',
     matchStatus: matched ? 'matched' : 'exception', quantityVariance, unbilledReceiptQuantity, quantityCoverage: unbilledReceiptQuantity > 1e-9 ? 'partial_invoice' : 'fully_invoiced_receipt', priceVarianceIrr, lines,
     journalEntryId: null, reversalJournalEntryId: null, reversedBy: null, reversedAt: null,
@@ -1570,6 +3071,11 @@ function createVendorInvoiceV2(db, input, actor) {
 }
 
 function requestVendorInvoiceMatchReview(db, invoiceId, input, actor) {
+  ensureFinanceV2(db);
+  return withFinanceAtomicity(db, () => requestVendorInvoiceMatchReviewAtomic(db, invoiceId, input, actor), { keys: ['vendorInvoices', 'threeWayMatches', 'approvals'] });
+}
+
+function requestVendorInvoiceMatchReviewAtomic(db, invoiceId, input, actor) {
   const state = ensureFinanceV2(db);
   const invoice = state.vendorInvoices.find((row) => row.id === String(invoiceId));
   if (!invoice) throw Object.assign(new Error('فاکتور تأمین‌کننده یافت نشد.'), { code: 'vendor_invoice_not_found', status: 404 });
@@ -1594,18 +3100,37 @@ function requestVendorInvoiceMatchReview(db, invoiceId, input, actor) {
 }
 
 function requestSupplierPaymentV2(db, invoiceId, input, actor) {
+  ensureFinanceV2(db);
+  return withFinanceAtomicity(db, () => requestSupplierPaymentV2Atomic(db, invoiceId, input, actor), { keys: ['vendorInvoices', 'supplierPayments', 'approvals'] });
+}
+
+function requestSupplierPaymentV2Atomic(db, invoiceId, input, actor) {
   const state = ensureFinanceV2(db);
-  const invoice = state.vendorInvoices.find((row) => row.id === invoiceId);
+  const invoice = state.vendorInvoices.find((row) => String(row.id) === String(invoiceId));
   if (!invoice) throw Object.assign(new Error('فاکتور تأمین‌کننده یافت نشد.'), { code: 'vendor_invoice_not_found', status: 404 });
   if (!['open', 'partially_paid'].includes(invoice.status)) throw Object.assign(new Error('فاکتور در وضعیت قابل پرداخت نیست؛ اختلاف تطبیق باید ابتدا تعیین تکلیف شود.'), { code: invoice.status === 'match_exception' ? 'three_way_match_required' : 'vendor_invoice_not_payable', status: 409 });
-  const remainingIrr = invoice.totalIrr - invoice.paidAmountIrr - state.supplierPayments.filter((row) => row.vendorInvoiceId === invoice.id && row.status === 'pending_approval').reduce((sum, row) => sum + row.amountIrr, 0);
+  const invoiceBranchId = branchDimension(invoice);
+  const requestedBranchId = branchDimension(input?.branchId);
+  if (!invoiceBranchId) throw Object.assign(new Error('شعبهٔ فاکتور تأمین‌کننده مشخص نیست.'), { code: 'supplier_payment_branch_missing', status: 409 });
+  if (requestedBranchId && requestedBranchId !== invoiceBranchId) {
+    throw Object.assign(new Error('فاکتور تأمین‌کننده به شعبهٔ فعال تعلق ندارد.'), { code: 'supplier_payment_branch_mismatch', status: 409 });
+  }
+  const invoiceTotalIrr = safeIrr(invoice.totalIrr, 'vendor_invoice_total_invalid');
+  const paidAmountIrr = safeIrr(invoice.paidAmountIrr ?? 0, 'vendor_invoice_paid_amount_invalid');
+  if (paidAmountIrr > invoiceTotalIrr) throw Object.assign(new Error('مبلغ پرداخت‌شدهٔ فاکتور از مبلغ کل بیشتر است.'), { code: 'vendor_invoice_paid_amount_exceeds_total', status: 409 });
+  const pendingAmountIrr = state.supplierPayments.filter((row) => row.vendorInvoiceId === invoice.id && row.status === 'pending_approval')
+    .reduce((sum, row) => sum + safeIrr(row.amountIrr, 'supplier_payment_existing_amount_invalid'), 0);
+  const remainingIrr = invoiceTotalIrr - paidAmountIrr - pendingAmountIrr;
   const amountIrr = safeIrr(input.amountIrr, 'payment_amount_irr_invalid');
   if (amountIrr <= 0 || amountIrr > remainingIrr) throw Object.assign(new Error('مبلغ پرداخت از ماندهٔ قابل پرداخت بیشتر است یا معتبر نیست.'), { code: 'supplier_payment_amount_invalid' });
   const method = String(input.paymentMethod || 'bank').toLowerCase();
   if (!['bank', 'cash', 'petty_cash'].includes(method)) throw Object.assign(new Error('روش پرداخت معتبر نیست.'), { code: 'supplier_payment_method_invalid' });
+  const paymentDate = input.paymentDate || input.date
+    ? isoTimestamp(input.paymentDate || input.date, 'supplier_payment_date_invalid', 'زمان پرداخت تأمین‌کننده باید تاریخ ISO معتبر همراه منطقهٔ زمانی باشد.')
+    : now();
   const payment = {
     id: id(), vendorInvoiceId: invoice.id, vendorId: invoice.vendorId, branchId: invoice.branchId,
-    amountIrr, paymentMethod: method, paymentDate: input.paymentDate || input.date || now(), reference: String(input.reference || '').trim().slice(0, 160) || null,
+    amountIrr, paymentMethod: method, paymentDate, reference: String(input.reference || '').trim().slice(0, 160) || null,
     status: 'pending_approval', createdBy: actor, createdAt: now(), approvedBy: null, approvedAt: null, journalEntryId: null, approvalId: null,
     reversalJournalEntryId: null, reversedBy: null, reversedAt: null,
   };
@@ -1620,9 +3145,20 @@ function requestSupplierPaymentV2(db, invoiceId, input, actor) {
 }
 
 function createCostCommitment(db, input, actor) {
+  ensureFinanceV2(db);
+  return withFinanceAtomicity(db, () => createCostCommitmentAtomic(db, input, actor), {
+    keys: ['costCommitments'],
+  });
+}
+
+function createCostCommitmentAtomic(db, input, actor) {
   const state = ensureFinanceV2(db);
   const branchId = Number(input.branchId) || null;
   if (!branchId) throw Object.assign(new Error('شعبهٔ تعهد هزینه الزامی است.'), { code: 'cost_commitment_branch_required' });
+  const branches = list(db.branches);
+  if (branches.length && !branches.some((branch) => Number(branch.id) === branchId && branch.active !== false)) {
+    throw Object.assign(new Error('شعبهٔ تعهد هزینه یافت نشد یا فعال نیست.'), { code: 'cost_commitment_branch_not_found', status: 404 });
+  }
   const name = String(input.name || '').trim().slice(0, 160);
   if (name.length < 2) throw Object.assign(new Error('عنوان تعهد هزینه الزامی است.'), { code: 'cost_commitment_name_required' });
   const type = String(input.type || '');
@@ -1630,8 +3166,12 @@ function createCostCommitment(db, input, actor) {
   if (!policy) throw Object.assign(new Error('نوع هزینهٔ دوره‌ای معتبر نیست.'), { code: 'cost_commitment_type_invalid' });
   const monthlyAmountIrr = safeIrr(input.monthlyAmountIrr, 'cost_commitment_amount_invalid');
   if (!monthlyAmountIrr) throw Object.assign(new Error('مبلغ ماهانه باید بزرگ‌تر از صفر باشد.'), { code: 'cost_commitment_amount_invalid' });
-  const startDate = String(input.startDate || '').slice(0, 10);
-  const endDate = input.endDate ? String(input.endDate).slice(0, 10) : null;
+  const startDate = valueContracts.requireDateOnly(input.startDate, {
+    code: 'cost_commitment_date_invalid', message: 'بازهٔ فعال تعهد هزینه معتبر نیست.',
+  });
+  const endDate = input.endDate ? valueContracts.requireDateOnly(input.endDate, {
+    code: 'cost_commitment_date_invalid', message: 'بازهٔ فعال تعهد هزینه معتبر نیست.',
+  }) : null;
   const start = new Date(`${startDate}T12:00:00.000Z`);
   const end = endDate ? new Date(`${endDate}T12:00:00.000Z`) : null;
   if (!Number.isFinite(start.getTime()) || (end && (!Number.isFinite(end.getTime()) || end < start))) {
@@ -1649,6 +3189,13 @@ function createCostCommitment(db, input, actor) {
 }
 
 function deactivateCostCommitment(db, commitmentId, actor) {
+  ensureFinanceV2(db);
+  return withFinanceAtomicity(db, () => deactivateCostCommitmentAtomic(db, commitmentId, actor), {
+    keys: ['costCommitments'],
+  });
+}
+
+function deactivateCostCommitmentAtomic(db, commitmentId, actor) {
   const commitment = ensureFinanceV2(db).costCommitments.find((row) => row.id === commitmentId);
   if (!commitment) throw Object.assign(new Error('تعهد هزینه یافت نشد.'), { code: 'cost_commitment_not_found', status: 404 });
   if (commitment.status === 'inactive') return { commitment, idempotentReplay: true };
@@ -1657,11 +3204,20 @@ function deactivateCostCommitment(db, commitmentId, actor) {
 }
 
 function createCostAccrual(db, commitmentId, input, actor) {
+  ensureFinanceV2(db);
+  return withFinanceAtomicity(db, () => createCostAccrualAtomic(db, commitmentId, input, actor), {
+    keys: ['journalEntries', 'approvals', 'costAccruals'],
+  });
+}
+
+function createCostAccrualAtomic(db, commitmentId, input, actor) {
   const state = ensureFinanceV2(db);
   const commitment = state.costCommitments.find((row) => row.id === commitmentId);
   if (!commitment) throw Object.assign(new Error('تعهد هزینه یافت نشد.'), { code: 'cost_commitment_not_found', status: 404 });
   if (commitment.status !== 'active') throw Object.assign(new Error('تعهد هزینه غیرفعال است.'), { code: 'cost_commitment_inactive', status: 409 });
-  const postingDate = String(input.postingDate || '').slice(0, 10);
+  const postingDate = valueContracts.requireDateOnly(input.postingDate, {
+    code: 'cost_accrual_date_invalid', message: 'تاریخ ثبت دوره‌ای معتبر نیست.',
+  });
   const postingAt = new Date(`${postingDate}T12:00:00.000Z`);
   if (!Number.isFinite(postingAt.getTime())) throw Object.assign(new Error('تاریخ ثبت دوره‌ای معتبر نیست.'), { code: 'cost_accrual_date_invalid' });
   if (postingDate < commitment.startDate || (commitment.endDate && postingDate > commitment.endDate)) {
@@ -1674,7 +3230,7 @@ function createCostAccrual(db, commitmentId, input, actor) {
   if (!state.fiscalPeriods.length) {
     throw Object.assign(new Error('برای ثبت هزینهٔ دوره‌ای باید دورهٔ مالی V2 تعریف شده باشد؛ دورهٔ میراثی فقط خواندنی است.'), { code: 'cost_accrual_v2_period_required', status: 409 });
   }
-  const periodCheck = validateOpenPeriod(db, postingAt.toISOString());
+  const periodCheck = validateOpenPeriod(db, postingAt.toISOString(), commitment.branchId);
   if (!periodCheck.ok) throw Object.assign(new Error(periodCheck.message), { code: periodCheck.code, status: 409 });
   const amountIrr = input.amountIrr == null ? commitment.monthlyAmountIrr : safeIrr(input.amountIrr, 'cost_accrual_amount_invalid');
   if (!amountIrr) throw Object.assign(new Error('مبلغ ثبت دوره‌ای باید بزرگ‌تر از صفر باشد.'), { code: 'cost_accrual_amount_invalid' });
@@ -1708,6 +3264,13 @@ function createCostAccrual(db, commitmentId, input, actor) {
 }
 
 function requestCostAccrualPayment(db, accrualId, input, actor) {
+  ensureFinanceV2(db);
+  return withFinanceAtomicity(db, () => requestCostAccrualPaymentAtomic(db, accrualId, input, actor), {
+    keys: ['costPayments', 'approvals'],
+  });
+}
+
+function requestCostAccrualPaymentAtomic(db, accrualId, input, actor) {
   const state = ensureFinanceV2(db);
   const accrual = state.costAccruals.find((row) => row.id === accrualId);
   if (!accrual) throw Object.assign(new Error('ثبت دوره‌ای هزینه یافت نشد.'), { code: 'cost_accrual_not_found', status: 404 });
@@ -1718,8 +3281,9 @@ function requestCostAccrualPayment(db, accrualId, input, actor) {
   if (!amountIrr || amountIrr > remainingIrr) throw Object.assign(new Error('مبلغ پرداخت از ماندهٔ تعهد بیشتر است یا معتبر نیست.'), { code: 'cost_payment_amount_invalid' });
   const paymentMethod = String(input.paymentMethod || 'bank').toLowerCase();
   if (!['bank', 'cash', 'petty_cash'].includes(paymentMethod)) throw Object.assign(new Error('روش پرداخت معتبر نیست.'), { code: 'cost_payment_method_invalid' });
-  const paymentDate = input.paymentDate || now();
-  if (!Number.isFinite(new Date(paymentDate).getTime())) throw Object.assign(new Error('تاریخ پرداخت معتبر نیست.'), { code: 'cost_payment_date_invalid' });
+  const paymentDate = input.paymentDate
+    ? isoTimestamp(input.paymentDate, 'cost_payment_date_invalid', 'زمان پرداخت هزینه باید تاریخ ISO معتبر همراه منطقهٔ زمانی باشد.')
+    : now();
   const payment = {
     id: id(), costAccrualId: accrual.id, costCommitmentId: accrual.costCommitmentId, branchId: accrual.branchId,
     amountIrr, paymentMethod, paymentDate, reference: String(input.reference || '').trim().slice(0, 160) || null,
@@ -1737,9 +3301,20 @@ function requestCostAccrualPayment(db, accrualId, input, actor) {
 }
 
 function createFixedAssetV2(db, input, actor) {
+  ensureFinanceV2(db);
+  return withFinanceAtomicity(db, () => createFixedAssetV2Atomic(db, input, actor), {
+    keys: ['journalEntries', 'approvals', 'fixedAssets'],
+  });
+}
+
+function createFixedAssetV2Atomic(db, input, actor) {
   const state = ensureFinanceV2(db);
   const branchId = Number(input.branchId) || null;
   if (!branchId) throw Object.assign(new Error('شعبهٔ دارایی الزامی است.'), { code: 'fixed_asset_branch_required' });
+  const branches = list(db.branches);
+  if (branches.length && !branches.some((branch) => Number(branch.id) === branchId && branch.active !== false)) {
+    throw Object.assign(new Error('شعبهٔ دارایی یافت نشد یا فعال نیست.'), { code: 'fixed_asset_branch_not_found', status: 404 });
+  }
   if (!state.fiscalPeriods.length) throw Object.assign(new Error('برای ثبت دارایی باید دورهٔ مالی V2 تعریف شده باشد؛ دادهٔ دارایی میراثی فقط خواندنی است.'), { code: 'fixed_asset_v2_period_required', status: 409 });
   const name = String(input.name || '').trim().slice(0, 160);
   if (name.length < 2) throw Object.assign(new Error('نام دارایی الزامی است.'), { code: 'fixed_asset_name_required' });
@@ -1759,7 +3334,7 @@ function createFixedAssetV2(db, input, actor) {
   const purchasedAt = new Date(`${purchaseDate}T12:00:00.000Z`);
   const serviceAt = new Date(`${inServiceDate}T12:00:00.000Z`);
   if (!Number.isFinite(purchasedAt.getTime()) || !Number.isFinite(serviceAt.getTime()) || serviceAt < purchasedAt) throw Object.assign(new Error('تاریخ خرید/بهره‌برداری معتبر نیست.'), { code: 'fixed_asset_date_invalid' });
-  const periodCheck = validateOpenPeriod(db, purchasedAt.toISOString());
+  const periodCheck = validateOpenPeriod(db, purchasedAt.toISOString(), branchId);
   if (!periodCheck.ok) throw Object.assign(new Error(periodCheck.message), { code: periodCheck.code, status: 409 });
   const sourceReference = String(input.sourceReference || '').trim().slice(0, 160);
   if (sourceReference.length < 3) throw Object.assign(new Error('شماره فاکتور، قرارداد یا مرجع خرید الزامی است.'), { code: 'fixed_asset_source_reference_required' });
@@ -1823,12 +3398,24 @@ function previewDepreciationV2(db, input = {}) {
 }
 
 function createDepreciationRunV2(db, input, actor) {
+  ensureFinanceV2(db);
+  return withFinanceAtomicity(db, () => createDepreciationRunV2Atomic(db, input, actor), {
+    keys: ['journalEntries', 'approvals', 'depreciationRuns'],
+  });
+}
+
+function createDepreciationRunV2Atomic(db, input, actor) {
   const state = ensureFinanceV2(db);
   if (!Number(input.branchId)) throw Object.assign(new Error('شعبهٔ ثبت استهلاک الزامی است.'), { code: 'depreciation_branch_required' });
+  const branchId = Number(input.branchId);
+  const branches = list(db.branches);
+  if (branches.length && !branches.some((branch) => Number(branch.id) === branchId && branch.active !== false)) {
+    throw Object.assign(new Error('شعبهٔ ثبت استهلاک یافت نشد یا فعال نیست.'), { code: 'depreciation_branch_not_found', status: 404 });
+  }
   if (!state.fiscalPeriods.length) throw Object.assign(new Error('برای ثبت استهلاک باید دورهٔ مالی V2 تعریف شده باشد.'), { code: 'depreciation_v2_period_required', status: 409 });
   const preview = previewDepreciationV2(db, input);
   if (preview.status !== 'available' || !preview.lines.length) throw Object.assign(new Error(preview.message), { code: 'depreciation_no_eligible_assets', status: 409 });
-  const periodCheck = validateOpenPeriod(db, `${preview.postingDate}T12:00:00.000Z`);
+  const periodCheck = validateOpenPeriod(db, `${preview.postingDate}T12:00:00.000Z`, preview.branchId);
   if (!periodCheck.ok) throw Object.assign(new Error(periodCheck.message), { code: periodCheck.code, status: 409 });
   const runId = id();
   const costCenter = `branch:${preview.branchId}`;
@@ -1903,7 +3490,19 @@ function previewPayrollRunV2(input = {}) {
 }
 
 function createPayrollRunV2(db, input, actor) {
+  ensureFinanceV2(db);
+  return withFinanceAtomicity(db, () => createPayrollRunV2Atomic(db, input, actor), {
+    keys: ['journalEntries', 'approvals', 'payrollRuns'],
+  });
+}
+
+function createPayrollRunV2Atomic(db, input, actor) {
   const state = ensureFinanceV2(db);
+  const branchId = Number(input.branchId) || null;
+  const branches = list(db.branches);
+  if (branchId && branches.length && !branches.some((branch) => Number(branch.id) === branchId && branch.active !== false)) {
+    throw Object.assign(new Error('شعبهٔ لیست حقوق یافت نشد یا فعال نیست.'), { code: 'payroll_branch_not_found', status: 404 });
+  }
   if (!state.fiscalPeriods.length) throw Object.assign(new Error('برای ثبت لیست حقوق باید دورهٔ مالی V2 تعریف شده باشد.'), { code: 'payroll_v2_period_required', status: 409 });
   const sourceReference = String(input.sourceReference || '').trim().slice(0, 160);
   if (sourceReference.length < 3) throw Object.assign(new Error('مرجع لیست حقوق تأییدشده الزامی است.'), { code: 'payroll_source_reference_required' });
@@ -1911,7 +3510,7 @@ function createPayrollRunV2(db, input, actor) {
   if (state.payrollRuns.some((run) => run.branchId === preview.branchId && run.serviceMonth === preview.serviceMonth && !['rejected', 'reversed'].includes(run.status))) {
     throw Object.assign(new Error('برای این شعبه و ماه، لیست حقوق فعال قبلاً ثبت یا ارسال شده است.'), { code: 'payroll_branch_period_duplicate', status: 409 });
   }
-  const periodCheck = validateOpenPeriod(db, `${preview.postingDate}T12:00:00.000Z`);
+  const periodCheck = validateOpenPeriod(db, `${preview.postingDate}T12:00:00.000Z`, preview.branchId);
   if (!periodCheck.ok) throw Object.assign(new Error(periodCheck.message), { code: periodCheck.code, status: 409 });
   const runId = id();
   const description = `لیست حقوق ${preview.serviceMonth} · ${preview.headcount} نفر · مرجع ${sourceReference}`;
@@ -1935,6 +3534,13 @@ function createPayrollRunV2(db, input, actor) {
 }
 
 function requestPayrollPaymentV2(db, runId, input, actor) {
+  ensureFinanceV2(db);
+  return withFinanceAtomicity(db, () => requestPayrollPaymentV2Atomic(db, runId, input, actor), {
+    keys: ['payrollPayments', 'approvals'],
+  });
+}
+
+function requestPayrollPaymentV2Atomic(db, runId, input, actor) {
   const state = ensureFinanceV2(db);
   const run = state.payrollRuns.find((row) => row.id === runId);
   if (!run) throw Object.assign(new Error('لیست حقوق V2 یافت نشد.'), { code: 'payroll_run_not_found', status: 404 });
@@ -1950,8 +3556,9 @@ function requestPayrollPaymentV2(db, runId, input, actor) {
   if (!amountIrr || amountIrr > remainingIrr) throw Object.assign(new Error('مبلغ پرداخت از ماندهٔ بدهی انتخاب‌شده بیشتر است یا معتبر نیست.'), { code: 'payroll_payment_amount_invalid' });
   const paymentMethod = String(input.paymentMethod || 'bank');
   if (!['bank', 'cash'].includes(paymentMethod)) throw Object.assign(new Error('روش پرداخت حقوق معتبر نیست.'), { code: 'payroll_payment_method_invalid' });
-  const paymentDate = input.paymentDate || now();
-  if (!Number.isFinite(new Date(paymentDate).getTime())) throw Object.assign(new Error('تاریخ پرداخت حقوق معتبر نیست.'), { code: 'payroll_payment_date_invalid' });
+  const paymentDate = input.paymentDate
+    ? isoTimestamp(input.paymentDate, 'payroll_payment_date_invalid', 'زمان پرداخت حقوق باید تاریخ ISO معتبر همراه منطقهٔ زمانی باشد.')
+    : now();
   const payment = {
     id: id(), payrollRunId: run.id, branchId: run.branchId, liabilityType, liabilityAccount: liabilityPolicy.accountCode,
     amountIrr, paymentMethod, paymentDate, reference: String(input.reference || '').trim().slice(0, 160) || null,
@@ -1969,10 +3576,24 @@ function requestPayrollPaymentV2(db, runId, input, actor) {
 }
 
 function captureCashMovement(db, session, movement, { actor = 'system' } = {}) {
-  const amountIrr = Math.abs(irrFromLegacyToman(movement?.amount));
+  ensureFinanceV2(db);
+  return withFinanceAtomicity(db, () => captureCashMovementAtomic(db, session, movement, { actor }), {
+    keys: ['events', 'approvals', 'idempotency'],
+  });
+}
+
+function captureCashMovementAtomic(db, session, movement, { actor = 'system' } = {}) {
+  const branchId = branchDimension(session);
+  if (!branchId) throw Object.assign(new Error('شعبهٔ نشست صندوق مشخص نیست.'), { code: 'cash_session_branch_missing', status: 409 });
+  if (!movement?.id) throw Object.assign(new Error('شناسهٔ حرکت صندوق الزامی است.'), { code: 'cash_movement_id_missing' });
+  if (!['pay_in', 'pay_out'].includes(String(movement.type))) throw Object.assign(new Error('نوع حرکت صندوق معتبر نیست.'), { code: 'cash_movement_type_invalid' });
+  const rawAmount = numeric(movement.amount);
+  if (!Number.isSafeInteger(rawAmount) || rawAmount === 0) throw Object.assign(new Error('مبلغ حرکت صندوق باید عدد صحیح و غیرصفر باشد.'), { code: 'cash_movement_amount_invalid' });
+  const amountIrr = safeIrr(Math.abs(rawAmount) * 10, 'cash_movement_amount_invalid');
+  const occurredAt = isoTimestamp(movement.at, 'cash_movement_date_invalid', 'زمان حرکت صندوق باید تاریخ ISO معتبر همراه منطقهٔ زمانی باشد.');
   const recorded = recordEvent(db, {
     source: 'cash.movement', sourceId: `${session.id}:${movement.id}`, sourceVersion: 1,
-    branchId: session.branchId, occurredAt: movement.at, amountIrr,
+    branchId, occurredAt, amountIrr,
     payload: { sessionId: session.id, movementId: movement.id, type: movement.type, note: movement.note || null },
     status: 'blocked',
     error: { code: 'cash_counteraccount_required', message: 'حساب مقابل باید توسط حسابدار تعیین و قابل‌ردیابی تأیید شود.' },
@@ -1989,17 +3610,29 @@ function captureCashMovement(db, session, movement, { actor = 'system' } = {}) {
 }
 
 function captureCashClose(db, session, { actor = 'system' } = {}) {
-  const varianceToman = int(session.variance);
+  ensureFinanceV2(db);
+  return withFinanceAtomicity(db, () => captureCashCloseAtomic(db, session, { actor }), {
+    keys: ['events', 'journalEntries', 'idempotency'],
+  });
+}
+
+function captureCashCloseAtomic(db, session, { actor = 'system' } = {}) {
+  const branchId = branchDimension(session);
+  if (!branchId) throw Object.assign(new Error('شعبهٔ نشست صندوق مشخص نیست.'), { code: 'cash_session_branch_missing', status: 409 });
+  const varianceToman = numeric(session.variance);
+  if (!Number.isSafeInteger(varianceToman)) throw Object.assign(new Error('اختلاف صندوق باید عدد صحیح معتبر باشد.'), { code: 'cash_variance_invalid' });
+  const closedAt = session.closedAt ? isoTimestamp(session.closedAt, 'cash_close_date_invalid', 'زمان بستن صندوق باید تاریخ ISO معتبر همراه منطقهٔ زمانی باشد.') : now();
+  const countedAmount = session.countedAmount == null ? null : numeric(session.countedAmount);
+  if (countedAmount != null && !Number.isSafeInteger(countedAmount)) throw Object.assign(new Error('مبلغ شمارش‌شدهٔ صندوق معتبر نیست.'), { code: 'cash_counted_amount_invalid' });
+  const varianceIrr = safeIrr(Math.abs(varianceToman) * 10, 'cash_variance_invalid');
   const recorded = recordEvent(db, {
     source: 'cash_session.closed', sourceId: session.id, sourceVersion: 1,
-    branchId: session.branchId, occurredAt: session.closedAt || now(), amountIrr: Math.abs(irrFromLegacyToman(varianceToman)),
-    payload: { sessionId: session.id, countedAmountIrr: irrFromLegacyToman(session.countedAmount), varianceIrr: irrFromLegacyToman(varianceToman) },
+    branchId, occurredAt: closedAt, amountIrr: varianceIrr,
+    payload: { sessionId: session.id, countedAmountIrr: countedAmount == null ? null : safeIrr(countedAmount * 10, 'cash_counted_amount_invalid'), varianceIrr },
     status: varianceToman === 0 ? 'posted' : 'pending',
   });
   if (!recorded.idempotentReplay && varianceToman !== 0) {
-    const branchId = Number(session.branchId);
     const costCenter = `branch:${branchId}`;
-    const varianceIrr = Math.abs(irrFromLegacyToman(varianceToman));
     const lines = varianceToman > 0
       ? [
         { accountCode: '1110', debitIrr: varianceIrr, creditIrr: 0, branchId, costCenter, memo: `مازاد صندوق نشست ${session.id}` },
@@ -2009,12 +3642,18 @@ function captureCashClose(db, session, { actor = 'system' } = {}) {
         { accountCode: '5500', debitIrr: varianceIrr, creditIrr: 0, branchId, costCenter, accountType: 'cogs', memo: `کسری صندوق نشست ${session.id}` },
         { accountCode: '1110', debitIrr: 0, creditIrr: varianceIrr, branchId, costCenter, memo: `کسری صندوق نشست ${session.id}` },
       ];
-    postEventJournal(db, recorded.event, lines, `کسری/مازاد بستن صندوق نشست ${session.id}`, actor);
+    const entry = postEventJournal(db, recorded.event, lines, `کسری/مازاد بستن صندوق نشست ${session.id}`, actor);
+    if (!entry) throw Object.assign(new Error('سند اختلاف بستن صندوق پست نشد.'), { code: recorded.event.error?.code || 'cash_close_journal_post_failed', status: 409 });
   }
   return recorded;
 }
 
 function resolveEvent(db, eventId, input, actor) {
+  ensureFinanceV2(db);
+  return withFinanceAtomicity(db, () => resolveEventAtomic(db, eventId, input, actor));
+}
+
+function resolveEventAtomic(db, eventId, input, actor) {
   const state = ensureFinanceV2(db);
   const event = state.events.find((item) => item.id === eventId);
   if (!event) throw Object.assign(new Error('رویداد مالی یافت نشد.'), { code: 'finance_event_not_found', status: 404 });
@@ -2054,9 +3693,13 @@ function resolveEvent(db, eventId, input, actor) {
   } else if (event.source === 'order.paid') {
     const order = list(db.orders).find((item) => String(item.id) === String(event.sourceId) && sameBranch(item, event.branchId));
     if (!order) throw Object.assign(new Error('سفارش منبع یافت نشد.'), { code: 'order_not_found', status: 404 });
-    const sourceTenders = list(event.payload?.tenderSnapshot).map((row) => ({ tender: String(row.tender || ''), amountIrr: int(row.amountIrr) }));
+    const sourceTenders = list(event.payload?.tenderSnapshot).map((row) => ({
+      ...row, tender: String(row.tender || ''), amountIrr: int(row.amountIrr),
+    }));
     const sourceTenderIsReliable = reliableTenderRows(sourceTenders, event.amountIrr);
-    const reviewedTenders = list(input.tenders).map((row) => ({ tender: String(row.tender || ''), amountIrr: int(row.amountIrr) }));
+    const reviewedTenders = list(input.tenders).map((row) => ({
+      ...row, tender: String(row.tender || ''), amountIrr: int(row.amountIrr),
+    }));
     const usesAccountantReview = reviewedTenders.length > 0 || !sourceTenderIsReliable;
     const tenders = usesAccountantReview ? reviewedTenders : sourceTenders;
     if (!tenders.length || tenders.some((row) => !TENDER_ACCOUNTS[row.tender]) || tenders.reduce((sum, row) => sum + row.amountIrr, 0) !== event.amountIrr) {
@@ -2077,7 +3720,9 @@ function resolveEvent(db, eventId, input, actor) {
         occurredAt: event.occurredAt,
         providerReference: row.providerReference || event.payload.reviewEvidenceReference || null,
       }));
-    lines = tenders.map((row) => ({ accountCode: TENDER_ACCOUNTS[row.tender], debitIrr: row.amountIrr, creditIrr: 0, branchId, costCenter, paymentMethod: row.tender, memo: `دریافت سفارش ${order.orderNo || order.id}` }));
+    const paymentDebits = paymentReceiptDebitLines(db, order, tenders, branchId, costCenter);
+    if (!paymentDebits.ok) throw Object.assign(new Error(paymentDebits.message), { code: paymentDebits.code, status: 409 });
+    lines = paymentDebits.lines;
     const salesAccount = order.fulfillment === 'pickup' ? '4120' : order.fulfillment === 'delivery' ? '4130' : '4110';
     lines.push({ accountCode: salesAccount, debitIrr: 0, creditIrr: event.amountIrr, branchId, costCenter, accountType: 'revenue', memo: `فروش سفارش ${order.orderNo || order.id}` });
   } else {
@@ -2088,11 +3733,16 @@ function resolveEvent(db, eventId, input, actor) {
   const payments = entry && event.source === 'order.paid' && paymentRows
     ? materializeOrderPayments(db, list(db.orders).find((order) => String(order.id) === String(event.sourceId) && sameBranch(order, event.branchId)), paymentRows)
     : [];
+  if (entry && event.source === 'order.paid') linkOrderPaymentsToSaleEvent(payments, event, entry);
   return { event, entry, payments, idempotentReplay: false };
 }
 
-function legacyArchiveSummary(db, branchId = null) {
-  const rows = ensureFinanceV2(db).legacyArchive.filter((row) => !branchId || row.branchId == null || Number(row.branchId) === Number(branchId));
+function legacyArchiveSummary(db, branchId = null, { includeUnscoped = true } = {}) {
+  const rows = ensureFinanceV2(db).legacyArchive.filter((row) => {
+    if (!branchId) return true;
+    if (row.branchId == null) return includeUnscoped;
+    return Number(row.branchId) === Number(branchId);
+  });
   return rows.reduce((summary, row) => {
     summary.total += 1;
     if (Object.hasOwn(summary.byTrust, row.trustStatus)) summary.byTrust[row.trustStatus] += 1;
@@ -2321,13 +3971,13 @@ function legacyOrderBackfillPreview(db, archiveId, { forApproval = false } = {})
         paymentTender: null,
         paymentMethod: null,
       };
-      built = salesLines(reviewedOrder);
+      built = salesLines(reviewedOrder, db);
       if (!built.ok) blockers.push({ code: built.code, message: built.message });
     } catch (error) {
       blockers.push({ code: error.code || 'legacy_backfill_tender_invalid', message: error.message });
     }
   }
-  const periodCheck = validateOpenPeriod(db, record.occurredAt || order?.paidAt || order?.createdAt);
+  const periodCheck = validateOpenPeriod(db, record.occurredAt || order?.paidAt || order?.createdAt, record.branchId || order?.branchId);
   if (!periodCheck.ok) blockers.push({ code: periodCheck.code, message: periodCheck.message });
   const totals = built?.ok ? assertBalanced(built.lines) : { debitIrr: 0, creditIrr: 0 };
   return {
@@ -2380,22 +4030,30 @@ function duplicateGroups(rows, keyFor) {
   return [...groups.entries()].filter(([, bucket]) => bucket.length > 1).map(([key, bucket]) => ({ key, count: bucket.length, ids: bucket.map((row) => row.id) }));
 }
 
-function dataQuality(db, branchId) {
+function dataQuality(db, branchId, options = {}) {
   const state = ensureFinanceV2(db);
+  const scopedByDate = options.from != null || options.to != null;
+  const withinScope = (row, field = 'occurredAt') => !scopedByDate || inRange(row, options.from, options.to, field);
   // A row explicitly assigned to another branch must not affect this
   // branch's gate. An unscoped legacy row remains visible as a global
   // exception until an authorized reviewer assigns or resolves it.
   const qualityScope = (row) => !branchId || row?.branchId == null || Number(row.branchId) === Number(branchId);
-  const orders = list(db.orders).filter((order) => paid(order) && sameBranch(order, branchId));
+  // Accounting-period quality checks must use the same payment/accounting date
+  // as reports and reconciliation. Using createdAt here could silently omit a
+  // paid order created before the period but captured inside it.
+  const orderInScope = options.orderDateField === 'createdAt'
+    ? (order) => withinScope(order, 'createdAt')
+    : (order) => orderInAccountingRange(order, options.from, options.to);
+  const orders = list(db.orders).filter((order) => paid(order) && sameBranch(order, branchId) && orderInScope(order));
   const paidOrderIds = new Set(orders.map((order) => String(order.id)));
-  const saleEvents = state.events.filter((event) => event.source === 'order.paid' && qualityScope(event));
-  const cogsEvents = state.events.filter((event) => event.source === 'order.cogs' && qualityScope(event));
+  const saleEvents = state.events.filter((event) => event.source === 'order.paid' && qualityScope(event) && withinScope(event));
+  const cogsEvents = state.events.filter((event) => event.source === 'order.cogs' && qualityScope(event) && withinScope(event));
   const orphanedSaleEvents = saleEvents.filter((event) => !paidOrderIds.has(String(event.sourceId)));
   const orphanedCogsEvents = cogsEvents.filter((event) => !paidOrderIds.has(String(event.sourceId)));
   const capturedIds = new Set(saleEvents.map((event) => String(event.sourceId)));
   const postedSaleIds = new Set(saleEvents.filter((event) => event.status === 'posted').map((event) => String(event.sourceId)));
   const cogsEventIds = new Set(cogsEvents.map((event) => String(event.sourceId)));
-  const legacyPostedIds = new Set(list(db.accounting?.journalEntries).filter((entry) => entry.source === 'sale' && qualityScope(entry)).map((entry) => String(entry.sourceId)));
+  const legacyPostedIds = new Set(list(db.accounting?.journalEntries).filter((entry) => entry.source === 'sale' && qualityScope(entry) && withinScope(entry, 'date')).map((entry) => String(entry.sourceId)));
   const uncaptured = orders.filter((order) => !capturedIds.has(String(order.id)) && !legacyPostedIds.has(String(order.id)));
   const uncapturedCogs = orders.filter((order) => postedSaleIds.has(String(order.id)) && !cogsEventIds.has(String(order.id)));
   const postedSaleTenderEvidenceMissing = saleEvents.filter((event) => event.status === 'posted' && event.journalEntryId).filter((event) => {
@@ -2410,32 +4068,58 @@ function dataQuality(db, branchId) {
     return Boolean(order && (!tenders ? paymentRows.length === 0 : !orderPaymentsMatch(state, order.id, event.branchId, tenders)));
   });
   const ambiguousTender = orders.filter((order) => {
-    if (salesLines(order).ok) return false;
+    if (salesLines(order, db).ok) return false;
     const resolvedEvent = saleEvents.find((event) => event.status === 'posted' && String(event.sourceId) === String(order.id));
     return !reliableTenderRows(resolvedEvent?.payload?.reviewedTenderSnapshot, resolvedEvent?.amountIrr);
   });
   const settlementDuplicates = duplicateGroups(
-    list(db.accounting?.settlements).filter(qualityScope),
+    list(db.accounting?.settlements).filter((row) => qualityScope(row) && withinScope(row, 'settledAt')),
     legacyClassifier.settlementDuplicateKey,
   );
   const expenseDuplicates = duplicateGroups(
-    list(db.accounting?.expenses).filter(qualityScope),
+    list(db.accounting?.expenses).filter((row) => qualityScope(row) && withinScope(row, 'date')),
     legacyClassifier.expenseDuplicateKey,
   );
   const depreciationDuplicates = duplicateGroups(
-    list(db.accounting?.journalEntries).filter((entry) => entry.source === 'depreciation' && entry.status !== 'reversed' && qualityScope(entry)),
+    list(db.accounting?.journalEntries).filter((entry) => entry.source === 'depreciation' && entry.status !== 'reversed' && qualityScope(entry) && withinScope(entry, 'date')),
     legacyClassifier.depreciationDuplicateKey,
   );
+  const knownBranchIds = new Set(list(db.branches).map((branch) => Number(branch.id)).filter(Number.isFinite));
+  // Invalid master-data references are a global cutover blocker. Do not hide
+  // an orphaned item merely because the current report is scoped to branch 1;
+  // otherwise a second, undefined branch can leak into a later rollout.
+  const orphanedInventoryItems = list(db.accounting?.inventoryItems).filter((item) => (
+    item?.branchId != null && !knownBranchIds.has(Number(item.branchId))
+  ));
+  // Fiscal periods are also branch-scoped master data after migration 019.
+  // Report invalid legacy references before the PostgreSQL FK rejects a sync;
+  // silently waiting for the migration error makes the cutover diagnosis
+  // needlessly opaque and can leave the operator with no repair queue.
+  const fiscalPeriodsForQuality = state.fiscalPeriods.length ? state.fiscalPeriods : list(db.accounting?.fiscalPeriods);
+  const orphanedFiscalPeriods = fiscalPeriodsForQuality.filter((period) => (
+    period?.branchId != null && !knownBranchIds.has(Number(period.branchId))
+  ));
   const currentDate = now();
   const currentDay = currentDate.slice(0, 10);
   const currentServiceMonth = currentDay.slice(0, 7);
-  const currentPeriod = periodForDate(db, currentDate);
-  const unmatchedV2Payments = state.reconciliationItems.filter((item) => item.kind === 'payment' && item.status === 'unmatched' && sameBranch(item, branchId));
-  const unmatchedBankStatementLines = state.reconciliationItems.filter((item) => item.kind === 'bank_statement_line' && item.status === 'unmatched' && sameBranch(item, branchId));
-  const dueCostCommitments = state.costCommitments.filter((item) => item.status === 'active' && sameBranch(item, branchId)
+  const currentPeriod = periodForDate(db, currentDate, branchId);
+  const unmatchedV2Payments = state.reconciliationItems.filter((item) => item.kind === 'payment' && item.status === 'unmatched' && sameBranch(item, branchId) && withinScope(item));
+  const unmatchedBankStatementLines = state.reconciliationItems.filter((item) => item.kind === 'bank_statement_line' && item.status === 'unmatched' && sameBranch(item, branchId) && withinScope(item, 'occurredAt'));
+  const dueCostCommitments = !scopedByDate && state.costCommitments.filter((item) => item.status === 'active' && sameBranch(item, branchId)
     && item.startDate <= currentDay && (!item.endDate || item.endDate >= currentDay)
-    && !state.costAccruals.some((accrual) => accrual.costCommitmentId === item.id && accrual.serviceMonth === currentServiceMonth && !['rejected', 'reversed'].includes(accrual.status)));
-  const dueDepreciationAssets = previewDepreciationV2(db, { branchId, postingDate: currentDay }).lines;
+    && !state.costAccruals.some((accrual) => accrual.costCommitmentId === item.id && accrual.serviceMonth === currentServiceMonth && !['rejected', 'reversed'].includes(accrual.status))) || [];
+  const dueDepreciationAssets = scopedByDate ? [] : previewDepreciationV2(db, { branchId, postingDate: currentDay }).lines;
+  const recipeApprovalById = new Map(state.approvals.map((approval) => [String(approval.id), approval]));
+  const recipesMissingApprovalEvidence = state.recipeVersions.filter((recipe) => {
+    if (!qualityScope(recipe) || !['approved', 'retired'].includes(recipe.status)) return false;
+    const approval = recipe.approvalId == null ? null : recipeApprovalById.get(String(recipe.approvalId));
+    return !recipe.approvedBy || !recipe.approvedAt
+      || !approval
+      || approval.entityType !== 'recipe_version'
+      || String(approval.entityId) !== String(recipe.id)
+      || approval.operation !== 'approve_recipe_version'
+      || approval.status !== 'approved';
+  });
   const issues = [];
   if (uncaptured.length) issues.push({ code: 'paid_orders_without_finance_event', severity: 'critical', count: uncaptured.length, amountIrr: uncaptured.reduce((sum, order) => sum + irrFromLegacyToman(order.total), 0), title: 'سفارش پرداخت‌شده بدون رویداد مالی' });
   if (uncapturedCogs.length) issues.push({ code: 'posted_sales_without_cogs_event', severity: 'critical', count: uncapturedCogs.length, amountIrr: null, title: 'فروش ثبت‌شده بدون رویداد بهای تمام‌شده' });
@@ -2444,10 +4128,13 @@ function dataQuality(db, branchId) {
   if (postedSaleTenderEvidenceMissing.length) issues.push({ code: 'posted_sale_tender_evidence_missing', severity: 'critical', count: postedSaleTenderEvidenceMissing.length, amountIrr: postedSaleTenderEvidenceMissing.reduce((sum, event) => sum + int(event.amountIrr), 0), title: 'فروش قطعی بدون snapshot معتبر روش پرداخت' });
   if (postedSalePaymentGaps.length) issues.push({ code: 'posted_sale_payment_records_missing', severity: 'critical', count: postedSalePaymentGaps.length, amountIrr: postedSalePaymentGaps.reduce((sum, event) => sum + int(event.amountIrr), 0), title: 'فروش قطعی بدون رکورد پرداخت متناظر' });
   if (ambiguousTender.length) issues.push({ code: 'payment_tender_missing', severity: 'critical', count: ambiguousTender.length, amountIrr: ambiguousTender.reduce((sum, order) => sum + irrFromLegacyToman(order.total), 0), title: 'روش پرداخت نامطمئن یا جمع پرداخت ناسازگار' });
-  if (!currentPeriod || !['open', 'reopened'].includes(currentPeriod.status)) issues.push({ code: 'current_fiscal_period_not_open', severity: 'critical', count: 1, amountIrr: null, title: 'دورهٔ مالی جاری باز و معتبر نیست' });
-  if (settlementDuplicates.length) issues.push({ code: 'duplicate_settlement_batch', severity: 'critical', count: settlementDuplicates.length, amountIrr: null, title: 'بچ تسویهٔ تکراری' });
+  if (!scopedByDate && (!currentPeriod || !['open', 'reopened'].includes(currentPeriod.status))) issues.push({ code: 'current_fiscal_period_not_open', severity: 'critical', count: 1, amountIrr: null, title: 'دورهٔ مالی جاری باز و معتبر نیست' });
+  if (settlementDuplicates.length) issues.push({ code: 'duplicate_settlement_batch', severity: 'critical', count: settlementDuplicates.length, amountIrr: null, title: 'دسته تسویهٔ تکراری' });
   if (expenseDuplicates.length) issues.push({ code: 'duplicate_expense_candidate', severity: 'critical', count: expenseDuplicates.length, amountIrr: null, title: 'هزینهٔ احتمالی تکراری' });
   if (depreciationDuplicates.length) issues.push({ code: 'duplicate_depreciation_period', severity: 'critical', count: depreciationDuplicates.length, amountIrr: null, title: 'استهلاک تکراری دارایی/دوره' });
+  if (orphanedInventoryItems.length) issues.push({ code: 'inventory_branch_reference_invalid', severity: 'critical', count: orphanedInventoryItems.length, amountIrr: null, title: 'اقلام انبار به شعبهٔ نامعتبر متصل‌اند' });
+  if (orphanedFiscalPeriods.length) issues.push({ code: 'fiscal_period_branch_reference_invalid', severity: 'critical', count: orphanedFiscalPeriods.length, amountIrr: null, title: 'دوره‌های مالی به شعبهٔ نامعتبر متصل‌اند' });
+  if (recipesMissingApprovalEvidence.length) issues.push({ code: 'recipe_approval_audit_missing', severity: 'critical', count: recipesMissingApprovalEvidence.length, amountIrr: null, title: 'نسخه‌های دستور تهیه بدون زنجیرهٔ تأیید مستقل' });
   const cashSessions = list(db.cashSessions);
   const legacyCashDrawers = list(db.accounting?.cashDrawers);
   // An empty legacy collection is not a parallel model: it is the expected
@@ -2464,13 +4151,15 @@ function dataQuality(db, branchId) {
   if (unmatchedBankStatementLines.length) issues.push({ code: 'unmatched_bank_statement_lines', severity: 'warning', count: unmatchedBankStatementLines.length, amountIrr: unmatchedBankStatementLines.reduce((sum, item) => sum + int(item.amountIrr), 0), title: 'گردش صورت‌حساب بانک منتظر تطبیق دفتر' });
   if (dueCostCommitments.length) issues.push({ code: 'periodic_cost_accrual_due', severity: 'warning', count: dueCostCommitments.length, amountIrr: dueCostCommitments.reduce((sum, item) => sum + int(item.monthlyAmountIrr), 0), title: 'تعهد هزینهٔ ماه جاری هنوز ثبت دوره‌ای ندارد' });
   if (dueDepreciationAssets.length) issues.push({ code: 'asset_depreciation_due', severity: 'warning', count: dueDepreciationAssets.length, amountIrr: dueDepreciationAssets.reduce((sum, item) => sum + int(item.amountIrr), 0), title: 'استهلاک ماه جاری دارایی‌های V2 هنوز ثبت نشده است' });
-  return { issues, uncaptured, uncapturedCogs, orphanedSaleEvents, orphanedCogsEvents, postedSaleTenderEvidenceMissing, postedSalePaymentGaps, ambiguousTender, settlementDuplicates, expenseDuplicates, depreciationDuplicates, unmatchedV2Payments, unmatchedBankStatementLines, dueCostCommitments, dueDepreciationAssets, currentPeriod };
+  return { issues, uncaptured, uncapturedCogs, orphanedSaleEvents, orphanedCogsEvents, postedSaleTenderEvidenceMissing, postedSalePaymentGaps, ambiguousTender, settlementDuplicates, expenseDuplicates, depreciationDuplicates, orphanedInventoryItems, orphanedFiscalPeriods, recipesMissingApprovalEvidence, unmatchedV2Payments, unmatchedBankStatementLines, dueCostCommitments, dueDepreciationAssets, currentPeriod };
 }
 
 function reportSnapshot(db, { branchId, from, to } = {}) {
   const state = ensureFinanceV2(db);
-  const orders = list(db.orders).filter((order) => paid(order) && sameBranch(order, branchId) && inRange(order, from, to, 'createdAt'));
-  const refunds = state.refunds.filter((refund) => refund.status === 'succeeded' && sameBranch(refund, branchId) && inRange(refund, from, to, 'refundDate'));
+  const orders = list(db.orders).filter((order) => paid(order) && sameBranch(order, branchId) && orderInAccountingRange(order, from, to));
+  const refunds = state.refunds.filter((refund) => refund.status === 'succeeded'
+    && refund.recognitionState !== 'customer_deposit'
+    && sameBranch(refund, branchId) && inRange(refund, from, to, 'refundDate'));
   const entries = state.journalEntries.filter((entry) => entry.status === 'posted' && sameBranch(entry, branchId) && inRange(entry, from, to, 'date'));
   const grossSalesIrr = orders.reduce((sum, order) => sum + irrFromLegacyToman(order.total), 0);
   const refundsIrr = refunds.reduce((sum, refund) => sum + int(refund.amountIrr), 0);
@@ -2517,7 +4206,7 @@ function shadowRunReadiness(db, branchId = null, runtime = {}) {
     if (!postedCogsIds.has(String(event.sourceId))) return false;
     const succeededPayments = state.payments.filter((payment) => payment.status === 'succeeded'
       && sameBranch(payment, branchId) && String(payment.orderId) === String(event.sourceId));
-    return succeededPayments.length > 0 && succeededPayments.reduce((sum, payment) => sum + int(payment.amountIrr), 0) === int(event.amountIrr);
+    return succeededPayments.length > 0 && succeededPayments.reduce((sum, payment) => sum + Math.max(0, int(payment.amountIrr) - int(payment.refundedIrr)), 0) === int(event.amountIrr);
   });
   const completeDayKeys = [...new Set(completeOrders.map((event) => tehranDay(event.occurredAt)).filter(Boolean))].sort();
   const migration = legacyMigrationReadiness(db, branchId);
@@ -2577,8 +4266,7 @@ function branchRolloutStatus(db, branchId, runtime = {}) {
 
 function requestBranchCutover(db, branchId, actor, runtime = {}) {
   const state = ensureFinanceV2(db);
-  const numericBranchId = Number(branchId) || null;
-  if (!numericBranchId) throw Object.assign(new Error('شعبه برای درخواست انتقال الزامی است.'), { code: 'finance_rollout_branch_required', status: 400 });
+  const numericBranchId = strictBranchRouteId(branchId);
   if (list(db.branches).length && !list(db.branches).some((branch) => Number(branch.id) === numericBranchId)) {
     throw Object.assign(new Error('شعبهٔ درخواست‌شده یافت نشد.'), { code: 'finance_rollout_branch_not_found', status: 404 });
   }
@@ -2621,6 +4309,14 @@ function workbench(db, query = {}, runtime = {}) {
   if (quality.uncapturedCogs.length || branchEvents.some((event) => event.source === 'order.cogs' && event.status === 'blocked')) actions.push({ id: 'review-cogs', label: 'رفع نقص دستور تهیه و بهای تمام‌شده', operation: 'events' });
   if (!quality.currentPeriod || !['open', 'reopened'].includes(quality.currentPeriod.status)) actions.push({ id: 'open-period', label: 'رفع مانع دورهٔ مالی', operation: 'periods' });
   if (quality.settlementDuplicates.length) actions.push({ id: 'review-settlements', label: 'بررسی تسویهٔ تکراری', operation: 'events' });
+  if (quality.expenseDuplicates.length) actions.push({ id: 'review-expense-duplicates', label: 'بررسی هزینه‌های احتمالی تکراری', operation: 'events' });
+  if (quality.depreciationDuplicates.length) actions.push({ id: 'review-depreciation-duplicates', label: 'بررسی استهلاک تکراری', operation: 'events' });
+  if (quality.orphanedInventoryItems.length) actions.push({ id: 'review-inventory-branches', label: 'تعیین شعبهٔ اقلام انبار', operation: 'inventory' });
+  if (quality.recipesMissingApprovalEvidence.length) actions.push({
+    id: 'review-recipe-approvals', label: 'بازبینی زنجیرهٔ تأیید دستورهای تهیه', workspace: 'costing',
+  });
+  if (quality.ambiguousTender.length) actions.push({ id: 'review-payment-tenders', label: 'بررسی روش پرداخت سفارش‌ها', operation: 'events' });
+  if (branchEvents.some((event) => event.status === 'blocked')) actions.push({ id: 'review-blocked-events', label: 'رفع رویدادهای مالی مسدودشده', operation: 'events' });
   if (quality.unmatchedV2Payments.length) actions.push({ id: 'reconcile-payments', label: 'تطبیق پرداخت‌های کارت و درگاه', workspace: 'sales_bank' });
   if (quality.unmatchedBankStatementLines.length) actions.push({ id: 'reconcile-bank', label: 'تطبیق صورت‌حساب بانک با دفتر', workspace: 'sales_bank' });
   if (quality.dueCostCommitments.length) actions.push({ id: 'accrue-costs', label: 'ثبت اجاره، حقوق و هزینه‌های ماه', workspace: 'purchases' });
@@ -2628,10 +4324,93 @@ function workbench(db, query = {}, runtime = {}) {
   if (branchApprovals.some((item) => item.status === 'pending')) actions.push({ id: 'pending-approvals', label: 'رسیدگی به تأییدهای منتظر', operation: 'approvals' });
   const migration = legacyMigrationReadiness(db, branchId);
   if (migration.status !== 'complete') actions.push({ id: 'migration-baseline', label: 'تکمیل خط مبنا و پرونده‌های مهاجرت', operation: 'events' });
+  // Keep the operational queue self-describing for every role.  The action
+  // list is consumed by multiple clients (the admin shell, audit tooling and
+  // future mobile views), so a free-text label alone is not enough to decide
+  // whether the current user can actually perform the next step.  These
+  // fields are advisory metadata; the API capability guards remain the
+  // source of truth and must still reject unauthorized mutations.
+  const actionPolicies = {
+    'review-orders': { requiredCapability: 'finance.events.manage', audience: 'accountant_manager' },
+    'review-cogs': { requiredCapability: 'finance.events.manage', audience: 'accountant_manager' },
+    'open-period': { requiredCapability: 'finance.period.close', audience: 'accountant_manager' },
+    'review-settlements': { requiredCapability: 'finance.reconcile', audience: 'accountant_manager' },
+    'review-expense-duplicates': { requiredCapability: 'finance.events.manage', audience: 'accountant_manager' },
+    'review-depreciation-duplicates': { requiredCapability: 'finance.events.manage', audience: 'accountant_manager' },
+    'review-inventory-branches': { requiredCapability: 'finance.events.manage', audience: 'accountant_manager' },
+    // The costing workspace exposes the immutable review queue. Creating or
+    // approving a recipe still requires its own kitchen/finance capability;
+    // this action only takes an authorized viewer to the evidence.
+    'review-recipe-approvals': { requiredCapability: 'inventory.view', audience: 'kitchen_manager' },
+    'review-payment-tenders': { requiredCapability: 'finance.events.manage', audience: 'accountant_manager' },
+    'review-blocked-events': { requiredCapability: 'finance.events.manage', audience: 'accountant_manager' },
+    'reconcile-payments': { requiredCapability: 'finance.reconcile', audience: 'accountant_manager' },
+    'reconcile-bank': { requiredCapability: 'finance.reconcile', audience: 'accountant_manager' },
+    'accrue-costs': { requiredCapability: 'finance.journal.create', audience: 'accountant_manager' },
+    'depreciate-assets': { requiredCapability: 'finance.journal.create', audience: 'accountant_manager' },
+    'pending-approvals': { requiredCapability: 'finance.approve', audience: 'manager_owner' },
+    'migration-baseline': { requiredCapability: 'finance.events.manage', audience: 'accountant_manager' },
+  };
+  const describedActions = actions.map((action) => ({
+    ...action,
+    requiredCapability: actionPolicies[action.id]?.requiredCapability || 'finance.view',
+    audience: actionPolicies[action.id]?.audience || 'accountant_manager',
+  }));
   const shadowReadiness = shadowRunReadiness(db, branchId, runtime);
   const rollout = branchId || list(db.branches)[0]?.id
     ? branchRolloutStatus(db, branchId || list(db.branches)[0].id, { ...runtime, readiness: shadowReadiness })
     : null;
+  const expenseRows = list(db.accounting?.expenses);
+  const recipeApprovalById = new Map(state.approvals.map((approval) => [String(approval.id), approval]));
+  const recipeApprovalReview = quality.recipesMissingApprovalEvidence.map((recipe) => {
+    const approval = recipe.approvalId == null ? null : recipeApprovalById.get(String(recipe.approvalId));
+    const missingEvidence = [];
+    if (!recipe.approvedBy) missingEvidence.push('approved_by');
+    if (!recipe.approvedAt) missingEvidence.push('approved_at');
+    if (!approval) missingEvidence.push('approval_record');
+    else {
+      if (approval.entityType !== 'recipe_version') missingEvidence.push('approval_entity');
+      if (String(approval.entityId) !== String(recipe.id)) missingEvidence.push('approval_entity_id');
+      if (approval.operation !== 'approve_recipe_version') missingEvidence.push('approval_operation');
+      if (approval.status !== 'approved') missingEvidence.push('approval_decision');
+    }
+    return {
+      id: recipe.id,
+      recipeId: recipe.recipeId || null,
+      menuItemId: recipe.menuItemId == null ? null : String(recipe.menuItemId),
+      menuItemName: recipe.menuItemName || recipe.name || null,
+      branchId: recipe.branchId ?? null,
+      version: recipe.version ?? null,
+      status: recipe.status || null,
+      effectiveFrom: recipe.effectiveFrom || null,
+      approvalId: recipe.approvalId || null,
+      approvalStatus: approval?.status || null,
+      missingEvidence,
+    };
+  });
+  const reviewQueues = {
+    duplicateExpenses: quality.expenseDuplicates.map((group) => ({
+      key: group.key,
+      count: group.count,
+      records: group.ids.map((expenseId) => expenseRows.find((row) => String(row.id) === String(expenseId))).filter(Boolean).map((row) => ({
+        id: row.id,
+        branchId: row.branchId ?? null,
+        date: String(row.date || row.createdAt || '').slice(0, 10),
+        amount: row.amount ?? row.amountToman ?? row.amountIrr ?? null,
+        description: row.description || row.subject || '',
+        category: row.category || row.categoryId || null,
+      })),
+    })),
+    invalidInventoryBranches: quality.orphanedInventoryItems.map((item) => ({
+      id: item.id,
+      branchId: item.branchId ?? null,
+      name: item.name || '',
+      sku: item.sku || '',
+      unit: item.unit || '',
+    })),
+    recipeApprovalReview: recipeApprovalReview.sort((left, right) =>
+      String(left.menuItemName || left.menuItemId || left.id).localeCompare(String(right.menuItemName || right.menuItemId || right.id), 'fa')),
+  };
   return {
     status: quality.issues.some((issue) => issue.severity === 'critical') ? 'NO_GO' : 'READY_FOR_SHADOW',
     mode: state.cutover?.status || state.mode,
@@ -2644,8 +4423,13 @@ function workbench(db, query = {}, runtime = {}) {
       blockedCogsEvents: branchEvents.filter((event) => event.source === 'order.cogs' && event.status === 'blocked').length,
       pendingApprovals: branchApprovals.filter((item) => item.status === 'pending').length,
     },
-    actions: actions.slice(0, 3),
+    // The workbench is an operational queue. Do not silently discard a real
+    // exception after an arbitrary visual-card limit; the renderer can group
+    // or paginate these actions without losing the source issue.
+    actions: describedActions,
+    actionSummary: { total: describedActions.length, hasMore: false },
     issues: quality.issues,
+    reviewQueues,
     sources: {
       operationalSales: 'سفارش‌های عملیاتی', cash: 'نشست‌های صندوق', ledger: 'دفتر مالی جدید', legacyLedger: 'دفتر قدیمی (فقط خواندنی در اجرای آزمایشی)',
       persistence: storage?.available ? 'PostgreSQL normalized transaction mirror + durable snapshot' : `snapshot only (${storage?.reason || 'runtime status unavailable'})`,
@@ -2660,7 +4444,13 @@ function workbench(db, query = {}, runtime = {}) {
 function dailyOperations(db, query = {}) {
   const state = ensureFinanceV2(db);
   const branchId = query.branchId ? Number(query.branchId) : null;
-  const quality = dataQuality(db, branchId);
+  // Operational queues follow the selected calendar scope. The workbench's
+  // top-level actions/readiness intentionally remain all-history controls,
+  // but an uncaptured order from outside `from/to` must not leak into a
+  // date-filtered daily queue or its counters.
+  // This queue is an operational daily view, so its order list follows the
+  // order creation day. Accounting reports/gates use the payment day.
+  const quality = dataQuality(db, branchId, { from: query.from, to: query.to, orderDateField: 'createdAt' });
   const branchEvents = state.events
     .filter((row) => sameBranch(row, branchId) && inRange(row, query.from, query.to))
     .sort((a, b) => new Date(b.occurredAt) - new Date(a.occurredAt));
@@ -2668,9 +4458,26 @@ function dailyOperations(db, query = {}) {
     .filter((row) => sameBranch(row, branchId) && inRange(row, query.from, query.to, 'date'))
     .sort((a, b) => new Date(b.date) - new Date(a.date));
   const approvals = state.approvals
-    .filter((row) => approvalMatchesBranch(state, row, branchId))
+    .filter((row) => approvalMatchesBranch(state, row, branchId)
+      && (!query.from && !query.to || inRange(row, query.from, query.to, 'createdAt')))
     .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-  const periods = state.fiscalPeriods.length ? state.fiscalPeriods : list(db.accounting?.fiscalPeriods);
+  const periods = (state.fiscalPeriods.length ? state.fiscalPeriods : list(db.accounting?.fiscalPeriods))
+    .filter((row) => !branchId || row.branchId == null || Number(row.branchId) === branchId);
+  const actionableEvents = branchEvents.filter((row) => ['blocked', 'pending'].includes(row.status));
+  const actionableEventPage = page(actionableEvents, { ...query, page: query.eventPage || query.page, pageSize: 25 });
+  // Each operational queue has its own cursor. Returning only the first
+  // 25 rows made the counters look complete while silently hiding real work
+  // from the accountant. Keep the source collections independently pageable
+  // so one long queue cannot starve the others.
+  const uncapturedOrderPage = page(quality.uncaptured, { ...query, page: query.uncapturedPage || 1, pageSize: 25 });
+  const journalDraftRows = journalRows.filter((row) => ['draft', 'pending_approval'].includes(row.status));
+  const journalDraftPage = page(journalDraftRows, { ...query, page: query.journalPage || 1, pageSize: 25 });
+  const approvalRows = approvals.filter((row) => row.status === 'pending');
+  const approvalPage = page(approvalRows, { ...query, page: query.approvalPage || 1, pageSize: 25 });
+  const legacyArchiveRows = state.legacyArchive
+    .filter((row) => !branchId || (row.branchId != null && Number(row.branchId) === branchId))
+    .slice().sort((a, b) => new Date(b.archivedAt) - new Date(a.archivedAt));
+  const legacyArchivePage = page(legacyArchiveRows, { ...query, page: query.migrationPage || 1, pageSize: 25 });
   return {
     counters: {
       blockedEvents: branchEvents.filter((row) => row.status === 'blocked').length,
@@ -2682,21 +4489,39 @@ function dailyOperations(db, query = {}) {
       unmatchedBankStatementLines: quality.unmatchedBankStatementLines.length,
       dueCostCommitments: quality.dueCostCommitments.length,
     },
-    events: branchEvents.filter((row) => ['blocked', 'pending'].includes(row.status)).slice(0, 25).map((row) => ({
+    events: actionableEventPage.rows.map((row) => ({
       id: row.id, source: row.source, sourceId: row.sourceId, occurredAt: row.occurredAt, amountIrr: row.amountIrr,
       status: row.status, error: row.error ? { code: row.error.code, message: row.error.message } : null,
       payload: row.source === 'order.paid' ? { tenderSnapshot: list(row.payload?.tenderSnapshot) } : undefined,
     })),
-    uncapturedOrders: quality.uncaptured.slice(0, 25).map((order) => ({
+    eventsPagination: {
+      page: actionableEventPage.page, pageSize: actionableEventPage.pageSize,
+      total: actionableEventPage.total, pages: actionableEventPage.pages,
+    },
+    uncapturedOrders: uncapturedOrderPage.rows.map((order) => ({
       id: order.id, orderNo: order.orderNo || null, createdAt: order.createdAt, branchId: order.branchId,
       amountIrr: irrFromLegacyToman(order.total), tenderKnown: normalizeTenderRows(order).length > 0,
     })),
-    journalDrafts: journalRows.filter((row) => ['draft', 'pending_approval'].includes(row.status)).slice(0, 25),
-    approvals: approvals.filter((row) => row.status === 'pending').slice(0, 25),
-    legacyArchive: state.legacyArchive
-      .filter((row) => !branchId || row.branchId == null || Number(row.branchId) === branchId)
-      .slice().sort((a, b) => new Date(b.archivedAt) - new Date(a.archivedAt)).slice(0, 50),
-    legacyArchiveSummary: legacyArchiveSummary(db, branchId),
+    uncapturedOrdersPagination: {
+      page: uncapturedOrderPage.page, pageSize: uncapturedOrderPage.pageSize,
+      total: uncapturedOrderPage.total, pages: uncapturedOrderPage.pages,
+    },
+    journalDrafts: journalDraftPage.rows,
+    journalDraftsPagination: {
+      page: journalDraftPage.page, pageSize: journalDraftPage.pageSize,
+      total: journalDraftPage.total, pages: journalDraftPage.pages,
+    },
+    approvals: approvalPage.rows,
+    approvalsPagination: {
+      page: approvalPage.page, pageSize: approvalPage.pageSize,
+      total: approvalPage.total, pages: approvalPage.pages,
+    },
+    legacyArchive: legacyArchivePage.rows,
+    legacyArchivePagination: {
+      page: legacyArchivePage.page, pageSize: legacyArchivePage.pageSize,
+      total: legacyArchivePage.total, pages: legacyArchivePage.pages,
+    },
+    legacyArchiveSummary: legacyArchiveSummary(db, branchId, { includeUnscoped: branchId == null }),
     migrationReadiness: legacyMigrationReadiness(db, branchId),
     periods: periods.slice().sort((a, b) => new Date(b.startDate) - new Date(a.startDate)),
     periodSource: state.fiscalPeriods.length ? 'finance_v2' : 'legacy_read_only',
@@ -2739,10 +4564,43 @@ function bankJournalCandidates(db, branchId, query = {}) {
     .sort((a, b) => new Date(b.occurredAt) - new Date(a.occurredAt));
 }
 
+function reconciliationItemInRange(item, query = {}) {
+  const occurredAt = item?.details?.occurredAt
+    || item?.details?.settledAt
+    || item?.payment?.paidAt
+    || item?.createdAt;
+  return inRange({ occurredAt }, query.from, query.to);
+}
+
+function cashSessionView(session) {
+  const movements = list(session?.movements);
+  const openingToman = Number(session?.openingAmount || 0);
+  const movementToman = movements.reduce((sum, movement) => sum + Number(movement.amount || 0), 0);
+  const expectedToman = openingToman + movementToman;
+  const countedToman = session?.countedAmount == null ? null : Number(session.countedAmount);
+  const varianceToman = countedToman == null ? null : countedToman - expectedToman;
+  return {
+    id: session.id,
+    branchId: session.branchId,
+    openedAt: session.openedAt || null,
+    closedAt: session.closedAt || null,
+    status: session.closedAt ? 'closed' : 'open',
+    openingAmountIrr: irrFromLegacyToman(openingToman),
+    expectedAmountIrr: irrFromLegacyToman(expectedToman),
+    countedAmountIrr: countedToman == null ? null : irrFromLegacyToman(countedToman),
+    varianceIrr: varianceToman == null ? null : irrFromLegacyToman(varianceToman),
+    reconciliationStatus: countedToman == null ? 'awaiting_count' : varianceToman === 0 ? 'balanced' : 'difference',
+  };
+}
+
 function recordBankStatementLine(db, input, actor) {
   const state = ensureFinanceV2(db);
   const branchId = Number(input.branchId) || null;
   if (!branchId) throw Object.assign(new Error('شعبهٔ گردش بانک الزامی است.'), { code: 'bank_statement_branch_required' });
+  const branches = list(db.branches);
+  if (branches.length && !branches.some((branch) => Number(branch.id) === branchId && branch.active !== false)) {
+    throw Object.assign(new Error('شعبهٔ گردش بانک یافت نشد یا فعال نیست.'), { code: 'bank_statement_branch_not_found', status: 404 });
+  }
   const bankReference = String(input.bankReference || '').trim().slice(0, 160);
   if (!bankReference) throw Object.assign(new Error('شناسهٔ یکتای تراکنش بانک الزامی است.'), { code: 'bank_statement_reference_required' });
   const normalizedReference = bankReference.toLocaleUpperCase('en-US');
@@ -2758,8 +4616,7 @@ function recordBankStatementLine(db, input, actor) {
   if (!bankPostingAccounts(db).some((account) => account.code === bankAccountCode)) {
     throw Object.assign(new Error('حساب بانکی انتخاب‌شده، حساب معین بانکی معتبر نیست.'), { code: 'bank_statement_account_invalid' });
   }
-  const occurredAt = String(input.occurredAt || '');
-  if (!Number.isFinite(new Date(occurredAt).getTime())) throw Object.assign(new Error('تاریخ گردش بانک معتبر نیست.'), { code: 'bank_statement_date_invalid' });
+  const occurredAt = isoTimestamp(input.occurredAt, 'bank_statement_date_invalid', 'زمان گردش بانک باید تاریخ ISO معتبر همراه منطقهٔ زمانی باشد.');
   const statementLine = {
     id: id(), kind: 'bank_statement_line', branchId, orderId: null, paymentId: null, cashSessionId: null,
     bankReference, settlementReference: null, psp: null, terminalId: null, batchNo: null, journalEntryId: null,
@@ -2818,8 +4675,12 @@ function matchBankStatementLine(db, statementLineId, input, actor) {
 function salesCashBank(db, query = {}) {
   const branchId = query.branchId ? Number(query.branchId) : null;
   const state = ensureFinanceV2(db);
-  const quality = dataQuality(db, branchId);
-  const orders = list(db.orders).filter((order) => paid(order) && sameBranch(order, branchId) && inRange(order, query.from, query.to, 'createdAt'));
+  // Every surfaced reconciliation warning must use the same accounting
+  // period as orders, payments, refunds and bank rows.  Passing no range here
+  // made duplicate settlement warnings all-history while the rest of this
+  // workspace was period-scoped.
+  const quality = dataQuality(db, branchId, { from: query.from, to: query.to });
+  const orders = list(db.orders).filter((order) => paid(order) && sameBranch(order, branchId) && orderInAccountingRange(order, query.from, query.to));
   const tenders = new Map();
   for (const order of orders) {
     const rows = normalizeTenderRows(order);
@@ -2836,18 +4697,23 @@ function salesCashBank(db, query = {}) {
     const payment = state.payments.find((row) => row.id === refund.paymentId);
     if (payment) tenders.set(payment.tender, (tenders.get(payment.tender) || 0) - refund.amountIrr);
   }
-  const sessions = list(db.cashSessions).filter((row) => sameBranch(row, branchId) && inRange(row, query.from, query.to, 'openedAt'));
+  const sessions = list(db.cashSessions)
+    .filter((row) => sameBranch(row, branchId) && inRange(row, query.from, query.to, 'openedAt'))
+    .map(cashSessionView);
   const mappedOrders = orders.slice().sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).map((order) => ({
     id: order.id, orderNo: order.orderNo || null, branchId: order.branchId, createdAt: order.createdAt,
+    paidAt: order.paidAt || null, accountingDate: order.paidAt || order.createdAt || null,
     paymentStatus: order.paymentStatus, fulfillment: order.fulfillment, amountIrr: irrFromLegacyToman(order.total),
     tenders: normalizeTenderRows(order).map((row) => row.tender),
     financeStatus: state.events.find((event) => event.source === 'order.paid' && String(event.sourceId) === String(order.id))?.status || 'unregistered',
   }));
   const orderPage = page(mappedOrders, query);
+  const scopedPayments = state.payments
+    .filter((row) => sameBranch(row, branchId) && inRange({ occurredAt: row.paidAt || row.createdAt }, query.from, query.to));
   const reconciliationPayments = state.reconciliationItems
     .filter((row) => row.kind === 'payment' && sameBranch(row, branchId) && row.status === 'unmatched')
     .map((row) => ({ ...row, payment: state.payments.find((payment) => payment.id === row.paymentId) || null }))
-    .filter((row) => row.payment);
+    .filter((row) => row.payment && reconciliationItemInRange(row, query));
   const bankAccounts = bankPostingAccounts(db);
   const bankStatementLines = state.reconciliationItems
     .filter((row) => row.kind === 'bank_statement_line' && sameBranch(row, branchId) && inRange({ occurredAt: row.details?.occurredAt }, query.from, query.to))
@@ -2865,14 +4731,15 @@ function salesCashBank(db, query = {}) {
     orders: orderPage.rows,
     pagination: { page: orderPage.page, pageSize: orderPage.pageSize, total: orderPage.total, pages: orderPage.pages },
     cashSessions: sessions,
-    settlements: list(db.accounting?.settlements),
     settlementDuplicates: quality.settlementDuplicates,
-    payments: state.payments.filter((row) => sameBranch(row, branchId)),
+    payments: scopedPayments,
     refunds,
-    refundablePayments: state.payments.filter((row) => sameBranch(row, branchId) && row.amountIrr > int(row.refundedIrr)),
+    refundablePayments: scopedPayments.filter((row) => row.amountIrr > int(row.refundedIrr)),
     reconciliation: {
       unmatchedPayments: reconciliationPayments,
-      settlements: state.reconciliationItems.filter((row) => row.kind === 'settlement' && sameBranch(row, branchId)).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)),
+      settlements: state.reconciliationItems
+        .filter((row) => row.kind === 'settlement' && sameBranch(row, branchId) && reconciliationItemInRange(row, query))
+        .sort((a, b) => new Date(b.details?.settledAt || b.createdAt) - new Date(a.details?.settledAt || a.createdAt)),
       bankAccounts,
       bankStatementLines,
       bankCandidates,
@@ -2880,29 +4747,137 @@ function salesCashBank(db, query = {}) {
   };
 }
 
+function financeOrderChain(db, orderId, branchId = null) {
+  const state = ensureFinanceV2(db);
+  const order = list(db.orders).find((row) => String(row.id) === String(orderId));
+  if (!order) throw Object.assign(new Error('سفارش یافت نشد.'), { code: 'order_not_found', status: 404 });
+  const requestedBranchId = branchDimension(branchId);
+  if (requestedBranchId && !sameExactBranch(order, { branchId: requestedBranchId })) {
+    throw Object.assign(new Error('سفارش به شعبهٔ انتخاب‌شده تعلق ندارد.'), { code: 'order_branch_mismatch', status: 409 });
+  }
+  const orderBranchId = branchDimension(order);
+  if (!orderBranchId) throw Object.assign(new Error('شعبهٔ سفارش برای بررسی زنجیره مشخص نیست.'), { code: 'order_branch_missing', status: 409 });
+
+  const saleEvents = state.events
+    .filter((event) => event.source === 'order.paid' && String(event.sourceId) === String(order.id) && sameExactBranch(event, order))
+    .sort((left, right) => (int(right.sourceVersion) - int(left.sourceVersion)) || (new Date(right.createdAt || 0) - new Date(left.createdAt || 0)));
+  const saleEvent = saleEvents[0] || null;
+  const saleJournalEntry = saleEvent?.journalEntryId
+    ? state.journalEntries.find((entry) => entry.id === saleEvent.journalEntryId) || null
+    : null;
+  const payments = state.payments
+    .filter((payment) => String(payment.orderId) === String(order.id) && sameExactBranch(payment, order))
+    .sort((left, right) => new Date(left.paidAt || left.createdAt || 0) - new Date(right.paidAt || right.createdAt || 0));
+  const capturedPayments = payments.filter((payment) => ['succeeded', 'refunded'].includes(payment.status));
+  const capturedAmountIrr = capturedPayments.reduce((sum, payment) => sum + Math.max(0, int(payment.amountIrr) - int(payment.refundedIrr)), 0);
+  const totalToman = numeric(order.total);
+  const expectedAmountIrr = Number.isSafeInteger(totalToman) && totalToman >= 0 && totalToman <= Number.MAX_SAFE_INTEGER / 10
+    ? totalToman * 10 : null;
+  const tenderSnapshot = eventTenderSnapshot(saleEvent);
+  const cogsEvents = state.events
+    .filter((event) => event.source === 'order.cogs' && String(event.sourceId) === String(order.id) && sameExactBranch(event, order))
+    .sort((left, right) => new Date(right.createdAt || 0) - new Date(left.createdAt || 0));
+  const cogsEvent = cogsEvents[0] || null;
+  const cogsJournalEntry = cogsEvent?.journalEntryId
+    ? state.journalEntries.find((entry) => entry.id === cogsEvent.journalEntryId) || null
+    : null;
+  const refunds = state.refunds
+    .filter((refund) => String(refund.orderId) === String(order.id) && sameExactBranch(refund, order))
+    .sort((left, right) => new Date(right.refundDate || right.createdAt || 0) - new Date(left.refundDate || left.createdAt || 0))
+    .map((refund) => ({
+      ...refund,
+      approval: state.approvals.find((approval) => approval.entityType === 'finance_refund'
+        && String(approval.entityId) === String(refund.id)) || null,
+      journalEntry: refund.journalEntryId ? state.journalEntries.find((entry) => entry.id === refund.journalEntryId) || null : null,
+    }));
+  const reconciliationItems = state.reconciliationItems
+    .filter((item) => String(item.orderId) === String(order.id) && sameExactBranch(item, order))
+    .sort((left, right) => new Date(right.createdAt || 0) - new Date(left.createdAt || 0));
+  const nonCashPayments = capturedPayments.filter((payment) => ['card', 'manual_card', 'card_on_file', 'online', 'gateway'].includes(payment.tender));
+  const paymentReconciliation = reconciliationItems.filter((item) => item.kind === 'payment');
+  const unresolvedPaymentReconciliation = nonCashPayments.filter((payment) => {
+    const item = paymentReconciliation.find((candidate) => candidate.paymentId === payment.id);
+    return !item || item.status !== 'matched';
+  });
+
+  const issues = [];
+  if (paid(order)) {
+    if (!saleEvent) issues.push({ code: 'finance_event_missing', message: 'فروش پرداخت‌شده هنوز در Finance V2 ثبت نشده است.' });
+    else if (saleEvent.status !== 'posted' || !saleJournalEntry) {
+      issues.push({ code: saleEvent.error?.code || 'sales_journal_missing', message: saleEvent.error?.message || 'سند فروش هنوز قطعی نشده است.' });
+    }
+    if (!capturedPayments.length) issues.push({ code: 'payment_records_missing', message: 'رکورد پرداخت معتبر برای سفارش پیدا نشد.' });
+    else if (saleEvent && capturedAmountIrr !== int(saleEvent.amountIrr)) {
+      issues.push({
+        code: 'payment_chain_amount_mismatch', message: 'جمع پرداخت‌ها با مبلغ فروش قطعی برابر نیست.',
+        details: { capturedAmountIrr, saleAmountIrr: int(saleEvent.amountIrr) },
+      });
+    }
+    if (!tenderSnapshot) issues.push({ code: 'tender_snapshot_missing', message: 'جزئیات معتبر روش پرداخت برای فروش ثبت نشده است.' });
+    if (!cogsEvent || cogsEvent.status !== 'posted' || !cogsJournalEntry) {
+      issues.push({ code: cogsEvent?.error?.code || 'cogs_missing', message: cogsEvent?.error?.message || 'بهای تمام‌شدهٔ این سفارش هنوز قطعی نشده است.' });
+    }
+  }
+  const pendingRefunds = refunds.filter((refund) => ['pending_approval', 'approved', 'processing'].includes(refund.status));
+  if (pendingRefunds.length) issues.push({ code: 'refund_approval_pending', message: 'یک یا چند درخواست برگشت وجه منتظر تصمیم مستقل است.', details: { count: pendingRefunds.length } });
+  const failedRefunds = refunds.filter((refund) => refund.status === 'failed');
+  if (failedRefunds.length) issues.push({ code: 'refund_failed', message: 'یک یا چند برگشت وجه ناموفق نیازمند بررسی است.', details: { count: failedRefunds.length } });
+
+  const reconciliationStatus = !nonCashPayments.length
+    ? 'not_required'
+    : unresolvedPaymentReconciliation.length ? 'needs_action' : 'matched';
+  const status = !paid(order) ? 'not_paid' : !saleEvent ? 'not_captured' : issues.length ? 'needs_action' : 'complete';
+  const statusLabels = {
+    not_paid: 'هنوز پرداخت نشده', not_captured: 'ثبت مالی نشده', needs_action: 'نیازمند اقدام', complete: 'کامل',
+  };
+  return {
+    status, statusLabel: statusLabels[status], reconciliationStatus,
+    order: {
+      id: order.id, orderNo: order.orderNo || null, branchId: orderBranchId, status: order.status || null,
+      paymentStatus: order.paymentStatus || null, fulfillment: order.fulfillment || null,
+      totalIrr: expectedAmountIrr, createdAt: order.createdAt || null, paidAt: order.paidAt || null,
+      paymentRevision: int(order.paymentRevision || order.editRevision) || 1,
+    },
+    sales: {
+      event: saleEvent, eventHistory: saleEvents, journalEntry: saleJournalEntry,
+      expectedAmountIrr, capturedAmountIrr, tenderSnapshot,
+      payments, capturedPayments,
+    },
+    costing: {
+      event: cogsEvent, eventHistory: cogsEvents, journalEntry: cogsJournalEntry,
+      snapshots: state.orderItemCostSnapshots.filter((row) => String(row.orderId) === String(order.id) && sameExactBranch(row, order)),
+      movements: state.inventoryMovements.filter((row) => row.source === 'order.cogs' && String(row.sourceId) === String(order.id) && sameExactBranch(row, order)),
+    },
+    refunds, reconciliation: { items: reconciliationItems, unresolvedPaymentIds: unresolvedPaymentReconciliation.map((payment) => payment.id) },
+    issues,
+  };
+}
+
 function purchasesPayables(db, query = {}) {
   const acc = db.accounting || {};
   const state = ensureFinanceV2(db);
   const branchId = query.branchId ? Number(query.branchId) : null;
-  const vendors = list(acc.vendors).filter((row) => row.branchId == null || sameBranch(row, branchId));
+  const vendors = list(acc.vendors).filter((row) => branchId == null || sameBranch(row, branchId));
   const inventoryItems = list(acc.inventoryItems).filter((row) => sameBranch(row, branchId));
-  const bills = list(acc.vendorBills).filter((row) => row.branchId == null || sameBranch(row, branchId));
-  const expenses = list(acc.expenses).filter((row) => sameBranch(row, branchId));
-  const orders = list(acc.purchaseOrders).filter((row) => !branchId || Number(row.branchId ?? row.locationId) === Number(branchId));
-  const receipts = list(acc.goodsReceipts).filter((row) => sameBranch(row, branchId));
-  const v2Orders = state.purchaseOrders.filter((row) => sameBranch(row, branchId));
-  const v2Receipts = state.goodsReceipts.filter((row) => sameBranch(row, branchId));
-  const v2Invoices = state.vendorInvoices.filter((row) => sameBranch(row, branchId));
-  const v2Payments = state.supplierPayments.filter((row) => sameBranch(row, branchId));
-  const operatingExpenses = state.operatingExpenses.filter((row) => sameBranch(row, branchId));
-  const costCommitments = state.costCommitments.filter((row) => sameBranch(row, branchId));
-  const costAccruals = state.costAccruals.filter((row) => sameBranch(row, branchId)).map((row) => ({
+  const inPurchaseRange = (row, field) => inRange(row, query.from, query.to, field);
+  const bills = list(acc.vendorBills).filter((row) => (branchId == null || sameBranch(row, branchId)) && inPurchaseRange(row, 'date'));
+  const expenses = list(acc.expenses).filter((row) => sameBranch(row, branchId) && inPurchaseRange(row, 'date'));
+  const orders = list(acc.purchaseOrders).filter((row) => (!branchId || Number(row.branchId ?? row.locationId) === Number(branchId)) && inPurchaseRange(row, 'issueDate'));
+  const receipts = list(acc.goodsReceipts).filter((row) => sameBranch(row, branchId) && inPurchaseRange(row, 'receivedAt'));
+  const v2Orders = state.purchaseOrders.filter((row) => sameBranch(row, branchId) && inPurchaseRange(row, 'issueDate'));
+  const v2Receipts = state.goodsReceipts.filter((row) => sameBranch(row, branchId) && inPurchaseRange(row, 'receivedAt'));
+  const v2Invoices = state.vendorInvoices.filter((row) => sameBranch(row, branchId) && inPurchaseRange(row, 'invoiceDate'));
+  const v2InvoiceIds = new Set(v2Invoices.map((row) => row.id));
+  const v2Payments = state.supplierPayments.filter((row) => sameBranch(row, branchId) && inPurchaseRange(row, 'paymentDate'));
+  const operatingExpenses = state.operatingExpenses.filter((row) => sameBranch(row, branchId) && inPurchaseRange(row, 'date'));
+  const costCommitments = state.costCommitments.filter((row) => sameBranch(row, branchId) && inPurchaseRange(row, 'startDate'));
+  const costAccruals = state.costAccruals.filter((row) => sameBranch(row, branchId) && inPurchaseRange(row, 'postingDate')).map((row) => ({
     ...row,
     commitment: costCommitments.find((commitment) => commitment.id === row.costCommitmentId) || null,
     journalEntry: state.journalEntries.find((entry) => entry.id === row.journalEntryId) || null,
-    payments: state.costPayments.filter((payment) => payment.costAccrualId === row.id),
+    payments: state.costPayments.filter((payment) => payment.costAccrualId === row.id && inPurchaseRange(payment, 'paymentDate')),
   }));
-  const costPayments = state.costPayments.filter((row) => sameBranch(row, branchId));
+  const costPayments = state.costPayments.filter((row) => sameBranch(row, branchId) && inPurchaseRange(row, 'paymentDate'));
   const duplicateExpenses = duplicateGroups(expenses, (row) => {
     const day = String(row.date || row.createdAt || '').slice(0, 10);
     const amountValue = row.amount ?? row.totalAmount;
@@ -2914,7 +4889,7 @@ function purchasesPayables(db, query = {}) {
       purchaseOrders: v2Orders, goodsReceipts: v2Receipts, vendorInvoices: v2Invoices, supplierPayments: v2Payments,
       threeWayMatches: state.threeWayMatches.filter((row) => {
         const invoice = state.vendorInvoices.find((candidate) => candidate.id === row.vendorInvoiceId);
-        return !branchId || invoice && sameBranch(invoice, branchId);
+        return Boolean(invoice && v2InvoiceIds.has(invoice.id));
       }), costCommitments, costAccruals, costPayments,
       operatingExpenses,
       costCommitmentTypes: Object.entries(COST_COMMITMENT_TYPES).map(([id, policy]) => ({ id, ...policy })),
@@ -2935,7 +4910,7 @@ function purchasesPayables(db, query = {}) {
       operatingExpenses: operatingExpenses.length,
       pendingOperatingExpenses: operatingExpenses.filter((row) => row.status === 'pending_approval').length,
     },
-    dataQuality: { duplicateExpenses, trust: 'legacy_unverified' },
+    dataQuality: { duplicateExpenses, trust: 'legacy_unverified', scope: { from: query.from || null, to: query.to || null } },
   };
 }
 
@@ -3120,7 +5095,9 @@ function normalizeBreakEvenPlanAssumptions(input, suggested, existingPlan = null
       categoryCode: planText(row?.categoryCode ?? row?.category, fallback.categoryCode || 'other_fixed', 80),
       categoryName: planText(row?.categoryName, fallback.categoryName || 'سایر هزینه ثابت', 120),
       amountIrr,
+      monthlyAmountIrr: amountIrr,
       amountToman: amountIrr / 10,
+      monthlyAmountToman: amountIrr / 10,
       period: { unit: 'month', interval: 1, label: 'ماهانه' },
       status: breakEvenDefaults.PLANNING_ASSUMPTION_STATUS,
       statusLabel: breakEvenDefaults.PLANNING_ASSUMPTION_LABEL,
@@ -3376,7 +5353,7 @@ function breakEvenDashboard(db, query = {}) {
     startDate: plan.startDate,
     deadlineDate: plan.deadlineDate,
     asOfDate,
-    fixedCostLines: list(plan.assumptions).map((row) => ({ id: row.id, name: row.name, category: row.categoryCode, monthlyAmountIrr: row.amountIrr })),
+    fixedCostLines: list(plan.assumptions).map((row) => ({ id: row.id, name: row.name, category: row.categoryCode, monthlyAmountIrr: row.monthlyAmountIrr ?? row.amountIrr })),
     actualDaily: sourceChoice.selected.rows,
     source: sourceChoice.selected.source,
   });
@@ -3395,10 +5372,45 @@ function costingInventory(db, query = {}) {
   const acc = db.accounting || {};
   const state = ensureFinanceV2(db);
   const branchId = query.branchId ? Number(query.branchId) : null;
+  // Keep the approval-evidence queue visible in the costing workspace.  A
+  // recipe can be structurally versioned yet still be ineligible for official
+  // COGS when its independent approval chain is missing; hiding that fact
+  // behind the generic "recipe count" would make the release gate opaque.
+  const quality = dataQuality(db, branchId);
+  const approvalById = new Map(state.approvals.map((approval) => [String(approval.id), approval]));
+  const recipeApprovalReviewQueue = quality.recipesMissingApprovalEvidence
+    .map((recipe) => {
+      const approval = recipe.approvalId == null ? null : approvalById.get(String(recipe.approvalId));
+      const missingEvidence = [];
+      if (!recipe.approvedBy) missingEvidence.push('approved_by');
+      if (!recipe.approvedAt) missingEvidence.push('approved_at');
+      if (!approval) missingEvidence.push('approval_record');
+      else {
+        if (approval.entityType !== 'recipe_version') missingEvidence.push('approval_entity');
+        if (String(approval.entityId) !== String(recipe.id)) missingEvidence.push('approval_entity_id');
+        if (approval.operation !== 'approve_recipe_version') missingEvidence.push('approval_operation');
+        if (approval.status !== 'approved') missingEvidence.push('approval_decision');
+      }
+      return {
+        id: recipe.id,
+        recipeId: recipe.recipeId || null,
+        menuItemId: recipe.menuItemId == null ? null : String(recipe.menuItemId),
+        menuItemName: recipe.menuItemName || recipe.name || null,
+        branchId: recipe.branchId ?? null,
+        version: recipe.version ?? null,
+        status: recipe.status || null,
+        effectiveFrom: recipe.effectiveFrom || null,
+        approvalId: recipe.approvalId || null,
+        approvalStatus: approval?.status || null,
+        missingEvidence,
+      };
+    })
+    .sort((left, right) => String(left.menuItemName || left.menuItemId || left.id)
+      .localeCompare(String(right.menuItemName || right.menuItemId || right.id), 'fa'));
   const items = list(acc.inventoryItems).filter((row) => sameBranch(row, branchId));
   const recipes = restaurantIntelligence.recipeCatalog(db, branchId);
-  const transactions = list(acc.inventoryTransactions).filter((row) => sameBranch(row, branchId));
-  const waste = list(acc.wasteLog).filter((row) => sameBranch(row, branchId));
+  const transactions = list(acc.inventoryTransactions).filter((row) => sameBranch(row, branchId) && inRange(row, query.from, query.to, 'date'));
+  const waste = list(acc.wasteLog).filter((row) => sameBranch(row, branchId) && inRange(row, query.from, query.to, 'date'));
   const invalidCostItems = items.filter((row) => {
     const cost = row.unitCostIrr ?? row.avgCostIrr ?? row.unitCost ?? row.avgCost ?? row.cost;
     return !Number.isFinite(Number(cost)) || Number(cost) < 0;
@@ -3438,7 +5450,9 @@ function costingInventory(db, query = {}) {
     row.snapshotCount += 1;
     profitabilityMap.set(key, row);
   }
-  const scopedRefunds = state.refunds.filter((row) => row.status === 'succeeded' && sameBranch(row, branchId) && inRange(row, query.from, query.to, 'refundDate'));
+  const scopedRefunds = state.refunds.filter((row) => row.status === 'succeeded'
+    && row.recognitionState !== 'customer_deposit'
+    && sameBranch(row, branchId) && inRange(row, query.from, query.to, 'refundDate'));
   const itemProfitability = [...profitabilityMap.values()].map((row) => {
     const contributionIrr = row.netSalesIrr - row.theoreticalCogsIrr;
     const contributionMarginPercent = row.netSalesIrr > 0 ? Math.round(contributionIrr / row.netSalesIrr * 10000) / 100 : null;
@@ -3497,7 +5511,13 @@ function costingInventory(db, query = {}) {
     .sort((a, b) => b.affectedSaleLines - a.affectedSaleLines || String(a.menuItemName).localeCompare(String(b.menuItemName), 'fa'));
   return {
     items, recipes, transactions, waste, orderItemCostSnapshots: costSnapshots, shadowInventoryMovements: shadowMovements,
-    summary: { inventoryItems: items.length, recipes: recipes.length, movements: transactions.length, shadowMovements: shadowMovements.length, costSnapshots: costSnapshots.length, wasteEvents: waste.length, invalidCostItems: invalidCostItems.length, unversionedRecipes: recipeWithoutVersion.length },
+    summary: {
+      inventoryItems: items.length, recipes: recipes.length, movements: transactions.length,
+      shadowMovements: shadowMovements.length, costSnapshots: costSnapshots.length,
+      wasteEvents: waste.length, invalidCostItems: invalidCostItems.length,
+      unversionedRecipes: recipeWithoutVersion.length,
+      recipeApprovalAuditMissing: recipeApprovalReviewQueue.length,
+    },
     theoreticalCogs: { status: costSnapshots.length ? 'snapshot_backed' : 'insufficient_data', amountIrr: costSnapshots.length ? costSnapshots.reduce((sum, row) => sum + int(row.theoreticalCogsIrr), 0) : null },
     actualConsumption: {
       status: actualConsumeMovements.length
@@ -3518,8 +5538,12 @@ function costingInventory(db, query = {}) {
       status: itemProfitability.length ? scopedRefunds.length ? 'partial_coverage' : 'snapshot_backed' : 'insufficient_data',
       rows: itemProfitability, refundCountNotAllocated: scopedRefunds.length,
     },
-    stockoutActions, recipeCoverageQueue,
-    dataQuality: { invalidCostItemIds: invalidCostItems.map((row) => row.id), unversionedRecipeIds: recipeWithoutVersion.map((row) => row.id) },
+    stockoutActions, recipeCoverageQueue, recipeApprovalReviewQueue,
+    dataQuality: {
+      invalidCostItemIds: invalidCostItems.map((row) => row.id),
+      unversionedRecipeIds: recipeWithoutVersion.map((row) => row.id),
+      recipeApprovalAuditMissingIds: recipeApprovalReviewQueue.map((row) => row.id),
+    },
     intelligence,
     actualBreakEven: actualBreakEvenFromLedger(db, query),
     plannedBreakEven: plannedBreakEvenFromCommitments(db, query),
@@ -3576,7 +5600,39 @@ function kitchenInventory(db, query = {}) {
         quantityBasis: ingredient.quantityBasis, yieldPercent: ingredient.yieldPercent,
       })),
     }));
-  const vendorNames = new Map(list(db.accounting?.vendors).map((row) => [String(row.id), row.nameFa || row.name || String(row.id)]));
+  const allVendors = list(db.accounting?.vendors);
+  const spotVendorExists = allVendors.some((row) => row.id === 'vendor-spot' || row.isSpot);
+  const defaultSpot = {
+    id: 'vendor-spot',
+    name: 'خرید آزاد / بازار روز',
+    nameFa: 'خرید آزاد / بازار روز',
+    category: 'آزاد',
+    phone: '',
+    contactPerson: 'خرید متفرقه و حضوری',
+    termsDays: 0,
+    isSpot: true,
+    itemIds: [],
+    active: true,
+    balance: 0,
+  };
+  const vendorsList = spotVendorExists ? allVendors : [defaultSpot, ...allVendors];
+  const vendors = vendorsList
+    .filter((row) => row.branchId == null || sameBranch(row, branchId))
+    .map((row) => ({
+      id: String(row.id),
+      name: row.name || row.nameFa || String(row.id),
+      nameFa: row.nameFa || row.name || String(row.id),
+      category: row.category || 'عمومی',
+      phone: row.phone || '',
+      contactPerson: row.contactPerson || '',
+      termsDays: Number(row.termsDays) || 0,
+      isSpot: Boolean(row.isSpot || row.category === 'آزاد' || row.id === 'vendor-spot'),
+      itemIds: list(row.itemIds || row.materialIds).map(String),
+      notes: row.notes || '',
+      active: row.active !== false,
+      balance: Number(row.balance || 0),
+    }));
+  const vendorNames = new Map(vendorsList.map((row) => [String(row.id), row.nameFa || row.name || String(row.id)]));
   const receivablePurchaseOrders = state.purchaseOrders
     .filter((row) => sameBranch(row, branchId) && ['approved', 'partially_received'].includes(row.status))
     .map((row) => ({
@@ -3597,17 +5653,28 @@ function kitchenInventory(db, query = {}) {
         })),
     }))
     .filter((row) => row.lines.length);
-  const inventorySources = new Set(['inventory.waste', 'inventory.stock_count', 'inventory.production_batch', 'inventory.reversal', 'purchase.goods_received']);
+  const inventorySources = new Set(['inventory.waste', 'inventory.stock_count', 'inventory.production_batch', 'inventory.stock_issue', 'inventory.stock_transfer', 'inventory.reversal', 'purchase.goods_received']);
   const recentOperations = state.events
     .filter((row) => inventorySources.has(row.source) && sameBranch(row, branchId))
     .sort((a, b) => new Date(b.occurredAt) - new Date(a.occurredAt))
     .slice(0, 25)
-    .map((row) => ({
-      id: row.id, source: row.source, sourceId: row.sourceId, occurredAt: row.occurredAt, status: row.status,
-      itemId: row.payload?.itemId || null, recipeId: row.payload?.recipeId || null, reason: row.payload?.reason || null,
-      issues: list(row.payload?.issues).map((issue) => ({ code: issue.code, itemId: issue.itemId || null })),
-      physicalRecorded: row.payload?.physicalRecorded === true,
-    }));
+    .map((row) => {
+      const movementRows = list(row.payload?.movementIds)
+        .map((movementId) => state.inventoryMovements.find((movement) => movement.id === movementId))
+        .filter(Boolean);
+      const quantities = movementRows.map((movement) => Number(movement.quantityBase));
+      const costs = movementRows.map((movement) => movement.totalCostIrr == null ? null : Number(movement.totalCostIrr));
+      const totalCostIrr = costs.length && costs.every((value) => Number.isFinite(value))
+        ? costs.reduce((sum, value) => sum + Math.abs(value), 0) : null;
+      return {
+        id: row.id, source: row.source, sourceId: row.sourceId, occurredAt: row.occurredAt, status: row.status,
+        itemId: row.payload?.itemId || movementRows[0]?.itemId || null, recipeId: row.payload?.recipeId || null, reason: row.payload?.reason || null,
+        quantity: quantities.every((value) => Number.isFinite(value)) ? quantities.reduce((sum, value) => sum + Math.abs(value), 0) : null,
+        unit: movementRows[0]?.baseUnit || null, totalCostIrr, movementType: movementRows[0]?.movementType || null,
+        issues: list(row.payload?.issues).map((issue) => ({ code: issue.code, itemId: issue.itemId || null })),
+        physicalRecorded: row.payload?.physicalRecorded === true,
+      };
+    });
   const exceptions = state.reconciliationItems
     .filter((row) => row.kind === 'inventory_exception' && sameBranch(row, branchId) && row.status === 'exception')
     .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
@@ -3615,6 +5682,7 @@ function kitchenInventory(db, query = {}) {
     .map((row) => ({ id: row.id, createdAt: row.createdAt, operationId: row.details?.operationId || null, issues: list(row.details?.issues) }));
   return {
     items, menuItems, recipeVersions, productionRecipes, receivablePurchaseOrders, recentOperations, exceptions,
+    vendors,
     recipeCapacity: intelligence.recipeCapacity,
     stockoutForecast: intelligence.stockoutForecast,
     summary: {
@@ -3640,7 +5708,8 @@ function kitchenInventory(db, query = {}) {
 function financialReports(db, query = {}) {
   const state = ensureFinanceV2(db);
   const branchId = query.branchId ? Number(query.branchId) : null;
-  const accountNames = new Map(list(db.accounting?.accounts).map((row) => [String(row.code || row.accountCode), row.nameFa || row.name || null]));
+  const accountDefinitions = new Map(list(db.accounting?.accounts).map((row) => [String(row.code || row.accountCode), row]));
+  const accountNames = new Map([...accountDefinitions.entries()].map(([code, row]) => [code, row.nameFa || row.name || null]));
   const entries = state.journalEntries
     .filter((entry) => entry.status === 'posted' && sameBranch(entry, branchId) && inRange(entry, query.from, query.to, 'date'))
     .sort((a, b) => new Date(a.date) - new Date(b.date) || String(a.number).localeCompare(String(b.number)));
@@ -3682,6 +5751,35 @@ function financialReports(db, query = {}) {
     category: row.accountCode.startsWith('1') ? 'asset' : row.accountCode.startsWith('2') ? 'liability' : 'equity',
     amountIrr: row.accountCode.startsWith('1') ? row.debitIrr - row.creditIrr : row.creditIrr - row.debitIrr,
   }));
+  const abnormalBalanceRows = balanceRows.filter((row) => {
+    const configuredSide = String(accountDefinitions.get(row.accountCode)?.normalSide || '').toLowerCase();
+    const normalSide = ['debit', 'credit'].includes(configuredSide)
+      ? configuredSide
+      : row.category === 'asset' ? 'debit' : 'credit';
+    return normalSide === 'debit' ? row.balanceIrr < 0 : row.balanceIrr > 0;
+  }).map((row) => ({
+    accountCode: row.accountCode, accountName: row.accountName, category: row.category,
+    balanceIrr: row.balanceIrr, amountIrr: row.amountIrr,
+  }));
+  const scopedSaleEvents = state.events.filter((event) => event.source === 'order.paid' && event.status === 'posted'
+    && sameBranch(event, branchId) && inRange(event, query.from, query.to));
+  const scopedCogsEvents = state.events.filter((event) => event.source === 'order.cogs'
+    && sameBranch(event, branchId) && inRange(event, query.from, query.to));
+  const postedCogsSourceIds = new Set(scopedCogsEvents.filter((event) => event.status === 'posted').map((event) => String(event.sourceId)));
+  const missingCogsSourceIds = [...new Set(scopedSaleEvents.map((event) => String(event.sourceId)))]
+    .filter((sourceId) => !postedCogsSourceIds.has(sourceId));
+  const blockedCogsEvents = scopedCogsEvents.filter((event) => event.status === 'blocked');
+  const snapshot = reportSnapshot(db, query);
+  const salesDifferenceIrr = int(snapshot.reconciliation.salesDifferenceIrr);
+  const pnlControls = {
+    salesReconciled: salesDifferenceIrr === 0,
+    cogsComplete: missingCogsSourceIds.length === 0 && blockedCogsEvents.length === 0,
+    expectedSaleEvents: scopedSaleEvents.length,
+    postedCogsEvents: postedCogsSourceIds.size,
+    missingCogsEvents: missingCogsSourceIds.length,
+    blockedCogsEvents: blockedCogsEvents.length,
+    salesDifferenceIrr,
+  };
   const cashAccounts = new Set(['1110', '1120', '1210']);
   const classifyCash = (entry) => {
     const counterpartCodes = list(entry.lines).map((line) => String(line.accountCode)).filter((code) => !cashAccounts.has(code));
@@ -3699,15 +5797,26 @@ function financialReports(db, query = {}) {
   const cashTotals = Object.fromEntries(['operating', 'investing', 'financing', 'unclassified'].map((category) => [category, cashRows.filter((row) => row.category === category).reduce((sum, row) => sum + row.amountIrr, 0)]));
   const linePage = page(lines, query);
   const cashPage = page(cashRows.slice().sort((a, b) => new Date(b.date) - new Date(a.date)), query);
+  const pnlHasRows = entries.length && pnlRows.length;
+  const pnlStatus = !pnlHasRows ? 'insufficient_data'
+    : pnlControls.salesReconciled && pnlControls.cogsComplete ? 'available' : 'partial_coverage';
+  const balanceStatus = !entries.length ? 'insufficient_data'
+    : equationDifferenceIrr !== 0 ? 'unbalanced'
+      : abnormalBalanceRows.length ? 'partial_coverage' : 'balanced';
   return {
     source: 'posted Finance V2 journal lines',
     generatedAt: now(),
     generalLedger: { status: entries.length ? 'available' : 'insufficient_data', rows: linePage.rows, pagination: { page: linePage.page, pageSize: linePage.pageSize, total: linePage.total, pages: linePage.pages } },
     trialBalance: { status: entries.length ? debitIrr === creditIrr ? 'balanced' : 'unbalanced' : 'insufficient_data', rows: trialRows, debitIrr, creditIrr, differenceIrr: debitIrr - creditIrr },
-    profitAndLoss: { status: entries.length && pnlRows.length ? 'available' : 'insufficient_data', rows: pnlRows, revenueIrr, cogsIrr, operatingExpenseIrr, netProfitIrr },
-    balanceSheet: { status: entries.length ? equationDifferenceIrr === 0 ? 'balanced' : 'unbalanced' : 'insufficient_data', rows: balanceRows, assetsIrr, liabilitiesIrr, equityBeforeCurrentIrr, currentPeriodEarningsIrr: netProfitIrr, equityIrr, equationDifferenceIrr },
+    profitAndLoss: {
+      status: pnlStatus,
+      activityStatus: entries.length ? 'active' : 'empty_period',
+      rows: pnlRows, revenueIrr, cogsIrr, operatingExpenseIrr, netProfitIrr, controls: pnlControls,
+    },
+    balanceSheet: { status: balanceStatus, rows: balanceRows, assetsIrr, liabilitiesIrr, equityBeforeCurrentIrr, currentPeriodEarningsIrr: netProfitIrr, equityIrr, equationDifferenceIrr, abnormalBalanceRows },
     cashFlow: {
       status: !cashRows.length ? 'insufficient_data' : cashTotals.unclassified ? 'partial_coverage' : 'rule_based',
+      activityStatus: entries.length ? 'active' : 'empty_period',
       method: 'direct_rule_based', rows: cashPage.rows, pagination: { page: cashPage.page, pageSize: cashPage.pageSize, total: cashPage.total, pages: cashPage.pages },
       operatingIrr: cashTotals.operating, investingIrr: cashTotals.investing, financingIrr: cashTotals.financing,
       unclassifiedIrr: cashTotals.unclassified, netChangeIrr: cashRows.reduce((sum, row) => sum + row.amountIrr, 0),
@@ -3742,7 +5851,7 @@ function reverseInventoryOperationV2(db, eventId, input, actor, idempotencyKey) 
   // Validate the target period before recording physical corrections so a
   // reversal cannot leave the physical and financial ledgers out of sync.
   if (original.journalEntryId) {
-    const periodCheck = validateOpenPeriod(db, occurredAt);
+    const periodCheck = validateOpenPeriod(db, occurredAt, original.branchId);
     if (!periodCheck.ok) throw Object.assign(new Error(periodCheck.message), { code: periodCheck.code, status: 409 });
   }
   const journalEntry = original.journalEntryId ? reverseEntry(db, original.journalEntryId, actor, reason, occurredAt) : null;
@@ -3766,34 +5875,69 @@ function reverseInventoryOperationV2(db, eventId, input, actor, idempotencyKey) 
 
 function ledgerClose(db, query = {}) {
   const state = ensureFinanceV2(db);
-  const quality = dataQuality(db, query.branchId ? Number(query.branchId) : null);
   const snapshot = reportSnapshot(db, query);
-  const entries = state.journalEntries.filter((entry) => sameBranch(entry, query.branchId) && inRange(entry, query.from, query.to, 'date'));
+  // Keep the ledger-close page order identical to the journal endpoint and
+  // finance search targetPage calculation. Otherwise a search result can
+  // navigate to a page that does not contain the selected journal entry.
+  const entries = state.journalEntries
+    .filter((entry) => sameBranch(entry, query.branchId) && inRange(entry, query.from, query.to, 'date'))
+    .sort((a, b) => new Date(b.date) - new Date(a.date));
   const entryPage = page(entries, query);
   const usingV2Periods = state.fiscalPeriods.length > 0;
   const periods = usingV2Periods ? state.fiscalPeriods : list(db.accounting?.fiscalPeriods);
   const selectedPeriod = query.periodId
-    ? periods.find((period) => String(period.id) === String(query.periodId)) || null
-    : quality.currentPeriod;
-  const fixedAssets = state.fixedAssets.filter((asset) => sameBranch(asset, query.branchId));
-  const depreciationRuns = state.depreciationRuns.filter((run) => sameBranch(run, query.branchId)).map((run) => ({
+    ? periods.find((period) => String(period.id) === String(query.periodId)
+      && (query.branchId == null || period.branchId == null || Number(period.branchId) === Number(query.branchId))) || null
+    : periodForDate(db, now(), query.branchId ? Number(query.branchId) : null);
+  const qualityFrom = query.from || (query.periodId && selectedPeriod ? `${selectedPeriod.startDate}T00:00:00.000Z` : null);
+  const qualityTo = query.to || (query.periodId && selectedPeriod ? `${selectedPeriod.endDate}T23:59:59.999Z` : null);
+  const quality = dataQuality(db, query.branchId ? Number(query.branchId) : null, { from: qualityFrom, to: qualityTo });
+  const inSelectedRange = (row, field) => !qualityFrom && !qualityTo || inRange(row, qualityFrom, qualityTo, field);
+  const fixedAssets = state.fixedAssets.filter((asset) => sameBranch(asset, query.branchId)
+    && (!qualityFrom && !qualityTo || (new Date(asset.purchaseDate || asset.createdAt || 0).getTime() <= new Date(qualityTo).getTime()
+      && (!asset.disposalDate || new Date(asset.disposalDate).getTime() >= new Date(qualityFrom).getTime()))));
+  const depreciationRuns = state.depreciationRuns.filter((run) => sameBranch(run, query.branchId) && inSelectedRange(run, 'postingDate')).map((run) => ({
     ...run, journalEntry: state.journalEntries.find((entry) => entry.id === run.journalEntryId) || null,
   }));
-  const depreciationPreview = previewDepreciationV2(db, { branchId: query.branchId, postingDate: String(query.to || now()).slice(0, 10) });
-  const payrollRuns = state.payrollRuns.filter((run) => sameBranch(run, query.branchId)).map((run) => ({
+  // A period-only ledger-close request has no explicit `to`, but its
+  // specialist previews must still use the selected period rather than the
+  // current wall-clock month. Otherwise opening a historical period can show
+  // a depreciation preview for a later month.
+  const depreciationPostingDate = query.to || selectedPeriod?.endDate || now();
+  const depreciationPreview = previewDepreciationV2(db, { branchId: query.branchId, postingDate: String(depreciationPostingDate).slice(0, 10) });
+  const payrollRuns = state.payrollRuns.filter((run) => sameBranch(run, query.branchId) && inSelectedRange(run, 'postingDate')).map((run) => ({
     ...run,
     journalEntry: state.journalEntries.find((entry) => entry.id === run.journalEntryId) || null,
     payments: state.payrollPayments.filter((payment) => payment.payrollRunId === run.id),
   }));
-  const payrollPayments = state.payrollPayments.filter((payment) => sameBranch(payment, query.branchId));
+  const payrollPayments = state.payrollPayments.filter((payment) => sameBranch(payment, query.branchId) && inSelectedRange(payment, 'paymentDate'));
   const openingBalanceBatches = state.openingBalanceBatches
-    .filter((batch) => sameBranch(batch, query.branchId))
+    .filter((batch) => sameBranch(batch, query.branchId) && inSelectedRange(batch, 'asOfDate'))
     .map((batch) => ({
       ...batch,
       journalEntry: state.journalEntries.find((entry) => entry.id === batch.journalEntryId) || null,
       approval: state.approvals.find((approval) => approval.id === batch.approvalId) || null,
     }))
     .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  const reports = financialReports(db, query);
+  const pnlRows = reports.profitAndLoss?.rows || [];
+  const pnlControls = reports.profitAndLoss?.controls || {};
+  const hasRevenueOrCogs = pnlRows.some((row) => ['revenue', 'cogs'].includes(row.category));
+  const hasNoSalesOrCogsActivity = !hasRevenueOrCogs
+    && Number(pnlControls.expectedSaleEvents || 0) === 0
+    && Number(pnlControls.missingCogsEvents || 0) === 0
+    && Number(pnlControls.blockedCogsEvents || 0) === 0;
+  const hasHealthyBalances = Number(reports.balanceSheet?.equationDifferenceIrr || 0) === 0
+    && !(reports.balanceSheet?.abnormalBalanceRows || []).length;
+  const reportsReliable = (reports.profitAndLoss.status === 'available' && reports.balanceSheet.status === 'balanced')
+    || (hasNoSalesOrCogsActivity && hasHealthyBalances);
+  const hasPostedActivity = reports.generalLedger.status === 'available'
+    || Number(snapshot.operational?.paidOrders || 0) > 0;
+  const reportingState = !hasPostedActivity && reportsReliable
+    ? { status: 'empty_period', hasActivity: false, message: 'این دوره سالم است اما هنوز فعالیت قطعی در آن ثبت نشده است.' }
+    : reportsReliable
+      ? { status: 'available', hasActivity: true, message: 'گزارش‌ها از اسناد قطعی دفتر مالی ساخته شده‌اند.' }
+      : { status: 'needs_action', hasActivity: hasPostedActivity, message: 'برای گزارش رسمی، کنترل‌های فروش، بهای تمام‌شده و تراز باید تکمیل شوند.' };
   return {
     snapshot, entries: entryPage.rows, pagination: { page: entryPage.page, pageSize: entryPage.pageSize, total: entryPage.total, pages: entryPage.pages }, periods, selectedPeriod, periodSource: usingV2Periods ? 'finance_v2' : 'legacy_read_only',
     closeChecklist: [
@@ -3803,8 +5947,10 @@ function ledgerClose(db, query = {}) {
       { id: 'period-open', label: 'وجود دورهٔ معتبر در وضعیت قابل بستن', passed: Boolean(selectedPeriod && (['open', 'reopened'].includes(selectedPeriod.status) || (query.allowSoftClosed && selectedPeriod.status === 'soft_closed'))) },
       { id: 'duplicates-clear', label: 'نبود تسویه، هزینه یا استهلاک تکراری', passed: !quality.settlementDuplicates.length && !quality.expenseDuplicates.length && !quality.depreciationDuplicates.length },
       { id: 'approvals-clear', label: 'نبود عملیات مالی منتظر تأیید', passed: !state.approvals.some((approval) => approval.status === 'pending' && approvalMatchesBranch(state, approval, query.branchId)) },
+      { id: 'reports-reliable', label: 'کامل بودن بهای تمام‌شده و نبود مانده با ماهیت غیرعادی', passed: reportsReliable },
     ],
-    reports: financialReports(db, query),
+    reports,
+    reportingState,
     fixedAssets, depreciationRuns, depreciationPreview,
     assetPolicies: {
       categories: Object.entries(FIXED_ASSET_ACCOUNTS).map(([id, policy]) => ({ id, ...policy })),
@@ -3821,6 +5967,7 @@ function ledgerClose(db, query = {}) {
     legacyPayroll: { count: list(db.accounting?.payrollRuns).length, trust: 'legacy_quarantined_read_only' },
     openingBalanceBatches,
     openingBalanceAccounts: openingBalanceAccounts(db),
+    scope: { from: qualityFrom ? String(qualityFrom).slice(0, 10) : null, to: qualityTo ? String(qualityTo).slice(0, 10) : null },
     openingBalancePolicy: {
       scope: 'posting_balance_sheet_accounts_only', currentYearProfitLossExcluded: true,
       explicitBalancingLineRequired: true, automaticPlugAccount: false,
@@ -3831,10 +5978,47 @@ function ledgerClose(db, query = {}) {
   };
 }
 
+function refundRequestFingerprint(refund) {
+  return sha256(canonicalJson({
+    orderId: String(refund?.orderId ?? ''),
+    branchId: branchDimension(refund),
+    paymentId: String(refund?.paymentId ?? ''),
+    amountIrr: safeIrr(refund?.amountIrr, 'refund_amount_invalid'),
+    reason: String(refund?.reason || '').trim().slice(0, 300),
+    refundDate: String(refund?.refundDate || ''),
+  }));
+}
+
+function recordRefundAudit(db, refund, action, actor, metadata = {}) {
+  const accounting = db.accounting && typeof db.accounting === 'object'
+    ? db.accounting : (db.accounting = {});
+  return financeAuditEngine.recordAuditLog(accounting, {
+    action: `finance_refund_${action}`,
+    entityType: 'finance_refund',
+    entityId: String(refund.id),
+    userId: String(actor || '').trim(),
+    branchId: branchDimension(refund),
+    message: String(metadata.reason || `رویداد برگشت وجه: ${action}`).slice(0, 300),
+    metadata: {
+      ...metadata,
+      orderId: String(refund.orderId),
+      paymentId: String(refund.paymentId),
+      approvalId: refund.approvalId || null,
+      amountIrr: safeIrr(refund.amountIrr, 'refund_amount_invalid'),
+    },
+    idempotencyKey: `finance-refund:${refund.id}:${action}`,
+  });
+}
+
 function requestOrderRefund(db, orderId, input, actor, idempotencyKey) {
   const state = ensureFinanceV2(db);
   const order = list(db.orders).find((item) => String(item.id) === String(orderId));
   if (!order) throw Object.assign(new Error('سفارش یافت نشد.'), { code: 'order_not_found', status: 404 });
+  const requestedBranchId = input?.branchId == null ? null : strictBranchRouteId(input.branchId);
+  if (requestedBranchId && !sameExactBranch(order, { branchId: requestedBranchId })) {
+    throw Object.assign(new Error('سفارش به شعبهٔ انتخاب‌شده تعلق ندارد.'), { code: 'refund_order_branch_mismatch', status: 409 });
+  }
+  if (!branchDimension(order)) throw Object.assign(new Error('شعبهٔ سفارش برای برگشت وجه مشخص نیست.'), { code: 'refund_order_branch_missing', status: 409 });
   const linkedPayments = state.payments.filter((item) => String(item.orderId) === String(order.id) && ['succeeded', 'refunded'].includes(item.status));
   if (linkedPayments.some((item) => !sameExactBranch(item, order))) {
     throw Object.assign(new Error('پرداخت سفارش به شعبهٔ دیگری تعلق دارد.'), { code: 'refund_payment_branch_mismatch', status: 409 });
@@ -3845,12 +6029,45 @@ function requestOrderRefund(db, orderId, input, actor, idempotencyKey) {
     ? orderPayments.find((item) => String(item.id) === String(input.paymentId))
     : orderPayments.length === 1 ? orderPayments[0] : null;
   if (!payment) throw Object.assign(new Error('برای سفارش چند روش پرداخت وجود دارد؛ روش بازگشت وجه را مشخص کنید.'), { code: 'refund_payment_required', status: 400 });
+  const saleRecognized = state.journalEntries.some((entry) => entry.source === 'order.paid'
+    && String(entry.sourceId) === String(order.id) && sameExactBranch(entry, order));
+  if (!saleRecognized) {
+    if (!['cash', 'manual_card'].includes(String(payment.tender || ''))) {
+      throw Object.assign(new Error('برای برگشت این روش پرداخت، ابتدا مسیر بازپرداخت کیف پول/درگاه باید آماده باشد.'), {
+        code: 'refund_pre_sale_tender_unsupported', status: 409,
+      });
+    }
+    preSaleRefundOperationalLeg(db, order, payment);
+  }
   const amountIrr = safeIrr(input.amountIrr, 'refund_amount_invalid');
   if (amountIrr <= 0) throw Object.assign(new Error('مبلغ برگشت وجه باید بزرگ‌تر از صفر باشد.'), { code: 'refund_amount_invalid' });
   const reason = String(input.reason || '').trim().slice(0, 300);
   if (reason.length < 3) throw Object.assign(new Error('علت برگشت وجه الزامی است.'), { code: 'refund_reason_required' });
-  const refundDate = input.refundDate || now();
-  if (!Number.isFinite(new Date(refundDate).getTime())) throw Object.assign(new Error('تاریخ برگشت وجه معتبر نیست.'), { code: 'refund_date_invalid' });
+  const normalizedIdempotencyKey = normalizeIdempotencyKey(idempotencyKey);
+  const existingByKey = normalizedIdempotencyKey
+    ? state.refunds.find((item) => item.idempotencyKey === normalizedIdempotencyKey)
+    : null;
+  // Reuse the original timestamp for a retry that omits refundDate. An
+  // explicitly changed date remains part of the immutable request identity.
+  const refundDate = input.refundDate
+    ? valueContracts.parseTimestamp(input.refundDate)
+    : existingByKey?.refundDate || now();
+  if (!refundDate) throw Object.assign(new Error('زمان برگشت وجه باید ISO معتبر و همراه منطقهٔ زمانی باشد.'), { code: 'refund_date_invalid' });
+  const requestFingerprint = refundRequestFingerprint({
+    orderId: order.id, branchId: branchDimension(order), paymentId: payment.id,
+    amountIrr, reason, refundDate,
+  });
+  if (existingByKey) {
+    const storedFingerprint = existingByKey.requestFingerprint || refundRequestFingerprint(existingByKey);
+    if (!sameExactBranch(existingByKey, order) || storedFingerprint !== requestFingerprint) {
+      throw Object.assign(new Error('کلید تکرارنشدنی قبلاً برای درخواست برگشت وجه دیگری مصرف شده است.'), { code: 'refund_idempotency_conflict', status: 409 });
+    }
+    return {
+      refund: existingByKey,
+      approval: state.approvals.find((item) => item.entityType === 'finance_refund' && item.entityId === existingByKey.id) || null,
+      idempotentReplay: true,
+    };
+  }
   const committedIrr = state.refunds
     .filter((item) => item.paymentId === payment.id && !['failed', 'cancelled'].includes(item.status))
     .reduce((sum, item) => sum + int(item.amountIrr), 0);
@@ -3862,7 +6079,8 @@ function requestOrderRefund(db, orderId, input, actor, idempotencyKey) {
   }
   const refund = {
     id: id(), orderId: order.id, paymentId: payment.id, branchId: payment.branchId,
-    amountIrr, reason, refundDate, status: 'pending_approval', idempotencyKey,
+    amountIrr, reason, refundDate, status: 'pending_approval', idempotencyKey: normalizedIdempotencyKey || null,
+    requestFingerprint,
     createdBy: actor, createdAt: now(), approvedBy: null, approvedAt: null,
     journalEntryId: null, taxRefundIrr: null, revenueRefundIrr: null,
     inventoryEffect: 'none_financial_refund_only',
@@ -3873,94 +6091,327 @@ function requestOrderRefund(db, orderId, input, actor, idempotencyKey) {
     amountIrr, status: 'pending', createdBy: actor, createdAt: now(), decidedBy: null, decidedAt: null,
     history: [{ action: 'submitted', by: actor, at: now(), comment: reason }],
   };
+  refund.approvalId = approval.id;
   state.approvals.push(approval);
-  return { refund, approval };
+  recordRefundAudit(db, refund, 'requested', actor, {
+    reason, requestFingerprint, approvalId: approval.id,
+  });
+  return { refund, approval, idempotentReplay: false };
 }
 
-function postApprovedRefund(db, refund, actor) {
+function postApprovedRefund(db, refund, actor, evidenceId) {
   const state = ensureFinanceV2(db);
-  if (refund.journalEntryId) return state.journalEntries.find((item) => item.id === refund.journalEntryId) || null;
+  const persistedRefund = state.refunds.find((item) => String(item.id) === String(refund?.id));
+  if (!persistedRefund) throw Object.assign(new Error('درخواست برگشت وجه یافت نشد.'), { code: 'finance_refund_not_found', status: 404 });
+  const payment = state.payments.find((item) => String(item.id) === String(persistedRefund.paymentId));
+  const order = list(db.orders).find((item) => String(item.id) === String(persistedRefund.orderId));
+  if (!payment) throw Object.assign(new Error('پرداخت مبنای برگشت وجه یافت نشد.'), { code: 'refund_source_chain_missing', status: 409 });
+  const match = buildRefundReconciliationMatch({
+    refund: { ...persistedRefund, paymentReference: payment.providerReference || persistedRefund.paymentReference || null },
+    evidenceId,
+    loadEvidence: (requestedId) => {
+      const row = state.reconciliationItems.find((item) => String(item.id) === String(requestedId));
+      return row ? refundEvidenceFromPersistedItem(row) : null;
+    },
+    existingMatches: state.reconciliationItems.filter((item) => item.kind === 'refund').map(refundEvidenceFromPersistedItem),
+    actor,
+    matchedAt: now(),
+  });
+  return withFinanceAtomicity(db, () => postApprovedRefundAtomic(db, persistedRefund, actor, match), {
+    keys: ['events', 'payments', 'refunds', 'reconciliationItems', 'journalEntries', 'idempotency'],
+    objects: [order],
+  });
+}
+
+function refundEvidenceFromPersistedItem(item) {
+  const details = item?.details && typeof item.details === 'object' ? item.details : {};
+  const direction = item?.direction ?? details.direction;
+  return {
+    ...item,
+    direction: direction === 'outflow' ? 'outgoing' : direction,
+    sourceRecordId: item?.sourceRecordId ?? details.sourceRecordId,
+    sourcePaymentId: item?.sourcePaymentId ?? details.sourcePaymentId,
+    verifiedAt: item?.verifiedAt ?? details.verifiedAt,
+    refundReference: item?.refundReference ?? details.refundReference,
+    bankReference: item?.bankReference ?? details.bankReference,
+    disbursementReference: item?.disbursementReference ?? details.disbursementReference,
+    refundId: item?.refundId ?? details.refundId,
+    evidenceId: item?.evidenceId ?? details.evidenceId,
+    outgoingReference: item?.outgoingReference ?? details.outgoingReference,
+    matchedAt: item?.matchedAt ?? details.matchedAt,
+  };
+}
+
+function postApprovedRefundAtomic(db, refund, actor, match) {
+  const state = ensureFinanceV2(db);
+  if (refund.status === 'succeeded') {
+    const existingMatch = state.reconciliationItems.map(refundEvidenceFromPersistedItem)
+      .find((item) => item.kind === 'refund' && String(item.refundId || '') === String(refund.id));
+    const existingEntry = refund.journalEntryId ? state.journalEntries.find((item) => item.id === refund.journalEntryId) || null : null;
+    if (!existingMatch || !existingEntry || String(existingMatch.evidenceId || '') !== String(match.evidenceId)
+      || String(existingMatch.outgoingReference || '') !== String(match.outgoingReference)) {
+      throw Object.assign(new Error('برگشت وجه قبلاً با هویت دیگری نهایی شده است.'), { code: 'refund_match_identity_conflict', status: 409 });
+    }
+    return existingEntry;
+  }
+  if (!refund || !['approved', 'processing'].includes(refund.status)) {
+    throw Object.assign(new Error('درخواست برگشت وجه هنوز تأیید مستقل نشده یا در وضعیت پرداخت نیست.'), { code: 'refund_status_invalid', status: 409 });
+  }
+  const approval = state.approvals.find((item) => item.entityType === 'finance_refund'
+    && String(item.entityId) === String(refund.id)
+    && (refund.approvalId == null || String(item.id) === String(refund.approvalId)));
+  if (!approval || approval.operation !== 'approve_customer_refund' || approval.status !== 'approved'
+    || !approval.decidedBy || String(approval.createdBy) === String(approval.decidedBy)
+    || String(refund.approvedBy || '') !== String(approval.decidedBy)
+    || safeIrr(approval.amountIrr, 'refund_approval_amount_invalid') !== safeIrr(refund.amountIrr, 'refund_amount_invalid')) {
+    throw Object.assign(new Error('پرداخت برگشت وجه فقط پس از تأیید مستقل درخواست مجاز است.'), { code: 'refund_independent_approval_required', status: 409 });
+  }
+  if (!match || match.status !== 'matched' || match.refundId !== String(refund.id)) {
+    throw Object.assign(new Error('مدرک خروجی تأییدشده برای نهایی‌کردن برگشت وجه الزامی است.'), { code: 'refund_match_evidence_required', status: 409 });
+  }
   const payment = state.payments.find((item) => item.id === refund.paymentId);
   const order = list(db.orders).find((item) => String(item.id) === String(refund.orderId));
   if (!payment || !order) throw Object.assign(new Error('زنجیرهٔ سفارش و پرداخت برگشت وجه کامل نیست.'), { code: 'refund_source_chain_missing', status: 409 });
+  if (!['succeeded', 'refunded'].includes(String(payment.status))) {
+    throw Object.assign(new Error('فقط پرداخت قطعی و موفق می‌تواند مبنای بازپرداخت باشد.'), { code: 'refund_payment_not_succeeded', status: 409 });
+  }
   if (!sameExactBranch(payment, order) || !sameExactBranch(refund, order)) {
     throw Object.assign(new Error('زنجیرهٔ سفارش، پرداخت و برگشت وجه بین شعبه‌ها ناسازگار است.'), { code: 'refund_payment_branch_mismatch', status: 409 });
   }
   const tenderAccount = TENDER_ACCOUNTS[payment.tender];
   if (!tenderAccount) throw Object.assign(new Error('حساب روش پرداخت برای برگشت وجه تعریف نشده است.'), { code: 'refund_tender_account_missing', status: 409 });
-  const periodCheck = validateOpenPeriod(db, refund.refundDate);
-  if (!periodCheck.ok) throw Object.assign(new Error(periodCheck.message), { code: periodCheck.code, status: 409 });
-  const orderTotalIrr = irrFromLegacyToman(order.total);
-  if (orderTotalIrr <= 0) throw Object.assign(new Error('مبلغ قطعی سفارش برای تسهیم برگشت معتبر نیست.'), { code: 'refund_order_total_invalid', status: 409 });
-  const storedTaxToman = order.taxAmount ?? order.tax ?? order.vatAmount;
-  const orderTaxIrr = storedTaxToman == null ? 0 : Math.max(0, irrFromLegacyToman(storedTaxToman));
-  if (orderTaxIrr > orderTotalIrr) throw Object.assign(new Error('مالیات ذخیره‌شده سفارش نامعتبر است.'), { code: 'tax_total_invalid', status: 409 });
-  const priorSucceeded = state.refunds.filter((item) => item.id !== refund.id && String(item.orderId) === String(order.id) && item.status === 'succeeded');
-  const priorRefundIrr = priorSucceeded.reduce((sum, item) => sum + int(item.amountIrr), 0);
-  const priorTaxIrr = priorSucceeded.reduce((sum, item) => sum + int(item.taxRefundIrr), 0);
-  const cumulativeRefundIrr = priorRefundIrr + refund.amountIrr;
-  if (cumulativeRefundIrr > orderTotalIrr) throw Object.assign(new Error('جمع برگشت وجه از مبلغ سفارش بیشتر می‌شود.'), { code: 'refund_total_exceeds_order', status: 409 });
-  const cumulativeTaxIrr = cumulativeRefundIrr === orderTotalIrr
-    ? orderTaxIrr
-    : Math.round((orderTaxIrr * cumulativeRefundIrr) / orderTotalIrr);
-  const taxRefundIrr = Math.max(0, cumulativeTaxIrr - priorTaxIrr);
-  const revenueRefundIrr = refund.amountIrr - taxRefundIrr;
-  const branchId = Number(order.branchId) || payment.branchId;
-  const costCenter = `branch:${branchId}`;
   const originalSale = state.journalEntries.find((entry) => entry.source === 'order.paid'
     && String(entry.sourceId) === String(order.id) && sameExactBranch(entry, order));
+  const refundsAgainstCustomerDeposit = !originalSale;
+  let preSaleLeg = null;
+  if (refundsAgainstCustomerDeposit) {
+    if (!['cash', 'manual_card'].includes(String(payment.tender || ''))) {
+      throw Object.assign(new Error('برگشت پرداخت پیش از فروش برای این روش پرداخت هنوز مسیر عملیاتی امن ندارد.'), {
+        code: 'refund_pre_sale_tender_unsupported', status: 409,
+      });
+    }
+    if (int(refund.amountIrr) % 10 !== 0) {
+      throw Object.assign(new Error('مبلغ برگشت پیش از فروش باید با واحد عملیاتی تومان قابل ثبت باشد.'), {
+        code: 'refund_pre_sale_amount_precision_unsupported', status: 409,
+      });
+    }
+    preSaleLeg = preSaleRefundOperationalLeg(db, order, payment);
+    const refundedBeforeIrr = state.refunds
+      .filter((item) => String(item.paymentId) === String(payment.id) && item.status === 'succeeded')
+      .reduce((sum, item) => sum + safeIrr(item.amountIrr, 'refund_amount_invalid'), 0);
+    if (int(preSaleLeg.refundedAmount || 0) * 10 !== refundedBeforeIrr) {
+      throw Object.assign(new Error('ماندهٔ پرداخت عملیاتی با بازپرداخت‌های قطعی دفتر مالی هم‌خوان نیست.'), {
+        code: 'refund_order_payment_balance_mismatch', status: 409,
+      });
+    }
+  }
+  const periodCheck = validateOpenPeriod(db, refund.refundDate, refund.branchId);
+  if (!periodCheck.ok) throw Object.assign(new Error(periodCheck.message), { code: periodCheck.code, status: 409 });
+  let orderTotalIrr;
+  try {
+    orderTotalIrr = strictLegacyTomanIrr(order.total, 'refund_order_total_invalid');
+  } catch (error) {
+    throw Object.assign(error, { code: 'refund_order_total_invalid', status: 409 });
+  }
+  if (orderTotalIrr <= 0) throw Object.assign(new Error('مبلغ قطعی سفارش برای تسهیم برگشت معتبر نیست.'), { code: 'refund_order_total_invalid', status: 409 });
+  const reservedOnPaymentIrr = state.refunds
+    .filter((item) => String(item.paymentId) === String(payment.id) && String(item.id) !== String(refund.id)
+      && !['failed', 'cancelled'].includes(String(item.status)))
+    .reduce((sum, item) => sum + safeIrr(item.amountIrr, 'refund_amount_invalid'), 0);
+  const requestedRefundIrr = safeIrr(refund.amountIrr, 'refund_amount_invalid');
+  const paymentAmountIrr = safeIrr(payment.amountIrr, 'refund_payment_amount_invalid');
+  if (reservedOnPaymentIrr + requestedRefundIrr > paymentAmountIrr) {
+    throw Object.assign(new Error('جمع بازپرداخت‌های فعال از مبلغ قطعی پرداخت بیشتر است.'), {
+      code: 'refund_total_exceeds_payment', status: 409,
+      details: { paymentAmountIrr, committedIrr: reservedOnPaymentIrr, requestedIrr: requestedRefundIrr },
+    });
+  }
+  const orderTaxIrr = refundsAgainstCustomerDeposit ? 0 : orderTaxAmountIrr(order);
+  if (orderTaxIrr > orderTotalIrr) throw Object.assign(new Error('مالیات ذخیره‌شده سفارش نامعتبر است.'), { code: 'tax_total_invalid', status: 409 });
+  const priorSucceeded = state.refunds.filter((item) => item.id !== refund.id && String(item.orderId) === String(order.id)
+    && item.status === 'succeeded' && item.recognitionState !== 'customer_deposit');
+  const priorRefundIrr = priorSucceeded.reduce((sum, item) => {
+    const next = sum + safeIrr(item.amountIrr, 'refund_amount_invalid');
+    if (!Number.isSafeInteger(next)) throw Object.assign(new Error('جمع بازپرداخت‌های سفارش از محدودهٔ امن خارج است.'), { code: 'refund_total_unsafe', status: 409 });
+    return next;
+  }, 0);
+  const priorTaxIrr = priorSucceeded.reduce((sum, item) => {
+    const next = sum + (item.taxRefundIrr == null ? 0 : safeIrr(item.taxRefundIrr, 'tax_total_invalid'));
+    if (!Number.isSafeInteger(next)) throw Object.assign(new Error('جمع مالیات برگشتی از محدودهٔ امن خارج است.'), { code: 'tax_total_invalid', status: 409 });
+    return next;
+  }, 0);
+  const cumulativeRefundIrr = priorRefundIrr + requestedRefundIrr;
+  if (!Number.isSafeInteger(cumulativeRefundIrr)) throw Object.assign(new Error('جمع بازپرداخت سفارش از محدودهٔ امن خارج است.'), { code: 'refund_total_unsafe', status: 409 });
+  if (!refundsAgainstCustomerDeposit && cumulativeRefundIrr > orderTotalIrr) throw Object.assign(new Error('جمع برگشت وجه از مبلغ سفارش بیشتر می‌شود.'), { code: 'refund_total_exceeds_order', status: 409 });
+  // Keep proportional tax allocation in integer arithmetic. The numerator can
+  // exceed Number.MAX_SAFE_INTEGER even when each input amount is itself a
+  // valid safe integer, making Math.round() silently add or lose a rial.
+  const cumulativeTaxIrr = refundsAgainstCustomerDeposit ? 0 : cumulativeRefundIrr === orderTotalIrr
+    ? orderTaxIrr
+    : Number((BigInt(orderTaxIrr) * BigInt(cumulativeRefundIrr) + BigInt(orderTotalIrr) / 2n) / BigInt(orderTotalIrr));
+  if (!Number.isSafeInteger(cumulativeTaxIrr) || cumulativeTaxIrr < 0 || cumulativeTaxIrr > orderTaxIrr) {
+    throw Object.assign(new Error('سهم مالیات برگشتی از محدودهٔ امن خارج است.'), { code: 'tax_total_invalid', status: 409 });
+  }
+  const taxRefundIrr = Math.max(0, cumulativeTaxIrr - priorTaxIrr);
+  const revenueRefundIrr = refundsAgainstCustomerDeposit ? 0 : refund.amountIrr - taxRefundIrr;
+  const branchId = Number(order.branchId) || payment.branchId;
+  const costCenter = `branch:${branchId}`;
   const salesAccount = originalSale?.lines?.find((line) => ['4110', '4120', '4130'].includes(line.accountCode))?.accountCode
     || (order.fulfillment === 'pickup' ? '4120' : order.fulfillment === 'delivery' ? '4130' : '4110');
   const recorded = recordEvent(db, {
-    source: 'order.refund', sourceId: refund.id, sourceVersion: 1,
+    source: refundsAgainstCustomerDeposit ? 'order.payment_refund' : 'order.refund', sourceId: refund.id, sourceVersion: 1,
     idempotencyKey: `refund:${refund.id}:v1`, branchId, occurredAt: refund.refundDate,
     amountIrr: refund.amountIrr,
-    payload: { orderId: order.id, paymentId: payment.id, tender: payment.tender, reason: refund.reason, taxRefundIrr, revenueRefundIrr, inventoryEffect: refund.inventoryEffect },
+    payload: {
+      orderId: order.id, paymentId: payment.id, tender: payment.tender, reason: refund.reason,
+      taxRefundIrr, revenueRefundIrr, inventoryEffect: refund.inventoryEffect,
+      recognitionState: refundsAgainstCustomerDeposit ? 'customer_deposit' : 'sale',
+      disbursementEvidenceId: match.evidenceId, outgoingReference: match.outgoingReference,
+      evidenceSourceRecordId: match.sourceRecordId, evidenceKind: match.evidenceKind,
+    },
   });
   const lines = [];
-  if (revenueRefundIrr) lines.push({ accountCode: salesAccount, accountType: 'contra_revenue', debitIrr: revenueRefundIrr, creditIrr: 0, branchId, costCenter, memo: `برگشت فروش سفارش ${order.orderNo || order.id}` });
-  if (taxRefundIrr) lines.push({ accountCode: '2210', debitIrr: taxRefundIrr, creditIrr: 0, branchId, costCenter, memo: `برگشت مالیات سفارش ${order.orderNo || order.id}` });
+  if (refundsAgainstCustomerDeposit) {
+    lines.push({ accountCode: WALLET_LIABILITY_ACCOUNT, accountType: 'liability', debitIrr: refund.amountIrr, creditIrr: 0, branchId, costCenter, memo: `آزادسازی پیش‌دریافت برگشتی سفارش ${order.orderNo || order.id}` });
+  } else {
+    if (revenueRefundIrr) lines.push({ accountCode: salesAccount, accountType: 'contra_revenue', debitIrr: revenueRefundIrr, creditIrr: 0, branchId, costCenter, memo: `برگشت فروش سفارش ${order.orderNo || order.id}` });
+    if (taxRefundIrr) lines.push({ accountCode: '2210', debitIrr: taxRefundIrr, creditIrr: 0, branchId, costCenter, memo: `برگشت مالیات سفارش ${order.orderNo || order.id}` });
+  }
   lines.push({ accountCode: tenderAccount, debitIrr: 0, creditIrr: refund.amountIrr, branchId, costCenter, paymentMethod: payment.tender, memo: `خروج وجه برگشت سفارش ${order.orderNo || order.id}` });
   const entry = postEventJournal(db, recorded.event, lines, `برگشت وجه تأییدشده سفارش ${order.orderNo || order.id}`, actor);
   if (!entry) throw Object.assign(new Error('سند برگشت وجه پست نشد.'), { code: recorded.event.error?.code || 'refund_journal_post_failed', status: 409 });
-  refund.status = 'succeeded'; refund.approvedBy = actor; refund.approvedAt = now(); refund.journalEntryId = entry.id;
+  refund.status = 'succeeded'; refund.disbursedBy = actor; refund.disbursedAt = match.matchedAt;
+  refund.disbursementEvidenceId = match.evidenceId; refund.disbursementReference = match.outgoingReference;
+  refund.journalEntryId = entry.id;
   refund.taxRefundIrr = taxRefundIrr; refund.revenueRefundIrr = revenueRefundIrr;
+  refund.recognitionState = refundsAgainstCustomerDeposit ? 'customer_deposit' : 'sale';
   payment.refundedIrr = state.refunds.filter((item) => item.paymentId === payment.id && item.status === 'succeeded').reduce((sum, item) => sum + int(item.amountIrr), 0);
   payment.status = payment.refundedIrr >= payment.amountIrr ? 'refunded' : 'succeeded';
-  state.reconciliationItems.push({
-    id: id(), kind: 'refund', branchId, orderId: order.id, paymentId: payment.id, cashSessionId: null,
-    bankReference: payment.providerReference || null, settlementReference: null, psp: payment.provider || null,
+  if (refundsAgainstCustomerDeposit) {
+    const refundedToman = payment.refundedIrr / 10;
+    if (!Number.isSafeInteger(refundedToman) || refundedToman > int(preSaleLeg.amount)) {
+      throw Object.assign(new Error('بازپرداخت ریالی با ماندهٔ تومانی پرداخت عملیاتی سازگار نیست.'), {
+        code: 'refund_order_payment_balance_mismatch', status: 409,
+      });
+    }
+    preSaleLeg.refundedAmount = refundedToman;
+    const paidToman = list(order.partialPayments).reduce((sum, row) => {
+      const gross = Number(row?.amount);
+      const refunded = Number(row?.refundedAmount || 0);
+      if (!Number.isSafeInteger(gross) || gross < 0 || !Number.isSafeInteger(refunded) || refunded < 0 || refunded > gross) {
+        throw Object.assign(new Error('تاریخچهٔ پرداخت سفارش هنگام ثبت بازپرداخت نامعتبر است.'), { code: 'refund_order_payment_history_invalid', status: 409 });
+      }
+      return sum + gross - refunded;
+    }, 0);
+    if (!Number.isSafeInteger(paidToman) || paidToman > Number(order.total)) {
+      throw Object.assign(new Error('جمع پرداخت خالص سفارش برای محاسبهٔ مانده نامعتبر است.'), { code: 'refund_order_payment_balance_mismatch', status: 409 });
+    }
+    order.amountPaid = paidToman;
+    order.balanceDue = Math.max(0, Number(order.total) - paidToman);
+    order.paymentStatus = paidToman >= Number(order.total) ? 'paid' : paidToman > 0 ? 'partial' : 'unpaid';
+  }
+  const reconciliation = {
+    id: id(), kind: 'refund', refundId: refund.id, evidenceId: match.evidenceId,
+    outgoingReference: match.outgoingReference, sourceRecordId: match.sourceRecordId,
+    branchId, orderId: order.id, paymentId: payment.id, cashSessionId: null,
+    bankReference: match.outgoingReference, settlementReference: null, psp: payment.provider || null,
     terminalId: null, batchNo: null, journalEntryId: entry.id, amountIrr: refund.amountIrr,
-    status: 'matched', matchedAt: now(), matchedBy: actor,
-    details: { refundId: refund.id, financialOnly: true }, createdAt: now(),
+    status: 'matched', matchedAt: match.matchedAt, matchedBy: actor,
+    details: {
+      refundId: refund.id, evidenceId: match.evidenceId, evidenceKind: match.evidenceKind,
+      sourceRecordId: match.sourceRecordId, outgoingReference: match.outgoingReference,
+      financialOnly: false,
+    }, createdAt: now(),
+  };
+  const evidence = state.reconciliationItems.find((item) => String(item.id) === String(match.evidenceId));
+  if (!evidence) throw Object.assign(new Error('مدرک خروجی پس از اعتبارسنجی یافت نشد.'), { code: 'refund_match_evidence_unverified', status: 409 });
+  evidence.status = 'matched'; evidence.refundId = refund.id; evidence.matchedAt = match.matchedAt;
+  evidence.matchedBy = actor; evidence.refundReconciliationId = reconciliation.id;
+  const verifiedEvidence = refundEvidenceFromPersistedItem(evidence);
+  evidence.details = {
+    ...(evidence.details || {}), direction: 'outgoing', sourceRecordId: match.sourceRecordId,
+    sourcePaymentId: match.paymentId, verifiedAt: verifiedEvidence.verifiedAt,
+    refundId: refund.id, evidenceId: match.evidenceId, outgoingReference: match.outgoingReference,
+    refundReconciliationId: reconciliation.id, matchedAt: match.matchedAt,
+  };
+  state.reconciliationItems.push(reconciliation);
+  recordRefundAudit(db, refund, 'disbursed_reconciled', actor, {
+    approvalId: approval.id,
+    evidenceId: match.evidenceId,
+    evidenceKind: match.evidenceKind,
+    sourceRecordId: match.sourceRecordId,
+    outgoingReference: match.outgoingReference,
+    journalEntryId: entry.id,
+    reconciledAt: match.matchedAt,
   });
   return entry;
 }
 
 function recordSettlementV2(db, input, actor) {
+  ensureFinanceV2(db);
+  return withFinanceAtomicity(db, () => recordSettlementV2Atomic(db, input, actor), {
+    keys: ['events', 'payments', 'reconciliationItems', 'journalEntries', 'idempotency'],
+  });
+}
+
+function recordSettlementV2Atomic(db, input, actor) {
   const state = ensureFinanceV2(db);
   const branchId = Number(input.branchId) || null;
   if (!branchId) throw Object.assign(new Error('شعبهٔ تسویه الزامی است.'), { code: 'settlement_branch_required' });
+  const branches = list(db.branches);
+  if (branches.length && !branches.some((branch) => Number(branch.id) === branchId && branch.active !== false)) {
+    throw Object.assign(new Error('شعبهٔ تسویه یافت نشد یا فعال نیست.'), { code: 'settlement_branch_not_found', status: 404 });
+  }
   const psp = String(input.psp || '').trim().slice(0, 120);
   const terminalId = String(input.terminalId || '').trim().slice(0, 120);
   const batchNo = String(input.batchNo || '').trim().slice(0, 120);
-  if (!psp || !terminalId || !batchNo) throw Object.assign(new Error('PSP، پایانه و شماره بچ تسویه الزامی است.'), { code: 'settlement_identity_required' });
+  if (!psp || !terminalId || !batchNo) throw Object.assign(new Error('PSP، پایانه و شماره دسته تسویه الزامی است.'), { code: 'settlement_identity_required' });
   if (state.reconciliationItems.some((item) => item.kind === 'settlement' && sameExactBranch(item, { branchId })
     && item.psp === psp && item.terminalId === terminalId && item.batchNo === batchNo && item.status !== 'exception')) {
-    throw Object.assign(new Error('این بچ تسویه قبلاً ثبت شده است.'), { code: 'settlement_batch_duplicate', status: 409 });
+    throw Object.assign(new Error('این دسته تسویه قبلاً ثبت شده است.'), { code: 'settlement_batch_duplicate', status: 409 });
   }
   const paymentIds = [...new Set(list(input.paymentIds).map(String).filter(Boolean))];
   if (!paymentIds.length) throw Object.assign(new Error('حداقل یک پرداخت برای تطبیق انتخاب کنید.'), { code: 'settlement_payments_required' });
   const payments = paymentIds.map((paymentId) => state.payments.find((item) => item.id === paymentId));
   if (payments.some((payment) => !payment)) throw Object.assign(new Error('یکی از پرداخت‌های انتخاب‌شده یافت نشد.'), { code: 'settlement_payment_not_found', status: 404 });
-  if (payments.some((payment) => Number(payment.branchId) !== branchId)) throw Object.assign(new Error('پرداخت‌های چند شعبه را نمی‌توان در یک بچ تسویه کرد.'), { code: 'settlement_branch_mismatch', status: 409 });
+  if (payments.some((payment) => Number(payment.branchId) !== branchId)) throw Object.assign(new Error('پرداخت‌های چند شعبه را نمی‌توان در یک دسته تسویه کرد.'), { code: 'settlement_branch_mismatch', status: 409 });
+  if (payments.some((payment) => !['succeeded', 'refunded'].includes(String(payment.status)))) {
+    throw Object.assign(new Error('فقط پرداخت‌های موفق قابل تسویه هستند.'), { code: 'settlement_payment_not_succeeded', status: 409 });
+  }
+  if (payments.some((payment) => !safeIrr(payment.amountIrr, 'settlement_payment_amount_invalid'))) {
+    throw Object.assign(new Error('مبلغ یکی از پرداخت‌ها برای تسویه معتبر نیست.'), { code: 'settlement_payment_amount_invalid', status: 409 });
+  }
   const clearingAccounts = new Set(payments.map((payment) => TENDER_ACCOUNTS[payment.tender]));
   if (clearingAccounts.size !== 1 || !['1310', '1320'].includes([...clearingAccounts][0])) {
-    throw Object.assign(new Error('هر بچ باید فقط پرداخت‌های یک حساب واسط کارتخوان یا درگاه را شامل شود.'), { code: 'settlement_tender_mismatch', status: 409 });
+    throw Object.assign(new Error('هر دسته باید فقط پرداخت‌های یک حساب واسط کارتخوان یا درگاه را شامل شود.'), { code: 'settlement_tender_mismatch', status: 409 });
   }
   const paymentItems = payments.map((payment) => state.reconciliationItems.find((item) => item.kind === 'payment' && item.paymentId === payment.id));
   if (paymentItems.some((item) => !item || item.status !== 'unmatched')) throw Object.assign(new Error('یکی از پرداخت‌ها قبلاً تطبیق شده یا در صف تطبیق نیست.'), { code: 'settlement_payment_already_matched', status: 409 });
-  const grossAmountIrr = payments.reduce((sum, payment) => sum + int(payment.amountIrr), 0);
+  if (paymentItems.some((item, index) => !sameExactBranch(item, payments[index]))) {
+    throw Object.assign(new Error('رکورد تطبیق پرداخت و خود پرداخت به یک شعبه تعلق ندارند.'), { code: 'settlement_reconciliation_branch_mismatch', status: 409 });
+  }
+  // A refund credits the clearing account immediately.  Settling the original
+  // payment amount again would therefore over-credit the clearing account
+  // (and would book a bank inflow for a fully refunded payment).  Use the
+  // still-outstanding amount for this batch and reject zero-net payments so a
+  // settlement can never manufacture cash after a customer refund.
+  const settlementPayments = payments.map((payment) => {
+    const grossIrr = safeIrr(payment.amountIrr, 'settlement_payment_amount_invalid');
+    const refundedIrr = safeIrr(payment.refundedIrr || 0, 'settlement_refunded_amount_invalid');
+    if (refundedIrr > grossIrr) {
+      throw Object.assign(new Error('مبلغ بازپرداخت‌شده از مبلغ پرداخت بیشتر است.'), {
+        code: 'settlement_refund_exceeds_payment', status: 409,
+      });
+    }
+    const outstandingIrr = grossIrr - refundedIrr;
+    if (outstandingIrr <= 0) {
+      throw Object.assign(new Error('پرداخت کاملاً برگشت‌خورده قابل تسویه نیست.'), {
+        code: 'settlement_payment_fully_refunded', status: 409,
+      });
+    }
+    return { payment, grossIrr, refundedIrr, outstandingIrr };
+  });
+  const grossAmountIrr = settlementPayments.reduce((sum, row) => sum + row.outstandingIrr, 0);
   const feeIrr = safeIrr(input.feeIrr || 0, 'settlement_fee_invalid');
   if (feeIrr > grossAmountIrr) throw Object.assign(new Error('کارمزد از مبلغ ناخالص تسویه بیشتر است.'), { code: 'settlement_fee_exceeds_gross' });
   const bankAmountIrr = grossAmountIrr - feeIrr;
@@ -3970,8 +6421,14 @@ function recordSettlementV2(db, input, actor) {
       details: { grossAmountIrr, feeIrr, expectedBankAmountIrr: bankAmountIrr, suppliedBankAmountIrr: input.bankAmountIrr },
     });
   }
-  const settledAt = input.settledAt || now();
-  const periodCheck = validateOpenPeriod(db, settledAt);
+  const bankAccountCode = String(input.bankAccountCode || '1210').trim();
+  if (!bankPostingAccounts(db).some((account) => account.code === bankAccountCode)) {
+    throw Object.assign(new Error('حساب بانکی تسویه در طرح حساب‌ها تعریف نشده است.'), { code: 'settlement_bank_account_invalid', status: 409 });
+  }
+  const settledAt = input.settledAt
+    ? isoTimestamp(input.settledAt, 'settlement_date_invalid', 'زمان تسویه باید تاریخ ISO معتبر همراه منطقهٔ زمانی باشد.')
+    : now();
+  const periodCheck = validateOpenPeriod(db, settledAt, branchId);
   if (!periodCheck.ok) throw Object.assign(new Error(periodCheck.message), { code: periodCheck.code, status: 409 });
   const settlementId = id();
   const clearingAccount = [...clearingAccounts][0];
@@ -3980,20 +6437,29 @@ function recordSettlementV2(db, input, actor) {
     source: 'settlement.received', sourceId: settlementId, sourceVersion: 1,
     idempotencyKey: `settlement:${branchId}:${psp}:${terminalId}:${batchNo}`, branchId, occurredAt: settledAt,
     amountIrr: grossAmountIrr,
-    payload: { psp, terminalId, batchNo, bankReference: input.bankReference || null, paymentIds, grossAmountIrr, feeIrr, bankAmountIrr },
+    payload: {
+      psp, terminalId, batchNo, bankReference: input.bankReference || null, bankAccountCode, paymentIds,
+      grossAmountIrr, feeIrr, bankAmountIrr,
+      refundedAmountIrr: settlementPayments.reduce((sum, row) => sum + row.refundedIrr, 0),
+      paymentAmounts: settlementPayments.map((row) => ({ paymentId: row.payment.id, originalAmountIrr: row.grossIrr, refundedIrr: row.refundedIrr, settledAmountIrr: row.outstandingIrr })),
+    },
   });
   const lines = [];
-  if (bankAmountIrr) lines.push({ accountCode: '1210', debitIrr: bankAmountIrr, creditIrr: 0, branchId, costCenter, memo: `واریز بچ ${batchNo}` });
-  if (feeIrr) lines.push({ accountCode: '6710', accountType: 'expense', debitIrr: feeIrr, creditIrr: 0, branchId, costCenter, counterpartyId: psp, memo: `کارمزد بچ ${batchNo}` });
-  lines.push({ accountCode: clearingAccount, debitIrr: 0, creditIrr: grossAmountIrr, branchId, costCenter, paymentMethod: payments[0].tender, counterpartyId: psp, memo: `تسویه حساب واسط بچ ${batchNo}` });
-  const entry = postEventJournal(db, recorded.event, lines, `تسویه ${psp} / پایانه ${terminalId} / بچ ${batchNo}`, actor);
+  if (bankAmountIrr) lines.push({ accountCode: bankAccountCode, debitIrr: bankAmountIrr, creditIrr: 0, branchId, costCenter, memo: `واریز دسته ${batchNo}` });
+  if (feeIrr) lines.push({ accountCode: '6710', accountType: 'expense', debitIrr: feeIrr, creditIrr: 0, branchId, costCenter, counterpartyId: psp, memo: `کارمزد دسته ${batchNo}` });
+  lines.push({ accountCode: clearingAccount, debitIrr: 0, creditIrr: grossAmountIrr, branchId, costCenter, paymentMethod: payments[0].tender, counterpartyId: psp, memo: `تسویه حساب واسط دسته ${batchNo}` });
+  const entry = postEventJournal(db, recorded.event, lines, `تسویه ${psp} / پایانه ${terminalId} / دسته ${batchNo}`, actor);
   if (!entry) throw Object.assign(new Error('سند تسویه پست نشد.'), { code: recorded.event.error?.code || 'settlement_journal_post_failed', status: 409 });
   const settlement = {
     id: settlementId, kind: 'settlement', branchId, orderId: null, paymentId: null, cashSessionId: null,
     bankReference: String(input.bankReference || '').trim().slice(0, 160) || null,
     settlementReference: batchNo, psp, terminalId, batchNo, journalEntryId: entry.id,
     amountIrr: bankAmountIrr, status: 'matched', matchedAt: now(), matchedBy: actor,
-    details: { paymentIds, grossAmountIrr, feeIrr, bankAmountIrr, clearingAccount }, createdAt: now(),
+    details: {
+      paymentIds, grossAmountIrr, feeIrr, bankAmountIrr, bankAccountCode, clearingAccount, settledAt,
+      refundedAmountIrr: settlementPayments.reduce((sum, row) => sum + row.refundedIrr, 0),
+      paymentAmounts: settlementPayments.map((row) => ({ paymentId: row.payment.id, originalAmountIrr: row.grossIrr, refundedIrr: row.refundedIrr, settledAmountIrr: row.outstandingIrr })),
+    }, createdAt: now(),
   };
   state.reconciliationItems.push(settlement);
   paymentItems.forEach((item) => {
@@ -4061,11 +6527,10 @@ function openingBalancePreview(db, input = {}) {
     };
   });
   const totals = assertBalanced(lines, accountCodesForDb(db));
-  const period = list(db.financeV2?.fiscalPeriods).find((candidate) => {
-    const start = new Date(candidate.startDate);
-    const end = new Date(candidate.endDate);
-    return Number.isFinite(start.getTime()) && Number.isFinite(end.getTime()) && start <= asOf && end >= asOf;
-  }) || null;
+  // Resolve the period with the same branch-aware, ambiguity-safe selector
+  // used by every other posting path. A date-only lookup could otherwise
+  // select another branch's period for an opening balance.
+  const period = periodForDate(db, asOfDate, branchId);
   if (!period) throw Object.assign(new Error('برای تاریخ مانده افتتاحیه، دورهٔ مالی V2 تعریف نشده است.'), { code: 'opening_balance_fiscal_period_missing', status: 409 });
   if (!['open', 'reopened'].includes(period.status)) throw Object.assign(new Error(`دورهٔ «${period.name || period.id}» باز نیست.`), { code: 'fiscal_period_closed', status: 409 });
   return {
@@ -4112,6 +6577,7 @@ function requestOpeningBalance(db, input, actor) {
 
 function createDraft(db, input, actor) {
   const state = ensureFinanceV2(db);
+  const headerBranchId = Number(input.branchId) || null;
   const lines = list(input.lines).map((line) => ({
     accountCode: String(line.accountCode || '').trim(), accountType: String(line.accountType || '').trim() || null,
     debitIrr: safeIrr(line.debitIrr), creditIrr: safeIrr(line.creditIrr), branchId: Number(line.branchId || input.branchId) || null,
@@ -4120,12 +6586,22 @@ function createDraft(db, input, actor) {
     itemId: line.itemId == null ? null : String(line.itemId), recipeVersionId: line.recipeVersionId == null ? null : String(line.recipeVersionId),
     memo: String(line.memo || '').slice(0, 300),
   }));
+  const lineBranches = [...new Set(lines.map((line) => line.branchId).filter((branchId) => branchId != null))];
+  if (lineBranches.length > 1) {
+    throw Object.assign(new Error('تمام ردیف‌های سند باید متعلق به یک شعبه باشند.'), { code: 'journal_line_branch_mismatch', status: 400 });
+  }
+  if (headerBranchId == null && lineBranches.length) {
+    throw Object.assign(new Error('سند دارای ردیف شعبه‌ای باید شعبهٔ سرسند را نیز مشخص کند.'), { code: 'journal_header_branch_required', status: 400 });
+  }
+  if (headerBranchId != null && lineBranches.length && lineBranches[0] !== headerBranchId) {
+    throw Object.assign(new Error('شعبهٔ سرسند با شعبهٔ ردیف‌های سند یکسان نیست.'), { code: 'journal_header_line_branch_mismatch', status: 400 });
+  }
   const totals = assertBalanced(lines, accountCodesForDb(db));
   const entry = {
     id: id('fje'), number: `F2-D-${String(state.journalEntries.length + 1).padStart(6, '0')}`,
     periodId: null, sourceEventId: null, source: 'manual', sourceId: null,
     date: input.date || now(), description: String(input.description || 'سند دستی').slice(0, 280), status: 'draft',
-    debitIrr: totals.debitIrr, creditIrr: totals.creditIrr, branchId: Number(input.branchId) || null,
+    debitIrr: totals.debitIrr, creditIrr: totals.creditIrr, branchId: headerBranchId,
     reversalOfId: null, reversedById: null,
     lines: lines.map((line, index) => ({ id: id('fjl'), lineNo: index + 1, ...line })),
     createdAt: now(), createdBy: actor, postedAt: null, postedBy: null,
@@ -4152,9 +6628,15 @@ function submitDraft(db, entryId, actor) {
 }
 
 function decideApproval(db, approvalId, decision, actor, comment, runtime = {}) {
+  ensureFinanceV2(db);
+  return withFinanceAtomicity(db, () => decideApprovalAtomic(db, approvalId, decision, actor, comment, runtime));
+}
+
+function decideApprovalAtomic(db, approvalId, decision, actor, comment, runtime = {}) {
   const state = ensureFinanceV2(db);
   const approval = state.approvals.find((item) => item.id === approvalId);
   if (!approval) throw Object.assign(new Error('درخواست تأیید یافت نشد.'), { code: 'approval_not_found', status: 404 });
+  assertApprovalBranchScope(state, approval, runtime.branchId);
   if (approval.status !== 'pending') throw Object.assign(new Error('این درخواست قبلاً تصمیم‌گیری شده است.'), { code: 'approval_already_decided', status: 409 });
   if (!['approved', 'rejected'].includes(decision)) throw Object.assign(new Error('تصمیم معتبر نیست.'), { code: 'approval_decision_invalid', status: 400 });
   if (String(approval.createdBy) === String(actor)) throw Object.assign(new Error('ایجادکننده نمی‌تواند درخواست خودش را تأیید کند.'), { code: 'segregation_of_duties', status: 409 });
@@ -4277,7 +6759,7 @@ function decideApproval(db, approvalId, decision, actor, comment, runtime = {}) 
     }
   }
   if (decision === 'approved' && entry) {
-    const periodCheck = validateOpenPeriod(db, entry.date);
+    const periodCheck = validateOpenPeriod(db, entry.date, entry.branchId);
     if (!periodCheck.ok) throw Object.assign(new Error(periodCheck.message), { code: periodCheck.code, status: 409 });
     assertBalanced(entry.lines);
     entry.periodId = periodCheck.period.id;
@@ -4336,7 +6818,7 @@ function decideApproval(db, approvalId, decision, actor, comment, runtime = {}) 
     if (!invoice) throw Object.assign(new Error('فاکتور پرداختنی یافت نشد.'), { code: 'vendor_invoice_not_found', status: 404 });
     const remainingIrr = invoice.totalIrr - invoice.paidAmountIrr;
     if (supplierPayment.amountIrr > remainingIrr) throw Object.assign(new Error('مبلغ تأییدشده از ماندهٔ فعلی فاکتور بیشتر است.'), { code: 'supplier_payment_exceeds_remaining', status: 409 });
-    const periodCheck = validateOpenPeriod(db, supplierPayment.paymentDate);
+    const periodCheck = validateOpenPeriod(db, supplierPayment.paymentDate, supplierPayment.branchId);
     if (!periodCheck.ok) throw Object.assign(new Error(periodCheck.message), { code: periodCheck.code, status: 409 });
     const creditAccount = supplierPayment.paymentMethod === 'cash' ? '1110' : supplierPayment.paymentMethod === 'petty_cash' ? '1120' : '1210';
     const costCenter = `branch:${supplierPayment.branchId}`;
@@ -4358,7 +6840,9 @@ function decideApproval(db, approvalId, decision, actor, comment, runtime = {}) 
   let refundEntry = null;
   if (decision === 'approved' && approval.entityType === 'finance_refund') {
     if (!financeRefund) throw Object.assign(new Error('درخواست برگشت وجه یافت نشد.'), { code: 'finance_refund_not_found', status: 404 });
-    refundEntry = postApprovedRefund(db, financeRefund, actor);
+    // Approval authorizes a future disbursement; it is not evidence that funds
+    // have left the restaurant. The reconciliation endpoint performs the
+    // disbursement transition only after persisted outgoing evidence is proven.
   }
   let costPaymentEntry = null;
   if (decision === 'approved' && approval.entityType === 'cost_payment') {
@@ -4371,7 +6855,7 @@ function decideApproval(db, approvalId, decision, actor, comment, runtime = {}) 
     const pendingOtherIrr = state.costPayments.filter((item) => item.id !== costPayment.id && item.costAccrualId === accrual.id && item.status === 'pending_approval').reduce((sum, item) => sum + int(item.amountIrr), 0);
     const remainingIrr = accrual.amountIrr - int(accrual.paidAmountIrr) - pendingOtherIrr;
     if (costPayment.amountIrr > remainingIrr) throw Object.assign(new Error('مبلغ پرداخت از ماندهٔ فعلی تعهد بیشتر است.'), { code: 'cost_payment_exceeds_remaining', status: 409 });
-    const periodCheck = validateOpenPeriod(db, costPayment.paymentDate);
+    const periodCheck = validateOpenPeriod(db, costPayment.paymentDate, costPayment.branchId);
     if (!periodCheck.ok) throw Object.assign(new Error(periodCheck.message), { code: periodCheck.code, status: 409 });
     const creditAccount = costPayment.paymentMethod === 'cash' ? '1110' : costPayment.paymentMethod === 'petty_cash' ? '1120' : '1210';
     const costCenter = `branch:${costPayment.branchId}`;
@@ -4399,7 +6883,7 @@ function decideApproval(db, approvalId, decision, actor, comment, runtime = {}) 
     const pendingOtherIrr = state.payrollPayments.filter((item) => item.id !== payrollPayment.id && item.payrollRunId === run.id && item.liabilityType === payrollPayment.liabilityType && item.status === 'pending_approval').reduce((sum, item) => sum + int(item.amountIrr), 0);
     const remainingIrr = ceilingIrr - int(run.paidByLiability?.[payrollPayment.liabilityType]) - pendingOtherIrr;
     if (payrollPayment.amountIrr > remainingIrr) throw Object.assign(new Error('مبلغ پرداخت از ماندهٔ فعلی بدهی حقوق بیشتر است.'), { code: 'payroll_payment_exceeds_remaining', status: 409 });
-    const periodCheck = validateOpenPeriod(db, payrollPayment.paymentDate);
+    const periodCheck = validateOpenPeriod(db, payrollPayment.paymentDate, run.branchId);
     if (!periodCheck.ok) throw Object.assign(new Error(periodCheck.message), { code: periodCheck.code, status: 409 });
     const creditAccount = payrollPayment.paymentMethod === 'cash' ? '1110' : '1210';
     const costCenter = `branch:${run.branchId}`;
@@ -4511,7 +6995,14 @@ function decideApproval(db, approvalId, decision, actor, comment, runtime = {}) 
   if (supplierPayment && decision === 'rejected') supplierPayment.status = 'rejected';
   if (costPayment && decision === 'rejected') costPayment.status = 'rejected';
   if (payrollPayment && decision === 'rejected') payrollPayment.status = 'rejected';
-  if (financeRefund && decision === 'rejected') financeRefund.status = 'cancelled';
+  if (financeRefund) {
+    if (decision === 'rejected') financeRefund.status = 'cancelled';
+    else {
+      financeRefund.status = 'approved';
+      financeRefund.approvedBy = actor;
+      financeRefund.approvedAt = approval.decidedAt;
+    }
+  }
   if (recipeVersion) {
     recipeVersion.status = decision === 'approved' ? 'approved' : 'rejected';
     recipeVersion.history = list(recipeVersion.history);
@@ -4540,6 +7031,13 @@ function decideApproval(db, approvalId, decision, actor, comment, runtime = {}) 
         approvedAt: branchRollout.activatedAt, approvedBy: actor,
       };
     }
+  }
+  if (financeRefund) {
+    recordRefundAudit(db, financeRefund, decision === 'approved' ? 'approved' : 'rejected', actor, {
+      approvalId: approval.id,
+      comment: String(comment || '').trim().slice(0, 300) || null,
+      decidedAt: approval.decidedAt,
+    });
   }
   return { approval, entry, period, purchaseOrder, vendorInvoiceMatch, threeWayMatch, vendorInvoiceEntry, supplierPayment, supplierPaymentEntry, costAccrual, costPayment, costPaymentEntry, financeRefund, refundEntry, fixedAsset, depreciationRun, payrollRun, payrollPayment, payrollPaymentEntry, recipeVersion, openingBalanceBatch, branchRollout, branchRolloutReadiness, legacyBackfill, legacyBackfillEvent, legacyBackfillPayments, legacyBackfillCosting };
 }
@@ -4595,7 +7093,7 @@ function reverseEntry(db, entryId, actor, reason, date = now()) {
     const cogsEntry = cogsEvent?.journalEntryId ? state.journalEntries.find((entry) => entry.id === cogsEvent.journalEntryId) : null;
     if (cogsEntry?.status === 'posted' && !cogsEntry.reversedById) throw Object.assign(new Error('پیش از برگشت فروش بازسازی‌شده، مصرف انبار و بهای تمام‌شدهٔ وابسته باید کنترل‌شده معکوس شود.'), { code: 'legacy_backfill_has_posted_cogs', status: 409 });
   }
-  const periodCheck = validateOpenPeriod(db, date);
+  const periodCheck = validateOpenPeriod(db, date, original.branchId);
   if (!periodCheck.ok) throw Object.assign(new Error(periodCheck.message), { code: periodCheck.code, status: 409 });
   const reversal = {
     ...original, id: id('fje'), number: `F2-R-${String(state.journalEntries.length + 1).padStart(6, '0')}`,
@@ -4607,6 +7105,16 @@ function reverseEntry(db, entryId, actor, reason, date = now()) {
   };
   state.journalEntries.push(reversal);
   original.reversedById = reversal.id; original.reversedAt = now();
+  try {
+    const accountingEngine = require('./accounting-engine');
+    const linkedEvent = (state.events || []).find((ev) => ev.journalEntryId === original.id && ev.source === 'order.paid');
+    if (linkedEvent?.sourceId) {
+      accountingEngine.reverseOrderSalesJournal(db, linkedEvent.sourceId, {
+        reason: reversalReason || 'برگشت سند در فینانس',
+        userId: actor,
+      });
+    }
+  } catch (_) {}
   if (linkedCostAccrual) linkedCostAccrual.status = 'reversed';
   if (linkedOperatingExpense) {
     linkedOperatingExpense.status = 'reversed'; linkedOperatingExpense.reversalJournalEntryId = reversal.id;
@@ -4713,6 +7221,9 @@ function envelope(data, query = {}, extraMeta = {}) {
     data,
     meta: {
       generatedAt: now(), calculatedAt: now(), currency: 'IRR', displayCurrency: 'TOMAN',
+      apiContractVersion: financeContracts.API_CONTRACT_VERSION,
+      valueContractVersion: valueContracts.VALUE_CONTRACT_VERSION,
+      responseShape: '{ data, meta, error }',
       branchId: query.branchId ? Number(query.branchId) : null, from: query.from || null, to: query.to || null,
       source: 'WESTO Finance V2', ...extraMeta,
     },
@@ -4721,7 +7232,15 @@ function envelope(data, query = {}, extraMeta = {}) {
 }
 
 function errorBody(error, query = {}) {
-  return { data: null, meta: { generatedAt: now(), currency: 'IRR', branchId: query.branchId ? Number(query.branchId) : null }, error: { code: error.code || 'finance_error', message: error.message || 'خطای مالی', details: error.details || null } };
+  return {
+    data: null,
+    meta: {
+      generatedAt: now(), currency: 'IRR', apiContractVersion: financeContracts.API_CONTRACT_VERSION,
+      valueContractVersion: valueContracts.VALUE_CONTRACT_VERSION,
+      responseShape: '{ data, meta, error }', branchId: query.branchId ? Number(query.branchId) : null,
+    },
+    error: { code: error.code || 'finance_error', message: error.message || 'خطای مالی', details: error.details || null },
+  };
 }
 
 function page(rows, query) {
@@ -4744,6 +7263,14 @@ function financeRequestBranchCandidates(db, req) {
   add(req.params?.branchId);
   list(req.body?.lines).forEach((line) => add(line?.branchId));
 
+  // Express normally exposes req.route.path, but a few adapters and test
+  // harnesses only preserve params/path.  Entity scope must not disappear in
+  // that case: an inferred branch for a scoped actor must still be checked
+  // against the order being captured.
+  if (req.params?.orderId != null) {
+    add(list(db.orders).find((row) => String(row.id) === String(req.params.orderId))?.branchId);
+  }
+
   const findBranch = (collection, entityId) => {
     if (entityId == null || entityId === '') return;
     add(list(state[collection]).find((row) => String(row.id) === String(entityId))?.branchId);
@@ -4760,10 +7287,12 @@ function financeRequestBranchCandidates(db, req) {
   else if (routePath.includes('/events/:id')) findBranch('events', req.params?.id);
   else if (routePath.includes('/migration/archive/:id')) findBranch('legacyArchive', req.params?.id);
   else if (routePath.includes('/journal-entries/:id')) findBranch('journalEntries', req.params?.id);
+  else if (routePath.includes('/reconciliation/refunds/:id')) findBranch('refunds', req.params?.id);
   else if (routePath.includes('/bank-statement-lines/:id')) findBranch('reconciliationItems', req.params?.id);
   else if (routePath.includes('/approvals/:id')) {
     add(approvalEntityBranch(state, list(state.approvals).find((row) => row.id === req.params?.id)));
   }
+  if (routePath.includes('/fiscal-periods/:id')) findBranch('fiscalPeriods', req.params?.id);
 
   findBranch('purchaseOrders', req.body?.purchaseOrderId || req.body?.poId);
   findBranch('goodsReceipts', req.body?.goodsReceiptId || req.body?.grnId);
@@ -4772,9 +7301,54 @@ function financeRequestBranchCandidates(db, req) {
   return [...new Set(candidates)];
 }
 
+function assertOrderBranchScope(db, req, selectedBranchId) {
+  if (req.params?.orderId == null || selectedBranchId == null) return;
+  const order = list(db.orders).find((row) => String(row.id) === String(req.params.orderId));
+  // Preserve the route's canonical 404 for an unknown order.  The handler
+  // below owns that response; this guard only validates an existing entity.
+  if (!order) return;
+  const orderBranchId = branchDimension(order);
+  if (orderBranchId == null) {
+    throw Object.assign(new Error('شعبهٔ سفارش برای ثبت مالی مشخص نیست.'), {
+      code: 'order_branch_missing', status: 409,
+    });
+  }
+  if (orderBranchId !== Number(selectedBranchId)) {
+    throw Object.assign(new Error('سفارش به شعبهٔ انتخاب‌شده تعلق ندارد.'), {
+      code: 'order_branch_mismatch', status: 409,
+      details: { orderBranchId, selectedBranchId: Number(selectedBranchId) },
+    });
+  }
+}
+
+// An owner is allowed to inspect multiple branches, but an explicit branch
+// selector on a mutation is still a hard target.  The scope guard above only
+// rejects branches outside a scoped user's assignment; without this second
+// check an owner could send `?branchId=2` while the route entity (for example
+// a vendor invoice or goods receipt) belongs to branch 1 and the domain
+// handler would silently mutate that other entity.  Keep this generic so new
+// branch-aware routes inherit the invariant as their entity candidates are
+// added to financeRequestBranchCandidates().
+function assertSelectedBranchMatchesCandidates(selectedBranchId, candidates) {
+  if (selectedBranchId == null || selectedBranchId === '') return;
+  const selected = Number(selectedBranchId);
+  if (!Number.isSafeInteger(selected) || selected <= 0) return;
+  const mismatched = list(candidates).find((candidate) => Number(candidate) !== selected);
+  if (mismatched == null) return;
+  throw Object.assign(new Error('رکورد مالی به شعبهٔ انتخاب‌شده تعلق ندارد.'), {
+    code: 'finance_branch_entity_mismatch', status: 409,
+    details: { entityBranchId: Number(mismatched), selectedBranchId: selected },
+  });
+}
+
 function financeRouteIsBranchNeutral(req) {
   const routePath = String(req.route?.path || req.path || '').split('?')[0];
-  return routePath.includes('/planning/break-even/preview') || routePath.includes('/fiscal-periods');
+  // Fiscal periods are branch-scoped for every non-owner actor.  Keeping the
+  // create route neutral let a manager with one allowed branch create a
+  // global period by omitting branchId, which then became visible to other
+  // branches as a fallback period.  Owners may still create global periods;
+  // scoped actors are handled by the normal branch inference/requirement.
+  return routePath.includes('/planning/break-even/preview');
 }
 
 function registerFinanceV2Routes({ app, getDb, save, requireCapability, effectiveRole, getStorageStatus = () => null }) {
@@ -4787,12 +7361,13 @@ function registerFinanceV2Routes({ app, getDb, save, requireCapability, effectiv
       Object.prototype.hasOwnProperty.call(db, key) && db[key] !== undefined ? JSON.parse(JSON.stringify(db[key])) : undefined,
     ])) : null;
     try {
+      assertFinanceBranchQuery(db, req);
       const allowedBranchIds = branchScopeForUser(req.user, { role: effectiveRole(req.user) });
+      const requestedBranchIds = financeRequestBranchCandidates(db, req);
       if (allowedBranchIds !== null) {
         if (!allowedBranchIds.length) {
           throw Object.assign(new Error('برای این کاربر هیچ شعبهٔ مالی مجازی تعریف نشده است.'), { code: 'finance_branch_scope_empty', status: 403 });
         }
-        const requestedBranchIds = financeRequestBranchCandidates(db, req);
         const deniedBranchId = requestedBranchIds.find((branchId) => !allowedBranchIds.includes(branchId));
         if (deniedBranchId) {
           throw Object.assign(new Error('دسترسی مالی به شعبهٔ انتخاب‌شده مجاز نیست.'), {
@@ -4809,6 +7384,13 @@ function registerFinanceV2Routes({ app, getDb, save, requireCapability, effectiv
           query.branchId = allowedBranchIds[0];
         }
       }
+      // Validate entity-vs-selection after scoped-user inference.  Without
+      // this check, an adapter that omitted req.route.path could turn a
+      // branch-1 inferred request into a capture of a branch-2 order.
+      const selectedBranchId = req.query?.branchId ?? req.body?.branchId ?? null;
+      assertOrderBranchScope(db, req, selectedBranchId);
+      if (mutating) assertSelectedBranchMatchesCandidates(selectedBranchId, requestedBranchIds);
+      applyFinanceResponseScope(req);
       let key = '';
       let state = null;
       if (mutating) {
@@ -4896,8 +7478,40 @@ function registerFinanceV2Routes({ app, getDb, save, requireCapability, effectiv
     await save({ requireDurable: true });
     res.status(201).json(envelope(operatorAudience ? operatorReceiptPayload(result, false) : { ...result, idempotentReplay: false }, req.query, operatorAudience ? { audience: 'kitchen_inventory_operator' } : {}));
   });
+  const archiveScopeOptions = (req) => {
+    const role = effectiveRole(req.user);
+    const scoped = branchScopeForUser(req.user, { role }) !== null;
+    const branchId = req.query?.branchId ? Number(req.query.branchId) : null;
+    return { branchId, includeUnscoped: !scoped && branchId == null };
+  };
+  const assertArchiveRouteScope = (req, archiveId) => {
+    const { branchId } = archiveScopeOptions(req);
+    if (branchId == null) return;
+    const record = ensureFinanceV2(getDb()).legacyArchive.find((row) => String(row.id) === String(archiveId));
+    if (!record) return;
+    if (record.branchId == null || Number(record.branchId) !== branchId) {
+      throw Object.assign(new Error('رکورد مهاجرت به شعبهٔ انتخاب‌شده تخصیص ندارد.'), {
+        code: 'legacy_archive_branch_scope_denied', status: 403,
+      });
+    }
+  };
+  app.get('/api/admin/v2/finance/contracts', requireCapability('finance.view'), guard((req, res) => {
+    res.json(envelope(financeContracts.contractDocument(), req.query));
+  }));
   app.get('/api/admin/v2/finance/workbench', requireCapability('finance.view'), guard((req, res) => res.json(envelope(workbench(getDb(), req.query, { storageStatus: getStorageStatus() }), req.query))));
   app.get('/api/admin/v2/finance/cutover-readiness', requireCapability('finance.reports.view'), guard((req, res) => res.json(envelope(shadowRunReadiness(getDb(), req.query.branchId ? Number(req.query.branchId) : null, { storageStatus: getStorageStatus() }), req.query))));
+  app.get('/api/admin/v2/finance/cutover-runbook', requireCapability('finance.reports.view'), guard((req, res) => {
+    const branchId = req.query.branchId ? Number(req.query.branchId) : null;
+    const storageStatus = getStorageStatus();
+    const readiness = shadowRunReadiness(getDb(), branchId, { storageStatus });
+    const qualityGate = readiness.gates.find((gate) => gate.id === 'data_quality');
+    const runbook = buildCutoverRunbook({
+      shadowReadiness: readiness,
+      destination: { available: storageStatus?.available === true },
+      qualityIssues: Array.isArray(qualityGate?.value) ? qualityGate.value : [],
+    });
+    res.json(envelope({ ...runbook, readiness }, { ...req.query, branchId }));
+  }));
   app.get('/api/admin/v2/finance/rollout', requireCapability('finance.view'), guard((req, res) => {
     const branchId = Number(req.query.branchId) || Number(getDb().branches?.[0]?.id) || null;
     res.json(envelope(branchRolloutStatus(getDb(), branchId, { storageStatus: getStorageStatus() }), req.query));
@@ -4913,8 +7527,13 @@ function registerFinanceV2Routes({ app, getDb, save, requireCapability, effectiv
     res.status(result.idempotentReplay ? 200 : 201).json(envelope(result, req.query));
   }));
   app.get('/api/admin/v2/finance/sales-cash-bank', requireCapability('finance.view'), guard((req, res) => res.json(envelope(salesCashBank(getDb(), req.query), req.query))));
+  app.get('/api/admin/v2/finance/orders/:orderId/chain', requireCapability('finance.view'), guard((req, res) => {
+    const branchId = req.query.branchId ? Number(req.query.branchId) : null;
+    res.json(envelope(financeOrderChain(getDb(), req.params.orderId, branchId), req.query));
+  }));
   app.get('/api/admin/v2/finance/inventory-items', requireCapability('inventory.view'), guard((req, res) => {
-    res.json(envelope(inventoryItemsView(getDb(), req.query), req.query));
+    const operatorAudience = effectiveRole(req.user) === 'kitchen';
+    res.json(envelope(inventoryItemsView(getDb(), req.query, { hideFinancial: operatorAudience }), req.query, operatorAudience ? { audience: 'kitchen_inventory_operator' } : {}));
   }));
   app.post('/api/admin/v2/finance/inventory-items', requireCapability('inventory.manage'), guard(async (req, res) => {
     const key = String(req.get('Idempotency-Key') || '').trim();
@@ -4954,13 +7573,26 @@ function registerFinanceV2Routes({ app, getDb, save, requireCapability, effectiv
     await save({ requireDurable: true });
     res.status(201).json(envelope(result, req.query));
   }));
-  app.post('/api/admin/v2/finance/orders/:orderId/refund-requests', requireCapability('finance.events.manage'), guard(async (req, res) => {
-    const key = String(req.get('Idempotency-Key') || '').trim();
-    if (!key) throw Object.assign(new Error('کلید Idempotency-Key الزامی است.'), { code: 'idempotency_key_required', status: 400 });
+  // Cashiers/accountants may request a refund, but the separate approval and
+  // disbursement routes retain their stricter capabilities and controls.
+  app.post('/api/admin/v2/finance/orders/:orderId/refund-requests', requireCapability(['payments.refund.request', 'finance.events.manage']), guard(async (req, res) => {
+    const rawKey = String(req.get('Idempotency-Key') || '');
+    if (!rawKey.trim()) throw Object.assign(new Error('کلید Idempotency-Key الزامی است.'), { code: 'idempotency_key_required', status: 400 });
+    const key = normalizeIdempotencyKey(rawKey);
     const db = getDb(); const state = ensureFinanceV2(db); const replay = state.idempotency[key];
     if (replay) {
+      if (replay.kind !== 'customer_refund_request') {
+        throw Object.assign(new Error('این Idempotency-Key قبلاً برای عملیات دیگری مصرف شده است؛ برای درخواست بازپرداخت از کلید تازه استفاده کنید.'), {
+          code: 'idempotency_key_payload_mismatch', status: 409,
+        });
+      }
       const refund = state.refunds.find((row) => row.id === replay.id);
-      const approval = refund ? state.approvals.find((row) => row.entityType === 'finance_refund' && row.entityId === refund.id) : null;
+      if (!refund || String(refund.idempotencyKey || '') !== key) {
+        throw Object.assign(new Error('رکورد تکرارنشدنی بازپرداخت با درخواست ثبت‌شده سازگار نیست؛ از ثبت دوباره خودداری کنید.'), {
+          code: 'refund_idempotency_record_inconsistent', status: 409,
+        });
+      }
+      const approval = state.approvals.find((row) => row.entityType === 'finance_refund' && row.entityId === refund.id) || null;
       return res.json(envelope({ refund, approval, idempotentReplay: true }, req.query));
     }
     const result = requestOrderRefund(db, req.params.orderId, req.body || {}, req.user.phone, key);
@@ -4973,7 +7605,11 @@ function registerFinanceV2Routes({ app, getDb, save, requireCapability, effectiv
     if (!key) throw Object.assign(new Error('کلید Idempotency-Key الزامی است.'), { code: 'idempotency_key_required', status: 400 });
     const db = getDb(); const state = ensureFinanceV2(db); const replay = state.idempotency[key];
     if (replay) return res.json(envelope({ purchaseOrder: state.purchaseOrders.find((row) => row.id === replay.id), idempotentReplay: true }, req.query));
-    const purchaseOrder = createPurchaseOrderV2(db, req.body || {}, req.user.phone);
+    // The branch guard may infer a single allowed branch from the authenticated
+    // user and expose it through the query.  Carry that decision into the
+    // mutation payload; otherwise a scoped cashier/manager can be rejected by
+    // the domain validator even though the request is safely branch-scoped.
+    const purchaseOrder = createPurchaseOrderV2(db, { ...(req.body || {}), branchId: req.body?.branchId || req.query.branchId }, req.user.phone);
     state.idempotency[key] = { kind: 'purchase_order', id: purchaseOrder.id, at: now() }; await save({ requireDurable: true });
     res.status(201).json(envelope({ purchaseOrder, idempotentReplay: false }, req.query));
   }));
@@ -5069,7 +7705,7 @@ function registerFinanceV2Routes({ app, getDb, save, requireCapability, effectiv
       const approval = recipeVersion ? state.approvals.find((row) => row.id === recipeVersion.approvalId) || null : null;
       return res.json(envelope({ recipeVersion, approval, idempotentReplay: true }, req.query, { audience: 'kitchen_inventory_operator' }));
     }
-    const result = requestRecipeVersion(db, req.body || {}, req.user.phone);
+    const result = requestRecipeVersion(db, { ...(req.body || {}), branchId: req.body?.branchId || req.query.branchId }, req.user.phone);
     state.idempotency[key] = { kind: 'recipe_version_request', id: result.recipeVersion.id, at: now() };
     await save({ requireDurable: true });
     res.status(201).json(envelope({ ...result, idempotentReplay: false }, req.query, { audience: 'kitchen_inventory_operator' }));
@@ -5077,13 +7713,23 @@ function registerFinanceV2Routes({ app, getDb, save, requireCapability, effectiv
   const inventoryMutation = (kind) => guard(async (req, res) => {
     const key = String(req.get('Idempotency-Key') || '').trim();
     if (!key) throw Object.assign(new Error('کلید Idempotency-Key الزامی است.'), { code: 'idempotency_key_required', status: 400 });
-    const result = recordInventoryOperationV2(getDb(), kind, req.body || {}, req.user.phone, key);
+    const result = recordInventoryOperationV2(getDb(), kind, { ...(req.body || {}), branchId: req.body?.branchId || req.query.branchId }, req.user.phone, key);
     await save({ requireDurable: true });
     res.status(result.idempotentReplay ? 200 : 201).json(envelope(result, req.query, { audience: 'kitchen_inventory_operator' }));
   });
   app.post('/api/kitchen/inventory/waste', requireCapability('inventory.operations'), inventoryMutation('waste'));
   app.post('/api/kitchen/inventory/stock-counts', requireCapability('inventory.operations'), inventoryMutation('stock_count'));
   app.post('/api/kitchen/inventory/production-batches', requireCapability('inventory.operations'), inventoryMutation('production_batch'));
+  app.post('/api/admin/v2/finance/inventory-movements', requireCapability('inventory.operations'), guard(async (req, res) => {
+    const key = String(req.get('Idempotency-Key') || '').trim();
+    if (!key) throw Object.assign(new Error('کلید Idempotency-Key الزامی است.'), { code: 'idempotency_key_required', status: 400 });
+    const mode = String(req.body?.mode || 'OUT').toUpperCase();
+    if (!['OUT', 'TRANSFER'].includes(mode)) throw Object.assign(new Error('نوع خروج یا انتقال معتبر نیست.'), { code: 'inventory_movement_mode_invalid', status: 400 });
+    const kind = mode === 'TRANSFER' ? 'stock_transfer' : 'stock_issue';
+    const result = recordInventoryOperationV2(getDb(), kind, { ...(req.body || {}), branchId: req.body?.branchId || req.query.branchId }, req.user.phone, key);
+    await save({ requireDurable: true });
+    res.status(result.idempotentReplay ? 200 : 201).json(envelope(result, req.query));
+  }));
   app.post('/api/admin/v2/finance/inventory-operations/:eventId/reversal', requireCapability('finance.approve'), guard(async (req, res) => {
     const key = String(req.get('Idempotency-Key') || '').trim();
     if (!key) throw Object.assign(new Error('کلید Idempotency-Key الزامی است.'), { code: 'idempotency_key_required', status: 400 });
@@ -5106,7 +7752,7 @@ function registerFinanceV2Routes({ app, getDb, save, requireCapability, effectiv
       if (!plan) throw Object.assign(new Error('نتیجهٔ قبلی برنامهٔ سودآوری یافت نشد.'), { code: 'break_even_plan_idempotency_missing', status: 409 });
       return res.json(envelope({ plan: breakEvenPlanView(plan), idempotentReplay: true }, req.query));
     }
-    const result = upsertBreakEvenPlan(db, req.body || {}, req.user?.phone || null);
+    const result = upsertBreakEvenPlan(db, { ...(req.body || {}), branchId: req.body?.branchId || req.query.branchId }, req.user?.phone || null);
     state.idempotency[key] = { kind: 'break_even_plan_upsert', id: result.plan.id, at: now() };
     await save({ requireDurable: true });
     res.status(result.created ? 201 : 200).json(envelope({ ...result, idempotentReplay: false }, req.query));
@@ -5179,7 +7825,14 @@ function registerFinanceV2Routes({ app, getDb, save, requireCapability, effectiv
     if (!key) throw Object.assign(new Error('کلید Idempotency-Key الزامی است.'), { code: 'idempotency_key_required', status: 400 });
     const db = getDb(); const state = ensureFinanceV2(db); const replay = state.idempotency[key];
     if (replay) return res.json(envelope({ period: state.fiscalPeriods.find((period) => period.id === replay.id), idempotentReplay: true }, req.query));
-    const period = createFiscalPeriod(db, req.body || {}, req.user.phone);
+    // The branch guard may infer a single allowed branch into the query when
+    // a scoped actor omits branchId. Carry that resolved scope into the
+    // persisted period; otherwise the period would be stored as global even
+    // though the request was authorized only for one branch.
+    const period = createFiscalPeriod(db, {
+      ...(req.body || {}),
+      branchId: req.body?.branchId ?? req.query?.branchId ?? null,
+    }, req.user.phone);
     state.idempotency[key] = { kind: 'fiscal_period_create', id: period.id, at: now() };
     await save({ requireDurable: true }); res.status(201).json(envelope({ period, idempotentReplay: false }, req.query));
   }));
@@ -5191,7 +7844,10 @@ function registerFinanceV2Routes({ app, getDb, save, requireCapability, effectiv
     if (!preliminary && !['owner', 'manager'].includes(role)) throw Object.assign(new Error('بستن نهایی فقط برای مالک یا مدیر مالی مجاز است.'), { code: 'finance_final_close_approver_required', status: 403 });
     const db = getDb(); const state = ensureFinanceV2(db); const replay = state.idempotency[key];
     if (replay) return res.json(envelope({ period: state.fiscalPeriods.find((period) => period.id === replay.id), idempotentReplay: true }, req.query));
-    const result = closeFiscalPeriod(db, req.params.id, req.user.phone, { preliminary });
+    const result = closeFiscalPeriod(db, req.params.id, req.user.phone, {
+      preliminary,
+      branchId: req.body?.branchId || req.query?.branchId || null,
+    });
     state.idempotency[key] = { kind: preliminary ? 'fiscal_period_preliminary_close' : 'fiscal_period_final_close', id: result.period.id, at: now() };
     await save({ requireDurable: true }); res.json(envelope({ ...result, idempotentReplay: false }, req.query));
   }));
@@ -5217,6 +7873,14 @@ function registerFinanceV2Routes({ app, getDb, save, requireCapability, effectiv
     const db = getDb(); const order = list(db.orders).find((item) => String(item.id) === String(req.params.orderId));
     if (!order) throw Object.assign(new Error('سفارش یافت نشد.'), { code: 'order_not_found', status: 404 });
     const result = capturePaidOrder(db, order, { actor: req.user.phone, idempotencyKey: key });
+    if (!result?.journalEntry || result.journalEntry.status !== 'posted') {
+      const captureCode = result?.event?.error?.code || result?.reason || 'finance_capture_blocked';
+      throw Object.assign(new Error('ثبت پرداخت انجام نشد چون سند فروش در دفتر مالی ثبت نشد.'), {
+        code: captureCode,
+        status: 409,
+        details: result?.event?.error || null,
+      });
+    }
     await save({ requireDurable: true }); res.status(result.idempotentReplay ? 200 : 201).json(envelope(result, req.query));
   }));
   app.post('/api/admin/v2/finance/events/cogs/retry-ready', requireCapability('finance.events.manage'), guard(async (req, res) => {
@@ -5252,19 +7916,26 @@ function registerFinanceV2Routes({ app, getDb, save, requireCapability, effectiv
   }));
   app.get('/api/admin/v2/finance/migration/archive', requireCapability('finance.view'), guard((req, res) => {
     const state = ensureFinanceV2(getDb());
-    let rows = state.legacyArchive.filter((row) => !req.query.branchId || row.branchId == null || Number(row.branchId) === Number(req.query.branchId));
+    const archiveScope = archiveScopeOptions(req);
+    let rows = state.legacyArchive.filter((row) => {
+      if (archiveScope.branchId == null) return true;
+      if (row.branchId == null) return archiveScope.includeUnscoped;
+      return Number(row.branchId) === archiveScope.branchId;
+    });
     if (req.query.trustStatus) rows = rows.filter((row) => row.trustStatus === req.query.trustStatus);
     if (req.query.decision) rows = rows.filter((row) => row.decision === req.query.decision);
     rows.sort((a, b) => new Date(b.archivedAt) - new Date(a.archivedAt));
     const result = page(rows, req.query);
-    res.json(envelope(result.rows, req.query, { pagination: result, summary: legacyArchiveSummary(getDb(), req.query.branchId) }));
+    res.json(envelope(result.rows, req.query, { pagination: result, summary: legacyArchiveSummary(getDb(), archiveScope.branchId, archiveScope) }));
   }));
   app.post('/api/admin/v2/finance/migration/classify', requireCapability('finance.events.manage'), guard(async (req, res) => {
     const key = String(req.get('Idempotency-Key') || '').trim();
     if (!key) throw Object.assign(new Error('کلید Idempotency-Key الزامی است.'), { code: 'idempotency_key_required', status: 400 });
     const db = getDb(); const state = ensureFinanceV2(db); const replay = state.idempotency[key];
-    if (replay) return res.json(envelope({ archive: legacyArchiveSummary(db, req.query.branchId), idempotentReplay: true }, req.query));
+    const archiveScope = archiveScopeOptions(req);
+    if (replay) return res.json(envelope({ archive: legacyArchiveSummary(db, archiveScope.branchId, archiveScope), idempotentReplay: true }, req.query));
     const result = classifyAndArchiveLegacy(db, req.user.phone, req.query.branchId);
+    result.archive = legacyArchiveSummary(db, archiveScope.branchId, archiveScope);
     state.idempotency[key] = { kind: 'legacy_classification', id: 'legacy_archive', at: now() }; await save({ requireDurable: true });
     res.status(201).json(envelope({ ...result, idempotentReplay: false }, req.query));
   }));
@@ -5272,18 +7943,21 @@ function registerFinanceV2Routes({ app, getDb, save, requireCapability, effectiv
     const key = String(req.get('Idempotency-Key') || '').trim();
     if (!key) throw Object.assign(new Error('کلید Idempotency-Key الزامی است.'), { code: 'idempotency_key_required', status: 400 });
     const db = getDb(); const state = ensureFinanceV2(db); const replay = state.idempotency[key];
+    assertArchiveRouteScope(req, req.params.id);
     if (replay) return res.json(envelope({ record: state.legacyArchive.find((row) => row.id === replay.id), idempotentReplay: true }, req.query));
     const result = decideLegacyArchive(db, req.params.id, req.body || {}, req.user.phone, effectiveRole(req.user));
     state.idempotency[key] = { kind: 'legacy_archive_decision', id: result.record.id, at: now() }; await save({ requireDurable: true });
     res.json(envelope({ ...result, idempotentReplay: false }, req.query));
   }));
   app.post('/api/admin/v2/finance/migration/archive/:id/backfill-preview', requireCapability('finance.view'), guard((req, res) => {
+    assertArchiveRouteScope(req, req.params.id);
     res.json(envelope(legacyOrderBackfillPreview(getDb(), req.params.id), req.query, { source: 'read-only legacy backfill preview' }));
   }));
   app.post('/api/admin/v2/finance/migration/archive/:id/backfill-request', requireCapability('finance.journal.create'), guard(async (req, res) => {
     const key = String(req.get('Idempotency-Key') || '').trim();
     if (!key) throw Object.assign(new Error('کلید Idempotency-Key الزامی است.'), { code: 'idempotency_key_required', status: 400 });
     const db = getDb(); const state = ensureFinanceV2(db); const replay = state.idempotency[key];
+    assertArchiveRouteScope(req, req.params.id);
     if (replay) return res.json(envelope({ entry: state.journalEntries.find((entry) => entry.id === replay.id), idempotentReplay: true }, req.query));
     const result = requestLegacyOrderBackfill(db, req.params.id, req.user.phone);
     state.idempotency[key] = { kind: 'legacy_order_backfill_request', id: result.entry.id, at: now() }; await save({ requireDurable: true });
@@ -5319,9 +7993,42 @@ function registerFinanceV2Routes({ app, getDb, save, requireCapability, effectiv
     await save({ requireDurable: true }); res.status(201).json(envelope({ entry, idempotentReplay: false }, req.query));
   }));
   app.get('/api/admin/v2/finance/reconciliation', requireCapability('finance.reconcile'), guard((req, res) => {
-    const db = getDb(); const quality = dataQuality(db, req.query.branchId ? Number(req.query.branchId) : null);
+    const db = getDb();
+    // Keep the unmatched-order queue on the same accounting-period scope as
+    // the summary. Without from/to here, a selected period could show every
+    // historical uncaptured order while its totals correctly showed only the
+    // selected dates.
+    const quality = dataQuality(db, req.query.branchId ? Number(req.query.branchId) : null, req.query);
     const sessions = list(db.cashSessions).filter((row) => sameBranch(row, req.query.branchId));
-    res.json(envelope({ summary: reportSnapshot(db, req.query), cashSessions: sessions, settlementDuplicates: quality.settlementDuplicates, unmatchedOrders: quality.uncaptured.map((order) => ({ id: order.id, orderNo: order.orderNo, branchId: order.branchId, amountIrr: irrFromLegacyToman(order.total), createdAt: order.createdAt })) }, req.query));
+    res.json(envelope({ summary: reportSnapshot(db, req.query), cashSessions: sessions, settlementDuplicates: quality.settlementDuplicates, unmatchedOrders: quality.uncaptured.map((order) => ({ id: order.id, orderNo: order.orderNo, branchId: order.branchId, amountIrr: irrFromLegacyToman(order.total), createdAt: order.createdAt, paidAt: order.paidAt || null, accountingDate: orderAccountingDate(order) })) }, req.query));
+  }));
+  app.post('/api/admin/v2/finance/reconciliation/refunds/:id/match', requireCapability('finance.reconcile'), guard(async (req, res) => {
+    const rawKey = String(req.get('Idempotency-Key') || '');
+    if (!rawKey.trim()) throw Object.assign(new Error('کلید Idempotency-Key الزامی است.'), { code: 'idempotency_key_required', status: 400 });
+    const key = normalizeIdempotencyKey(rawKey);
+    const db = getDb(); const state = ensureFinanceV2(db); const replay = state.idempotency[key];
+    if (replay) {
+      if (replay.kind !== 'refund_disbursement_reconciliation') {
+        throw Object.assign(new Error('این کلید برای عملیات دیگری مصرف شده است.'), { code: 'idempotency_key_payload_mismatch', status: 409 });
+      }
+      const reconciliation = state.reconciliationItems.find((row) => row.id === replay.id) || null;
+      const refundId = reconciliation?.refundId || reconciliation?.details?.refundId;
+      const refund = refundId ? state.refunds.find((row) => String(row.id) === String(refundId)) || null : null;
+      const journalEntryId = refund?.journalEntryId
+        || state.events.find((row) => row.source === 'order.refund' && String(row.sourceId) === String(refundId))?.journalEntryId;
+      const journalEntry = journalEntryId ? state.journalEntries.find((row) => row.id === journalEntryId) || null : null;
+      return res.json(envelope({ refund, reconciliation, journalEntry, idempotentReplay: true }, req.query));
+    }
+    const refund = state.refunds.find((row) => String(row.id) === String(req.params.id));
+    if (!refund) throw Object.assign(new Error('درخواست برگشت وجه یافت نشد.'), { code: 'finance_refund_not_found', status: 404 });
+    const journalEntry = postApprovedRefund(db, refund, req.user.phone, req.body?.evidenceId);
+    const reconciliation = state.reconciliationItems.find((row) => row.kind === 'refund' && String(row.refundId || '') === String(refund.id)) || null;
+    if (!journalEntry || !reconciliation || reconciliation.status !== 'matched') {
+      throw Object.assign(new Error('برگشت وجه بدون ثبت تطبیق خروجی قطعی نشد.'), { code: 'refund_disbursement_reconciliation_incomplete', status: 409 });
+    }
+    state.idempotency[key] = { kind: 'refund_disbursement_reconciliation', id: reconciliation.id, at: now() };
+    await save({ requireDurable: true });
+    res.status(201).json(envelope({ refund, reconciliation, journalEntry, idempotentReplay: false }, req.query));
   }));
   app.post('/api/admin/v2/finance/reconciliation/settlements', requireCapability('finance.reconcile'), guard(async (req, res) => {
     const key = String(req.get('Idempotency-Key') || '').trim();
@@ -5380,7 +8087,10 @@ function registerFinanceV2Routes({ app, getDb, save, requireCapability, effectiv
     const role = effectiveRole(req.user); if (!['owner', 'manager'].includes(role)) throw Object.assign(new Error('تأیید فقط برای مالک یا مدیر مالی مجاز است.'), { code: 'finance_approver_required', status: 403 });
     const db = getDb(); const state = ensureFinanceV2(db); const replay = state.idempotency[key];
     if (replay) return res.json(envelope({ approval: state.approvals.find((approval) => approval.id === replay.id), idempotentReplay: true }, req.query));
-    const result = decideApproval(db, req.params.id, String(req.body?.decision || ''), req.user.phone, req.body?.comment, { storageStatus: getStorageStatus() });
+    const result = decideApproval(db, req.params.id, String(req.body?.decision || ''), req.user.phone, req.body?.comment, {
+      storageStatus: getStorageStatus(),
+      branchId: req.query?.branchId ?? req.body?.branchId ?? null,
+    });
     state.idempotency[key] = { kind: 'approval_decision', id: result.approval.id, at: now() }; await save({ requireDurable: true }); res.json(envelope({ ...result, idempotentReplay: false }, req.query));
   }));
   app.get('/api/admin/v2/finance/search', requireCapability('finance.view'), guard((req, res) => {
@@ -5388,9 +8098,34 @@ function registerFinanceV2Routes({ app, getDb, save, requireCapability, effectiv
     const branchId = req.query.branchId ? Number(req.query.branchId) : null;
     if (term.length < 2) return res.json(envelope([], req.query));
     const matches = [];
-    list(db.orders).filter((row) => sameBranch(row, branchId)).forEach((row) => { if (`${row.id} ${row.orderNo || ''} ${row.total || ''}`.toLowerCase().includes(term)) matches.push({ kind: 'order', id: row.id, branchId: row.branchId, label: row.orderNo || `سفارش ${row.id}`, amountIrr: irrFromLegacyToman(row.total) }); });
-    state.journalEntries.filter((row) => sameBranch(row, branchId)).forEach((row) => { if (`${row.id} ${row.number} ${row.description} ${row.debitIrr}`.toLowerCase().includes(term)) matches.push({ kind: 'journal_entry', id: row.id, branchId: row.branchId, label: row.number, amountIrr: row.debitIrr }); });
-    list(db.accounting?.vendors).filter((row) => !branchId || row.branchId == null || sameBranch(row, branchId)).forEach((row) => { if (`${row.id} ${row.name || ''} ${row.nameFa || ''} ${row.balance || ''}`.toLowerCase().includes(term)) matches.push({ kind: 'vendor', id: row.id, branchId: row.branchId ?? null, label: row.nameFa || row.name, amountIrr: irrFromLegacyToman(row.balance) }); });
+    const pageSize = Math.min(100, Math.max(1, Number(req.query.pageSize) || 25));
+    // Search results deep-link into the sales/finance workspace, whose
+    // canonical collection is paid orders only. Do not route open, partial,
+    // cancelled or otherwise unpaid operational orders to a misleading
+    // accounting detail page.
+    const searchableOrders = list(db.orders)
+      .filter((row) => sameBranch(row, branchId) && paid(row) && orderInAccountingRange(row, req.query.from, req.query.to))
+      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    searchableOrders.forEach((row, index) => {
+      if (`${row.id} ${row.orderNo || ''} ${row.total || ''}`.toLowerCase().includes(term)) {
+        matches.push({
+          kind: 'order', id: row.id, branchId: row.branchId, label: row.orderNo || `سفارش ${row.id}`,
+          amountIrr: irrFromLegacyToman(row.total), targetPage: Math.floor(index / pageSize) + 1,
+        });
+      }
+    });
+    state.journalEntries
+      .filter((row) => sameBranch(row, branchId) && inRange(row, req.query.from, req.query.to, 'date'))
+      .sort((a, b) => new Date(b.date) - new Date(a.date))
+      .forEach((row, index) => {
+        if (`${row.id} ${row.number} ${row.description} ${row.debitIrr}`.toLowerCase().includes(term)) {
+          matches.push({
+            kind: 'journal_entry', id: row.id, branchId: row.branchId, label: row.number,
+            amountIrr: row.debitIrr, targetPage: Math.floor(index / pageSize) + 1,
+          });
+        }
+      });
+    list(db.accounting?.vendors).filter((row) => branchId == null || sameBranch(row, branchId)).forEach((row) => { if (`${row.id} ${row.name || ''} ${row.nameFa || ''} ${row.balance || ''}`.toLowerCase().includes(term)) matches.push({ kind: 'vendor', id: row.id, branchId: row.branchId ?? null, label: row.nameFa || row.name, amountIrr: irrFromLegacyToman(row.balance) }); });
     res.json(envelope(matches.slice(0, 50), req.query));
   }));
 }
@@ -5398,6 +8133,7 @@ function registerFinanceV2Routes({ app, getDb, save, requireCapability, effectiv
 module.exports = {
   registerFinanceV2Routes,
   ensureFinanceV2,
+  captureOrderPaymentReceipt,
   capturePaidOrder,
   captureOrderCogs,
   retryReadyOrderCogs,
@@ -5432,6 +8168,7 @@ module.exports = {
   captureCashClose,
   recordInventoryOperationV2,
   reverseInventoryOperationV2,
+  reverseOrderCogsAndInventory,
   resolveEvent,
   classifyAndArchiveLegacy,
   legacyMigrationReadiness,
@@ -5440,6 +8177,9 @@ module.exports = {
   legacyOrderBackfillPreview,
   requestLegacyOrderBackfill,
   recordEvent,
+  recordWalletTopup,
+  captureWalletTopup,
+  captureWalletAdjustment,
   createDraft,
   submitDraft,
   decideApproval,
@@ -5454,6 +8194,7 @@ module.exports = {
   reportSnapshot,
   shadowRunReadiness,
   salesCashBank,
+  financeOrderChain,
   purchasesPayables,
   inventoryItemsView,
   createInventoryItemV2,
@@ -5462,6 +8203,7 @@ module.exports = {
   createOperatingExpenseV2,
   menuItemUsesInventoryV2,
   menuItemAvailability,
+  buildOrderInventoryReservationSnapshot,
   costingInventory,
   kitchenInventory,
   requestRecipeVersion,
@@ -5473,5 +8215,12 @@ module.exports = {
   financialReports,
   salesLines,
   envelope,
-  __test: { irrFromLegacyToman, normalizeTenderRows, assertBalanced, periodForDate, postEventJournal, suggestedBreakEvenPlan, chooseContributionSource },
+  contractDocument: financeContracts.contractDocument,
+  eventSourceContract: financeContracts.eventSourceContract,
+  __test: {
+    irrFromLegacyToman, normalizeTenderRows, assertBalanced, periodForDate, postEventJournal,
+    suggestedBreakEvenPlan, chooseContributionSource, recordWalletTopup, captureWalletTopup,
+    captureWalletAdjustment, materializeOrderPayments, refundRequestFingerprint,
+    paymentReceiptEvidence, paymentReceiptDebitLines,
+  },
 };

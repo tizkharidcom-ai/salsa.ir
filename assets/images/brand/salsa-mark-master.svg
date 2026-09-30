@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 500" role="img" aria-labelledby="title desc">
+  <title id="title">SALSA modular S mark</title>
+  <desc id="desc">A modular red S mark built from rounded system tiles and a continuous negative-space path.</desc>
+  <g fill="#C62828">
+    <rect x="96" y="132" width="126" height="126" rx="38"/>
+    <rect x="188" y="66" width="126" height="126" rx="38"/>
+    <rect x="316" y="66" width="104" height="104" rx="31"/>
+    <rect x="74" y="306" width="104" height="104" rx="31"/>
+    <rect x="202" y="328" width="126" height="126" rx="38"/>
+    <rect x="318" y="214" width="126" height="126" rx="38"/>
+    <rect x="164" y="188" width="104" height="104" rx="31"/>
+    <rect x="264" y="242" width="104" height="104" rx="31"/>
+  </g>
+  <path d="M250 154 C205 154 187 179 197 207 C207 235 247 239 265 263 C284 289 271 323 237 335 C218 342 202 338 189 326"
+        fill="none" stroke="#F8F5F0" stroke-width="48" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

@@ -6,11 +6,72 @@
  */
 
 window.renderGM08 = function() {
-  const store = window.prototypeStore || window.GMStore;
-  const features = store ? store.getFeatures() : [];
-  const suspendedFeatures = features.filter(f => f.globallyDisabled);
+  const view = window.GMViews?.GM08;
+  if (!view?.catalogSnapshot) {
+    if (view && !view.loading && !view.loadError) view.loadServerSnapshot();
+    if (view?.loadError) return `
+      <div class="empty-state" role="alert">
+        <h2>وضعیت سرور بارگذاری نشد</h2>
+        <p>${view.escapeHtml(view.loadError)}</p>
+        <button type="button" class="btn btn-secondary" onclick="window.GMViews.GM08.loadServerSnapshot({ force: true })">تلاش دوباره</button>
+      </div>`;
+    return '<div class="empty-state" role="status"><h2>در حال دریافت کاتالوگ و وضعیت از کنترل‌پلن…</h2></div>';
+  }
+  const { features, killSwitches } = view.catalogSnapshot;
+  const globalMutationsAvailable = view.catalogSnapshot.globalMutationsAvailable === true;
+  const activeSwitchFor = key => killSwitches.find(record => record.status === 'active' &&
+    (record.featureKey === key || record.featureKeys?.includes(key)));
+  const decoratedFeatures = features.map(feature => {
+    const killSwitch = activeSwitchFor(feature.key);
+    return {
+      ...feature,
+      globallyDisabled: Boolean(killSwitch),
+      maintenanceReason: killSwitch?.reason || '',
+      distributionStatus: killSwitch?.distributionStatus || null,
+      distributionStatusLabel: !killSwitch ? '' : killSwitch.distributionStatus === 'failed'
+        ? 'آخرین تلاش ناموفق'
+        : killSwitch.distributionStatus === 'pending'
+          ? 'در انتظار ارسال'
+          : 'ACK سراسری همهٔ cellها موجود نیست'
+    };
+  });
+  const suspendedFeatures = decoratedFeatures.filter(f => f.globallyDisabled);
+
+  // Category counts
+  const categoryCounts = {};
+  decoratedFeatures.forEach(f => {
+    categoryCounts[f.category] = (categoryCounts[f.category] || 0) + 1;
+  });
+  const categoryNames = {
+    core: 'هسته', catalog: 'کاتالوگ', orders: 'سفارش‌ها', floor: 'سالن', kitchen: 'آشپزخانه',
+    booking: 'رزرو', delivery: 'تحویل', payments: 'پرداخت', finance: 'مالی', stock: 'انبار',
+    crm: 'CRM', marketing: 'بازاریابی', content: 'محتوا', brand: 'برند', insights: 'گزارش‌ها',
+    staff: 'پرسنل', platform: 'پلتفرم'
+  };
+
+  if (features.length === 0) return `
+    <div class="empty-state" role="status">
+      <h2>کاتالوگ سرور خالی است</h2>
+      <p>هیچ قابلیتی از کاتالوگ کنترل‌پلن دریافت نشد؛ دادهٔ محلی یا نمونه جایگزین نمایش داده نمی‌شود.</p>
+    </div>`;
 
   return `
+    ${!globalMutationsAvailable ? `
+      <div class="card" role="status" style="margin-bottom:1rem; border-color:var(--state-warning, #b54708);">
+        <strong>توقف سراسری در دسترس نیست</strong>
+        <div style="margin-top:.35rem; color:var(--text-secondary); line-height:1.6;">
+          کنترل‌پلن هنوز fan-out پایدار به همهٔ cellها و تأیید دریافت آن‌ها را ندارد؛ دکمه‌های توقف و بازگردانی غیرفعال‌اند و هیچ تغییر نیمه‌سراسری ثبت نمی‌شود.
+        </div>
+      </div>
+    ` : ''}
+    ${window.GMViews?.GM08?.mutationError ? `
+      <div class="card" role="alert" aria-live="assertive" style="margin-bottom: 1rem; border-color: var(--state-danger, #b42318);">
+        <div style="display:flex; align-items:center; justify-content:space-between; gap:.75rem; flex-wrap:wrap;">
+          <span>${window.GMViews.GM08.escapeHtml(window.GMViews.GM08.mutationError)}</span>
+          <button type="button" class="btn btn-danger btn-sm" onclick="window.GMViews.GM08.retryLastMutation()">تلاش دوباره</button>
+        </div>
+      </div>
+    ` : ''}
     <div class="page-header gm08-page">
       <div class="page-title-group">
         <nav class="breadcrumb-nav" aria-label="مسیر راهبری">
@@ -18,61 +79,77 @@ window.renderGM08 = function() {
           <span class="breadcrumb-separator">/</span>
           <span class="breadcrumb-current" aria-current="page">کاتالوگ قابلیت‌ها</span>
         </nav>
-        <div style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
-          <h1>
+        <div style="display: flex; align-items: center; gap: 0.65rem; flex-wrap: wrap;">
+          <h1 style="display: flex; align-items: center; gap: 0.5rem; margin: 0;">
             کاتالوگ سرویس‌های پلتفرم
             <span class="page-code-badge">GM-08</span>
           </h1>
           <span class="badge badge-scope-global"><span class="status-dot dot-purple"></span> کلان پلتفرم</span>
           ${suspendedFeatures.length > 0 ? `
-            <span class="badge badge-danger" style="background: rgba(239, 68, 68, 0.15); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.35);">
-              <span class="status-dot dot-red pulse"></span> ${suspendedFeatures.length.toLocaleString('fa-IR')} ماژول در تعلیق موقت
+            <span class="badge badge-danger" style="background: rgba(239, 68, 68, 0.15); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.35); font-weight: 600;">
+              <span class="status-dot dot-red pulse"></span> ${suspendedFeatures.length.toLocaleString('fa-IR')} توقف ثبت‌شده در کنترل‌پلن
             </span>
-          ` : ''}
+          ` : `
+            <span class="badge badge-success" style="font-weight: 600;">
+              <span class="status-dot dot-green"></span> هیچ توقف اضطراری در سرور ثبت نشده
+            </span>
+          `}
         </div>
-        <p>فهرست مرجع ${features.length.toLocaleString('fa-IR')} قابلیت قابل واگذاری با کلید قطع اضطراری سراسری (Kill-Switch) و تحلیل وابستگی‌ها</p>
+        <p>${features.length.toLocaleString('fa-IR')} قابلیت در کاتالوگ سرور؛ وضعیت عملیاتی هر سرویس جداگانه سنجیده می‌شود.</p>
       </div>
       <div class="header-actions">
-        <a href="#gm-15-simulator" class="btn btn-primary">
-          شبیه‌ساز فروش افزونه
+        <a href="#gm-15-simulator" class="btn btn-primary" style="display: inline-flex; align-items: center; gap: 0.4rem;">
+          <span>🎯</span>
+          <span>شبیه‌ساز فروش افزونه</span>
         </a>
-        <button class="btn btn-secondary" onclick="window.GMViews.GM08.openDependencyGraphDrawer()">
-          بررسی گراف وابستگی
+        <button class="btn btn-secondary" onclick="window.GMViews.GM08.openDependencyGraphDrawer()" style="display: inline-flex; align-items: center; gap: 0.4rem;">
+          <span>🌲</span>
+          <span>بررسی گراف وابستگی</span>
         </button>
       </div>
     </div>
 
     ${suspendedFeatures.length > 0 ? `
-    <div class="card" style="margin-bottom: 1.25rem; border-color: rgba(239, 68, 68, 0.4); background: linear-gradient(135deg, rgba(239, 68, 68, 0.08) 0%, rgba(245, 158, 11, 0.05) 100%);">
-      <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.75rem;">
-        <div style="display: flex; align-items: center; gap: 0.75rem;">
-          <span style="font-size: 1.5rem;">⚠️</span>
+    <div class="card" style="margin-bottom: 1.25rem; border-color: rgba(239, 68, 68, 0.4); background: linear-gradient(135deg, rgba(239, 68, 68, 0.09) 0%, rgba(245, 158, 11, 0.05) 100%); border-radius: 12px; box-shadow: 0 4px 14px rgba(239, 68, 68, 0.08);">
+      <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.85rem; padding: 0.35rem 0.25rem;">
+        <div style="display: flex; align-items: center; gap: 0.85rem;">
+          <div style="width: 44px; height: 44px; border-radius: 10px; background: rgba(239, 68, 68, 0.15); display: flex; align-items: center; justify-content: center; font-size: 1.35rem; flex-shrink: 0;">
+            ⚠️
+          </div>
           <div>
             <div style="font-size: 0.95rem; font-weight: 700; color: var(--state-danger);">
-              هشدار پلتفرم: ${suspendedFeatures.length.toLocaleString('fa-IR')} قابلیت در وضعیت تعلیق موقت جهت به‌روزرسانی (Global Kill-Switch) قرار دارند.
+              هشدار پلتفرم: ${suspendedFeatures.length.toLocaleString('fa-IR')} توقف در کنترل‌پلن ثبت شده است؛ اثر سراسری تأیید نشده است.
             </div>
-            <div style="font-size: 0.75rem; color: var(--text-secondary); margin-top: 0.2rem;">
-              دسترسی به این ماژول‌ها برای تمامی مشتریان مسدود گردیده، اما سایر ماژول‌ها و کلیه پایگاه‌های داده بدون اختلال فعال هستند.
+            <div style="font-size: 0.78rem; color: var(--text-secondary); margin-top: 0.25rem; line-height: 1.5;">
+              سیاست توقف برای این قابلیت‌ها در کنترل‌پلن ثبت شده است. وضعیت انتشار به سرویس مشتری در هر ردیف جداگانه نمایش داده می‌شود.
             </div>
           </div>
         </div>
-        <button type="button" class="btn btn-outline-danger btn-sm" onclick="window.GMViews.GM08.setCategory('suspended', null)">
+        <button type="button" class="btn btn-outline-danger btn-sm" onclick="window.GMViews.GM08.setCategory('suspended', null)" style="font-weight: 600;">
           مشاهده ماژول‌های در حال تعمیر (${suspendedFeatures.length.toLocaleString('fa-IR')})
         </button>
       </div>
     </div>
     ` : ''}
 
-    <div class="card" style="margin-bottom: 1.25rem; border-color: rgba(2, 132, 199, 0.25); background: linear-gradient(135deg, rgba(2, 132, 199, 0.04) 0%, rgba(99, 102, 241, 0.04) 100%);">
-      <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.75rem;">
-        <div style="display: flex; align-items: center; gap: 0.65rem;">
-          <span style="font-size: 1.25rem;">🧩</span>
+    <!-- Server-backed platform catalog summary -->
+    <div class="card" style="margin-bottom: 1.25rem; border-color: rgba(2, 132, 199, 0.22); background: linear-gradient(135deg, rgba(2, 132, 199, 0.05) 0%, rgba(99, 102, 241, 0.04) 100%); border-radius: 12px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.85rem;">
+        <div style="display: flex; align-items: center; gap: 0.85rem;">
+          <div style="width: 44px; height: 44px; border-radius: 10px; background: rgba(2, 132, 199, 0.12); display: flex; align-items: center; justify-content: center; font-size: 1.35rem; flex-shrink: 0;">
+            🧩
+          </div>
           <div>
-            <div style="font-size: 0.95rem; font-weight: 700; color: var(--text-primary);">مدیریت جامع ${features.length.toLocaleString('fa-IR')} قابلیت و ماژول پلتفرم NEEM</div>
-            <div style="font-size: 0.75rem; color: var(--text-secondary);">کلید قطع اضطراری سراسری (Kill-Switch) دسترسی به هر ماژول را در کلیه مشتریان جهت نگهداری متوقف می‌سازد بدون اینکه در سایر بخش‌ها اختلال ایجاد کند.</div>
+            <div style="font-size: 0.95rem; font-weight: 700; color: var(--text-primary);">مدیریت جامع ${features.length.toLocaleString('fa-IR')} قابلیت و ماژول پلتفرم SALSA</div>
+            <div style="font-size: 0.78rem; color: var(--text-secondary); margin-top: 0.25rem; line-height: 1.45;">
+              وضعیت‌های زیر از کاتالوگ و کلیدهای توقف ذخیره‌شده در کنترل‌پلن خوانده شده‌اند؛ این صفحه سلامت اجرای ماژول‌ها را ادعا نمی‌کند.
+            </div>
           </div>
         </div>
-        <div style="display: flex; gap: 0.5rem; align-items: center;">
+        <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+          <button type="button" class="btn btn-secondary btn-sm" onclick="window.GMViews.GM08.openDependencyGraphDrawer()">
+            نمایش ساختار درختی (DAG)
+          </button>
           <a href="#gm-03-tenants" class="btn btn-outline-cyan btn-sm">
             انتخاب مشتری برای تخصیص ↗
           </a>
@@ -83,62 +160,18 @@ window.renderGM08 = function() {
     <div class="data-quality-strip" role="status" aria-label="وضعیت منبع کاتالوگ قابلیت‌ها">
       <div class="data-quality-label"><span class="dq-badge-dot dot-cyan"></span><span>وضعیت کاتالوگ</span></div>
       <div class="data-quality-grid">
-        <span class="dq-badge"><span class="dq-badge-dot dot-emerald"></span><span class="dq-dim-name">منبع</span><span class="dq-dim-val">${features.length.toLocaleString('fa-IR')} ماژول</span></span>
-        <span class="dq-badge"><span class="dq-badge-dot ${suspendedFeatures.length > 0 ? 'dot-red' : 'dot-emerald'}"></span><span class="dq-dim-name">سرویس‌دهی سراسری</span><span class="dq-dim-val">${suspendedFeatures.length > 0 ? `${suspendedFeatures.length} در تعلیق موقت` : '۱۰۰٪ برخط'}</span></span>
-        <span class="dq-badge"><span class="dq-badge-dot dot-emerald"></span><span class="dq-dim-name">اعتبار</span><span class="dq-dim-val">عملیاتی و آماده فعال‌سازی</span></span>
+        <span class="dq-badge"><span class="dq-badge-dot dot-blue"></span><span class="dq-dim-name">منبع</span><span class="dq-dim-val">کنترل‌پلن</span></span>
+        <span class="dq-badge"><span class="dq-badge-dot ${suspendedFeatures.length > 0 ? 'dot-red' : 'dot-blue'}"></span><span class="dq-dim-name">توقف ثبت‌شده</span><span class="dq-dim-val">${suspendedFeatures.length.toLocaleString('fa-IR')} قابلیت</span></span>
+        <span class="dq-badge"><span class="dq-badge-dot dot-blue"></span><span class="dq-dim-name">تعرفه</span><span class="dq-dim-val">از منبع تأییدشده دریافت نشده</span></span>
       </div>
-      <span class="dq-action-hint"><span>کاتالوگ قابلیت‌های فعال و افزونه‌های تجاری پلتفرم NEEM</span></span>
+      <span class="dq-action-hint"><span>قیمت و سلامت اجرایی از این کاتالوگ استنتاج نمی‌شود.</span></span>
     </div>
 
-    ${window.GMDataState ? window.GMDataState.renderFreshnessBar({
-      viewId: 'GM08',
-      sourceLabel: `کاتالوگ مرجع ${features.length.toLocaleString('fa-IR')} قابلیت تجاری و فنی پلتفرم`,
-      sourceMode: 'local',
-      totalCount: features.length,
-      countLabel: 'قابلیت تجاری'
-    }) : ''}
-
-    ${(() => {
-      const dataState = window.GMDataState ? window.GMDataState.getViewState('GM08') : { state: 'live' };
-      if (dataState.state === 'failed' || dataState.state === 'error') {
-        return window.GMDataState.renderFailedState({
-          viewId: 'GM08',
-          title: 'خطا در بارگذاری کاتالوگ قابلیت‌ها',
-          reason: 'ارتباط با رجیستری مرکزی لایسنس‌ها برقرار نشد.',
-          errorCode: 'ERR_FEATURES_FETCH_FAILED'
-        });
-      }
-      if (dataState.state === 'empty') {
-        return window.GMDataState.renderEmptyState({
-          title: 'هیچ قابلیتی یافت نشد',
-          description: 'کاتالوگ قابلیت‌های تجاری خالی است.',
-          actionLabel: 'بارگذاری مجدد',
-          actionHash: '#gm-08-features'
-        });
-      }
-      if (dataState.state === 'loading') {
-        return window.GMDataState.renderSkeleton('table', 6);
-      }
-      if (dataState.state === 'stale') {
-        return window.GMDataState.renderStaleBanner('GM08');
-      }
-      if (dataState.state === 'refreshing') {
-        return window.GMDataState.renderRefreshingBanner ? window.GMDataState.renderRefreshingBanner('GM08') : '';
-      }
-      return '';
-    })()}
-
-    ${(window.GMDataState && ['failed', 'empty', 'error', 'loading'].includes(window.GMDataState.getViewState('GM08').state)) ? '' : `
     <div class="table-wrapper">
       <div class="table-toolbar">
         <div class="table-filters" id="featureCategoryFilters" role="group" aria-label="دسته‌بندی قابلیت‌های تجاری">
           <button class="filter-chip active" aria-pressed="true" onclick="filterFeatures('all', this)">همه (${features.length})</button>
-          <button class="filter-chip" aria-pressed="false" onclick="filterFeatures('کاتالوگ', this)">کاتالوگ</button>
-          <button class="filter-chip" aria-pressed="false" onclick="filterFeatures('سفارشات', this)">سفارشات</button>
-          <button class="filter-chip" aria-pressed="false" onclick="filterFeatures('مالی', this)">مالی و حسابداری</button>
-          <button class="filter-chip" aria-pressed="false" onclick="filterFeatures('انبار', this)">انبار و رسپی</button>
-          <button class="filter-chip" aria-pressed="false" onclick="filterFeatures('CRM', this)">CRM و وفاداری</button>
-          <button class="filter-chip" aria-pressed="false" onclick="filterFeatures('پلتفرم', this)">پلتفرم و زیرساخت</button>
+          ${Object.entries(categoryCounts).map(([category, count]) => `<button class="filter-chip" aria-pressed="false" onclick="filterFeatures('${category}', this)">${categoryNames[category] || category} (${count})</button>`).join('')}
           <button class="filter-chip ${suspendedFeatures.length > 0 ? 'filter-chip-warning' : ''}" aria-pressed="false" onclick="filterFeatures('suspended', this)" style="${suspendedFeatures.length > 0 ? 'border-color: rgba(239, 68, 68, 0.4); color: #f87171;' : ''}">
             ⚡ تعلیق موقت (${suspendedFeatures.length.toLocaleString('fa-IR')})
           </button>
@@ -146,7 +179,7 @@ window.renderGM08 = function() {
         <div class="table-search-group">
           <span id="featuresFilterCount" class="filter-count-badge">نمایش ${features.length.toLocaleString('fa-IR')} از ${features.length.toLocaleString('fa-IR')} قابلیت</span>
           <div class="search-input-wrapper" id="featureSearchWrapper">
-            <input type="text" id="featureSearchInput" class="form-control" placeholder="جست‌وجو در کلید یا عنوان..." aria-label="جست‌وجو در کلید یا عنوان قابلیت‌ها" style="width: 220px; padding: 0.35rem 0.75rem;" oninput="window.GMViews.GM08.setQuery(this.value)" />
+            <input type="text" id="featureSearchInput" class="form-control" placeholder="جست‌وجو در کلید یا عنوان..." aria-label="جست‌وجو در کلید یا عنوان قابلیت‌ها" style="width: 240px; padding: 0.35rem 0.75rem;" oninput="window.GMViews.GM08.setQuery(this.value)" />
             <button class="search-clear-btn" onclick="window.GMViews.GM08.clearSearch()" aria-label="پاکسازی جستجو">✕</button>
           </div>
         </div>
@@ -161,79 +194,94 @@ window.renderGM08 = function() {
               </th>
               <th>قابلیت و پیش‌نیازها</th>
               <th>دسته‌بندی</th>
-              <th>تعرفه افزونه (ماهانه)</th>
+              <th>قیمت‌گذاری</th>
               <th>وضعیت سراسری پلتفرم</th>
               <th class="cell-actions">اقدامات</th>
             </tr>
           </thead>
           <tbody>
-            ${features.map(f => `
+            ${decoratedFeatures.map(f => {
+              const catIcon = {
+                'کاتالوگ': '📦',
+                'سفارشات': '🛒',
+                'مالی': '💳',
+                'انبار': '🥫',
+                'CRM': '👥',
+                'پلتفرم': '⚙️',
+                'پایه': '⚡'
+              }[f.category] || '🧩';
+
+              return `
               <tr id="row-feat-${f.key.replace(/\./g, '-')}" data-category="${f.category}" data-status="${f.globallyDisabled ? 'suspended' : 'active'}" data-search="${f.key} ${f.nameFa} ${f.category} ${f.globallyDisabled ? 'معلق تعمیرات قطع موقت' : 'فعال'}">
                 <td class="cell-checkbox" style="text-align: center;">
                   <input type="checkbox" class="feature-row-select" data-id="${f.key}" aria-label="انتخاب قابلیت ${f.nameFa}" />
                 </td>
                 <td class="cell-primary" style="font-weight: 500;">
-                  <div class="feature-title-cell">
-                    <span>${f.nameFa}</span>
-                    <details class="row-disclosure feature-row-disclosure">
-                      <summary>شناسه و پیش‌نیازها</summary>
-                      <div class="feature-technical-details">
-                        <span class="cell-mono feature-key-detail">${f.key}</span>
-                        <span class="feature-dependency-detail">
+                  <div class="feature-title-cell" style="display: flex; flex-direction: column; gap: 0.25rem;">
+                    <div style="display: flex; align-items: center; gap: 0.45rem;">
+                      <span style="font-size: 1rem;">${catIcon}</span>
+                      <strong style="color: var(--text-primary); font-size: 0.875rem;">${f.nameFa}</strong>
+                      ${f.key === 'finance.workspace' ? '<span class="badge badge-emerald" style="font-size: 0.65rem;">هسته مالی</span>' : ''}
+                    </div>
+                    <details class="row-disclosure feature-row-disclosure" style="margin-top: 0.15rem;">
+                      <summary style="font-size: 0.72rem; color: var(--text-secondary); cursor: pointer;">شناسه و پیش‌نیازها</summary>
+                      <div class="feature-technical-details" style="margin-top: 0.35rem; padding: 0.4rem 0.5rem; background: var(--bg-surface-subtle); border-radius: 6px; font-size: 0.72rem;">
+                        <span class="cell-mono feature-key-detail" style="color: var(--accent-cyan); font-weight: 600;">${f.key}</span>
+                        <div class="feature-dependency-detail" style="margin-top: 0.25rem;">
                           ${f.dependencies.length === 0
                             ? '<span class="text-secondary">قابلیت پایه و مستقل</span>'
-                            : `پیش‌نیاز: ${f.dependencies.map(d => `<span class="badge badge-warning cell-mono">${d}</span>`).join('')}`}
-                        </span>
+                            : `پیش‌نیاز: ${f.dependencies.map(d => `<span class="badge badge-warning cell-mono" style="margin: 0 2px; font-size: 0.65rem;">${d}</span>`).join('')}`}
+                        </div>
                       </div>
                     </details>
                   </div>
                 </td>
                 <td>
-                  <span class="badge badge-neutral">${f.category}</span>
+                  <span class="badge badge-neutral" style="font-size: 0.75rem;">${catIcon} ${f.category}</span>
                 </td>
-                <td class="cell-mono" style="font-size: 0.75rem;">
-                  ${f.pricePerMonth === 0 
-                    ? '<span class="badge badge-success">رایگان در پلن</span>' 
-                    : `${f.pricePerMonth.toLocaleString('fa-IR')} تومان`
-                  }
-                </td>
+                <td class="cell-mono" style="font-size: 0.8rem;"><span class="text-secondary">تعرفه مصوب دریافت نشده</span></td>
                 <td>
                   ${f.globallyDisabled ? `
-                    <div style="display: inline-flex; flex-direction: column; gap: 0.2rem;">
-                      <span class="badge badge-danger" style="display: inline-flex; align-items: center; gap: 0.35rem; width: fit-content; background: rgba(239, 68, 68, 0.15); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.3);">
-                        <span class="status-dot dot-red pulse"></span> تعلیق موقت سراسری
+                    <div style="display: inline-flex; flex-direction: column; gap: 0.25rem;">
+                      <span class="badge badge-danger" style="display: inline-flex; align-items: center; gap: 0.35rem; width: fit-content; background: rgba(239, 68, 68, 0.15); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.3); font-size: 0.75rem;">
+                        <span class="status-dot dot-red pulse"></span> توقف در کنترل‌پلن ثبت شده
                       </span>
-                      <span style="font-size: 0.68rem; color: var(--text-tertiary); max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${f.maintenanceReason || 'تعمیرات سراسری پلتفرم'}">
-                        علت: ${f.maintenanceReason || 'به‌روزرسانی زیرساخت'}
+                      <span style="font-size: 0.7rem; color: var(--text-tertiary); max-width: 190px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${view.escapeHtml(f.maintenanceReason || 'ثبت نشده')}">
+                        ارسال: ${f.distributionStatusLabel} · علت: ${view.escapeHtml(f.maintenanceReason || 'ثبت نشده')}
                       </span>
                     </div>
                   ` : `
-                    <span class="badge badge-success" style="display: inline-flex; align-items: center; gap: 0.35rem;">
-                      <span class="badge-dot dot-green"></span> فعال در سراسر پلتفرم
+                    <span class="badge badge-neutral" style="display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.75rem;">
+                      <span class="badge-dot"></span> توقف اضطراری ثبت نشده
                     </span>
                   `}
                 </td>
                 <td class="cell-actions">
-                  <button class="btn btn-sm btn-secondary" aria-label="مشاهده جزئیات فنی قابلیت ${f.nameFa} (${f.key})" onclick="openFeatureDrawer('${f.key}')">جزئیات فنی</button>
-                  ${f.globallyDisabled ? `
-                    <button type="button" class="btn btn-sm btn-success" onclick="window.GMViews.GM08.restoreGlobalFeature('${f.key}')" title="پایان به‌روزرسانی و فعال‌سازی سراسری">
-                      ✓ فعال‌سازی
+                  <div style="display: flex; gap: 0.35rem; justify-content: flex-end; align-items: center;">
+                    <button class="btn btn-sm btn-secondary" aria-label="مشاهده جزئیات فنی قابلیت ${f.nameFa} (${f.key})" onclick="openFeatureDrawer('${f.key}')">
+                      جزئیات فنی
                     </button>
-                  ` : `
-                    <button type="button" class="btn btn-sm btn-outline-danger" onclick="window.GMViews.GM08.openKillSwitchModal('${f.key}')" title="قطع اضطراری و تعلیق موقت در سطح کل پلتفرم">
-                      ⚡ قطع موقت
-                    </button>
-                  `}
+                    ${f.globallyDisabled ? `
+                      <button type="button" class="btn btn-sm btn-success" ${globalMutationsAvailable ? '' : 'disabled'} onclick="window.GMViews.GM08.restoreGlobalFeature('${f.key}')" title="${globalMutationsAvailable ? 'پایان به‌روزرسانی و فعال‌سازی سراسری' : 'لغو سراسری تا پشتیبانی fan-out و ACK همهٔ cellها غیرفعال است'}">
+                        ✓ فعال‌سازی
+                      </button>
+                    ` : `
+                      <button type="button" class="btn btn-sm btn-outline-danger" ${globalMutationsAvailable ? '' : 'disabled'} onclick="window.GMViews.GM08.openKillSwitchModal('${f.key}')" title="${globalMutationsAvailable ? 'قطع اضطراری و تعلیق موقت در سطح کل پلتفرم' : 'تا fan-out و ACK سراسری موجود نشود غیرفعال است'}">
+                        ⚡ قطع موقت
+                      </button>
+                    `}
+                  </div>
                 </td>
               </tr>
-            `).join('')}
+              `;
+            }).join('')}
             <tr id="features-empty-row" style="display: none;">
-              <td colspan="6" style="text-align: center; padding: 2rem 1rem;">
+              <td colspan="6" style="text-align: center; padding: 2.5rem 1rem;">
                 <div class="empty-state empty-state-compact">
-                  <div class="empty-state-icon"><span class="badge-dot dot-warning"></span></div>
-                  <h3>قابلیتی با این مشخصات یافت نشد</h3>
-                  <p>عبارت جستجو یا دسته‌بندی انتخاب‌شده را بررسی نمایید.</p>
-                  <button class="btn btn-secondary btn-sm" onclick="window.GMViews.GM08.resetAll()">بازنشانی فیلترها</button>
+                  <div class="empty-state-icon" style="font-size: 2rem;">🔍</div>
+                  <h3 style="margin: 0.5rem 0 0.25rem;">قابلیتی با این مشخصات یافت نشد</h3>
+                  <p style="color: var(--text-secondary); font-size: 0.8rem;">عبارت جستجو یا دسته‌بندی انتخاب‌شده را بررسی نمایید.</p>
+                  <button class="btn btn-secondary btn-sm" onclick="window.GMViews.GM08.resetAll()" style="margin-top: 0.75rem;">بازنشانی فیلترها</button>
                 </div>
               </td>
             </tr>
@@ -255,10 +303,10 @@ window.renderGM08 = function() {
         <button type="button" class="btn btn-secondary btn-sm" id="gm08-bulk-export-btn" onclick="window.GMViews.GM08.exportSelected()" disabled>
           خروجی شناسه قابلیت‌ها
         </button>
-        <button type="button" class="btn btn-outline-danger btn-sm" id="gm08-bulk-disable-btn" onclick="window.GMViews.GM08.bulkDisableSelected()" disabled>
+        <button type="button" class="btn btn-outline-danger btn-sm" id="gm08-bulk-disable-btn" onclick="window.GMViews.GM08.bulkDisableSelected()" disabled title="${globalMutationsAvailable ? 'ابتدا قابلیت‌ها را انتخاب کنید' : 'توزیع سراسری هنوز در دسترس نیست'}">
           ⚡ تعلیق موقت گروهی
         </button>
-        <button type="button" class="btn btn-success btn-sm" id="gm08-bulk-enable-btn" onclick="window.GMViews.GM08.bulkEnableSelected()" disabled>
+        <button type="button" class="btn btn-success btn-sm" id="gm08-bulk-enable-btn" onclick="window.GMViews.GM08.bulkEnableSelected()" disabled title="${globalMutationsAvailable ? 'ابتدا قابلیت‌ها را انتخاب کنید' : 'توزیع سراسری هنوز در دسترس نیست'}">
           ✓ فعال‌سازی گروهی
         </button>
         <button type="button" class="bulk-clear-btn" onclick="window.GMViews.GM08.clearSelection()">
@@ -266,7 +314,6 @@ window.renderGM08 = function() {
         </button>
       </div>
     </div>
-    `}
   `;
 };
 
@@ -275,6 +322,140 @@ window.GMViews.GM08 = {
   render: window.renderGM08,
   category: 'all',
   query: '',
+  mutationError: '',
+  lastMutation: null,
+  catalogSnapshot: null,
+  loading: false,
+  loadError: '',
+  loadRequest: null,
+
+  escapeHtml(value) {
+    return String(value || '').replace(/[&<>"']/g, character => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    })[character]);
+  },
+
+  async loadServerSnapshot({ force = false } = {}) {
+    if (this.loadRequest) return this.loadRequest;
+    if (this.catalogSnapshot && !force) return this.catalogSnapshot;
+    this.loading = true;
+    this.loadError = '';
+    this.catalogSnapshot = null;
+    const request = (async () => {
+      try {
+        const client = this.getSameOriginControlPlaneClient();
+        const [catalogResponse, switchesResponse] = await Promise.all([
+          client.get('/api/control/policy/catalog'),
+          client.get('/api/control/policy/killswitch')
+        ]);
+        if (catalogResponse?.ok !== true || !Array.isArray(catalogResponse.data?.features) ||
+            switchesResponse?.ok !== true || !Array.isArray(switchesResponse.data)) {
+          throw new Error('کاتالوگ یا وضعیت ذخیره‌شدهٔ توقف از کنترل‌پلن پاسخ معتبر ندارد.');
+        }
+        this.catalogSnapshot = {
+          features: catalogResponse.data.features,
+          killSwitches: switchesResponse.data,
+          globalMutationsAvailable: switchesResponse.capabilities?.globalMutationsAvailable === true,
+          observedAt: switchesResponse.meta?.observedAt || catalogResponse.meta?.observedAt || null
+        };
+        return this.catalogSnapshot;
+      } catch (error) {
+        this.loadError = error?.message || 'دریافت وضعیت از کنترل‌پلن ناموفق بود.';
+        return null;
+      } finally {
+        this.loading = false;
+        this.loadRequest = null;
+        if (window.GMRouter?.refresh) window.GMRouter.refresh();
+      }
+    })();
+    this.loadRequest = request;
+    return request;
+  },
+
+  getSameOriginControlPlaneClient() {
+    const client = window.ControlPlaneClient;
+    if (!client || typeof client.get !== 'function' || typeof client.post !== 'function' || typeof client.delete !== 'function') {
+      throw new Error('اتصال کنترل‌پلن برای خواندن یا ثبت وضعیت سراسری در دسترس نیست.');
+    }
+    if (!window.location || typeof client.getBaseUrl !== 'function' ||
+        client.getBaseUrl().replace(/\/$/, '') !== window.location.origin) {
+      throw new Error('نشانی کنترل‌پلن با مبدأ همین صفحه یکسان نیست؛ تغییری ثبت نشد.');
+    }
+    return client;
+  },
+
+  async requestAndVerifyGlobalState(featureKey, enabled, reason = '') {
+    const client = this.getSameOriginControlPlaneClient();
+    if (this.catalogSnapshot?.globalMutationsAvailable !== true) {
+      throw new Error('GLOBAL_KILLSWITCH_FANOUT_NOT_IMPLEMENTED: ارسال پایدار به همهٔ cellها و تأیید ACK آن‌ها در دسترس نیست؛ هیچ تغییری ارسال نشد.');
+    }
+    const endpoint = '/api/control/policy/killswitch';
+    let mutation;
+    if (enabled) {
+      mutation = await client.delete(`${endpoint}/${encodeURIComponent(featureKey)}`);
+      if (!mutation || mutation.ok !== true || mutation.data?.revoked !== true) {
+        throw new Error('سرور پاسخ معتبر برای رفع کلید قطع سراسری نداد.');
+      }
+    } else {
+      mutation = await client.post(endpoint, { featureKey, reason: String(reason || '').trim() });
+      const record = mutation?.data;
+      if (!mutation || mutation.ok !== true || record?.status !== 'active' || record?.featureKey !== featureKey) {
+        throw new Error('سرور فعال‌سازی کلید قطع را تأیید نکرد.');
+      }
+    }
+
+    const readback = await client.get(endpoint);
+    if (!readback || readback.ok !== true || !Array.isArray(readback.data)) {
+      throw new Error('خواندن دوباره وضعیت برای تأیید تغییر از سرور موفق نشد.');
+    }
+    const found = readback.data.some(record => record?.status === 'active' &&
+      (record.featureKey === featureKey || record.moduleKey === featureKey || record.featureKeys?.includes(featureKey)));
+    if (found === enabled) {
+      throw new Error('وضعیت بازخوانی‌شده از سرور با درخواست هم‌خوانی ندارد؛ تغییر تأیید نشد.');
+    }
+
+    const feature = this.catalogSnapshot?.features.find(item => item.key === featureKey);
+    this.catalogSnapshot = { ...this.catalogSnapshot, killSwitches: readback.data };
+    return { success: true, feature: feature || { key: featureKey, nameFa: featureKey }, serverConfirmed: true };
+  },
+
+  async runGlobalMutation(mutation, { refresh = true } = {}) {
+    this.lastMutation = mutation;
+    this.mutationError = '';
+    try {
+      const result = await this.requestAndVerifyGlobalState(mutation.featureKey, mutation.enabled, mutation.reason);
+      this.lastMutation = null;
+      if (refresh) {
+        if (window.GMRouter && typeof window.GMRouter.refresh === 'function') {
+          window.GMRouter.refresh();
+        } else {
+          window.location.hash = `#gm-08-features?t=${Date.now()}`;
+        }
+      }
+      return result;
+    } catch (error) {
+      this.mutationError = error?.message || 'ثبت تغییر در کنترل‌پلن تأیید نشد.';
+      if (error?.status === 502) {
+        await this.loadServerSnapshot({ force: true });
+        const committed = this.catalogSnapshot?.killSwitches.find(record => record.status === 'active' &&
+          (record.featureKey === mutation.featureKey || record.featureKeys?.includes(mutation.featureKey)));
+        if (committed && !mutation.enabled) {
+          this.mutationError = `توقف در کنترل‌پلن ذخیره شد، اما انتشار به سرویس مشتری ناموفق است (${committed.distributionStatus || 'وضعیت نامشخص'}).`;
+        }
+      }
+      if (window.GMApp?.showToast) window.GMApp.showToast(this.mutationError, 'danger');
+      if (refresh) {
+        if (window.GMRouter && typeof window.GMRouter.refresh === 'function') window.GMRouter.refresh();
+        else window.location.hash = `#gm-08-features?error=${Date.now()}`;
+      }
+      return null;
+    }
+  },
+
+  retryLastMutation() {
+    if (!this.lastMutation) return Promise.resolve(null);
+    return this.runGlobalMutation({ ...this.lastMutation });
+  },
 
   applyFilters() {
     const rows = document.querySelectorAll('#featuresTable tbody tr');
@@ -399,7 +580,7 @@ window.GMViews.GM08 = {
       return;
     }
     if (window.GMApp && window.GMApp.showToast) {
-      window.GMApp.showToast(`گراف پیش‌نیازهای ${ids.length} قابلیت با موفقیت بررسی شد؛ اعتبارسنجی وابستگی بر اساس Fixture پلتفرم انجام گردید.`, 'info');
+      window.GMApp.showToast(`وابستگی‌های ${ids.length} قابلیت در کاتالوگ سرور بررسی شد؛ تخصیص نهایی همچنان سمت سرور اعتبارسنجی می‌شود.`, 'info');
     }
   },
 
@@ -412,24 +593,26 @@ window.GMViews.GM08 = {
       return;
     }
     if (window.GMApp && window.GMApp.showToast) {
-      window.GMApp.showToast(`فهرست شناسه ${ids.length} قابلیت در خروجی محلی Mock پلتفرم ذخیره شد.`, 'info');
+      window.GMApp.showToast(`${ids.length} شناسه انتخاب شد؛ فایل خروجی در این نسخه ساخته نمی‌شود.`, 'info');
     }
   },
 
   openKillSwitchModal(featureKey) {
-    const store = window.prototypeStore || window.GMStore;
-    const features = store ? store.getFeatures() : [];
+    if (this.catalogSnapshot?.globalMutationsAvailable !== true) {
+      this.mutationError = 'توقف سراسری تا زمان فراهم‌شدن fan-out پایدار و ACK همهٔ cellها غیرفعال است.';
+      if (window.GMApp?.showToast) window.GMApp.showToast(this.mutationError, 'warning');
+      return;
+    }
+    const features = this.catalogSnapshot?.features || [];
     const feature = features.find(f => f.key === featureKey);
     if (!feature) return;
-
-    const affectedTenants = store && store.getFeatureAffectedTenants ? store.getFeatureAffectedTenants(featureKey) : [];
 
     const content = `
       <div style="display: flex; flex-direction: column; gap: 1rem;">
         <div style="background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.25); border-radius: 8px; padding: 0.85rem;">
           <div style="display: flex; align-items: center; gap: 0.5rem; font-weight: 700; color: var(--state-danger); font-size: 0.875rem;">
             <span>⚡</span>
-            <span>توقف موقت ماژول در سطح کلان پلتفرم NEEM (Global Kill-Switch)</span>
+            <span>توقف موقت ماژول در سطح کلان پلتفرم SALSA (Global Kill-Switch)</span>
           </div>
           <div style="font-size: 0.75rem; color: var(--text-secondary); margin-top: 0.35rem; line-height: 1.55;">
             با تایید این عملیات، این قابلیت به صورت مرکزی برای <strong>تمامی مشتریان و کاربران پلتفرم</strong> مسدود می‌شود تا بتوانید عملیات ارتقا یا نگهداری را انجام دهید. سایر امکانات و مشتریان بدون کوچکترین اختلال به سرویس‌دهی ادامه می‌دهند.
@@ -449,22 +632,8 @@ window.GMViews.GM08 = {
             <span class="kv-label">دسته‌بندی:</span>
             <span class="badge badge-neutral">${feature.category}</span>
           </div>
-          <div class="kv-item">
-            <span class="kv-label">شعاع تأثیر (Blast Radius):</span>
-            <span class="badge ${affectedTenants.length > 0 ? 'badge-warning' : 'badge-neutral'}">
-              ${affectedTenants.length.toLocaleString('fa-IR')} مجموعه فعال دارای این ماژول
-            </span>
-          </div>
+          <div class="kv-item"><span class="kv-label">دامنه:</span><span>سراسری؛ تعداد مستأثرین در API ارائه نشده است</span></div>
         </div>
-
-        ${affectedTenants.length > 0 ? `
-          <div class="surface-subtle" style="padding: 0.6rem; border-radius: 6px; font-size: 0.75rem;">
-            <div style="color: var(--text-secondary); margin-bottom: 0.25rem;">مشتریان تحت تأثیر مستقیم:</div>
-            <div style="display: flex; gap: 0.35rem; flex-wrap: wrap;">
-              ${affectedTenants.map(t => `<span class="badge badge-neutral">${t.name}</span>`).join('')}
-            </div>
-          </div>
-        ` : ''}
 
         <div class="form-group" style="margin-bottom: 0;">
           <label class="form-label" for="killswitch-reason">
@@ -501,36 +670,28 @@ window.GMViews.GM08 = {
     }
   },
 
-  confirmGlobalKillSwitch(featureKey, reason) {
-    const store = window.prototypeStore || window.GMStore;
-    if (!store) return;
-    const res = store.toggleFeatureGlobal(featureKey, false, reason);
-    if (res.success) {
-      if (window.GMApp && window.GMApp.showToast) {
-        window.GMApp.showToast(`ماژول «${res.feature.nameFa}» در سراسر پلتفرم موقتاً متوقف شد.`, 'warning');
-      }
-      if (window.GMRouter && typeof window.GMRouter.refresh === 'function') {
-        window.GMRouter.refresh();
-      } else {
-        window.location.hash = `#gm-08-features?t=${Date.now()}`;
-      }
+  async confirmGlobalKillSwitch(featureKey, reason) {
+    if (String(reason || '').trim().length < 5) {
+      this.lastMutation = null;
+      this.mutationError = 'دلیل توقف سراسری باید دست‌کم ۵ نویسه داشته باشد.';
+      if (window.GMApp?.showToast) window.GMApp.showToast(this.mutationError, 'danger');
+      if (window.GMRouter?.refresh) window.GMRouter.refresh();
+      else window.location.hash = `#gm-08-features?error=${Date.now()}`;
+      return null;
     }
+    const res = await this.runGlobalMutation({ featureKey, enabled: false, reason: String(reason).trim() });
+    if (res?.success && window.GMApp?.showToast) {
+      window.GMApp.showToast(`سرور وضعیت توقف سراسری «${res.feature.nameFa}» را تأیید کرد.`, 'warning');
+    }
+    return res;
   },
 
-  restoreGlobalFeature(featureKey) {
-    const store = window.prototypeStore || window.GMStore;
-    if (!store) return;
-    const res = store.toggleFeatureGlobal(featureKey, true);
-    if (res.success) {
-      if (window.GMApp && window.GMApp.showToast) {
-        window.GMApp.showToast(`ماژول «${res.feature.nameFa}» با موفقیت در سراسر پلتفرم مجدداً فعال شد.`, 'success');
-      }
-      if (window.GMRouter && typeof window.GMRouter.refresh === 'function') {
-        window.GMRouter.refresh();
-      } else {
-        window.location.hash = `#gm-08-features?t=${Date.now()}`;
-      }
+  async restoreGlobalFeature(featureKey) {
+    const res = await this.runGlobalMutation({ featureKey, enabled: true, reason: '' });
+    if (res?.success && window.GMApp?.showToast) {
+      window.GMApp.showToast(`سرور وضعیت فعال‌سازی مجدد «${res.feature.nameFa}» را تأیید کرد.`, 'success');
     }
+    return res;
   },
 
   bulkDisableSelected() {
@@ -539,18 +700,7 @@ window.GMViews.GM08 = {
       if (window.GMApp && window.GMApp.showToast) window.GMApp.showToast('لطفاً حداقل یک قابلیت را انتخاب نمایید.', 'warning');
       return;
     }
-    const store = window.prototypeStore || window.GMStore;
-    if (store && store.bulkToggleFeaturesGlobal) {
-      store.bulkToggleFeaturesGlobal(ids, false, 'تعلیق گروهی موقت توسط مدیر ارشد');
-      if (window.GMApp && window.GMApp.showToast) {
-        window.GMApp.showToast(`تعداد ${ids.length} قابلیت به صورت گروهی متوقف شدند.`, 'warning');
-      }
-      if (window.GMRouter && typeof window.GMRouter.refresh === 'function') {
-        window.GMRouter.refresh();
-      } else {
-        window.location.hash = `#gm-08-features?t=${Date.now()}`;
-      }
-    }
+    this.runBulkGlobalMutation(ids, false, 'تعلیق گروهی موقت توسط مدیر ارشد');
   },
 
   bulkEnableSelected() {
@@ -559,40 +709,45 @@ window.GMViews.GM08 = {
       if (window.GMApp && window.GMApp.showToast) window.GMApp.showToast('لطفاً حداقل یک قابلیت را انتخاب نمایید.', 'warning');
       return;
     }
-    const store = window.prototypeStore || window.GMStore;
-    if (store && store.bulkToggleFeaturesGlobal) {
-      store.bulkToggleFeaturesGlobal(ids, true);
-      if (window.GMApp && window.GMApp.showToast) {
-        window.GMApp.showToast(`تعداد ${ids.length} قابلیت به صورت گروهی مجدداً فعال شدند.`, 'success');
+    this.runBulkGlobalMutation(ids, true, '');
+  },
+
+  async runBulkGlobalMutation(featureKeys, enabled, reason) {
+    let confirmed = 0;
+    for (const featureKey of featureKeys) {
+      const result = await this.runGlobalMutation({ featureKey, enabled, reason }, { refresh: false });
+      if (!result) {
+        this.mutationError = `${confirmed} مورد از ${featureKeys.length} مورد در سرور تأیید شد. مورد ناموفق را با «تلاش دوباره» پیگیری کنید. ${this.mutationError}`;
+        if (window.GMRouter?.refresh) window.GMRouter.refresh();
+        return { confirmed, failedFeatureKey: featureKey };
       }
-      if (window.GMRouter && typeof window.GMRouter.refresh === 'function') {
-        window.GMRouter.refresh();
-      } else {
-        window.location.hash = `#gm-08-features?t=${Date.now()}`;
-      }
+      confirmed++;
     }
+    if (window.GMApp?.showToast) {
+      window.GMApp.showToast(`وضعیت ${confirmed} قابلیت در سرور تأیید شد.`, enabled ? 'success' : 'warning');
+    }
+    return { confirmed };
   },
 
   verifyFeatureChain(key) {
-    const store = window.prototypeStore || window.GMStore;
-    const features = store ? store.getFeatures() : [];
+    const features = this.catalogSnapshot?.features || [];
     const feature = features.find(f => f.key === key);
     if (!feature) return;
     const deps = feature.dependencies || [];
     if (deps.length === 0) {
       if (window.GMApp && window.GMApp.showToast) {
-        window.GMApp.showToast(`قابلیت «${feature.nameFa}» (${feature.key}) در Fixture بدون وابستگی ثبت شده؛ کاتالوگ عملیاتی تأیید نشده است.`, 'info');
+        window.GMApp.showToast(`در کاتالوگ سرور برای «${feature.nameFa}» پیش‌نیازی ثبت نشده است؛ اجرای عملیاتی بررسی نشده.`, 'info');
       }
     } else {
       if (window.GMApp && window.GMApp.showToast) {
-        window.GMApp.showToast(`زنجیره وابستگی «${feature.nameFa}» در Fixture نمایش داده شد؛ DAG عملیاتی و policy معتبر تأیید نشده است.`, 'info');
+        window.GMApp.showToast(`پیش‌نیازهای «${feature.nameFa}» از کاتالوگ سرور خوانده شد؛ اعتبارسنجی تخصیص هنگام ثبت سمت سرور انجام می‌شود.`, 'info');
       }
     }
   },
 
   openDependencyGraphDrawer() {
-    const store = window.prototypeStore || window.GMStore;
-    const features = store && store.getFeatures ? store.getFeatures() : [];
+    const features = this.catalogSnapshot?.features || [];
+    if (features.length === 0) return;
 
     const totalCount = features.length;
     const rootFeatures = features.filter(f => !f.dependencies || f.dependencies.length === 0);
@@ -612,7 +767,7 @@ window.GMViews.GM08 = {
           <div class="drawer-kpi-card">
             <div class="drawer-kpi-title">کل قابلیت‌های پلتفرم</div>
             <div class="drawer-kpi-value" style="color: var(--text-primary);">${totalCount.toLocaleString('fa-IR')}</div>
-            <div style="font-size: 0.75rem; color: var(--text-secondary); margin-top: 0.25rem;">تعداد مصوب سند GODMODE</div>
+            <div style="font-size: 0.75rem; color: var(--text-secondary); margin-top: 0.25rem;">تعداد دریافتی از کنترل‌پلن</div>
           </div>
 
           <div class="drawer-kpi-card">
@@ -629,8 +784,8 @@ window.GMViews.GM08 = {
 
           <div class="drawer-kpi-card">
             <div class="drawer-kpi-title">وضعیت سلامت گراف</div>
-            <div class="drawer-kpi-value" style="color: var(--state-success); font-size: 1.05rem;">فاقد دور (DAG)</div>
-            <div style="font-size: 0.75rem; color: var(--text-secondary); margin-top: 0.25rem;">تضمین عدم بن‌بست لایسنس</div>
+            <div class="drawer-kpi-value" style="color: var(--text-secondary); font-size: 1.05rem;">بررسی‌نشده</div>
+            <div style="font-size: 0.75rem; color: var(--text-secondary); margin-top: 0.25rem;">اعتبار DAG از API دریافت نشده است</div>
           </div>
         </div>
 
@@ -638,52 +793,8 @@ window.GMViews.GM08 = {
         <div class="data-quality-strip" role="status" aria-label="وضعیت کیفیت داده‌های گراف">
           <div class="data-quality-label"><span class="dq-badge-dot dot-cyan"></span><span>ممیزی ساختار درختی</span></div>
           <div class="data-quality-grid">
-            <span class="dq-badge"><span class="dq-badge-dot dot-emerald"></span><span class="dq-dim-name">پوشش</span><span class="dq-dim-val">۱۰۰٪ (کامل)</span></span>
-            <span class="dq-badge"><span class="dq-badge-dot dot-emerald"></span><span class="dq-dim-name">اعتبار DAG</span><span class="dq-dim-val">تأییدشده و بدون حلقه</span></span>
-            <span class="dq-badge"><span class="dq-badge-dot dot-blue"></span><span class="dq-dim-name">حداکثر عمق</span><span class="dq-dim-val">۳ لایه</span></span>
-            <span class="dq-badge"><span class="dq-badge-dot dot-emerald"></span><span class="dq-dim-name">اتصال API</span><span class="dq-dim-val">فعال و متصل</span></span>
-          </div>
-        </div>
-
-        <!-- Key Architectural Chains -->
-        <div class="drawer-section">
-          <h4 class="drawer-section-title">زنجیره‌های کلیدی وابستگی در پلتفرم</h4>
-          <div style="display: flex; flex-direction: column; gap: 0.6rem;">
-            <div class="surface-subtle" style="padding: 0.75rem; border-radius: 6px;">
-              <div style="font-weight: 600; font-size: 0.813rem; color: var(--text-primary); margin-bottom: 0.35rem;">
-                باشگاه مشتریان و وفاداری:
-              </div>
-              <div style="font-size: 0.75rem; color: var(--text-secondary); line-height: 1.5;">
-                <code class="cell-mono text-cyan">crm.loyalty</code>
-                <span style="color: var(--text-tertiary); margin: 0 0.35rem;">← وابسته به</span>
-                <code class="cell-mono">crm.directory</code>
-                <span class="badge badge-neutral" style="margin-right: 0.5rem; font-size: 0.688rem;">الزام ثبت پرونده جهت تخصیص امتیاز</span>
-              </div>
-            </div>
-
-            <div class="surface-subtle" style="padding: 0.75rem; border-radius: 6px;">
-              <div style="font-weight: 600; font-size: 0.813rem; color: var(--text-primary); margin-bottom: 0.35rem;">
-                سفارش‌گیری سر میز با QR Code:
-              </div>
-              <div style="font-size: 0.75rem; color: var(--text-secondary); line-height: 1.5;">
-                <code class="cell-mono text-cyan">floor.qr</code>
-                <span style="color: var(--text-tertiary); margin: 0 0.35rem;">← وابسته به</span>
-                <code class="cell-mono">floor.tables</code> + <code class="cell-mono">orders.online</code>
-                <span class="badge badge-neutral" style="margin-right: 0.5rem; font-size: 0.688rem;">الزام نقشه سالن و موتور آنلاین</span>
-              </div>
-            </div>
-
-            <div class="surface-subtle" style="padding: 0.75rem; border-radius: 6px;">
-              <div style="font-weight: 600; font-size: 0.813rem; color: var(--text-primary); margin-bottom: 0.35rem;">
-                آنالیز قیمت تمام‌شده و رسپی:
-              </div>
-              <div style="font-size: 0.75rem; color: var(--text-secondary); line-height: 1.5;">
-                <code class="cell-mono text-cyan">inventory.recipes</code>
-                <span style="color: var(--text-tertiary); margin: 0 0.35rem;">← وابسته به</span>
-                <code class="cell-mono">catalog.menu</code> + <code class="cell-mono">inventory.warehouse</code>
-                <span class="badge badge-neutral" style="margin-right: 0.5rem; font-size: 0.688rem;">فرمول‌بندی مصرف کالا و انبار</span>
-              </div>
-            </div>
+            <span class="dq-badge"><span class="dq-badge-dot dot-blue"></span><span class="dq-dim-name">منبع ساختار</span><span class="dq-dim-val">کاتالوگ سرور</span></span>
+            <span class="dq-badge"><span class="dq-badge-dot dot-blue"></span><span class="dq-dim-name">اعتبارسنجی DAG</span><span class="dq-dim-val">از API دریافت نشده</span></span>
           </div>
         </div>
 
@@ -726,7 +837,7 @@ window.GMViews.GM08 = {
     `;
 
     if (window.GMApp && window.GMApp.openDrawer) {
-      window.GMApp.openDrawer('تحلیل گراف وابستگی قابلیت‌ها (Feature Dependency Graph)', content, { subtitle: 'ساختار مستقیم بی دور (DAG) و زنجیره پیش‌نیازهای فعال‌سازی' });
+      window.GMApp.openDrawer('وابستگی قابلیت‌ها', content, { subtitle: 'داده از کاتالوگ کنترل‌پلن؛ سلامت DAG جداگانه تأیید نشده است' });
     } else if (typeof openDrawer === 'function') {
       openDrawer('تحلیل گراف وابستگی قابلیت‌ها (Feature Dependency Graph)', content);
     }
@@ -746,25 +857,39 @@ window.searchFeatures = function(q) {
 };
 
 window.openFeatureDrawer = function(featureKey) {
-  const store = window.prototypeStore || window.GMStore;
-  const features = store && store.getFeatures ? store.getFeatures() : [];
-  const feature = features.find(f => f.key === featureKey);
-  if (!feature) return;
+  const view = window.GMViews?.GM08;
+  const features = view?.catalogSnapshot?.features || [];
+  const sourceFeature = features.find(f => f.key === featureKey);
+  if (!sourceFeature) return;
+  const switchRecord = view.catalogSnapshot.killSwitches.find(record => record.status === 'active' &&
+    (record.featureKey === featureKey || record.featureKeys?.includes(featureKey)));
+  const feature = {
+    ...sourceFeature,
+    dependencies: Array.isArray(sourceFeature.dependencies) ? sourceFeature.dependencies : [],
+    globallyDisabled: Boolean(switchRecord),
+    maintenanceReason: switchRecord?.reason || '',
+    distributionStatus: switchRecord?.distributionStatus || null,
+    distributionStatusLabel: !switchRecord ? '' : switchRecord.distributionStatus === 'failed'
+      ? 'آخرین تلاش ناموفق'
+      : switchRecord.distributionStatus === 'pending'
+        ? 'در انتظار ارسال'
+        : 'ACK سراسری همهٔ cellها موجود نیست'
+  };
 
   // Features depending on this feature
-  const dependents = features.filter(f => f.dependencies && f.dependencies.includes(feature.key));
+  const dependents = features.filter(f => Array.isArray(f.dependencies) && f.dependencies.includes(feature.key));
 
   const content = `
     <div style="display: flex; flex-direction: column; gap: 1.25rem;">
       <!-- KPI Metric Cards -->
       <div class="drawer-kpi-grid">
         <div class="drawer-kpi-card">
-          <div class="drawer-kpi-title">تعرفه اشتراک ماهانه</div>
+          <div class="drawer-kpi-title">تعرفه مصوب</div>
           <div class="drawer-kpi-value" style="font-size: 1.05rem; color: var(--accent-cyan);">
-            ${feature.pricePerMonth === 0 ? 'رایگان در پلن' : `${feature.pricePerMonth.toLocaleString('fa-IR')} تومان`}
+            از منبع قیمت‌گذاری دریافت نشده
           </div>
           <div style="font-size: 0.75rem; color: var(--text-secondary); margin-top: 0.25rem;">
-            ${feature.pricePerMonth === 0 ? 'شامل در کلیه سطوح' : 'تعرفه مستقل لایسنس'}
+            این کاتالوگ، قیمت قابل فروش را تأیید نمی‌کند.
           </div>
         </div>
 
@@ -803,10 +928,8 @@ window.openFeatureDrawer = function(featureKey) {
       <div class="data-quality-strip" role="status" aria-label="پایش چهاربعدی کیفیت قابلیت">
         <div class="data-quality-label"><span class="dq-badge-dot dot-cyan"></span><span>ارزیابی چهاربعدی</span></div>
         <div class="data-quality-grid">
-          <span class="dq-badge"><span class="dq-badge-dot dot-emerald"></span><span class="dq-dim-name">جامعیت</span><span class="dq-dim-val">۱۰۰٪ سازمانی</span></span>
-          <span class="dq-badge"><span class="dq-badge-dot dot-emerald"></span><span class="dq-dim-name">تازگی</span><span class="dq-dim-val">همگام با پورت ۴۱۸۰</span></span>
-          <span class="dq-badge"><span class="dq-badge-dot dot-emerald"></span><span class="dq-dim-name">اعتبارسنجی</span><span class="dq-dim-val">تأییدشده</span></span>
-          <span class="dq-badge"><span class="dq-badge-dot dot-emerald"></span><span class="dq-dim-name">سازگاری</span><span class="dq-dim-val">متوازن و پایدار</span></span>
+          <span class="dq-badge"><span class="dq-badge-dot dot-blue"></span><span class="dq-dim-name">منبع</span><span class="dq-dim-val">کاتالوگ کنترل‌پلن</span></span>
+          <span class="dq-badge"><span class="dq-badge-dot dot-blue"></span><span class="dq-dim-name">قیمت مصوب</span><span class="dq-dim-val">دریافت نشده</span></span>
         </div>
       </div>
 
@@ -824,7 +947,7 @@ window.openFeatureDrawer = function(featureKey) {
           </div>
           <div style="display: flex; justify-content: space-between; padding: 0.4rem 0; border-bottom: 1px solid var(--border-subtle);">
             <span style="color: var(--text-secondary);">نوع واگذاری:</span>
-            <span>${feature.pricePerMonth === 0 ? '<span class="badge badge-success">پایه (Core Platform)</span>' : '<span class="badge badge-neutral">افزونه تجاری (Commercial Addon)</span>'}</span>
+            <span class="badge badge-neutral">جزئیات تجاری معتبر دریافت نشده</span>
           </div>
         </div>
       </div>
@@ -867,29 +990,30 @@ window.openFeatureDrawer = function(featureKey) {
         <h4 class="drawer-section-title">وضعیت سرویس‌دهی سراسری پلتفرم (Platform Kill-Switch)</h4>
         <div class="surface-subtle" style="padding: 0.85rem; border-radius: 6px;">
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
-            <span style="font-weight: 600; font-size: 0.813rem; color: var(--text-primary);">وضعیت برخط ماژول در پلتفرم NEEM:</span>
+            <span style="font-weight: 600; font-size: 0.813rem; color: var(--text-primary);">وضعیت برخط ماژول در پلتفرم SALSA:</span>
             ${feature.globallyDisabled ? `
-              <span class="badge badge-danger"><span class="status-dot dot-red pulse"></span> تعلیق موقت سراسری</span>
+              <span class="badge badge-warning"><span class="status-dot dot-yellow"></span> توقف ثبت‌شده؛ توزیع سراسری تأیید نشده</span>
             ` : `
-              <span class="badge badge-success"><span class="badge-dot dot-green"></span> فعال در سراسر پلتفرم</span>
+              <span class="badge badge-neutral"><span class="badge-dot"></span> توقف اضطراری ثبت نشده</span>
             `}
           </div>
           <div style="font-size: 0.75rem; color: var(--text-secondary); line-height: 1.5; margin-bottom: 0.75rem;">
             ${feature.globallyDisabled ? `
-              این ماژول در حال حاضر به صورت متمرکز برای تمامی مشترکین غیرفعال شده است تا عملیات نگهداری و به‌روزرسانی انجام گیرد.<br>
-              <strong>علت تعلیق:</strong> ${feature.maintenanceReason || 'به‌روزرسانی پلتفرم'}<br>
+              فقط ثبت سیاست در کنترل‌پلن تأیید شده است؛ اثر آن بر همهٔ مستأجران و cellها تأیید نشده.<br>
+              <strong>علت ثبت:</strong> ${view.escapeHtml(feature.maintenanceReason || 'ثبت نشده')}<br>
+              <strong>وضعیت توزیع:</strong> ${feature.distributionStatusLabel}<br>
               <strong>زمان تعلیق:</strong> ${feature.disabledAt ? new Date(feature.disabledAt).toLocaleString('fa-IR') : 'نامشخص'}
             ` : `
-              این قابلیت به طور عادی در حال سرویس‌دهی به کلیه مشتریان دارای مجوز است. با کلید زیر می‌توانید آن را موقتاً از تمام برنامه خارج کنید.
+              در فهرست کلیدهای توقف کنترل‌پلن، توقف فعالی برای این قابلیت ثبت نشده است؛ سلامت اجرای سرویس‌ها از این صفحه قابل تأیید نیست.
             `}
           </div>
           <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
             ${feature.globallyDisabled ? `
-              <button type="button" class="btn btn-success btn-sm" onclick="if (window.GMApp && window.GMApp.closeDrawer) window.GMApp.closeDrawer(); window.GMViews.GM08.restoreGlobalFeature('${feature.key}');">
+              <button type="button" class="btn btn-success btn-sm" ${view.catalogSnapshot.globalMutationsAvailable === true ? '' : 'disabled'} onclick="if (window.GMApp && window.GMApp.closeDrawer) window.GMApp.closeDrawer(); window.GMViews.GM08.restoreGlobalFeature('${feature.key}');">
                 ✓ فعال‌سازی مجدد در سراسر پلتفرم
               </button>
             ` : `
-              <button type="button" class="btn btn-outline-danger btn-sm" onclick="if (window.GMApp && window.GMApp.closeDrawer) window.GMApp.closeDrawer(); window.GMViews.GM08.openKillSwitchModal('${feature.key}');">
+              <button type="button" class="btn btn-outline-danger btn-sm" ${view.catalogSnapshot.globalMutationsAvailable === true ? '' : 'disabled'} onclick="if (window.GMApp && window.GMApp.closeDrawer) window.GMApp.closeDrawer(); window.GMViews.GM08.openKillSwitchModal('${feature.key}');">
                 ⚡ قطع و توقف موقت در سراسر پلتفرم (Kill-Switch)
               </button>
             `}

@@ -29,6 +29,7 @@ const crypto = require('crypto');
 const money = require('./finance/money');
 const periodService = require('./finance/period-service');
 const taxEngine = require('./finance/tax-engine');
+const { checkoutSnapshotAmountsForLegacyToman } = require('./checkout-tax');
 const inventoryEngine = require('./finance/inventory-engine');
 const assetEngine = require('./finance/asset-engine');
 const approvalEngine = require('./finance/approval-engine');
@@ -135,7 +136,7 @@ const DEFAULT_COA = [
   { code: '5100', name: 'Food Ingredients COGS', nameFa: 'بهای تمام‌شده مواد اولیه غذا', type: 'cogs', isPostingAccount: true, parentCode: '5000' },
   { code: '5110', name: 'Raw Material Waste', nameFa: 'ضایعات مواد اولیه', type: 'cogs', isPostingAccount: true, parentCode: '5000' },
   { code: '5120', name: 'Inventory Count Shortage', nameFa: 'کسری شمارش موجودی', type: 'cogs', isPostingAccount: true, parentCode: '5000' },
-  { code: '5130', name: 'Production Yield Loss', nameFa: 'افت تولید بچ', type: 'cogs', isPostingAccount: true, parentCode: '5000' },
+  { code: '5130', name: 'Production Yield Loss', nameFa: 'افت تولید دسته‌ای', type: 'cogs', isPostingAccount: true, parentCode: '5000' },
   { code: '5150', name: 'Purchase Price Variance', nameFa: 'اختلاف قیمت خرید', type: 'cogs', isPostingAccount: true, parentCode: '5000' },
   { code: '5200', name: 'Beverage Ingredients COGS', nameFa: 'بهای تمام‌شده مواد اولیه نوشیدنی و قهوه', type: 'cogs', isPostingAccount: true, parentCode: '5000' },
   { code: '5300', name: 'Packaging & Takeaway Supplies', nameFa: 'بهای ظروف و ملزومات بیرون‌بر', type: 'cogs', isPostingAccount: true, parentCode: '5000' },
@@ -166,6 +167,58 @@ const DEFAULT_COA = [
   { code: '6990', name: 'Miscellaneous Expenses', nameFa: 'سایر هزینه‌های جزئی و متفرقه', type: 'expense', isPostingAccount: true, parentCode: '6000' },
   { code: '6995', name: 'Tax Penalties & Fines (Non-Deductible)', nameFa: 'جرایم و خسارات قانونی (غیرقابل قبول مالیاتی)', type: 'expense', isPostingAccount: true, parentCode: '6000' },
 ];
+
+const ACCOUNTING_SETTING_KEYS = Object.freeze([
+  'vatRatePct', 'autoPostOrders', 'defaultCashAccount', 'defaultPosAccount',
+  'defaultOnlineAccount', 'defaultWalletAccount', 'defaultCreditAccount',
+  'defaultVatAccount', 'defaultSalesAccount', 'defaultCogsAccount',
+  'defaultInventoryAccount', 'defaultBankAccountId', 'currency',
+]);
+const ACCOUNTING_SETTING_STRING_KEYS = new Set(ACCOUNTING_SETTING_KEYS.filter((key) => key !== 'vatRatePct' && key !== 'autoPostOrders'));
+
+function updateAccountingSettings(acc, patch) {
+  if (!acc || typeof acc !== 'object') throw new Error('ساختار حسابداری معتبر نیست.');
+  if (!patch || typeof patch !== 'object' || Array.isArray(patch)) {
+    throw Object.assign(new Error('بدنهٔ تنظیمات مالی باید یک شیء JSON باشد.'), { code: 'finance_settings_body_invalid', status: 400 });
+  }
+
+  const unknown = Object.keys(patch).filter((key) => !ACCOUNTING_SETTING_KEYS.includes(key));
+  if (unknown.length) {
+    throw Object.assign(new Error(`فیلد تنظیمات مالی مجاز نیست: ${unknown.join(', ')}`), {
+      code: 'finance_settings_field_not_allowed',
+      status: 400,
+      details: { fields: unknown, allowedFields: ACCOUNTING_SETTING_KEYS },
+    });
+  }
+
+  const next = { ...(acc.settings || {}) };
+  for (const [key, value] of Object.entries(patch)) {
+    if (key === 'vatRatePct') {
+      const rate = Number(value);
+      if (!Number.isFinite(rate) || rate < 0 || rate > 100) {
+        throw Object.assign(new Error('نرخ مالیات بر ارزش افزوده باید عددی بین صفر و صد باشد.'), { code: 'finance_settings_vat_rate_invalid', status: 400 });
+      }
+      next[key] = rate;
+      continue;
+    }
+    if (key === 'autoPostOrders') {
+      if (typeof value !== 'boolean') {
+        throw Object.assign(new Error('autoPostOrders باید از نوع boolean باشد.'), { code: 'finance_settings_boolean_invalid', status: 400 });
+      }
+      next[key] = value;
+      continue;
+    }
+    if (ACCOUNTING_SETTING_STRING_KEYS.has(key)) {
+      const normalized = String(value ?? '').trim().slice(0, 80);
+      if (!normalized) {
+        throw Object.assign(new Error(`مقدار ${key} نمی‌تواند خالی باشد.`), { code: 'finance_settings_value_invalid', status: 400 });
+      }
+      next[key] = normalized;
+    }
+  }
+  acc.settings = next;
+  return next;
+}
 
 function normalBalance(type) {
   switch (type) {
@@ -359,12 +412,12 @@ function cloneJournalEntry(entry, extra = {}) {
 }
 
 function sameJournalPayload(left, right) {
-  return left.number === right.number
-    && left.date === right.date
-    && left.description === right.description
+  const numberMatch = left.number === right.number || (!right.number && left.source === right.source && left.sourceId === right.sourceId);
+  return numberMatch
     && left.source === right.source
-    && left.sourceId === right.sourceId
+    && String(left.sourceId || '') === String(right.sourceId || '')
     && left.status === right.status
+    && String(left.description || '').trim() === String(right.description || '').trim()
     && left.totalAmount === right.totalAmount
     && JSON.stringify(left.lines || []) === JSON.stringify(right.lines || []);
 }
@@ -388,7 +441,11 @@ function postJournalEntry(db, entryInput) {
     throw new Error('تاریخ سند معتبر نیست.');
   }
   if (requestedStatus === 'posted') {
-    const periodCheck = periodService.assertPostingAllowed(acc, dateStr);
+    const entryBranch = entryInput.branchId != null
+      ? Number(entryInput.branchId)
+      : (Array.isArray(entryInput.lines) ? entryInput.lines.find((l) => l?.branchId != null)?.branchId : null);
+    const resolvedBranch = entryBranch != null && Number.isSafeInteger(Number(entryBranch)) ? Number(entryBranch) : null;
+    const periodCheck = periodService.assertPostingAllowed(acc, dateStr, resolvedBranch);
     if (!periodCheck.allowed) {
       throw new Error(periodCheck.reason || 'ثبت سند در این تاریخ به دلیل بسته بودن دوره مالی مجاز نیست.');
     }
@@ -439,17 +496,19 @@ function postJournalEntry(db, entryInput) {
     throw new Error(`سند تراز نیست! جمع بدهکار (${money.formatNumber(totalDebit)}) با جمع بستانکار (${money.formatNumber(totalCredit)}) برابر نیست. اختلاف: ${money.formatNumber(Math.abs(totalDebit - totalCredit))}`);
   }
 
-  const id = entryInput.id === undefined || entryInput.id === null || entryInput.id === ''
-    ? `je-${Date.now()}-${Math.random().toString(36).slice(2, 7)}` : String(entryInput.id);
-  const number = entryInput.number === undefined || entryInput.number === null || entryInput.number === ''
-    ? nextJournalNumber(acc) : String(entryInput.number);
   const source = String(entryInput.source || 'manual').trim() || 'manual';
   const sourceId = entryInput.sourceId === undefined || entryInput.sourceId === null || entryInput.sourceId === ''
     ? null : String(entryInput.sourceId);
+  const inputId = entryInput.id === undefined || entryInput.id === null || entryInput.id === ''
+    ? null : String(entryInput.id);
 
-  const existingIdx = acc.journalEntries.findIndex((e) => e.id === id
+  const existingIdx = acc.journalEntries.findIndex((e) => (inputId && e.id === inputId)
     || (sourceId !== null && e.source === source && String(e.sourceId) === sourceId));
   const existing = existingIdx >= 0 ? acc.journalEntries[existingIdx] : null;
+
+  const id = existing?.id || inputId || `je-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+  const number = entryInput.number === undefined || entryInput.number === null || entryInput.number === ''
+    ? (existing?.number || nextJournalNumber(acc)) : String(entryInput.number);
 
   const ledgerChain = acc.journalEntries.length > 0 ? auditEngine.verifyLedgerChain(acc) : null;
   if (ledgerChain && !ledgerChain.isIntegrityValid) {
@@ -606,13 +665,31 @@ function reverseJournalEntry(db, journalId, opts = {}) {
   return { ok: true, idempotentReplay: false, originalEntry: cloneJournalEntry(target), reversalEntry: cloneJournalEntry(reversalEntry) };
 }
 
+/**
+ * Automatically creates a reversing journal entry if a sales voucher exists for the given order.
+ */
+function reverseOrderSalesJournal(db, orderId, opts = {}) {
+  const acc = ensureAccountingData(db);
+  const target = (acc.journalEntries || []).find((e) =>
+    e.source === 'sale' && String(e.sourceId) === String(orderId) && e.status === 'posted'
+  );
+  if (!target) return null;
+  return reverseJournalEntry(db, target.id, {
+    reason: opts.reason || `لغو سفارش #${orderId}`,
+    userId: opts.userId || 'system',
+    reversalDate: opts.reversalDate || new Date().toISOString(),
+  });
+}
+
 // ── Automatic Sales Posting ──────────────────────────────────────────────────
 /**
  * Automatically creates/updates a balanced double-entry Journal Voucher from a paid Order.
  */
 function syncOrderSalesJournal(db, order) {
   if (!order || !order.id) return null;
-  const isPaid = order.paymentStatus === 'paid' || ['paid', 'preparing', 'ready', 'dispatched', 'picked_up', 'delivered', 'done'].includes(order.status);
+  const isPaid = typeof order.paymentStatus === 'string'
+    ? order.paymentStatus === 'paid'
+    : ['paid', 'preparing', 'ready', 'dispatched', 'picked_up', 'delivered', 'done'].includes(order.status);
   if (!isPaid) return null;
 
   const acc = ensureAccountingData(db);
@@ -622,16 +699,40 @@ function syncOrderSalesJournal(db, order) {
   const orderTotal = roundMoney(order.total || 0);
   if (orderTotal <= 0) return null;
 
-  const orderDate = order.createdAt || new Date().toISOString();
-  const taxCalc = taxEngine.calculateTax(acc.taxSettings, order.items || [{ price: orderTotal, qty: 1 }], {
-    date: orderDate,
-    fulfillmentType: order.fulfillment || null,
-    globalDiscount: order.discount || 0,
-  });
-
-  const netSales = taxCalc.totalTaxableBase || roundMoney(orderTotal / 1.10);
-  const totalTax = taxCalc.totalTax || (orderTotal - netSales);
-  const discountTotal = taxCalc.totalDiscounts || roundMoney(order.discount || 0);
+  const checkoutTaxSnapshot = order.taxSnapshot ?? order.tax_snapshot;
+  let netSales;
+  let totalTax;
+  let discountTotal;
+  if (checkoutTaxSnapshot) {
+    const capturedAmounts = checkoutSnapshotAmountsForLegacyToman(order);
+    if (!capturedAmounts) {
+      console.error(`[accounting] skipped order ${order.id}: checkout tax snapshot is not safely reconcilable to the legacy Toman ledger`);
+      return null;
+    }
+    netSales = capturedAmounts.netSalesToman;
+    totalTax = capturedAmounts.totalTaxToman;
+    discountTotal = capturedAmounts.discountToman;
+  } else {
+    const orderDate = order.createdAt || new Date().toISOString();
+    let taxCalc;
+    try {
+      taxCalc = taxEngine.calculateTax(acc.taxSettings, order.items || [{ price: orderTotal, qty: 1 }], {
+        date: orderDate,
+        fulfillmentType: order.fulfillment || null,
+        globalDiscount: order.discount || 0,
+      });
+    } catch (err) {
+      console.error(`[accounting] skipped order ${order.id}: no effective tax calculation is available (${err.message})`);
+      return null;
+    }
+    netSales = taxCalc.totalTaxableBase || 0;
+    totalTax = taxCalc.totalTax || 0;
+    discountTotal = taxCalc.totalDiscounts || roundMoney(order.discount || 0);
+    if (netSales + totalTax !== orderTotal) {
+      console.error(`[accounting] skipped order ${order.id}: tax calculation does not reconcile to the paid total`);
+      return null;
+    }
+  }
   const grossSales = netSales + discountTotal;
 
   // Determine debit account based on payment method and channel
@@ -879,7 +980,8 @@ function getSalesAnalysis(db, filter = {}) {
     if (branchId != null && Number(o.branchId) !== branchId) return false;
     if (Number.isFinite(fromAt) && new Date(o.paidAt || o.createdAt || o.date || 0).getTime() < fromAt) return false;
     if (Number.isFinite(toAt) && new Date(o.paidAt || o.createdAt || o.date || 0).getTime() > toAt) return false;
-    return o.paymentStatus === 'paid' || ['paid', 'preparing', 'ready', 'dispatched', 'picked_up', 'delivered', 'done'].includes(o.status);
+    if (typeof o.paymentStatus === 'string') return o.paymentStatus === 'paid';
+    return ['paid', 'preparing', 'ready', 'dispatched', 'picked_up', 'delivered', 'done'].includes(o.status);
   });
 
   let totalSales = 0;
@@ -1101,7 +1203,15 @@ function getCashFlowStatement(db, from, to, filter = {}) {
   let financingInflows = 0;
 
   entries.forEach(e => {
-    (e.lines || []).forEach(l => {
+    const activeLines = (e.lines || []).filter(l => (l.debit > 0 || l.credit > 0));
+    const isInternalCashTransfer = ['transfer', 'internal_transfer', 'cash_transfer'].includes(e.source) ||
+      (activeLines.length > 0 && activeLines.every(l => {
+        const a = (acc.accounts || []).find(accRow => accRow.code === l.accountCode);
+        return a && (a.subtype === 'cash' || a.subtype === 'bank');
+      }));
+    if (isInternalCashTransfer) return;
+
+    activeLines.forEach(l => {
       const lineBranchId = l.branchId ?? e.branchId ?? null;
       if (branchId != null && Number(lineBranchId) !== branchId) return;
       const accDef = (acc.accounts || []).find(a => a.code === l.accountCode);
@@ -1232,11 +1342,14 @@ function getAPAging(db, asOfDate = new Date().toISOString(), filter = {}) {
 
 module.exports = {
   DEFAULT_COA,
+  ACCOUNTING_SETTING_KEYS,
   validateChartOfAccounts,
   ensureAccountingData,
+  updateAccountingSettings,
   normalBalance,
   postJournalEntry,
   reverseJournalEntry,
+  reverseOrderSalesJournal,
   syncOrderSalesJournal,
   rebuildLedgerFromOrders,
   getOverview,

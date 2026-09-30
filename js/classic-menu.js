@@ -1,6 +1,174 @@
+/* Shared guest-menu rules. Prices and option identities are always resolved
+   from the current API menu; the browser only submits group/option IDs. */
+(function (global) {
+  'use strict';
+
+  function safePrice(value) {
+    if (typeof value === 'number') return Number.isSafeInteger(value) && value >= 0 ? value : null;
+    if (typeof value !== 'string' || !value.trim()) return null;
+    const normalized = value.trim()
+      .replace(/[۰-۹]/g, (digit) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(digit)))
+      .replace(/[٠-٩]/g, (digit) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(digit)));
+    if (!/^\d+$/.test(normalized)) return null;
+    const amount = Number(normalized);
+    return Number.isSafeInteger(amount) && amount >= 0 ? amount : null;
+  }
+
+  function safeSelectionCount(value) {
+    if (typeof value === 'number') return Number.isSafeInteger(value) ? value : null;
+    if (typeof value !== 'string' || !value.trim()) return null;
+    const normalized = value.trim()
+      .replace(/[۰-۹]/g, (digit) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(digit)))
+      .replace(/[٠-٩]/g, (digit) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(digit)));
+    if (!/^\d+$/.test(normalized)) return null;
+    const count = Number(normalized);
+    return Number.isSafeInteger(count) ? count : null;
+  }
+
+  function normalizeSearchText(value) {
+    return String(value ?? '')
+      .normalize('NFKC')
+      .replace(/[يى]/g, 'ی')
+      .replace(/ك/g, 'ک')
+      .replace(/[\u0610-\u061a\u064b-\u065f\u0670\u06d6-\u06ed]/g, '')
+      .replace(/[۰-۹]/g, (digit) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(digit)))
+      .replace(/[٠-٩]/g, (digit) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(digit)))
+      .replace(/\u200c/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .toLowerCase();
+  }
+
+  function normalizeGroups(rawGroups) {
+    if (rawGroups == null) return { ok: true, groups: [] };
+    if (!Array.isArray(rawGroups) || rawGroups.length > 8) return { ok: false, groups: [] };
+    const groupIds = new Set();
+    const groups = [];
+    for (const raw of rawGroups) {
+      if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return { ok: false, groups: [] };
+      const id = String(raw.id ?? '').trim();
+      const title = String(raw.title ?? raw.name ?? '').trim();
+      const selection = raw.selection == null || raw.selection === '' ? 'multiple' : raw.selection;
+      if (!id || !title || groupIds.has(id) || !['single', 'multiple'].includes(selection) || !Array.isArray(raw.options) || raw.options.length > 16) {
+        return { ok: false, groups: [] };
+      }
+      groupIds.add(id);
+      const optionIds = new Set();
+      const options = [];
+      for (const option of raw.options) {
+        if (!option || typeof option !== 'object' || Array.isArray(option)) return { ok: false, groups: [] };
+        const optionId = String(option.id ?? '').trim();
+        const name = String(option.name ?? option.title ?? '').trim();
+        if (!optionId || !name || optionIds.has(optionId)) return { ok: false, groups: [] };
+        optionIds.add(optionId);
+        const price = safePrice(option.price);
+        if (option.available != null && typeof option.available !== 'boolean') return { ok: false, groups: [] };
+        options.push({ id: optionId, name, price, available: option.available !== false && price != null });
+      }
+      if (!options.length) return { ok: false, groups: [] };
+      const minSelections = raw.minSelections == null || raw.minSelections === ''
+        ? (raw.required === true ? 1 : 0)
+        : safeSelectionCount(raw.minSelections);
+      const maxSelections = raw.maxSelections == null || raw.maxSelections === ''
+        ? (selection === 'single' ? 1 : 16)
+        : safeSelectionCount(raw.maxSelections);
+      if (!Number.isSafeInteger(minSelections) || minSelections < 0 || minSelections > 16 ||
+          !Number.isSafeInteger(maxSelections) || maxSelections < 1 || maxSelections > 16 ||
+          minSelections > maxSelections || (selection === 'single' && maxSelections > 1) ||
+          options.filter((option) => option.available).length < minSelections) {
+        return { ok: false, groups: [] };
+      }
+      groups.push({ id, title, selection, minSelections, maxSelections, options });
+    }
+    return { ok: true, groups };
+  }
+
+  function resolveSelection(groupsResult, requested, basePrice) {
+    const price = safePrice(basePrice);
+    if (!groupsResult?.ok || price == null || !Array.isArray(requested)) return { ok: false, error: 'invalid_configuration' };
+    const groups = groupsResult.groups || [];
+    if (requested.length > 128) return { ok: false, error: 'too_many_selections' };
+    const selectedByGroup = new Map();
+    const canonical = [];
+    const seen = new Set();
+    for (const entry of requested) {
+      const groupId = String(entry?.groupId ?? '').trim();
+      const optionId = String(entry?.id ?? '').trim();
+      const group = groups.find((candidate) => candidate.id === groupId);
+      const option = group?.options.find((candidate) => candidate.id === optionId);
+      const identity = `${groupId}\u0000${optionId}`;
+      if (!group || !option || !option.available || seen.has(identity)) return { ok: false, error: 'invalid_selection' };
+      seen.add(identity);
+      if (!selectedByGroup.has(groupId)) selectedByGroup.set(groupId, []);
+      selectedByGroup.get(groupId).push(option);
+      canonical.push({ groupId, id: optionId, groupTitle: group.title, name: option.name, price: option.price });
+    }
+    for (const group of groups) {
+      const count = (selectedByGroup.get(group.id) || []).length;
+      if (count < group.minSelections || count > group.maxSelections || (group.selection === 'single' && count > 1)) {
+        return { ok: false, error: 'selection_count' };
+      }
+    }
+    const unitPrice = price + canonical.reduce((sum, entry) => sum + entry.price, 0);
+    if (!Number.isSafeInteger(unitPrice)) return { ok: false, error: 'unsafe_total' };
+    return { ok: true, modifiers: canonical, unitPrice };
+  }
+
+  global.WestoMenuUiRules = Object.freeze({ safePrice, safeSelectionCount, normalizeSearchText, normalizeGroups, resolveSelection });
+})(typeof window !== 'undefined' ? window : globalThis);
+
 /* Classic menu — Majnoon-inspired UI, Westo data & cart. fa | en | ar */
 (function () {
-  const STORAGE_KEY = 'westo_table';
+  function readMenuCartContext(params) {
+    const first = (keys) => {
+      for (const key of keys) {
+        const value = String(params?.get?.(key) ?? '').trim();
+        if (value) return value;
+      }
+      return '';
+    };
+    return {
+      branch: first(['branch', 'branchId']),
+      table: first(['table', 't', 'tableNo']),
+    };
+  }
+
+  function publicMenuRequestUrl(context) {
+    const query = new URLSearchParams();
+    if (context?.branch) query.set('branch', context.branch);
+    const search = query.toString();
+    return `/api/menu${search ? `?${search}` : ''}`;
+  }
+
+  function initialMenuSearchQuery(params) {
+    return String(params?.get?.('q') ?? '');
+  }
+
+  function canonicalCartIdentity(value, { requirePositive = false } = {}) {
+    const raw = String(value ?? '').trim();
+    const digits = raw
+      .replace(/[۰-۹]/g, (digit) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(digit)))
+      .replace(/[٠-٩]/g, (digit) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(digit)));
+    if (!/^\d+$/.test(digits)) return digits;
+    const canonical = digits.replace(/^0+(?=\d)/, '');
+    if (requirePositive && canonical === '0') return '';
+    return canonical;
+  }
+
+  function cartStorageKeyForContext(context) {
+    const branch = canonicalCartIdentity(context?.branch, { requirePositive: true });
+    const table = canonicalCartIdentity(context?.table);
+    return table
+      ? `westo_table:v2:${encodeURIComponent(branch || 'default')}:table:${encodeURIComponent(table)}`
+      : branch
+        ? `westo_table:v2:${encodeURIComponent(branch)}:menu`
+        : 'westo_table';
+  }
+
+  const cartContext = readMenuCartContext(new URLSearchParams(location.search));
+  const cartBranch = canonicalCartIdentity(cartContext.branch, { requirePositive: true });
+  const cartTable = canonicalCartIdentity(cartContext.table);
+  const STORAGE_KEY = cartStorageKeyForContext(cartContext);
   const $ = (s, r) => (r || document).querySelector(s);
   const i18n = () => window.westoI18n;
 
@@ -54,6 +222,8 @@
   let query = '';
   let detailItem = null;
   let detailQty = 1;
+  let detailGroups = { ok: true, groups: [] };
+  let detailSelection = Object.create(null);
   let catThumbs = {};
 
   // Hot-path indexes. They are rebuilt only when menu data changes, so search,
@@ -98,6 +268,8 @@
     detailSub: $('#cm-detail-sub'),
     detailDesc: $('#cm-detail-desc'),
     detailAllergens: $('#cm-detail-allergens'),
+    detailModifiers: $('#cm-detail-modifiers'),
+    detailModifierMessage: $('#cm-detail-modifier-message'),
     detailPrice: $('#cm-detail-price'),
     detailScroll: $('#cm-detail-scroll'),
     detailMore: $('#cm-detail-more'),
@@ -145,6 +317,136 @@
     return parts.some((p) => activeDayparts.includes(p));
   }
 
+  const menuRules = window.WestoMenuUiRules;
+  const safeMenuPrice = (value) => menuRules?.safePrice(value) ?? null;
+
+  function menuItemStockLimit(item) {
+    return typeof item?.stock === 'number' && Number.isSafeInteger(item.stock) && item.stock >= 0
+      ? item.stock
+      : null;
+  }
+
+  function menuItemStockRemaining(item) {
+    const limit = menuItemStockLimit(item);
+    if (limit === null) return null;
+    const id = String(item?.id ?? '');
+    const inCart = loadCart().reduce((total, line) => {
+      if (!line || String(line.menuItemId ?? '') !== id) return total;
+      const quantity = Number(line.qty);
+      return Number.isSafeInteger(quantity) && quantity > 0 ? total + quantity : total;
+    }, 0);
+    return Math.max(0, limit - inCart);
+  }
+
+  function detailSelectedModifiers() {
+    return Object.entries(detailSelection).flatMap(([groupId, ids]) =>
+      (Array.isArray(ids) ? ids : []).map((id) => ({ groupId, id })),
+    );
+  }
+
+  function detailPricing() {
+    if (!detailItem) return { ok: false, error: 'item_missing' };
+    if (detailItem.available !== true) return { ok: false, error: 'unavailable' };
+    if (!itemInDaypart(detailItem)) return { ok: false, error: 'daypart' };
+    const remainingStock = menuItemStockRemaining(detailItem);
+    if (remainingStock !== null && remainingStock < detailQty) return { ok: false, error: 'stock' };
+    const basePrice = safeMenuPrice(detailItem.price);
+    if (basePrice == null) return { ok: false, error: 'price' };
+    const result = menuRules?.resolveSelection(detailGroups, detailSelectedModifiers(), basePrice);
+    if (!result?.ok) return { ok: false, error: result?.error || 'configuration' };
+    const lineTotal = result.unitPrice * detailQty;
+    if (!Number.isSafeInteger(lineTotal)) return { ok: false, error: 'unsafe_total' };
+    return { ...result, lineTotal };
+  }
+
+  function renderDetailModifiers() {
+    if (!els.detailModifiers) return;
+    if (!detailGroups.ok) {
+      els.detailModifiers.innerHTML = '';
+      return;
+    }
+    els.detailModifiers.innerHTML = detailGroups.groups.map((group, groupIndex) => {
+      const selected = new Set(detailSelection[group.id] || []);
+      const noChoice = group.selection === 'single' && group.minSelections === 0
+        ? `<label class="cm-modifier__option"><input type="radio" name="cm-modifier-${esc(group.id)}" value="" data-modifier-group="${esc(group.id)}" data-modifier-option=""${selected.size ? '' : ' checked'} /><span>${esc(t3('بدون انتخاب', 'No preference', 'دون تفضيل'))}</span></label>`
+        : '';
+      const options = group.options.map((option) => {
+        const disabled = !option.available;
+        const checked = selected.has(option.id);
+        const type = group.selection === 'single' ? 'radio' : 'checkbox';
+        const priceText = option.price > 0
+          ? `، ${formatUiNumber(option.price)} ${esc(i18n()?.t ? i18n().t('currency.toman') : 'تومان')}`
+          : '';
+        const stateText = disabled ? ` <small class="cm-modifier__unavailable">${esc(t3('ناموجود', 'Unavailable', 'غير متوفر'))}</small>` : '';
+        return `<label class="cm-modifier__option${disabled ? ' is-unavailable' : ''}">
+          <input type="${type}" name="cm-modifier-${esc(group.id)}" value="${esc(option.id)}" data-modifier-group="${esc(group.id)}" data-modifier-option="${esc(option.id)}"${checked ? ' checked' : ''}${disabled ? ' disabled' : ''} />
+          <span>${esc(option.name)}${priceText}${stateText}</span>
+        </label>`;
+      }).join('');
+      const rule = group.minSelections > 0
+        ? t3(`انتخاب ${group.minSelections} مورد الزامی`, `Choose at least ${group.minSelections}`, `اختر ${group.minSelections} على الأقل`)
+        : group.maxSelections < group.options.length
+          ? t3(`حداکثر ${group.maxSelections} انتخاب`, `Choose up to ${group.maxSelections}`, `اختر حتى ${group.maxSelections}`)
+          : t3('اختیاری', 'Optional', 'اختياري');
+      const hint = group.selection === 'single' ? t3('یک گزینه', 'Choose one', 'اختر واحداً') : t3('چند گزینه', 'Choose any', 'اختر ما يناسبك');
+      return `<fieldset class="cm-modifier" data-modifier-fieldset="${esc(group.id)}" role="${group.selection === 'single' ? 'radiogroup' : 'group'}"${group.selection === 'single' ? ` aria-required="${group.minSelections > 0 ? 'true' : 'false'}"` : ''} aria-describedby="cm-modifier-hint-${groupIndex}">
+        <legend>${esc(group.title)} <small id="cm-modifier-hint-${groupIndex}">${esc(hint)} · ${esc(rule)}</small></legend>
+        <div class="cm-modifier__options">${noChoice}${options}</div>
+      </fieldset>`;
+    }).join('');
+  }
+
+  function updateDetailPurchaseState() {
+    if (!detailItem) return;
+    const pricing = detailPricing();
+    const unit = i18n()?.t ? i18n().t('currency.toman') : t3('تومان', 'Toman', 'تومان');
+    if (els.detailPrice) {
+      if (pricing.ok) {
+        const unitPrice = `${formatUiNumber(pricing.unitPrice)} ${unit}`;
+        const totalPrice = `${formatUiNumber(pricing.lineTotal)} ${unit}`;
+        els.detailPrice.innerHTML = `<span class="cm-detail__unit-label">${esc(t3('هر عدد', 'Each', 'للوحدة'))}: ${esc(unitPrice)}</span>${detailQty > 1 ? `<span class="cm-detail__total-label">${esc(t3('جمع', 'Total', 'الإجمالي'))}: ${esc(totalPrice)}</span>` : ''}`;
+      } else if (pricing.error === 'price' || pricing.error === 'unsafe_total') {
+        els.detailPrice.textContent = t3('قیمت معتبر در دسترس نیست', 'Price unavailable', 'السعر غير متاح');
+      } else {
+        const basePrice = safeMenuPrice(detailItem.price);
+        const hasModifierGroups = Array.isArray(detailItem.modifierGroups) && detailItem.modifierGroups.length > 0;
+        const baseLabel = hasModifierGroups ? `${t3('قیمت پایه', 'Base price', 'السعر الأساسي')}: ` : '';
+        els.detailPrice.textContent = basePrice == null ? t3('قیمت معتبر در دسترس نیست', 'Price unavailable', 'السعر غير متاح') : `${baseLabel}${formatUiNumber(basePrice)} ${unit}`;
+      }
+    }
+    if (els.detailModifierMessage) {
+      const messages = {
+        unavailable: t3('این غذا در حال حاضر موجود نیست.', 'This item is currently unavailable.', 'هذا العنصر غير متاح حالياً.'),
+        daypart: t3('این غذا در ساعت فعلی سرو نمی‌شود.', 'This item is not served at this time.', 'لا يقدم هذا العنصر في الوقت الحالي.'),
+        stock: t3('موجودی کافی برای این تعداد باقی نمانده است.', 'There is not enough stock left for this quantity.', 'لا توجد كمية كافية متبقية لهذا العدد.'),
+        price: t3('قیمت معتبر ثبت نشده؛ افزودن به سفارش ممکن نیست.', 'A valid price is not configured; this item cannot be ordered.', 'لم يتم إعداد سعر صالح؛ لا يمكن طلب هذا العنصر.'),
+        unsafe_total: t3('مبلغ سفارش خارج از محدوده مجاز است.', 'The order amount exceeds the supported limit.', 'يتجاوز مبلغ الطلب الحد المسموح.'),
+        configuration: t3('گزینه‌های این غذا نیازمند بازبینی منو هستند.', 'This item’s options need menu review.', 'تحتاج خيارات هذا العنصر إلى مراجعة القائمة.'),
+        invalid_configuration: t3('گزینه‌های این غذا معتبر نیستند.', 'This item’s options are invalid.', 'خيارات هذا العنصر غير صالحة.'),
+        too_many_selections: t3('تعداد گزینه‌های انتخاب‌شده معتبر نیست.', 'Too many options were selected.', 'تم اختيار عدد كبير من الخيارات.'),
+        invalid_selection: t3('انتخاب نامعتبر است؛ گزینه‌ها را دوباره بررسی کنید.', 'An invalid option was selected. Review your choices.', 'تم اختيار خيار غير صالح. راجع اختياراتك.'),
+        selection_count: t3('انتخاب‌های لازم را کامل کنید.', 'Complete the required choices.', 'أكمل الاختيارات المطلوبة.'),
+      };
+      els.detailModifierMessage.textContent = pricing.ok ? '' : (messages[pricing.error] || messages.selection_count);
+      els.detailModifierMessage.hidden = pricing.ok;
+    }
+    if (els.detailAdd) {
+      els.detailAdd.disabled = !pricing.ok;
+      els.detailAdd.textContent = pricing.ok
+        ? (i18n()?.t ? i18n().t('cm.add') : t3('افزودن به سبد', 'Add to cart', 'أضف إلى السلة'))
+        : (pricing.error === 'selection_count'
+          ? t3('انتخاب گزینه‌های لازم', 'Choose required options', 'اختر الخيارات المطلوبة')
+          : t3('افزودن در دسترس نیست', 'Unavailable', 'غير متاح'));
+    }
+    $('#cm-detail-dec')?.toggleAttribute('disabled', detailQty <= 1);
+    const remainingStock = menuItemStockRemaining(detailItem);
+    $('#cm-detail-inc')?.toggleAttribute('disabled', detailQty >= 99 || (remainingStock !== null && detailQty >= remainingStock) || (pricing.ok && !Number.isSafeInteger(pricing.unitPrice * (detailQty + 1))));
+    if (els.detailQty) {
+      els.detailQty.textContent = detailQty.toLocaleString(localeTag());
+      els.detailQty.setAttribute('aria-label', `${t3('تعداد', 'Quantity', 'الكمية')} ${detailQty.toLocaleString(localeTag())}`);
+    }
+  }
+
   function rebuildIndexes() {
     categoryById = new Map(categories.map((c) => [Number(c.id), c]));
     itemById = new Map(items.map((m) => [Number(m.id), m]));
@@ -163,7 +465,7 @@
       if (!item?.img) continue;
       const id = Number(item.categoryId);
       if (!anyFallback.has(id)) anyFallback.set(id, item.img);
-      if (item.available !== false && !availableFallback.has(id)) {
+      if (item.available !== false && menuItemStockLimit(item) !== 0 && !availableFallback.has(id)) {
         availableFallback.set(id, item.img);
       }
     }
@@ -187,7 +489,7 @@
     if (cached != null) return cached;
 
     const cat = categoryById.get(Number(item.categoryId));
-    const value = [
+    const value = normalizeSearchText([
       item.name,
       item.en,
       item.ar,
@@ -195,9 +497,7 @@
       item.descEn,
       item.descAr,
       cat ? catTitle(cat) : '',
-    ]
-      .join(' ')
-      .toLowerCase();
+    ].join(' '));
     searchIndex.set(key, value);
     return value;
   }
@@ -225,15 +525,33 @@
     toast._t = setTimeout(() => els.toast.classList.remove('show'), 1600);
   }
 
-  function addToCart(item, qty) {
+  function addToCart(item, qty, modifiers = []) {
     const q = Math.max(1, Math.min(99, Math.round(Number(qty) || 1)));
+    const remainingStock = menuItemStockRemaining(item);
+    if (remainingStock !== null && q > remainingStock) {
+      toast(t3('موجودی کافی برای این تعداد باقی نمانده است.', 'There is not enough stock left for this quantity.', 'لا توجد كمية كافية متبقية لهذا العدد.'));
+      return false;
+    }
+    const basePrice = safeMenuPrice(item?.price);
+    const groups = menuRules?.normalizeGroups(item?.modifierGroups);
+    const resolved = basePrice == null || item?.available !== true || !itemInDaypart(item)
+      ? { ok: false }
+      : menuRules?.resolveSelection(groups, modifiers, basePrice);
+    if (!resolved?.ok || !Number.isSafeInteger(resolved.unitPrice * q)) {
+      toast(t3('قیمت یا انتخاب‌های این غذا معتبر نیست؛ سفارش ثبت نشد.', 'The price or options are invalid; item was not added.', 'السعر أو الخيارات غير صالحة؛ لم تتم الإضافة.'));
+      return false;
+    }
+    const cartItem = { ...item, modifiers: resolved.modifiers.map(({ groupId, id }) => ({ groupId, id })) };
     if (window.westoTable?.addDirect) {
       // table-cart owns badge/drawer + its own toast
-      window.westoTable.addDirect(item, q);
-      return;
+      return window.westoTable.addDirect(cartItem, q, {
+        modifiers: cartItem.modifiers,
+        activeDayparts,
+      });
     }
     const cart = loadCart();
-    const found = cart.find((l) => l.menuItemId === item.id);
+    const signature = JSON.stringify(cartItem.modifiers.map(({ groupId, id }) => [groupId, id]).sort((a, b) => `${a[0]}:${a[1]}`.localeCompare(`${b[0]}:${b[1]}`)));
+    const found = cart.find((l) => l.menuItemId === item.id && l.modifierSignature === signature);
     if (found) found.qty += q;
     else {
       cart.push({
@@ -242,6 +560,9 @@
         en: item.en,
         ar: item.ar,
         price: item.price,
+        unitTotal: resolved.unitPrice,
+        modifiers: resolved.modifiers,
+        modifierSignature: signature,
         qty: q,
         img: item.img || '',
       });
@@ -253,6 +574,7 @@
         ' — ' +
         (i18n()?.t ? i18n().t('cm.added') : t3('به سبد اضافه شد', 'added to cart', 'أضيف إلى السلة')),
     );
+    return true;
   }
 
   function syncUrl() {
@@ -318,7 +640,7 @@
 
   function filteredList() {
     const categoryId = activeCat === 'all' ? null : Number(activeCat);
-    const q = query.trim().toLowerCase();
+    const q = menuRules?.normalizeSearchText(query) ?? query.trim().toLowerCase();
     const hasExclusions = excludeAllergens.size > 0;
     const list = [];
 
@@ -342,7 +664,7 @@
   function renderTabs() {
     const allThumb = items.find((m) => m.img)?.img;
     const allLabel = i18n()?.t ? i18n().t('cm.all') : t3('همه', 'All', 'الكل');
-    const allBtn = `<button type="button" class="cm-cat${activeCat === 'all' ? ' is-active' : ''}" data-cat="all">
+    const allBtn = `<button type="button" class="cm-cat${activeCat === 'all' ? ' is-active' : ''}" data-cat="all" aria-current="${activeCat === 'all' ? 'true' : 'false'}" aria-pressed="${activeCat === 'all' ? 'true' : 'false'}">
       ${allThumb ? `<img class="cm-cat__thumb" src="${esc(allThumb)}" alt="" loading="lazy" />` : `<span class="cm-cat__thumb--empty" aria-hidden="true"></span>`}
       <span class="cm-cat__label">${esc(allLabel)}</span>
     </button>`;
@@ -351,7 +673,8 @@
       categories
         .map((c) => {
           const thumb = catThumbs[c.id];
-          return `<button type="button" class="cm-cat${String(c.id) === String(activeCat) ? ' is-active' : ''}" data-cat="${c.id}">
+          const selected = String(c.id) === String(activeCat);
+          return `<button type="button" class="cm-cat${selected ? ' is-active' : ''}" data-cat="${esc(c.id)}" aria-current="${selected ? 'true' : 'false'}" aria-pressed="${selected ? 'true' : 'false'}">
             ${thumb ? `<img class="cm-cat__thumb" src="${esc(thumb)}" alt="" loading="lazy" />` : `<span class="cm-cat__thumb--empty" aria-hidden="true"></span>`}
             <span class="cm-cat__label">${esc(catTitle(c))}</span>
           </button>`;
@@ -367,7 +690,7 @@
     els.filters.innerHTML = allergens
       .map(
         (a) =>
-          `<button type="button" class="cm-chip${excludeAllergens.has(a.id) ? ' is-on' : ''}" data-allergen="${esc(a.id)}">${esc(
+          `<button type="button" class="cm-chip${excludeAllergens.has(a.id) ? ' is-on' : ''}" style="min-width:44px;min-height:44px;touch-action:manipulation" data-allergen="${esc(a.id)}" aria-pressed="${excludeAllergens.has(a.id) ? 'true' : 'false'}">${esc(
             allergenLabel(a),
           )}</button>`,
       )
@@ -405,11 +728,26 @@
   }
 
   function cardPriceMarkup(price) {
-    const amount = Math.max(0, Number(price || 0));
+    const amount = safeMenuPrice(price);
+    if (amount == null) return `<span class="cm-item__price-unknown">${esc(t3('قیمت اعلام نشده', 'Price unavailable', 'السعر غير معلن'))}</span>`;
     const value = formatUiNumber(amount);
     const unit = i18n()?.t ? i18n().t('currency.toman') : t3('تومان', 'Toman', 'تومان');
     const unitMarkup = unit === 'تومان' ? '<small>تومان</small>' : `<small>${esc(unit)}</small>`;
     return `<strong>${esc(value)}</strong>${unitMarkup}`;
+  }
+
+  function emptyGridMessage(itemCount, categoryEmpty) {
+    if (itemCount === 0) {
+      return t3(
+        'منوی فعالی برای این رستوران منتشر نشده است.',
+        'No menu has been published for this restaurant yet.',
+        'لم تُنشر قائمة لهذا المطعم بعد.',
+      );
+    }
+    if (categoryEmpty) {
+      return t3('هنوز غذایی در این دسته نیست', 'No dishes in this category yet', 'لا أطباق في هذه الفئة بعد');
+    }
+    return t3('موردی با این فیلتر پیدا نشد', 'No dishes match these filters', 'لا توجد أطباق مطابقة');
   }
 
   function renderGrid() {
@@ -421,36 +759,45 @@
         !query &&
         !excludeAllergens.size &&
         !(items || []).some((m) => String(m.categoryId) === String(activeCat));
-      const msg = catEmpty
-        ? i18n()?.t
-          ? i18n().t('cm.emptyCat')
-          : t3('هنوز غذایی در این دسته نیست', 'No dishes in this category yet', 'لا أطباق في هذه الفئة بعد')
-        : i18n()?.t
-          ? i18n().t('cm.empty')
-          : t3('موردی با این فیلتر پیدا نشد', 'No dishes match these filters', 'لا توجد أطباق مطابقة');
-      els.grid.innerHTML = `<p class="cm-empty">${esc(msg)}</p>`;
+      const msg = emptyGridMessage((items || []).length, catEmpty);
+      els.grid.innerHTML = `<p class="cm-empty" role="status" aria-live="polite">${esc(msg)}</p>`;
       return;
     }
 
     let featuredUsed = false;
     els.grid.innerHTML = list
       .map((m) => {
-        const out = m.available === false;
+        const out = m.available !== true;
+        const outOfStock = menuItemStockLimit(m) === 0;
         const off = !itemInDaypart(m);
+        const menuPrice = safeMenuPrice(m.price);
+        const priceKnown = menuPrice != null;
+        const orderBlocked = out || outOfStock || off || !priceKnown;
         const name = itemName(m);
         const sub = itemSub(m);
         const summary = itemDesc(m);
-        const featured = !featuredUsed && m.featured && !out;
+        const featured = !featuredUsed && m.featured && !out && !outOfStock;
         if (featured) featuredUsed = true;
-        const spokenPrice = `${formatUiNumber(m.price)} ${i18n()?.t ? i18n().t('currency.toman') : t3('تومان', 'Toman', 'تومان')}`;
-        return `<article class="cm-item${featured ? ' is-featured' : ''}${out || off ? ' is-unavailable' : ''}" data-id="${m.id}" role="button" tabindex="0" aria-label="${esc(`${name}، ${spokenPrice}`)}">
-          <div class="cm-item__media">${m.img ? `<img src="${esc(m.img)}" alt="${esc(name)}" loading="lazy" />` : ''}</div>
+        const spokenPrice = priceKnown
+          ? `${formatUiNumber(menuPrice)} ${i18n()?.t ? i18n().t('currency.toman') : t3('تومان', 'Toman', 'تومان')}`
+          : t3('قیمت اعلام نشده', 'Price unavailable', 'السعر غير معلن');
+        const badge = outOfStock
+          ? t3('ناموجود', 'Sold out', 'غير متوفر')
+          : out
+          ? (m.available === false ? t3('ناموجود', 'Sold out', 'غير متوفر') : t3('وضعیت نامشخص', 'Availability unknown', 'التوفر غير معروف'))
+          : off
+            ? t3('در این ساعت سرو نمی‌شود', 'Not served now', 'لا يقدم الآن')
+            : !priceKnown
+              ? t3('قیمت نامشخص', 'Price unavailable', 'السعر غير متاح')
+              : '';
+        return `<article class="cm-item${featured ? ' is-featured' : ''}${orderBlocked ? ' is-unavailable' : ''}" data-id="${esc(m.id)}" role="button" tabindex="0" aria-haspopup="dialog" aria-controls="cm-detail" aria-label="${esc(`${name}، ${spokenPrice}${badge ? `، ${badge}` : ''}`)}">
+          <div class="cm-item__media">${m.img ? `<img src="${esc(m.img)}" alt="" loading="lazy" />` : ''}</div>
           <div class="cm-item__body">
             <h3 class="cm-item__name">${esc(name)}</h3>
             ${sub ? `<p class="cm-item__en" dir="auto">${esc(sub)}</p>` : ''}
             ${summary ? `<p class="cm-item__summary">${esc(summary)}</p>` : ''}
             <p class="cm-item__price">${cardPriceMarkup(m.price)}</p>
-            ${out ? `<span class="cm-item__badge">${t3('ناموجود', 'Sold out', 'غير متوفر')}</span>` : ''}
+            ${badge ? `<span class="cm-item__badge">${esc(badge)}</span>` : ''}
           </div>
         </article>`;
       })
@@ -487,17 +834,19 @@
   }
   function classicRestoreFocus(){ const back=overlayFocusBeforeOpen; overlayFocusBeforeOpen=null; if(back?.isConnected&&typeof back.focus==='function'){try{back.focus({preventScroll:true});}catch(_){}} }
 
-  function openDetail(item) {
+  function openDetail(item, { preserve = false } = {}) {
     const wasHidden = els.detail.hidden;
+    const sameItem = detailItem && Number(detailItem.id) === Number(item.id);
     detailItem = item;
-    detailQty = 1;
+    if (!preserve || !sameItem) {
+      detailQty = 1;
+      detailGroups = menuRules?.normalizeGroups(item?.modifierGroups) || { ok: false, groups: [] };
+      detailSelection = Object.create(null);
+    }
     if (els.detailQty) els.detailQty.textContent = detailQty.toLocaleString(localeTag());
     if (els.detailName) els.detailName.textContent = itemName(item);
     if (els.detailSub) els.detailSub.textContent = itemSub(item);
     if (els.detailDesc) els.detailDesc.textContent = itemDesc(item);
-    if (els.detailPrice) {
-      els.detailPrice.textContent = `${formatUiNumber(item.price)} ${i18n()?.t ? i18n().t('currency.toman') : t3('تومان', 'Toman', 'تومان')}`;
-    }
     if (els.detailMedia) {
       els.detailMedia.innerHTML = `${item.img ? `<img src="${esc(item.img)}" alt="${esc(itemName(item))}" />` : ''}<button type="button" class="cm-detail__media-expand" id="cm-detail-media-expand" aria-label="${esc(t3('نمایش جزئیات بیشتر', 'Show more details', 'عرض تفاصيل أكثر'))}" aria-expanded="false">↗</button>`;
     }
@@ -509,8 +858,13 @@
         .join('');
       els.detailAllergens.innerHTML = tags;
     }
-    if (els.detailAdd) els.detailAdd.disabled = item.available === false;
-    setDetailExpanded(false);
+    renderDetailModifiers();
+    if (els.detailModifierMessage) els.detailModifierMessage.hidden = true;
+    if (els.detailAdd) els.detailAdd.disabled = true;
+    updateDetailPurchaseState();
+    // The option list must remain reachable on small screens; expanded mode
+    // gives the detail sheet a real scroll region instead of clipping fields.
+    setDetailExpanded(Boolean(detailGroups.ok && detailGroups.groups.length));
     if (wasHidden) overlayFocusBeforeOpen = document.activeElement;
     els.detail.hidden = false;
     els.detail.setAttribute('aria-hidden','false');
@@ -605,7 +959,7 @@
       localStorage.setItem('westo_menu_lang_explicit_v1', '1');
     } catch (_) {}
     refresh();
-    if (detailItem) openDetail(detailItem);
+    if (detailItem) openDetail(detailItem, { preserve: true });
   }
 
   function applyCategoryTheme() {
@@ -674,10 +1028,13 @@
     }
 
     paintChrome();
-    els.grid.innerHTML = `<p class="cm-empty">${esc(i18n()?.t ? i18n().t('cm.loading') : t3('در حال بارگذاری…', 'Loading…', 'جاري التحميل…'))}</p>`;
+    els.grid.setAttribute('aria-busy', 'true');
+    els.grid.innerHTML = `<p class="cm-empty" role="status">${esc(i18n()?.t ? i18n().t('cm.loading') : t3('در حال بارگذاری…', 'Loading…', 'جاري التحميل…'))}</p>`;
 
     try {
-      const r = await fetch('/api/menu?all=1', {
+      // Use the guest-orderable catalogue for this QR branch. The unfiltered
+      // `all=1` view can show branch-stocked-out items as purchasable.
+      const r = await fetch(publicMenuRequestUrl({ branch: cartBranch }), {
         credentials: 'same-origin',
         cache: 'no-cache',
         signal: bootController?.signal,
@@ -685,26 +1042,32 @@
       if (!r.ok) throw new Error(`menu request failed (${r.status})`);
       const d = await r.json();
       if (generation !== bootGeneration) return;
+      if (!d || !Array.isArray(d.menuItems) || (!Array.isArray(d.menuCategories) && !Array.isArray(d.siteCategories))) {
+        throw new Error('menu response is missing catalogue collections');
+      }
 
       if (d.i18n && i18n()?.syncFromConfig) i18n().syncFromConfig(d.i18n);
-      items = d.menuItems || [];
-      allergens = d.allergens || [];
-      activeDayparts = d.activeDayparts || [];
+      items = d.menuItems;
+      allergens = Array.isArray(d.allergens) ? d.allergens : [];
+      activeDayparts = Array.isArray(d.activeDayparts) ? d.activeDayparts : [];
       const hasCover = (c) => {
         const cover = String(c?.coverImg || '').trim();
         return !!cover && !/assets\/textures\/westo_texture_/i.test(cover);
       };
-      if (Array.isArray(d.siteCategories) && d.siteCategories.length) {
-        categories = d.siteCategories.filter((c) => c && hasCover(c));
+      const siteCategories = Array.isArray(d.siteCategories) ? d.siteCategories : [];
+      const menuCategories = Array.isArray(d.menuCategories) ? d.menuCategories : [];
+      if (siteCategories.length) {
+        categories = siteCategories.filter((c) => c && hasCover(c));
       } else {
-        categories = (d.menuCategories || []).filter((c) => c && !c.hiddenOnSite && hasCover(c));
+        categories = menuCategories.filter((c) => c && !c.hiddenOnSite && hasCover(c));
       }
 
       rebuildIndexes();
       buildCatThumbs();
 
       const params = new URLSearchParams(location.search);
-      query = '';
+      query = initialMenuSearchQuery(params);
+      if (els.search) els.search.value = query;
       if (params.get('exclude')) {
         params
           .get('exclude')
@@ -725,12 +1088,14 @@
         if (found) openDetail(found);
       }
       bootComplete = true;
+      els.grid.setAttribute('aria-busy', 'false');
     } catch (error) {
       if (generation !== bootGeneration) return;
       if (error?.name === 'AbortError' && document.visibilityState === 'hidden') return;
-      els.grid.innerHTML = `<p class="cm-empty">${esc(i18n()?.t ? i18n().t('cm.loadFail') : t3('بارگذاری ناموفق بود', 'Failed to load menu', 'فشل التحميل'))}</p>`;
+      els.grid.innerHTML = `<div class="cm-empty cm-empty--error" role="alert"><p>${esc(i18n()?.t ? i18n().t('cm.loadFail') : t3('بارگذاری منو ناموفق بود؛ هیچ کالایی به‌صورت حدسی نمایش داده نمی‌شود.', 'Menu could not be loaded; no guessed items are shown.', 'تعذر تحميل القائمة؛ لن نعرض عناصر تخمينية.'))}</p><button type="button" class="cm-retry" id="cm-retry">${esc(t3('تلاش دوباره', 'Try again', 'إعادة المحاولة'))}</button></div>`;
     } finally {
       if (generation === bootGeneration) {
+        els.grid.setAttribute('aria-busy', 'false');
         if (bootTimeout) clearTimeout(bootTimeout);
         bootTimeout = 0;
         bootController = null;
@@ -739,6 +1104,10 @@
   }
 
   document.addEventListener('click', (e) => {
+    if (e.target.closest('#cm-retry')) {
+      void boot();
+      return;
+    }
     if (e.target.closest('#cm-search-toggle')) {
       toggleSearch();
       return;
@@ -819,18 +1188,45 @@
     }
     if (e.target.closest('#cm-detail-inc')) {
       detailQty = Math.min(99, detailQty + 1);
-      if (els.detailQty) els.detailQty.textContent = detailQty.toLocaleString(localeTag());
+      updateDetailPurchaseState();
       return;
     }
     if (e.target.closest('#cm-detail-dec')) {
       detailQty = Math.max(1, detailQty - 1);
-      if (els.detailQty) els.detailQty.textContent = detailQty.toLocaleString(localeTag());
+      updateDetailPurchaseState();
       return;
     }
     if (e.target.closest('#cm-detail-add') && detailItem) {
-      addToCart(detailItem, detailQty);
-      closeDetail();
+      const pricing = detailPricing();
+      if (pricing.ok && addToCart(detailItem, detailQty, pricing.modifiers)) closeDetail();
     }
+  });
+
+  els.detailModifiers?.addEventListener('change', (event) => {
+    const input = event.target.closest('input[data-modifier-group][data-modifier-option]');
+    if (!input || input.disabled) return;
+    const group = detailGroups.groups.find((entry) => entry.id === input.dataset.modifierGroup);
+    if (!group) return;
+    const chosen = new Set(detailSelection[group.id] || []);
+    if (group.selection === 'single') {
+      detailSelection[group.id] = input.value ? [input.value] : [];
+    } else if (input.checked) {
+      chosen.add(input.value);
+      if (chosen.size > group.maxSelections) {
+        input.checked = false;
+        if (els.detailModifierMessage) {
+          els.detailModifierMessage.textContent = t3(`حداکثر ${group.maxSelections} گزینه از «${group.title}» قابل انتخاب است.`, `Choose no more than ${group.maxSelections} from “${group.title}”.`, `اختر ${group.maxSelections} كحد أقصى من «${group.title}».`);
+          els.detailModifierMessage.hidden = false;
+        }
+        return;
+      }
+      detailSelection[group.id] = [...chosen];
+    } else {
+      chosen.delete(input.value);
+      detailSelection[group.id] = [...chosen];
+    }
+    if (els.detailModifierMessage) els.detailModifierMessage.hidden = true;
+    updateDetailPurchaseState();
   });
 
   els.search?.addEventListener('input', () => {
@@ -868,7 +1264,7 @@
     // that memoized layer; menu data/indexes themselves stay valid.
     searchIndex.clear();
     refresh();
-    if (detailItem) openDetail(detailItem);
+    if (detailItem) openDetail(detailItem, { preserve: true });
   });
 
   window.addEventListener('pagehide', () => {

@@ -55,7 +55,7 @@ body.is-kitchen-workspace {
   height: 100%;
   min-height: 0;
   display: grid;
-  grid-template-rows: 68px 36px minmax(0, 1fr) 23px;
+  grid-template-rows: 68px 36px minmax(0, 1fr) minmax(76px, 22vh) 23px;
   gap: 5px;
   direction: rtl;
 }
@@ -74,6 +74,7 @@ body.is-kitchen-workspace {
 .kds-command__summary { min-width: 0; display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 0 8px; }
 .kds-command__summary strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 16px; }
 .kds-command__summary small { grid-column: 2; color: #8f9c9d; font-size: 9px; }
+.kds-command__summary small.is-payment-review { color: #ffd38b; font-size: 10px; font-weight: 900; }
 .kds-live { grid-row: 1 / 3; display: inline-flex; align-items: center; gap: 5px; color: #98a4a6; font-size: 9px; font-weight: 850; }
 .kds-live i { width: 8px; height: 8px; border-radius: 50%; background: #798486; box-shadow: 0 0 0 3px rgba(121,132,134,.12); }
 .kds-live.is-online { color: #8ee0bc; }
@@ -95,7 +96,7 @@ body.is-kitchen-workspace {
 
 .kds-subbar { min-width: 0; display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 8px; padding: 3px 7px; border: 1px solid var(--kds-line); border-radius: 9px; background: #0e1415; }
 .kds-fulfillment { display: flex; gap: 3px; }
-.kds-fulfillment button { height: 27px; padding: 0 10px; border: 0; border-radius: 7px; background: transparent; color: #849193; cursor: pointer; font-size: 9px; font-weight: 800; }
+.kds-fulfillment button { min-width: 44px; height: 27px; padding: 0 10px; border: 0; border-radius: 7px; background: transparent; color: #849193; cursor: pointer; font-size: 9px; font-weight: 800; }
 .kds-fulfillment button.active { background: #263234; color: #fff; }
 .kds-pressure { min-width: 0; display: flex; align-items: center; justify-content: center; gap: 13px; overflow: hidden; color: #8f9b9d; font-size: 9px; }
 .kds-pressure span { white-space: nowrap; }
@@ -105,6 +106,12 @@ body.is-kitchen-workspace {
 .kds-pager button { width: 28px; height: 27px; border: 1px solid var(--kds-line); border-radius: 7px; background: #1b2426; color: #fff; cursor: pointer; }
 .kds-pager button:disabled { opacity: .3; cursor: default; }
 .kds-pager span { min-width: 42px; text-align: center; color: #c1cbcc; font-size: 9px; }
+.kds-subbar__end { display: flex; align-items: center; gap: 6px; }
+.kds-cancelled-jump { min-height: 27px; padding: 0 8px; border: 1px solid var(--kds-line); border-radius: 7px; background: #1b2426; color: #c2cbcc; cursor: pointer; font-size: 9px; font-weight: 850; white-space: nowrap; }
+.kds-cancelled-jump.has-cancellations { border-color: #8f4d50; background: #3b2023; color: #ffd6d7; }
+.kds-cancelled-jump:focus-visible,.kds-cancelled-lane:focus-visible { outline: 3px solid #f1b638; outline-offset: 2px; }
+body.is-kitchen-workspace :is(button,a,input,select):focus-visible { outline: 3px solid #f1b638; outline-offset: 2px; }
+body.is-kitchen-workspace button:disabled { cursor: not-allowed; }
 
 .kds-ticket-grid {
   min-height: 0;
@@ -116,6 +123,22 @@ body.is-kitchen-workspace {
   overflow: hidden;
 }
 .kds-shell.is-rail .kds-ticket-grid { grid-auto-flow: column; grid-auto-columns: minmax(220px,1fr); }
+
+.kds-cancelled-lane { min-height: 0; padding: 6px 8px; display: grid; grid-template-rows: auto minmax(0,1fr); gap: 5px; overflow: hidden; border: 1px solid #704145; border-radius: 9px; background: #1b1517; color: #f3eeee; }
+.kds-cancelled-lane > header { min-width: 0; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.kds-cancelled-lane > header > div { min-width: 0; }
+.kds-cancelled-lane h2 { margin: 0; color: #ffd6d7; font-size: 11px; }
+.kds-cancelled-lane > header p { margin: 2px 0 0; color: #b9a7a8; font-size: 8px; }
+.kds-cancelled-lane > header > span { flex: 0 0 auto; padding: 3px 7px; border-radius: 999px; background: #402326; color: #ffd6d7; font-size: 9px; font-weight: 850; }
+.kds-cancelled-lane__list { min-height: 0; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(190px, 245px); gap: 6px; overflow: auto; overscroll-behavior: contain; }
+.kds-cancelled-ticket { min-width: 0; padding: 6px 8px; overflow: auto; border: 1px solid #513437; border-radius: 7px; background: #241b1d; font-size: 9px; }
+.kds-cancelled-ticket header { display: flex; justify-content: space-between; gap: 6px; color: #f8e9e9; }
+.kds-cancelled-ticket header span { color: #c2b4b5; direction: ltr; }
+.kds-cancelled-ticket__time { margin: 3px 0; color: #ffaaaE; font-size: 8px; }
+.kds-cancelled-ticket ul { margin: 0; padding-inline-start: 15px; color: #e2d7d8; line-height: 1.5; }
+.kds-cancelled-ticket li b { color: #ffc4c6; }
+.kds-cancelled-ticket__note { margin: 3px 0 0; color: #c2b4b5; }
+.kds-cancelled-lane__empty { grid-column: 1 / -1; align-self: center; margin: 0; color: #b9a7a8; font-size: 9px; }
 
 .kds-ticket {
   --ticket-accent: var(--kds-cyan);
@@ -138,6 +161,7 @@ body.is-kitchen-workspace {
 .kds-ticket.needs-attention { box-shadow: 0 0 0 2px rgba(228,88,95,.28),0 5px 16px rgba(0,0,0,.3); }
 .kds-ticket.is-selected { border-color: var(--kds-cyan); box-shadow: 0 0 0 3px rgba(35,184,199,.55),0 7px 18px rgba(0,0,0,.36); }
 .kds-ticket.is-selected .kds-ticket__head::after { content: 'انتخاب‌شده'; margin-inline-start: auto; padding: 2px 4px; border-radius: 4px; background: rgba(8,16,18,.22); font-size: 7px; font-weight: 950; }
+.kds-ticket.is-fresh { --ticket-accent: #10b981; }
 .kds-ticket.is-warn { --ticket-accent: var(--kds-yellow); }
 .kds-ticket.is-late { --ticket-accent: var(--kds-red); animation: kdsLatePulse 1.8s ease-in-out infinite; }
 @keyframes kdsLatePulse { 50% { box-shadow: 0 0 0 3px rgba(228,88,95,.22),0 5px 16px rgba(0,0,0,.34); } }
@@ -265,7 +289,7 @@ body.is-kitchen-workspace {
   .kds-command__actions > button { padding: 0 3px; overflow: hidden; font-size: 10px; }
   .kds-unified-station b { font-size: 9px; }
   .kds-shortcuts { display: none; }
-  .kds-shell { grid-template-rows: 68px 36px minmax(0,1fr); }
+  .kds-shell { grid-template-rows: 68px 36px minmax(0,1fr) minmax(76px,22vh); }
 }
 
 @media (max-width: 700px) {
@@ -277,7 +301,7 @@ body.is-kitchen-workspace {
   .is-kitchen-workspace :is(.role-shift,.role-icon-button,.role-user,.role-branch) { height: 38px; min-height: 38px; }
   .is-kitchen-workspace .role-nav { position: static; inset: auto; height: 38px; padding: 2px; border-radius: 8px; }
   .is-kitchen-workspace .role-nav button { height: 36px; min-height: 36px; padding: 0 14px; font-size: 10px; }
-  .kds-shell { grid-template-rows: 110px 34px minmax(0,1fr); gap: 4px; }
+  .kds-shell { grid-template-rows: 110px 34px minmax(0,1fr) minmax(76px,20vh); gap: 4px; }
   .kds-command { grid-template-columns: 1fr; grid-template-rows: 34px 36px 32px; gap: 3px; padding: 4px; }
   .kds-command__summary { grid-template-columns: auto 1fr auto; }
   .kds-command__summary small { grid-column: 3; grid-row: 1; }
@@ -289,6 +313,8 @@ body.is-kitchen-workspace {
   .kds-command__actions { grid-row: 3; grid-template-columns: 1fr repeat(3,34px); }
   .kds-command__actions label,.kds-command__actions > button { height: 34px; min-height: 34px; }
   .kds-subbar { grid-template-columns: 1fr auto; }
+  .kds-subbar__end { gap: 3px; }
+  .kds-cancelled-jump { min-height: 30px; padding-inline: 5px; font-size: 8px; }
   .kds-pressure { display: none; }
   .kds-ticket-grid { gap: 4px; }
   .kds-ticket { grid-template-rows: 34px 20px minmax(0,1fr) auto auto; }
@@ -308,6 +334,96 @@ body.is-kitchen-workspace {
 
 @media (prefers-reduced-motion: reduce) {
   .kds-ticket.is-late,.kds-undo i { animation: none; }
+}
+
+/* Handheld KDS: trade tiny multi-column tickets for a legible, scrollable queue. */
+@media (max-width: 700px) {
+  .is-kitchen-workspace .role-app {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: 50px 46px minmax(0, 1fr);
+    min-width: 0;
+  }
+  .is-kitchen-workspace .role-header { height: 50px; padding: 3px 7px; }
+  .is-kitchen-workspace :is(.role-shift,.role-icon-button,.role-user,.role-branch) { height: 44px; min-height: 44px; }
+  .is-kitchen-workspace .role-icon-button,
+  .is-kitchen-workspace .role-user { width: 44px; flex: 0 0 44px; }
+  .is-kitchen-workspace .role-nav,
+  .is-kitchen-workspace .role-main { min-width: 0; width: 100%; max-width: 100%; }
+  .is-kitchen-workspace .role-nav { height: 46px; }
+  .is-kitchen-workspace .role-nav button { min-height: 44px; height: 44px; padding-inline: 14px; font-size: 13px; }
+  .kds-shell { grid-template-rows: 148px 52px minmax(0, 1fr) minmax(84px, 22vh) auto; }
+  .kds-command { grid-template-rows: 40px 42px 44px; gap: 5px; padding: 6px; }
+  .kds-command__actions label,
+  .kds-command__actions > button { height: 44px; min-height: 44px; font-size: 13px; }
+  .kds-command__actions { grid-template-columns: minmax(0, 1fr) repeat(3, 44px); }
+  .kds-subbar { min-height: 48px; }
+  .kds-fulfillment { min-width: 0; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none; }
+  .kds-fulfillment button { flex: 0 0 auto; min-width: 44px; height: 44px; min-height: 44px; padding-inline: 8px; font-size: 11px; }
+  .kds-pager button { flex: 0 0 44px; width: 44px; height: 44px; }
+  .kds-pager span { min-width: 34px; font-size: 11px; }
+  .kds-cancelled-jump { min-height: 44px; padding-inline: 7px; font-size: 10px; }
+  .kds-ticket-grid,
+  .kds-shell.is-rail .kds-ticket-grid {
+    grid-template-columns: minmax(0, 1fr) !important;
+    grid-template-rows: none;
+    grid-auto-flow: row;
+    grid-auto-columns: minmax(0, 1fr);
+    grid-auto-rows: minmax(270px, auto);
+    gap: 9px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+  .kds-ticket { min-height: 270px; grid-template-rows: 44px auto minmax(100px, 1fr) auto auto; }
+  .kds-ticket__head { padding: 6px 9px; }
+  .kds-ticket__head b { font-size: 14px; }
+  .kds-ticket__head small { font-size: 11px; }
+  .kds-ticket__head span,
+  .kds-ticket__head time { font-size: 12px; }
+  .kds-ticket__meta { padding: 6px 9px; font-size: 11px; }
+  .kds-item { min-height: 48px; padding: 7px 9px; grid-template-columns: auto minmax(0, 1fr) 20px; gap: 9px; }
+  .kds-item__qty { font-size: 13px; }
+  .kds-item__body b { font-size: 15px; line-height: 1.4; }
+  .kds-item__body small { font-size: 12px; line-height: 1.45; }
+  .kds-course-tag { font-size: 12px !important; line-height: 1.4; }
+  .kds-item__allergen { font-size: 11px; }
+  .kds-ticket__footer { height: auto; min-height: 48px; grid-template-columns: 44px 44px minmax(0, 1fr); gap: 6px; padding: 5px; }
+  .kds-ticket__footer > button { min-height: 44px; height: auto; font-size: 13px; }
+  .kds-ticket__footer > button:not(.kds-ticket__primary) { font-size: 18px; }
+  .kds-undo button { min-height: 44px; height: 44px; }
+  .kds-all-day-drawer__head > button { width: 44px; height: 44px; }
+  .kds-cancelled-lane { padding: 6px; }
+  .kds-cancelled-lane h2 { font-size: 13px; }
+  .kds-cancelled-lane > header > span { font-size: 11px; }
+  .kds-cancelled-lane > header p { display: none; }
+  .kds-cancelled-lane__list { grid-auto-flow: row; grid-auto-rows: minmax(0,auto); grid-template-columns: minmax(0,1fr); overflow-y: auto; }
+  .kds-cancelled-ticket { padding: 7px 9px; font-size: 12px; }
+  .kds-cancelled-ticket header { flex-wrap: wrap; overflow-wrap: anywhere; }
+  .kds-cancelled-ticket__time { font-size: 11px; }
+  .kds-cancelled-ticket__note { line-height: 1.5; overflow-wrap: anywhere; }
+  .kds-note,
+  .kds-note.is-held-course {
+    font-size: 12px;
+    line-height: 1.5;
+    overflow-wrap: anywhere;
+  }
+  .kds-note b,
+  .kds-note.is-held-course b {
+    font-size: 12px;
+    line-height: 1.45;
+  }
+  .kds-shell.is-text-large .kds-item__body small,
+  .kds-shell.is-text-large .kds-note,
+  .kds-shell.is-text-large .kds-note b,
+  .kds-shell.is-text-large .kds-note.is-held-course b {
+    font-size: 12px;
+  }
+}
+
+@media (max-width: 380px) {
+  .kds-shell { grid-template-rows: 148px 100px minmax(0, 1fr) minmax(84px, 22vh) auto; }
+  .kds-subbar { grid-template-columns: minmax(0, 1fr); grid-template-rows: 44px 44px; gap: 2px; min-height: 98px; }
+  .kds-fulfillment { grid-row: 1; }
+  .kds-subbar__end { grid-row: 2; justify-content: space-between; }
 }
 
 /* Inventory is a document-like workflow; unlike the live KDS board it must
@@ -332,4 +448,69 @@ body.is-kitchen-workspace.is-kitchen-inventory {
   height: auto;
   overflow: visible;
   padding-bottom: 24px;
+}
+
+/* Reconciliation states and held courses are informational, never kitchen actions. */
+.kds-live.is-stale { color: #ffd0a0; }
+.kds-live.is-stale i { background: var(--kds-orange); box-shadow: 0 0 0 3px rgba(233,151,74,.18); }
+.kds-command__summary small.is-stale { color: #ffd0a0; font-size: 9px; line-height: 1.35; }
+.kds-item.is-held { min-height: 48px; background: #fff8e7; cursor: default; }
+.kds-item.is-held:hover { background: #fff4d8; }
+.kds-item.is-held .kds-item__body b { white-space: normal; }
+.kds-course-tag.is-hold { display: inline-flex; margin-inline-start: 4px; padding: 2px 6px; border-radius: 6px; background: #fff0c2; color: #7b5000; font-size: 10px; font-weight: 900; }
+.kds-note.is-held-course { margin: 4px 5px; background: #fff0c2; color: #714800; }
+.kds-note.is-held-course b { font-size: 12px; line-height: 1.45; }
+.kds-item:disabled { cursor: not-allowed; opacity: .76; }
+
+/* Short, touch-first landscape viewports need document scrolling instead of a
+   compressed five-row board that leaves the actual tickets unusably short. */
+@media (max-height: 560px) and (pointer: coarse) {
+  body.is-kitchen-workspace:not(.is-kitchen-inventory) {
+    height: auto;
+    min-height: 100dvh;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior-y: auto;
+  }
+  .is-kitchen-workspace:not(.is-kitchen-inventory) .role-app {
+    height: auto;
+    min-height: 100dvh;
+    grid-template-rows: 50px 46px minmax(600px, auto);
+    overflow: visible;
+  }
+  .is-kitchen-workspace:not(.is-kitchen-inventory) .role-main {
+    height: auto;
+    min-height: 600px;
+    overflow: visible;
+  }
+  .kds-shell {
+    height: 600px;
+    min-height: 600px;
+    grid-template-rows: 148px 52px minmax(270px, 1fr) 84px auto;
+  }
+  .kds-ticket-grid { overflow-y: auto; }
+}
+
+/* All-day tally is an operational lookup, so its secondary data remains
+   readable and wraps instead of shrinking to 8px on narrow screens. */
+.kds-all-day-row {
+  min-height: 60px;
+  align-items: center;
+  padding: 9px 10px;
+}
+.kds-all-day-row__body b {
+  overflow: visible;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  font-size: 14px;
+  line-height: 1.45;
+}
+.kds-all-day-row__body b small,
+.kds-all-day-row__body small,
+.kds-all-day-row__body em {
+  color: #b7c7c8;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }

@@ -46,13 +46,13 @@
   </style>
   <link rel="stylesheet" href="css/i18n-dir.css?v=i18n4" />
   <link rel="stylesheet" href="css/westo-glass.css?v=glassAction1" />
-  <link rel="stylesheet" href="css/classic-menu.css?v=glassAction1" />
-  <link rel="stylesheet" href="css/table.css?v=glassAction1" />
+  <link rel="stylesheet" href="css/classic-menu.css?v=glassAction3-modifier-flow" />
+  <link rel="stylesheet" href="css/table.css?v=guest-receipt-recovery-v2" />
 
   <link rel="stylesheet" href="css/vazir-system.css?v=font1" />
   <link rel="stylesheet" href="css/westo-production-v11.css?v=prod11" />
   <link rel="stylesheet" href="css/westo-production-v12.css?v=prod13r9h1" />
-  <link rel="stylesheet" href="css/classic-menu-catalogue-v2.css?v=menuBrand7" />
+  <link rel="stylesheet" href="css/classic-menu-catalogue-v2.css?v=menuBrand9-modifier-flow" />
   <script src="js/design-logic-v13.js?v=logic13r1" defer></script>
 </head>
 <body class="classic-menu" lang="fa" dir="rtl">
@@ -94,19 +94,23 @@
       <small id="cm-order-context-note"></small>
     </div>
     <div class="cm-cats-wrap">
-      <nav class="cm-cats" id="cm-tabs" aria-label="Categories"></nav>
+      <nav class="cm-cats" id="cm-tabs" data-i18n-aria="nav.categories" aria-label="دسته‌ها"></nav>
     </div>
   </header>
 
   <main class="cm-shell" id="main-content" tabindex="-1">
     <h1 class="visually-hidden" data-i18n="nav.menu">منو</h1>
+    <div class="cm-search-panel" id="cm-search-panel" role="search" aria-label="جستجوی منو">
+      <label class="visually-hidden" for="cm-search" data-i18n="cm.search">جستجوی منو</label>
+      <input id="cm-search" name="q" type="search" autocomplete="off" enterkeyhint="search" aria-controls="cm-grid" style="min-height:44px;font-size:16px" placeholder="جستجوی غذا، مواد یا دسته…" />
+    </div>
     <section class="cm-section-head" aria-labelledby="cm-section-title">
       <p class="cm-section-kicker" id="cm-section-kicker">منوی کافه</p>
       <h2 id="cm-section-title">منوی وستو</h2>
       <p id="cm-section-desc"></p>
     </section>
-    <div class="cm-meta" id="cm-meta" aria-live="polite"></div>
-    <div class="cm-grid" id="cm-grid"></div>
+    <div class="cm-meta" id="cm-meta" role="status" aria-live="polite" aria-atomic="true"></div>
+    <div class="cm-grid" id="cm-grid" aria-label="فهرست غذاها"></div>
   </main>
 
   <div class="cm-drawer" id="cm-drawer" hidden>
@@ -127,25 +131,27 @@
 
   <div class="cm-detail" id="cm-detail" hidden>
     <div class="cm-detail__backdrop" data-detail-close></div>
-    <div class="cm-detail__card" role="dialog" aria-modal="true" aria-labelledby="cm-detail-name">
-      <button type="button" class="cm-detail__share" id="cm-detail-share" aria-label="اشتراک‌گذاری">
+    <div class="cm-detail__card" role="dialog" aria-modal="true" aria-labelledby="cm-detail-name" aria-describedby="cm-detail-desc">
+      <button type="button" class="cm-detail__share" id="cm-detail-share" style="min-width:44px;min-height:44px" aria-label="اشتراک‌گذاری">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="18" cy="5" r="2.5" stroke="currentColor" stroke-width="1.7"/><circle cx="6" cy="12" r="2.5" stroke="currentColor" stroke-width="1.7"/><circle cx="18" cy="19" r="2.5" stroke="currentColor" stroke-width="1.7"/><path d="m8.3 10.8 7.4-4.4M8.3 13.2l7.4 4.4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
       </button>
-      <button type="button" class="cm-detail__x" data-detail-close data-i18n-aria="cart.close" aria-label="بستن">×</button>
+      <button type="button" class="cm-detail__x" data-detail-close data-i18n-aria="cart.close" style="min-width:44px;min-height:44px" aria-label="بستن">×</button>
       <div class="cm-detail__media" id="cm-detail-media">
         <button type="button" class="cm-detail__media-expand" id="cm-detail-media-expand" aria-label="نمایش جزئیات بیشتر" aria-expanded="false">↗</button>
       </div>
       <div class="cm-detail__body">
         <div class="cm-detail__headline">
           <h3 id="cm-detail-name"></h3>
-          <button type="button" class="cm-detail__more" id="cm-detail-more" aria-expanded="false">بیشتر ↑</button>
+          <button type="button" class="cm-detail__more" id="cm-detail-more" style="min-height:44px" aria-expanded="false">بیشتر ↑</button>
         </div>
         <div class="cm-detail__scroll" id="cm-detail-scroll" tabindex="0">
           <p class="cm-detail__sub" id="cm-detail-sub"></p>
           <p class="cm-detail__desc" id="cm-detail-desc"></p>
           <div class="cm-detail__tags" id="cm-detail-allergens"></div>
+          <div class="cm-detail__modifiers" id="cm-detail-modifiers"></div>
+          <p class="cm-detail__modifier-message" id="cm-detail-modifier-message" role="status" aria-live="polite" aria-atomic="true"></p>
         </div>
-        <div class="cm-detail__footer">
+      <div class="cm-detail__footer">
           <div class="cm-detail__price" id="cm-detail-price"></div>
           <div class="cm-detail__actions">
             <div class="cm-qty" role="group" data-i18n-aria="cart.qty" aria-label="تعداد">
@@ -167,7 +173,9 @@
     <div class="qty-modal__card" role="dialog" aria-modal="true" aria-labelledby="qty-modal-name">
       <button type="button" class="qty-modal__x" data-qty-close data-i18n-aria="cart.close" aria-label="بستن">×</button>
       <h3 id="qty-modal-name">محصول</h3>
-      <p id="qty-modal-price" class="qty-modal__price"></p>
+      <p id="qty-modal-price" class="qty-modal__price" aria-live="polite" aria-atomic="true"></p>
+      <div class="menu-modifiers" id="qty-modifiers" hidden></div>
+      <p class="menu-modifier-message" id="qty-modifier-message" role="alert" aria-live="assertive" aria-atomic="true"></p>
       <div class="qty-circles" data-i18n-aria="cart.qty" aria-label="تعداد">
         <button type="button" class="qty-circle" id="qty-dec" data-i18n-aria="cart.dec" aria-label="کم کردن">−</button>
         <span id="qty-value" class="qty-value">۱</span>
@@ -188,28 +196,53 @@
       <header class="table-drawer__head">
         <div class="table-drawer__head-text">
           <h2 data-i18n="cart.title">سبد</h2>
-          <p id="table-cart-count" class="table-drawer__count" hidden></p>
+          <p id="table-cart-count" class="table-drawer__count" role="status" aria-live="polite" aria-atomic="true" hidden></p>
         </div>
         <button type="button" class="table-drawer__close" data-table-close data-i18n-aria="cart.close" aria-label="بستن">×</button>
       </header>
       <div id="table-view-cart" class="table-drawer__body table-drawer__body--cart">
         <div id="table-lines" class="table-lines"></div>
-        <p id="table-empty" class="table-empty">سبد سفارش خالی است<br/><span class="table-empty__hint">از منو غذا اضافه کنید</span></p>
+        <div id="table-cart-price-review" class="table-cart-validation" role="group" aria-labelledby="table-cart-price-review-note" hidden>
+          <p id="table-cart-price-review-note" role="status" aria-live="polite" aria-atomic="true"></p>
+          <div id="table-cart-price-changes"></div>
+          <button type="button" id="table-cart-price-accept" class="btn btn-ghost" hidden style="min-height:44px">قیمت‌های به‌روز را می‌پذیرم</button>
+        </div>
+        <p id="table-cart-storage-warning" class="msg error" role="alert" hidden></p>
+        <p id="table-cart-validation" class="table-cart-validation" role="alert" hidden></p>
+        <p id="table-empty" class="table-empty" role="status" aria-live="polite">سبد سفارش خالی است<br/><span class="table-empty__hint">از منو غذا اضافه کنید</span></p>
         <div class="table-cart-foot">
-          <div class="table-total-row"><span data-i18n="cart.total">جمع</span><strong id="table-total">۰ تومان</strong></div>
-          <button type="button" id="table-checkout-btn" class="btn" data-i18n="cart.continue" disabled>ادامه</button>
+          <div class="table-total-row"><span data-i18n="cart.total">جمع</span><strong id="table-total" aria-live="polite" aria-atomic="true">۰ تومان</strong></div>
+          <button type="button" id="table-checkout-btn" class="btn" data-i18n="cart.continue" style="min-height:44px" disabled>ادامه</button>
         </div>
       </div>
       <div id="table-view-checkout" class="table-drawer__body table-drawer__body--checkout" hidden>
         <div class="field"><label for="order-table" data-i18n="cart.tableNo">شماره میز</label><input id="order-table" dir="ltr" inputmode="numeric" autocomplete="off" data-i18n-placeholder="cart.ph.table" placeholder="۱۲" /></div>
-        <div class="field"><label for="order-name"><span data-i18n="cart.name">نام</span> <span class="field-optional" data-i18n="cart.optional">اختیاری</span></label><input id="order-name" autocomplete="name" data-i18n-placeholder="cart.ph.name" placeholder="نام شما" /></div>
+        <div class="field"><label for="order-name"><span data-i18n="cart.name">نام</span> <span aria-hidden="true">*</span></label><input id="order-name" autocomplete="name" maxlength="80" required data-i18n-placeholder="cart.ph.name" placeholder="نام شما" /></div>
         <div class="field"><label for="order-phone" data-i18n="cart.phone">موبایل</label><input id="order-phone" dir="ltr" type="tel" inputmode="tel" maxlength="11" autocomplete="tel" data-i18n-placeholder="cart.ph.phone" placeholder="0912…" /></div>
         <p class="table-pay-label" data-i18n="cart.pay">روش پرداخت</p>
         <div class="table-pay-methods" role="radiogroup" data-i18n-aria="cart.pay" aria-label="روش پرداخت">
           <label class="table-pay-opt"><input type="radio" name="pay" value="cashier" checked /> <span data-i18n="cart.cashier">پرداخت در صندوق</span></label>
-          <label class="table-pay-opt"><input type="radio" name="pay" value="online" /> <span data-i18n="cart.online">پرداخت آنلاین</span></label>
+          <label class="table-pay-opt"><input type="radio" name="pay" value="online" disabled /> <span data-i18n="cart.online">پرداخت آنلاین</span></label>
         </div>
+        <p id="table-payment-note" class="msg" role="status" aria-live="polite">در حال بررسی روش‌های پرداخت…</p>
         <p id="order-msg" class="msg" role="status" aria-live="polite"></p>
+        <section class="table-receipt-code" id="table-receipt-code-box" hidden aria-labelledby="table-receipt-code-title">
+          <h3 id="table-receipt-code-title">کد بازیابی سفارش</h3>
+          <output class="table-receipt-code__value" id="table-receipt-code-value" dir="ltr" aria-label="کد امن بازیابی"></output>
+          <p>این کد را نگه دارید؛ برای پیگیری سفارش در نشست دیگر به آن نیاز دارید.</p>
+          <button type="button" class="btn btn-ghost" id="table-receipt-code-copy" data-table-copy-receipt>کپی کد رسید</button>
+          <p id="table-receipt-code-status" role="status" aria-live="polite" aria-atomic="true"></p>
+        </section>
+        <details class="table-recovery-lookup" id="table-recovery-lookup">
+          <summary>پیگیری سفارش قبلی با کد رسید</summary>
+          <form id="table-recovery-form" novalidate>
+            <label for="table-recovery-code">کد رسید ۳۲ رقمی</label>
+            <input id="table-recovery-code" type="text" dir="ltr" inputmode="text" autocomplete="off" autocapitalize="characters" maxlength="39" aria-describedby="table-recovery-help table-recovery-result" placeholder="مثلاً 1a2b3c4d-…" />
+            <small id="table-recovery-help">شماره تلفن لازم نیست. کدی را وارد کنید که پیش از ثبت سفارش دریافت کردید.</small>
+            <button type="submit" class="btn btn-ghost" id="table-recovery-submit">پیگیری سفارش</button>
+            <p id="table-recovery-result" role="status" aria-live="polite" aria-atomic="true"></p>
+          </form>
+        </details>
         <div class="table-checkout-actions">
           <button type="button" id="table-back-btn" class="btn btn-ghost" data-i18n="cart.back">بازگشت</button>
           <button type="button" id="table-call-waiter-btn" class="btn btn-ghost" data-i18n="cart.callWaiter">فراخوان گارسون</button>
@@ -226,8 +259,8 @@
   <script src="js/persian-format.js?v=persianNumbers3-safe-fields"></script>
   <script src="js/i18n.js?v=logic10-persian2" defer></script>
   <script src="js/category-theme.js?v=stable1" defer></script>
-  <script src="js/table-cart.js?v=logic13r7-persianNumbers" defer></script>
-  <script src="js/classic-menu.js?v=menuCatalogue6-persianNumbers" defer></script>
+  <script src="js/table-cart.js?v=guest-receipt-recovery-v2" defer></script>
+  <script src="js/classic-menu.js?v=menuCatalogue8-verified-selection-guards" defer></script>
   <script src="js/theme.js?v=stable1" defer></script>
   
   <script src="js/westo-production-v11.js?v=prod11" defer></script>

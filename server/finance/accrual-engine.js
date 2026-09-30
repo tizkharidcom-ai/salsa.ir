@@ -335,7 +335,7 @@ function recordAccrualPayment(acc, accrualId, input = {}, opts = {}) {
       description: `پرداخت تعهد ${accrual.number || accrual.id}`,
       lines: [
         { accountCode: accrual.payableAccountCode || '2700', debit: amount, credit: 0, branchId: accrual.branchId || undefined },
-        { accountCode: opts.bankAccountCode || (method === 'cash' ? '1110' : method === 'petty_cash' ? '1120' : '1210'), debit: 0, credit: amount, branchId: accrual.branchId || undefined },
+        { accountCode: opts.bankAccountCode || (method === 'cash' ? '1110' : method === 'petty_cash' ? '1130' : '1210'), debit: 0, credit: amount, branchId: accrual.branchId || undefined },
       ],
     });
     payment.journalEntryId = journalEntry?.id || null;
@@ -368,7 +368,7 @@ function reverseAccrualPayment(acc, paymentId, opts = {}) {
       description: `معکوس پرداخت تعهد ${accrual.number || accrual.id}`,
       lines: [
         { accountCode: accrual.payableAccountCode || '2700', debit: 0, credit: paymentAmount, branchId: accrual.branchId || undefined },
-        { accountCode: opts.bankAccountCode || (payment.paymentMethod === 'cash' ? '1110' : payment.paymentMethod === 'petty_cash' ? '1120' : '1210'), debit: paymentAmount, credit: 0, branchId: accrual.branchId || undefined },
+        { accountCode: opts.bankAccountCode || (payment.paymentMethod === 'cash' ? '1110' : payment.paymentMethod === 'petty_cash' ? '1130' : '1210'), debit: paymentAmount, credit: 0, branchId: accrual.branchId || undefined },
       ],
     });
     payment.reversalJournalEntryId = journalEntry?.id || null;

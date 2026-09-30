@@ -65,6 +65,19 @@ const GMCommandPalette = {
       }
     },
     {
+      id: 'act-shortcuts-help',
+      title: 'راهنمای کلیدهای میانبر پلتفرم (؟)',
+      subtitle: 'مشاهده تمام کلیدهای دسترسی سریع کیبورد و ناوبری',
+      icon: '⌨️',
+      code: 'میانبرها',
+      keywords: ['keyboard', 'shortcuts', 'help', 'کلیدها', 'میانبر', 'راهنما', 'کیبورد', 'کلید'],
+      execute: () => {
+        if (window.GMApp && typeof window.GMApp.openShortcutsHelpModal === 'function') {
+          window.GMApp.openShortcutsHelpModal();
+        }
+      }
+    },
+    {
       id: 'act-kernel-health',
       title: 'پایش سلامت مونولیت ماژولار و ایزولاسیون خطا (۲۸ ماژول)',
       subtitle: 'مشاهده وضعیت سلامت ۶ فضای کاری، مهار خطا و تست پروب زنده',
@@ -286,13 +299,13 @@ const GMCommandPalette = {
       });
       // Limit to 4
       recents = recents.slice(0, 4);
-      localStorage.setItem('neem_recent_routes', JSON.stringify(recents));
+      localStorage.setItem('salsa_recent_routes', JSON.stringify(recents));
     } catch (e) {}
   },
 
   getStoredRecents() {
     try {
-      const stored = localStorage.getItem('neem_recent_routes');
+      const stored = localStorage.getItem('salsa_recent_routes');
       if (stored) {
         const parsed = JSON.parse(stored);
         if (Array.isArray(parsed)) {

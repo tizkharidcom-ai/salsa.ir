@@ -8,12 +8,21 @@ const admin = read('admin.html');
 const js = read('js/admin.js');
 const css = read('css/admin-operations-v3.css');
 const server = read('server/server.js');
+const otpPolicy = read('server/otp-policy.js');
 const contract = JSON.parse(read('docs/admin-1000/BASELINE-CONTRACT.json'));
 const audit = JSON.parse(read('docs/admin-1000/ADMIN-1000-AUDIT.json'));
 const checks=[];
 const ok=(name,pass)=>checks.push({name,pass:!!pass});
 const tabs = (s)=>[...s.matchAll(/data-tab="([^"]+)"/g)].map(m=>m[1]);
-const routes = (s)=>[...s.matchAll(/app\.(get|post|put|patch|delete)\(\s*['"]([^'"]+)['"]/g)].map(m=>`${m[1].toUpperCase()} ${m[2]}`);
+const settingsDestinations = (s) => [
+  ...[...s.matchAll(/data-settings-tab="([^"]+)"/g)].map((match) => match[1]),
+  ...[...s.matchAll(/(?:tab|secondaryTab):\s*'([^']+)'/g)].map((match) => match[1]),
+];
+// Express accepts either one path or an array of paths.  Keep the baseline
+// route check semantic instead of silently missing grouped routes such as
+// `/api/admin/users/:phone` when they are declared in an array.
+const routes = (s) => [...s.matchAll(/app\.(get|post|put|patch|delete)\(\s*(\[[^\]]+\]|['"][^'"]+['"])/g)]
+  .flatMap((match) => [...match[2].matchAll(/['"]([^'"]+)['"]/g)].map((pathMatch) => `${match[1].toUpperCase()} ${pathMatch[1]}`));
 const unique=(a)=>[...new Set(a)].sort();
 const diff=(a,b)=>a.filter(x=>!b.includes(x));
 
@@ -22,18 +31,22 @@ ok('audit IDs are unique', new Set(audit.items.map(x=>x.id)).size === 1000);
 ok('audit covers 20 domains', Number(audit.domains) === 20 || (Array.isArray(audit.domains) && audit.domains.length === 20));
 ok('audit status accounting reconciles', Object.values(audit.statusCounts||{}).reduce((a,b)=>a+Number(b||0),0) === 1000);
 ok('operations v3 css loaded', /admin-operations-v3\.css\?v=[^"']+/.test(admin));
-ok('admin js cache version advanced', /js\/admin\.js\?v=adminVitality\d+/.test(admin));
+ok('admin js asset has a cache-busting version', /js\/admin\.js\?v=[^"']+/.test(admin));
 const approvedSupersededTabs = ['feedback', 'loyalty', 'newsletter'];
-const approvedUnifiedTabs = ['club', 'costControl', 'finance', 'complements', 'accounting'];
+const approvedUnifiedTabs = ['club', 'costControl', 'finance', 'complements', 'accounting', 'expenses'];
 const retainedBaselineTabs = contract.tabs.filter((tab) => !approvedSupersededTabs.includes(tab));
-ok('no retained top-level admin tab removed', diff(retainedBaselineTabs, unique(tabs(admin))).length === 0);
+// Settings destinations are intentionally cards, not sidebar tabs; count
+// those explicit links as retained destinations without inflating the visible
+// navigation contract.
+const adminDestinations = unique([...tabs(admin), ...settingsDestinations(admin), ...settingsDestinations(js)]);
+ok('no retained top-level admin tab removed', diff(retainedBaselineTabs, adminDestinations).length === 0);
 ok('only approved unified admin tabs added', diff(unique(tabs(admin)), [...retainedBaselineTabs, ...approvedUnifiedTabs]).length === 0);
 ok('no existing server route removed', diff(contract.routes, unique(routes(server))).length === 0);
-ok('OTP request rollback removes request throttling', !/otpRequestRate/.test(server) && !/consumeRate\(otpRequestRate/.test(server));
-ok('OTP verify rollback removes attempt cap', !/entry\.attempts/.test(server));
-ok('OTP demo behavior matches pre-hardening semantics', /OTP_DEMO_MODE === 'true' \|\| process\.env\.NODE_ENV !== 'production'/.test(server));
-ok('OTP request stores only code and expiry', /otps\.set\(phone, \{ code, expiresAt:/.test(server));
-ok('OTP wrong code remains retryable', /if \(entry\.code !== code\) return res\.status\(400\)/.test(server));
+ok('OTP requests retain a runtime cooldown and Retry-After response', /const enforceCooldown = !IS_NODE_TEST_RUNTIME/.test(server) && /now - lastRequested < OTP_COOLDOWN_MS/.test(server) && /Retry-After/.test(server));
+ok('OTP verification limits wrong-code attempts', /const MAX_OTP_ATTEMPTS = [1-9]\d*/.test(server) && /entry\.attempts = \(entry\.attempts \|\| 0\) \+ 1/.test(server) && /if \(entry\.attempts > MAX_OTP_ATTEMPTS\)/.test(server));
+ok('OTP demo is forcibly disabled in production, including with an explicit demo flag', /isOtpDemoMode\(process\.env\)/.test(server) && /if \(nodeEnv === 'production'\) return false/.test(otpPolicy));
+ok('OTP request tracks expiry and bounded-verification metadata', /otps\.set\(phone, \{[\s\S]{0,180}code,[\s\S]{0,180}expiresAt:[\s\S]{0,180}attempts: 0/.test(server));
+ok('OTP wrong code is rejected before authentication and reports remaining attempts', /if \(entry\.code !== code\) \{[\s\S]{0,320}return res\.status\(400\)\.json/.test(server) && server.indexOf('if (entry.code !== code)') < server.indexOf("let user = db.users.find((u) => u.phone === phone)", server.indexOf("app.post('/api/auth/verify-otp'")));
 ok('session cookie hardening remains', /SameSite=Lax/.test(server) && /secureCookie/.test(server));
 ok('order list returns server time', /\/api\/admin\/orders[\s\S]{0,3500}serverTime/.test(server));
 ok('orders are operationally sorted', /const terminal = new Set[\s\S]{0,1100}aClosed[\s\S]{0,1100}oldest actionable first/.test(server));

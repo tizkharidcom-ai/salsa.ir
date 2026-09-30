@@ -3,25 +3,82 @@
 const crypto = require('crypto');
 const { convertQuantity, ingredientRequirement, canonicalUnit, recipeCatalog } = require('./restaurant-intelligence');
 const { physicalAvailable, unitCostIrr } = require('./order-costing');
+const valueContracts = require('./value-contracts');
 
 function list(value) { return Array.isArray(value) ? value : []; }
-function number(value) { return Number.isFinite(Number(value)) ? Number(value) : null; }
+function number(value) {
+  try {
+    return valueContracts.parseDecimal(value, { emptyValue: null, label: 'عدد' });
+  } catch {
+    return null;
+  }
+}
+function exceedsAvailable(requested, available) {
+  // Tolerate representational noise only; a fixed epsilon becomes a real
+  // overdraw allowance for small stock quantities.
+  const tolerance = Math.min(
+    1e-9,
+    Number.EPSILON * Math.max(1, Math.abs(requested), Math.abs(available)) * 4,
+  );
+  return requested - available > tolerance;
+}
+function operationTimestamp(value) {
+  if (value == null || String(value).trim() === '') return new Date().toISOString();
+  return valueContracts.requireTimestamp(value, {
+    code: 'inventory_timestamp_invalid',
+    message: 'زمان عملیات انبار باید تاریخ ISO معتبر همراه منطقهٔ زمانی باشد.',
+  });
+}
 function id() { return crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${crypto.randomBytes(12).toString('hex')}`; }
-function sameBranch(row, branchId) { return row?.branchId == null || Number(row.branchId) === Number(branchId); }
+function sameBranch(row, branchId) {
+  const scope = Number(branchId);
+  return Number.isSafeInteger(scope) && scope > 0
+    && row?.branchId != null
+    && Number(row.branchId) === scope;
+}
+
+function resolveInventoryItemForBranch(items, itemId, branchId) {
+  const key = String(itemId ?? '').trim();
+  const scope = Number(branchId);
+  if (!key || !Number.isSafeInteger(scope) || scope <= 0) return null;
+  const scoped = list(items).filter((row) => sameBranch(row, branchId));
+  let found = scoped.find((row) => String(row.id) === key)
+    || scoped.find((row) => String(row.sku || '').trim() === key);
+  if (found) return found;
+
+  const numBranch = Number(branchId);
+  if (numBranch) {
+    const suffix = `-b${numBranch}`.toLowerCase();
+    found = scoped.find((row) =>
+      String(row.id).toLowerCase() === `${key}${suffix}`.toLowerCase() ||
+      String(row.sku || '').trim().toLowerCase() === `${key}${suffix}`.toLowerCase()
+    );
+    if (found) return found;
+
+    if (key.toLowerCase().endsWith(suffix)) {
+      const baseKey = key.slice(0, -suffix.length);
+      found = scoped.find((row) =>
+        String(row.id).toLowerCase() === baseKey.toLowerCase() ||
+        String(row.sku || '').trim().toLowerCase() === baseKey.toLowerCase()
+      );
+      if (found) return found;
+    }
+  }
+  return null;
+}
 
 function inventoryItem(db, itemId, branchId) {
-  const key = String(itemId ?? '').trim();
-  const scoped = list(db.accounting?.inventoryItems).filter((row) => sameBranch(row, branchId));
-  return scoped.find((row) => String(row.id) === key)
-    || scoped.find((row) => String(row.sku || '').trim() === key)
-    || null;
+  return resolveInventoryItemForBranch(db?.accounting?.inventoryItems, itemId, branchId);
 }
 
 function inventoryItemAnyBranch(db, itemId) {
-  const key = String(itemId ?? '').trim();
-  return list(db.accounting?.inventoryItems).find((row) => (
-    String(row.id) === key || String(row.sku || '').trim() === key
-  )) || null;
+  const key = String(itemId ?? '').trim().toLowerCase();
+  const baseKey = key.replace(/-b\d+$/, '');
+  return list(db.accounting?.inventoryItems).find((row) => {
+    const rowId = String(row.id || '').toLowerCase();
+    const rowSku = String(row.sku || '').trim().toLowerCase();
+    return rowId === key || rowSku === key || rowId === baseKey || rowId.replace(/-b\d+$/, '') === baseKey;
+  }) || null;
 }
 
 function physicalOnHand(item, state, branchId) {
@@ -71,7 +128,7 @@ function buildWaste(db, state, input, actor) {
   const available = physicalAvailable(item, state, branchId);
   const issues = [];
   if (!available.ok) issues.push({ code: available.code, itemId: item.id });
-  else if (converted.value > available.value + 1e-9) issues.push({ code: 'waste_exceeds_available', itemId: item.id, quantityBase: converted.value, availableQuantityBase: available.value });
+  else if (exceedsAvailable(converted.value, available.value)) issues.push({ code: 'waste_exceeds_available', itemId: item.id, quantityBase: converted.value, availableQuantityBase: available.value });
   const blockingIssue = issues[0];
   if (blockingIssue) {
     return {
@@ -84,7 +141,7 @@ function buildWaste(db, state, input, actor) {
     };
   }
   const operationId = id();
-  const occurredAt = input.occurredAt || new Date().toISOString();
+  const occurredAt = operationTimestamp(input.occurredAt);
   const movement = valuedMovement({
     item, quantityBase: -converted.value, branchId, movementType: 'waste', source: 'inventory.waste',
     sourceId: operationId, occurredAt, actor, settings: state.settings,
@@ -105,7 +162,7 @@ function buildStockCount(db, state, input, actor) {
   if (!expected.ok) return { ok: false, code: expected.code, message: 'ماندهٔ مبنای کالا مشخص نیست.', issues: [{ code: expected.code, itemId: item.id }] };
   const deltaBase = converted.value - expected.value;
   const operationId = id();
-  const occurredAt = input.occurredAt || new Date().toISOString();
+  const occurredAt = operationTimestamp(input.occurredAt);
   const reason = String(input.reason || 'شمارش فیزیکی').trim().slice(0, 300);
   const movements = Math.abs(deltaBase) <= 1e-9 ? [] : [valuedMovement({
     item, quantityBase: deltaBase, branchId, movementType: 'count_adjustment', source: 'inventory.stock_count',
@@ -134,11 +191,11 @@ function buildProductionBatch(db, state, input, actor) {
   if (!outputItem) return { ok: false, code: inventoryItemAnyBranch(db, outputItemId) ? 'production_output_branch_mismatch' : 'production_output_item_missing', message: 'کالای خروجی رسپی در این شعبه مشخص نیست.', issues: [] };
   const plannedYield = number(input.plannedYield);
   const actualYield = number(input.actualYield);
-  if (plannedYield == null || plannedYield <= 0 || actualYield == null || actualYield < 0) return { ok: false, code: 'production_yield_invalid', message: 'بازده برنامه‌ریزی‌شده و واقعی معتبر نیست.', issues: [] };
+  if (plannedYield == null || plannedYield <= 0 || actualYield == null || actualYield < 0) return { ok: false, code: 'production_yield_invalid', message: 'بازده برنامه‌ریزی‌شده باید بزرگ‌تر از صفر و بازده واقعی نباید منفی باشد.', issues: [] };
   const convertedOutput = quantityInItemUnit(outputItem, actualYield, input.outputUnit || outputItem.unit);
   if (!convertedOutput.ok) return { ok: false, code: convertedOutput.code, message: 'واحد خروجی تولید معتبر نیست.', issues: [] };
   const operationId = id();
-  const occurredAt = input.occurredAt || new Date().toISOString();
+  const occurredAt = operationTimestamp(input.occurredAt);
   const issues = [];
   const consumeMovements = [];
   const requiredByItem = new Map();
@@ -181,8 +238,8 @@ function buildProductionBatch(db, state, input, actor) {
       ok: false,
       code: blockingIssue.code === 'inventory_shortage' ? 'production_inventory_shortage' : 'production_recipe_not_executable',
       message: blockingIssue.code === 'inventory_shortage'
-        ? 'موجودی مواد برای تولید این بچ کافی نیست؛ ابتدا دریافت یا شمارش موجودی را ثبت کنید.'
-        : 'رسپی یا واحد مواد برای ثبت تولید کامل نیست.',
+        ? 'موجودی مواد برای این تولید دسته‌ای کافی نیست؛ ابتدا دریافت یا شمارش موجودی را ثبت کنید.'
+        : 'دستور تهیه یا واحد مواد برای ثبت تولید کامل نیست.',
       issues,
     };
   }
@@ -203,4 +260,45 @@ function buildProductionBatch(db, state, input, actor) {
   };
 }
 
-module.exports = { inventoryItem, physicalOnHand, quantityInItemUnit, buildWaste, buildStockCount, buildProductionBatch };
+function buildStockMovement(db, state, input, actor, transfer = false) {
+  const branchId = Number(input.branchId) || null;
+  const item = inventoryItem(db, input.itemId, branchId);
+  if (!branchId) return { ok: false, code: 'branch_missing', message: 'شعبه مشخص نیست.', issues: [] };
+  if (!item) return { ok: false, code: inventoryItemAnyBranch(db, input.itemId) ? 'inventory_item_branch_mismatch' : 'inventory_item_not_found', message: 'مادهٔ انبار در این شعبه یافت نشد.', issues: [] };
+  const converted = quantityInItemUnit(item, input.quantity, input.unit);
+  if (!converted.ok || converted.value <= 0) return { ok: false, code: converted.code || 'quantity_invalid', message: 'مقدار یا واحد خروج معتبر نیست.', issues: [] };
+  const sourceWarehouse = String(input.sourceWarehouse || input.source || 'انبار اصلی').trim().slice(0, 100);
+  const destinationWarehouse = String(input.destinationWarehouse || input.destination || (transfer ? 'انبار آشپزخانه' : 'مصرف عملیاتی')).trim().slice(0, 100);
+  if (transfer && (!sourceWarehouse || !destinationWarehouse || sourceWarehouse === destinationWarehouse)) {
+    return { ok: false, code: 'transfer_warehouse_invalid', message: 'انبار مبدأ و مقصد انتقال باید متفاوت و مشخص باشند.', issues: [] };
+  }
+  // Stock issue/transfer is an outgoing operation: it must preserve quantities
+  // already held for orders, quarantined, or expired. The physical ledger
+  // balance alone includes all of those buckets and can therefore authorize
+  // spending stock that is not actually available to move.
+  const available = physicalAvailable(item, state, branchId);
+  if (!available.ok) return { ok: false, code: available.code, message: 'ماندهٔ قابل‌مصرف کالا مشخص نیست.', issues: [] };
+  if (exceedsAvailable(converted.value, available.value)) return { ok: false, code: 'movement_exceeds_available', message: 'مقدار خروج از موجودی قابل‌مصرف بیشتر است.', issues: [{ code: 'movement_exceeds_available', itemId: item.id, availableQuantityBase: available.value }] };
+  const operationId = id();
+  const occurredAt = operationTimestamp(input.occurredAt);
+  const reason = String(input.reason || (transfer ? 'انتقال بین انبارها' : 'خروج عملیاتی')).trim().slice(0, 300);
+  if (reason.length < 3) return { ok: false, code: 'movement_reason_required', message: 'علت خروج یا انتقال الزامی است.', issues: [] };
+  const outgoing = valuedMovement({
+    item, quantityBase: -converted.value, branchId, movementType: transfer ? 'stock_transfer' : 'stock_issue',
+    source: transfer ? 'inventory.stock_transfer' : 'inventory.stock_issue', sourceId: operationId, occurredAt, actor, settings: state.settings,
+    extra: { direction: transfer ? 'transfer_out' : 'consume', sourceWarehouse, destinationWarehouse, reason },
+  });
+  if (!transfer) return { ok: true, kind: 'stock_issue', operationId, branchId, occurredAt, reason, item, movements: [outgoing], issues: outgoing.valuationStatus === 'unvalued' ? [{ code: 'inventory_cost_unit_ambiguous', itemId: item.id }] : [], totalCostIrr: outgoing.totalCostIrr };
+  const incoming = valuedMovement({
+    item, quantityBase: converted.value, branchId, movementType: 'stock_transfer',
+    source: 'inventory.stock_transfer', sourceId: operationId, occurredAt, actor, settings: state.settings,
+    extra: { direction: 'transfer_in', sourceWarehouse, destinationWarehouse, reason },
+  });
+  const issues = outgoing.valuationStatus === 'unvalued' || incoming.valuationStatus === 'unvalued' ? [{ code: 'inventory_cost_unit_ambiguous', itemId: item.id }] : [];
+  return { ok: true, kind: 'stock_transfer', operationId, branchId, occurredAt, reason, item, movements: [outgoing, incoming], issues, totalCostIrr: 0 };
+}
+
+function buildStockIssue(db, state, input, actor) { return buildStockMovement(db, state, input, actor, false); }
+function buildStockTransfer(db, state, input, actor) { return buildStockMovement(db, state, input, actor, true); }
+
+module.exports = { inventoryItem, resolveInventoryItemForBranch, physicalOnHand, quantityInItemUnit, buildWaste, buildStockCount, buildProductionBatch, buildStockIssue, buildStockTransfer };

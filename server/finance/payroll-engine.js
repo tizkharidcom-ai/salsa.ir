@@ -505,6 +505,7 @@ module.exports = {
   ensurePayroll,
   calculateProgressiveTax,
   calculateEmployeePayslip,
+  calculatePayslip: calculateEmployeePayslip,
   createPayrollRun,
   disbursePayroll,
   reversePayrollDisbursement,

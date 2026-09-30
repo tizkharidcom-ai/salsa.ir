@@ -18,23 +18,85 @@
     try { const value = localStorage.getItem(key); return value === null ? fallback : JSON.parse(value); }
     catch { return fallback; }
   };
+  const STAFF_THEME_STORAGE_KEY = 'westo_staff_theme';
+  const supportsStaffTheme = role === 'cashier' || role === 'waiter';
+  const systemColorPreference = window.matchMedia?.('(prefers-color-scheme: dark)') || null;
+  const normalizeStaffThemePreference = (value) => ['dark', 'system'].includes(value) ? value : 'light';
+  let staffThemePreference = supportsStaffTheme
+    ? normalizeStaffThemePreference(readLocal(STAFF_THEME_STORAGE_KEY, 'light'))
+    : 'light';
+  function applyStaffTheme(preference = staffThemePreference, persist = false) {
+    if (!supportsStaffTheme) return 'light';
+    staffThemePreference = normalizeStaffThemePreference(preference);
+    const theme = staffThemePreference === 'system'
+      ? (systemColorPreference?.matches ? 'dark' : 'light')
+      : staffThemePreference;
+    document.documentElement.dataset.theme = theme;
+    const themeColor = document.querySelector('meta[name="theme-color"]');
+    if (themeColor) themeColor.content = theme === 'dark' ? '#0d1114' : '#f4f6f7';
+    if (persist) {
+      try { localStorage.setItem(STAFF_THEME_STORAGE_KEY, JSON.stringify(staffThemePreference)); }
+      catch { /* The in-memory selection still applies when storage is unavailable. */ }
+    }
+    return staffThemePreference;
+  }
+  function syncOpenStaffThemeControl(preference) {
+    const normalized = normalizeStaffThemePreference(preference);
+    document.querySelectorAll('input[name="role-user-theme"]').forEach((input) => {
+      input.checked = input.value === normalized;
+    });
+    const hint = document.getElementById('role-user-theme-hint');
+    if (hint) {
+      const label = normalized === 'dark' ? 'تیره' : normalized === 'system' ? 'خودکار' : 'روشن';
+      hint.textContent = `تم ${label} از پنل دیگر همگام شد.`;
+    }
+  }
+  if (supportsStaffTheme) {
+    applyStaffTheme(staffThemePreference);
+    window.addEventListener('storage', (event) => {
+      if (event.key !== STAFF_THEME_STORAGE_KEY) return;
+      let preference = 'light';
+      try { preference = event.newValue === null ? 'light' : JSON.parse(event.newValue); }
+      catch { preference = 'light'; }
+      syncOpenStaffThemeControl(applyStaffTheme(preference));
+    });
+    systemColorPreference?.addEventListener?.('change', () => {
+      if (staffThemePreference === 'system') applyStaffTheme('system');
+    });
+  }
   const normalizeDigits = (val) => String(val ?? '')
     .replace(/[۰-۹]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)))
     .replace(/[٠-٩]/g, (d) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d)));
   const state = {
     session: null, branchId: null, activeView: '', data: {}, menuItems: [], menuCategories: [], menuComplements: [], menuComplementRules: [],
+    waiterBranchGeneration: 0, waiterSnapshotRequestId: 0, waiterMenuRequestId: 0, waiterRenderRequestId: 0,
+    waiterUnmappedAssignmentIntents: new Map(),
+    waiterTerminalOpenings: new Set(),
+    waiterCallMutations: new Set(), waiterCallNeedsRefresh: new Set(), waiterRefreshPending: false,
     features: {},
     cart: new Map(), stream: null, posCategory: null, posCheck: null, posSearch: '', pendingPosItem: null,
     floorZone: 'all', floorCountdownTimer: null,
+    waiterUnmappedOnly: false,
     // The kitchen display is intentionally one queue. The API still keeps the
     // original item station for costing/reporting, but operators should never
     // have to switch between hot, cold, bar or expo panels.
     kdsStation: 'kitchen', kdsFulfillment: 'all', kdsSearch: '', kdsPage: 0, kdsSelectedTicketId: null, kdsOrderEntry: '', kdsOrderEntryTimer: null, kdsNumLock: null,
       kdsSettings: readLocal('westo_kds_settings', { layout: 'tile', columns: 6, textSize: 'normal', warnMinutes: 8, lateMinutes: 15, sound: true }),
     kdsUndo: null, kdsUndoTimer: null, kdsClockTimer: null, kdsLastOpenCount: null, kdsAudioArmed: false, kdsConnected: false, kdsHighlightItem: '', kdsAllDayOpen: false, kdsPendingTickets: new Set(),
+    kdsSnapshotInFlight: null, kdsSnapshotRefreshQueued: false, kdsActionNeedsRefresh: false, kdsHeldNotices: new Map(),
     printer: null,
   };
   let toastTimer = null;
+
+  window.addEventListener('beforeunload', (event) => {
+    const waiterOrder = state.waiterTerminal;
+    const hasUnsentWork = waiterTerminalHasUnsentWork(waiterOrder);
+    if (role === 'waiter' && hasUnsentWork && !waiterOrder.saving) {
+      persistWaiterTerminalDraft(waiterOrder);
+      event.preventDefault();
+      event.returnValue = '';
+    }
+  });
 
   document.body.classList.toggle('is-cashier-workspace', role === 'cashier');
   document.body.classList.toggle('is-waiter-workspace', role === 'waiter');
@@ -76,17 +138,46 @@
       unauthorized: 'نشست شما تمام شده است.', workspace_forbidden: 'این فضای کاری در سطح دسترسی شما نیست.',
       shift_not_open: 'شیفت بازی وجود ندارد.', cash_drawer_still_open: 'ابتدا صندوق پول را ببندید.',
       cash_drawer_not_open: 'برای دریافت نقدی ابتدا صندوق پول را باز کنید.', order_not_payable: 'این سفارش در مرحله قابل تسویه نیست.',
+      cash_collection_forbidden: 'دریافت وجه نقد فقط برای کاربر دارای دسترسی صندوق مجاز است.',
+      tenant_persistence_failed: 'ثبت امن اطلاعات این مجموعه انجام نشد؛ عملیات انجام‌شده تأیید نشده است. دوباره وضعیت را بررسی کنید.',
+      payment_amount_invalid: 'مبلغ پرداخت باید عدد صحیح و بزرگ‌تر از صفر باشد.',
+      payment_amount_exceeds_due: 'مبلغ واردشده از ماندهٔ فعلی بیشتر است؛ فاکتور را تازه کنید.',
+      payment_history_inconsistent: 'جمع دریافت‌ها با مبلغ پرداخت‌شده فاکتور هم‌خوان نیست؛ پیش از دریافت دوباره، وضعیت را تطبیق دهید.',
+      payment_history_invalid: 'سابقهٔ مالی فاکتور معتبر نیست؛ ثبت دریافت متوقف شد.',
+      payment_history_exceeds_order_total: 'جمع دریافت خالص از مبلغ فاکتور بیشتر است؛ دریافت را متوقف و با سرپرست تطبیق دهید.',
+      cash_received_invalid: 'مبلغ دریافتی نقدی باید عدد صحیح و بزرگ‌تر از صفر باشد.',
+      cash_received_insufficient: 'مبلغ دریافتی نقدی از مبلغ قابل پرداخت کمتر است.',
+      cash_amount_invalid: 'موجودی اولیه باید عدد صحیح و نامنفی باشد.',
+      cash_counted_amount_invalid: 'مبلغ شمارش‌شده باید عدد صحیح و نامنفی باشد.',
+      cash_movement_amount_invalid: 'مبلغ ورود یا خروج باید عدد صحیح و بزرگ‌تر از صفر باشد.',
+      cash_movement_idempotency_required: 'برای ثبت امن گردش، پنل را تازه کنید و دوباره تلاش کنید.',
+      cash_movement_idempotency_invalid: 'شناسهٔ گردش نقدی معتبر نیست.',
+      cash_movement_idempotency_conflict: 'این شناسه قبلاً برای گردش دیگری استفاده شده؛ اطلاعات صندوق را تازه کنید.',
+      cash_drawer_close_idempotency_conflict: 'این صندوق قبلاً با شمارش دیگری بسته شده است؛ گزارش نشست را بررسی کنید.',
+      cash_drawer_session_changed: 'نشست صندوق تغییر کرده است؛ اطلاعات را تازه کنید و دوباره بررسی کنید.',
+      settlement_idempotency_required: 'درخواست پرداخت معتبر نیست؛ پنل را تازه کنید و دوباره تلاش کنید.',
+      settlement_idempotency_invalid: 'شناسهٔ ثبت پرداخت معتبر نیست.', idempotency_key_conflict: 'این درخواست قبلاً با مبلغ یا روش دیگری ثبت شده است؛ وضعیت فاکتور را تازه کنید.',
+      payment_status_reconciliation_required: 'وضعیت پرداخت نیازمند تطبیق است؛ پیش از دریافت دوباره با مدیر تماس بگیرید.',
+      settlement_reference_invalid: 'کد پیگیری کارت‌خوان معتبر نیست؛ متن کوتاه‌تری وارد کنید.',
+      settlement_reference_required: 'کد پیگیری رسید کارت‌خوان برای ثبت دستی الزامی است.',
+      covers_invalid: 'تعداد مهمان باید حداقل یک نفر باشد.', seat_exceeds_covers: 'تعداد مهمان را با صندلی‌های تخصیص‌یافته هماهنگ کنید.',
+      kitchen_course_empty: 'برای ارسال سفارش، دست‌کم یک مرحله را به آشپزخانه بفرستید.',
+      loyalty_redemption_requires_settlement: 'استفاده از امتیاز در تسویه فعلاً فعال نیست.', tender_invalid: 'این روش دریافت وجه فعال نیست.',
+      discount_not_allowed: 'اعمال تخفیف دستی در دسترسی شما نیست.',
       cashier_transition_invalid: 'این تغییر وضعیت برای صندوق مجاز نیست.', waiter_transition_invalid: 'این تغییر وضعیت برای گارسون مجاز نیست.',
       kitchen_transition_invalid: 'این تغییر وضعیت در آشپزخانه مجاز نیست.',
       kds_item_invalid: 'این قلم دیگر در سفارش فعال نیست.', kds_station_invalid: 'ایستگاه انتخاب‌شده معتبر نیست.',
       kds_station_empty: 'این سفارش قلمی برای ایستگاه انتخاب‌شده ندارد.', kitchen_recall_invalid: 'این سفارش در وضعیت قابل بازگردانی نیست.',
       kds_ticket_incomplete: 'تا وقتی همهٔ اقلام تکمیل نشده‌اند، سفارش آماده نمی‌شود.',
       order_edit_locked: 'آشپزخانه آماده‌سازی را شروع کرده؛ ویرایش این سفارش قفل شده است.',
+      order_edit_after_payment_requires_adjustment: 'برای جلوگیری از مغایرت مالی، پس از دریافت وجه ویرایش مستقیم فاکتور ممکن نیست؛ برای تعدیل یا بازپرداخت با مدیر هماهنگ کنید.',
       order_edit_refund_required: 'مبلغ جدید از پرداخت ثبت‌شده کمتر است؛ ابتدا بازپرداخت را ثبت کنید.',
       order_edit_branch_mismatch: 'این سفارش متعلق به شعبه فعال نیست.',
-      order_split_locked: 'این فاکتور پرداخت شده و دیگر قابل تفکیک نیست.',
+      order_split_locked: 'تا تعیین تکلیف پرداخت یا ثبت دریافت، تفکیک فاکتور ممکن نیست؛ وضعیت صندوق را بررسی کنید.',
       split_mode_invalid: 'نوع تفکیک فاکتور معتبر نیست.',
-      table_not_found: 'میز مقصد در شعبه فعال پیدا نشد.',
+      table_persistence_failed: 'ذخیرهٔ تغییرات میز انجام نشد؛ وضعیت قبلی حفظ شد.',
+      table_id_duplicate: 'شناسهٔ یک میز در این فهرست بیش از یک‌بار آمده است.',
+      table_not_found: 'میز انتخاب‌شده در شعبهٔ فعال پیدا نشد یا قبلاً حذف شده است.',
       table_inactive: 'میز مقصد غیرفعال است.',
       table_occupied: 'میز مقصد در حال سرویس است؛ میز دیگری انتخاب کنید.',
       printer_not_configured: 'برای این شعبه پرینتر صندوق تنظیم نشده است.', printer_disabled: 'پرینتر صندوق غیرفعال است.',
@@ -113,11 +204,13 @@
     };
     const code = typeof data?.error === 'object' ? data.error.code : data?.error;
     const message = typeof data?.error === 'object' ? data.error.message : data?.message;
-    if (code === 'feature_disabled') return message || 'این بخش توسط کنترل‌پلن NEEM غیرفعال شده است.';
+    if (code === 'feature_disabled') return message || 'این بخش توسط کنترل‌پلن سالسا (SALSA) غیرفعال شده است.';
     return map[code] || message || code || `خطای ارتباط با سرور (${status})`;
   }
 
   async function api(url, options = {}) {
+    const method = String(options.method || 'GET').toUpperCase();
+    const mutating = !['GET', 'HEAD', 'OPTIONS'].includes(method);
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 20000);
     try {
@@ -126,11 +219,32 @@
       if (options.body && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
       const response = await fetch(url, { ...options, headers, credentials: 'same-origin', signal: controller.signal });
       const data = await response.json().catch(() => ({}));
-      if (response.status === 401) { location.href = '/login'; throw new Error('نشست شما تمام شده است.'); }
-      if (!response.ok) throw new Error(errorMessage(response.status, data));
+      if (response.status === 401) {
+        location.href = '/login';
+        const error = new Error('نشست شما تمام شده است.');
+        error.httpStatus = 401;
+        error.code = 'unauthorized';
+        throw error;
+      }
+      if (!response.ok) {
+        const error = new Error(errorMessage(response.status, data));
+        error.httpStatus = response.status;
+        error.code = typeof data?.error === 'object' ? data.error.code : data?.error;
+        error.outcomeUnknown = mutating && response.status >= 500;
+        if (mutating && /\/orders\/[^/]+\/settle$/.test(url) && ['idempotency_key_conflict', 'idempotency_replay_unavailable', 'payment_status_reconciliation_required'].includes(String(error.code))) {
+          error.outcomeUnknown = true;
+        }
+        throw error;
+      }
       return data;
     } catch (error) {
-      if (error.name === 'AbortError') throw new Error('پاسخ سرور طول کشید؛ اتصال را بررسی کنید.');
+      if (error.name === 'AbortError') {
+        const timeout = new Error('پاسخ سرور طول کشید؛ اتصال را بررسی کنید.');
+        timeout.code = 'request_timeout';
+        timeout.outcomeUnknown = mutating;
+        throw timeout;
+      }
+      if (mutating && error instanceof TypeError) error.outcomeUnknown = true;
       throw error;
     } finally { clearTimeout(timer); }
   }
@@ -139,7 +253,10 @@
     clearTimeout(toastTimer);
     toast.textContent = message;
     toast.className = `role-toast show ${type}`;
-    toastTimer = setTimeout(() => { toast.className = 'role-toast'; }, 3200);
+    toastTimer = setTimeout(() => {
+      toast.className = 'role-toast';
+      toast.textContent = '';
+    }, 3200);
   }
 
   function pageHead(kicker, title, description, action = '') {
@@ -152,8 +269,48 @@
 
   function empty(message) { return `<div class="empty-state">${esc(message)}</div>`; }
 
+  // Keep waiter/cashier floor sections aligned with the floor studio's zone
+  // normalization so the same tables always belong to the same named area.
+  function normalizeRoleFloorZoneName(zone) {
+    const value = String(zone ?? '').trim();
+    if (!value) return 'بدون بخش';
+    if (/^(?:سالن اصلی|سالن|main(?: hall)?)$/i.test(value)) return 'سالن';
+    if (/^(?:تراس و فضای باز|تراس|terrace|outdoor)$/i.test(value)) return 'تراس';
+    if (/^(?:سالن اختصاصی ویژه|سالن ویژه|ویژه|vip)$/i.test(value)) return 'ویژه';
+    return value;
+  }
+
+  function roleFloorFixtureInsideZone(fixture, zone) {
+    const centerX = Number(fixture?.x) + Number(fixture?.w || 0) / 2;
+    const centerY = Number(fixture?.y) + Number(fixture?.h || 0) / 2;
+    const left = Number(zone?.x);
+    const top = Number(zone?.y);
+    const right = left + Number(zone?.w);
+    const bottom = top + Number(zone?.h);
+    return [centerX, centerY, left, top, right, bottom].every(Number.isFinite)
+      && centerX >= left && centerX <= right && centerY >= top && centerY <= bottom;
+  }
+
   function statusLabel(status) {
-    return ({ pending_online: 'پرداخت آنلاین', awaiting_confirmation: 'نیازمند تأیید', pay_at_cashier: 'پیش‌نویس صندوق', sent_to_kitchen: 'ارسال‌شده به آشپزخانه', paid: 'پرداخت‌شده', preparing: 'در حال آماده‌سازی', ready: 'آماده تحویل', dispatched: 'تحویل پیک', picked_up: 'تحویل شد', delivered: 'رسید', done: 'تکمیل', cancelled: 'لغو' })[status] || status || '—';
+    return ({ pending_online: 'پرداخت آنلاین', awaiting_confirmation: 'نیازمند تأیید', pay_at_cashier: 'پیش‌نویس صندوق', sent_to_kitchen: 'ارسال‌شده به آشپزخانه', paid: 'پرداخت‌شده', preparing: 'در حال آماده‌سازی', ready: 'آماده تحویل', dispatched: 'تحویل پیک', picked_up: 'تحویل شد', delivered: 'رسید', done: 'تکمیل', completed: 'تکمیل', cancelled: 'لغو' })[status] || status || '—';
+  }
+
+  function orderPaymentStatus(order) {
+    const valid = new Set(['unpaid', 'partial', 'pending', 'paid', 'failed', 'cancelled', 'refunded', 'unknown']);
+    const raw = String(order?.paymentStatus || '').trim().toLowerCase();
+    if (valid.has(raw)) return raw;
+    const orderStatus = String(order?.status || '').trim().toLowerCase();
+    if (!raw && orderStatus === 'pending_online') return 'pending';
+    if (!raw && ['pay_at_cashier', 'awaiting_confirmation'].includes(orderStatus)) return 'unpaid';
+    return 'unknown';
+  }
+
+  function orderPaymentStatusLabel(order) {
+    return ({
+      unpaid: 'پرداخت‌نشده', partial: 'پرداخت بخشی', pending: 'پرداخت در انتظار',
+      paid: 'پرداخت‌شده', failed: 'پرداخت ناموفق', cancelled: 'پرداخت لغوشده',
+      refunded: 'بازپرداخت‌شده', unknown: 'نیازمند تطبیق پرداخت',
+    })[orderPaymentStatus(order)] || 'نیازمند تطبیق پرداخت';
   }
 
   function orderItems(order) {
@@ -163,12 +320,13 @@
     }).join(' · ') || 'بدون قلم';
   }
 
-  function orderCard(order, actions = '') {
+  function orderCard(order, actions = '', paymentSummary = '') {
     const age = ageMin(order.createdAt);
     return `<article class="order-card ${age >= 20 ? 'is-late' : ''}" data-order-id="${order.id}">
       <div class="order-card__top"><strong>${esc(order.orderNo || `سفارش ${order.id}`)}</strong><span>${esc(order.tableNo ? `میز ${order.tableNo}` : order.fulfillment === 'delivery' ? 'ارسال' : 'بیرون‌بر')} · ${num(age)} دقیقه</span></div>
       <div class="order-card__items">${orderItems(order)}</div>
-      <div class="order-card__meta">${esc(statusLabel(order.status))}${order.note ? ` · یادداشت: ${esc(order.note)}` : ''}${order.kitchenNote ? ` · پیام آشپزخانه: ${esc(order.kitchenNote)}` : ''}</div>
+      <div class="order-card__meta"><span>${esc(statusLabel(order.status))}</span><span class="order-card__payment">پرداخت: ${esc(orderPaymentStatusLabel(order))}</span>${order.note ? ` · یادداشت: ${esc(order.note)}` : ''}${order.kitchenNote ? ` · پیام آشپزخانه: ${esc(order.kitchenNote)}` : ''}</div>
+      ${paymentSummary}
       <div class="order-card__bottom"><b>${money(order.total)}</b><div class="order-actions">${actions}</div></div>
     </article>`;
   }
@@ -179,11 +337,144 @@
     else { button.textContent = button.dataset.label || button.textContent; button.disabled = false; }
   }
 
+  function settlementActorIntent(intent) {
+    return {
+      ...intent,
+      branchId: intent.branchId ?? state.branchId,
+      actor: state.session?.user?.phone || '',
+      actorRole: state.session?.user?.role || role,
+    };
+  }
+
+  function settlementIdempotencyKey(button, rawIntent) {
+    const intent = settlementActorIntent(rawIntent || {});
+    const paymentState = globalThis.WestoOrderPaymentState;
+    if (!paymentState?.getSettlementIdempotencyKey) {
+      if (!button.dataset.settlementKey) button.dataset.settlementKey = `settle-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+      return button.dataset.settlementKey;
+    }
+    const fingerprint = paymentState.settlementIntentFingerprint(intent);
+    if (button.dataset.settlementFingerprint === fingerprint && button.dataset.settlementKey) return button.dataset.settlementKey;
+    button.dataset.settlementFingerprint = fingerprint;
+    button.dataset.settlementKey = paymentState.getSettlementIdempotencyKey(intent);
+    return button.dataset.settlementKey;
+  }
+
+  function clearSettlementIdempotencyKey(key, rawIntent) {
+    const paymentState = globalThis.WestoOrderPaymentState;
+    if (paymentState?.clearSettlementIdempotencyKey) {
+      paymentState.clearSettlementIdempotencyKey(settlementActorIntent(rawIntent || {}), key);
+    }
+  }
+
+  function parseCashDrawerInput(input, { allowZero = false } = {}) {
+    const normalized = normalizeDigits(String(input?.value ?? '').trim());
+    if (!normalized || !/^(?:\d+|\d{1,3}(?:[,٬]\d{3})+)$/.test(normalized)) return null;
+    const amount = Number(normalized.replace(/[٬,]/g, ''));
+    return Number.isSafeInteger(amount) && amount >= (allowZero ? 0 : 1) ? amount : null;
+  }
+
+  function cashDrawerVarianceMessage(variance) {
+    if (variance == null || String(variance).trim() === '') {
+      return 'صندوق بسته شد؛ مبلغ مغایرت دریافت نشد و باید نشست را بررسی کنید.';
+    }
+    const amount = Number(variance);
+    if (!Number.isSafeInteger(amount)) return 'صندوق بسته شد؛ مبلغ مغایرت دریافت نشد و باید نشست را بررسی کنید.';
+    if (amount === 0) return 'صندوق بسته شد؛ شمارش با مبلغ مورد انتظار تطبیق دارد.';
+    const kind = amount > 0 ? 'اضافه صندوق' : 'کسری صندوق';
+    return `صندوق بسته شد؛ ${kind} به مبلغ ${money(Math.abs(amount))} ثبت شد و نیازمند بررسی است.`;
+  }
+
+  function cashDrawerMovementFingerprint(payload) {
+    const value = JSON.stringify(payload);
+    let first = 2166136261;
+    let second = 3339675911;
+    for (let index = 0; index < value.length; index += 1) {
+      const code = value.charCodeAt(index);
+      first = Math.imul(first ^ code, 16777619);
+      second = Math.imul(second ^ (code + index), 16777619);
+    }
+    return `${(first >>> 0).toString(16)}${(second >>> 0).toString(16)}`;
+  }
+
+  function cashDrawerMovementIntentStorageKey(payload, sessionId) {
+    return `westo.drawer-movement.v1:${payload.branchId}:${sessionId}:${payload.type}`;
+  }
+
+  function cashDrawerMovementIdempotencyKey(button, payload, sessionId) {
+    const fingerprint = cashDrawerMovementFingerprint(payload);
+    if (button.dataset.cashDrawerMovementFingerprint === fingerprint && button.dataset.cashDrawerMovementKey) {
+      return button.dataset.cashDrawerMovementKey;
+    }
+
+    const storageKey = cashDrawerMovementIntentStorageKey(payload, sessionId);
+    let intents = {};
+    try { intents = JSON.parse(sessionStorage.getItem(storageKey) || '{}') || {}; } catch (_) {}
+    const existing = intents[fingerprint];
+    const nonce = globalThis.crypto?.randomUUID?.()
+      || `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
+    const key = typeof existing?.key === 'string'
+      ? existing.key
+      : `drawer-move-${nonce}`;
+    if (!existing?.key) {
+      intents[fingerprint] = { key, createdAt: Date.now() };
+      const entries = Object.entries(intents).sort((a, b) => Number(b[1]?.createdAt || 0) - Number(a[1]?.createdAt || 0));
+      intents = Object.fromEntries(entries.slice(0, 48));
+      try { sessionStorage.setItem(storageKey, JSON.stringify(intents)); } catch (_) {}
+    }
+    button.dataset.cashDrawerMovementFingerprint = fingerprint;
+    button.dataset.cashDrawerMovementKey = key;
+    return key;
+  }
+
+  function clearCashDrawerMovementIntent(payload, sessionId) {
+    const storageKey = cashDrawerMovementIntentStorageKey(payload, sessionId);
+    const fingerprint = cashDrawerMovementFingerprint(payload);
+    try {
+      const intents = JSON.parse(sessionStorage.getItem(storageKey) || '{}') || {};
+      if (!Object.prototype.hasOwnProperty.call(intents, fingerprint)) return;
+      delete intents[fingerprint];
+      if (Object.keys(intents).length) sessionStorage.setItem(storageKey, JSON.stringify(intents));
+      else sessionStorage.removeItem(storageKey);
+    } catch (_) {}
+  }
+
   async function action(button, task, success) {
     setBusy(button, true);
-    try { await task(); if (success) showToast(success); await render(); }
-    catch (error) { showToast(error.message, 'error'); }
+    try { await task(); if (success) showToast(success); await render(); return true; }
+    catch (error) { showToast(error.message, 'error'); return false; }
     finally { setBusy(button, false); }
+  }
+
+  function openManualCardReference(order, amount, onConfirm) {
+    openDialog(
+      'مرحلهٔ پرداخت کارت',
+      `دریافت ${money(amount)}`,
+      `<div class="wt-payment-flow__confirm">
+        <strong>پس از تأیید موفق کارت‌خوان، پرداخت را ثبت کنید.</strong>
+        <p>کارت‌خوان به سامانه متصل نیست؛ این مرحله به‌تنهایی پرداخت بانکی را تأیید نمی‌کند.</p>
+        <label class="field"><span>کد پیگیری روی رسید کارت‌خوان</span><input id="settlement-card-reference" type="text" maxlength="120" autocomplete="off" inputmode="text" aria-label="کد پیگیری روی رسید کارت‌خوان، الزامی" aria-required="true" required placeholder="کد پیگیری یا شماره مرجع رسید" /></label>
+        <small>برای تطبیق مالی لازم است؛ این سامانه کارت‌خوان را کنترل نمی‌کند.</small>
+        <div class="wt-payment-flow__actions"><button type="button" class="wt-payment-confirm" id="settlement-card-confirm" disabled>تأیید دریافت پس از بررسی کارت‌خوان</button></div>
+      </div>`,
+    );
+    const referenceInput = dialogBody.querySelector('#settlement-card-reference');
+    const confirmButton = dialogBody.querySelector('#settlement-card-confirm');
+    const updateReferenceValidity = () => {
+      if (confirmButton) confirmButton.disabled = !String(referenceInput?.value || '').trim();
+    };
+    referenceInput?.addEventListener('input', updateReferenceValidity);
+    updateReferenceValidity();
+    confirmButton?.addEventListener('click', async (event) => {
+      const confirmButton = event.currentTarget;
+      const reference = String(referenceInput?.value || '').trim();
+      if (!reference) {
+        showToast('کد پیگیری رسید کارت‌خوان را وارد کنید.', 'error');
+        referenceInput?.focus();
+        return;
+      }
+      await onConfirm(reference, confirmButton);
+    });
   }
 
   function openDialog(kicker, title, body, options = {}) {
@@ -191,14 +482,34 @@
     document.getElementById('dialog-kicker').textContent = kicker;
     document.getElementById('dialog-title').textContent = title;
     dialogBody.innerHTML = body;
-    dialog.showModal();
+    if (!dialog.open || options.reuse !== true) dialog.showModal();
   }
 
   function setActiveBranch(value) {
     const nextBranchId = Number(value) || null;
     if (!nextBranchId || Number(nextBranchId) === Number(state.branchId)) return;
+    if (state.waiterTerminal) {
+      const headerBranchSelect = document.getElementById('role-branch-select');
+      const userBranchSelect = document.getElementById('role-user-branch-select');
+      if (headerBranchSelect) headerBranchSelect.value = String(state.branchId);
+      if (userBranchSelect) userBranchSelect.value = String(state.branchId);
+      showToast(waiterTerminalHasUnsentWork(state.waiterTerminal)
+        ? 'این سفارش هنوز پیش‌نویس یا درخواست در انتظار دارد؛ ابتدا به سالن بازگردید. شعبه تغییر نکرد.'
+        : 'برای جلوگیری از جابه‌جایی فاکتور، ابتدا از سفارش باز به سالن برگردید. شعبه تغییر نکرد.', 'warning');
+      return;
+    }
     state.branchId = nextBranchId;
+    state.waiterBranchGeneration = (state.waiterBranchGeneration || 0) + 1;
+    state.waiterSnapshotRequestId = (state.waiterSnapshotRequestId || 0) + 1;
+    state.waiterMenuRequestId = (state.waiterMenuRequestId || 0) + 1;
+    state.waiterRenderRequestId = (state.waiterRenderRequestId || 0) + 1;
+    state.lastWaiterCallsKey = '';
+    state.knownCallIds = new Set();
     state.menuItems = [];
+    state.menuCategories = [];
+    state.menuComplements = [];
+    state.menuComplementRules = [];
+    if (role === 'waiter') state.data = {};
     const headerBranchSelect = document.getElementById('role-branch-select');
     if (headerBranchSelect) headerBranchSelect.value = String(nextBranchId);
     localStorage.setItem('westo_staff_branch', String(nextBranchId));
@@ -230,6 +541,19 @@
     const user = state.session?.user || {};
     const branches = Array.isArray(state.session?.branches) ? state.session.branches : [];
     const branchOptions = branches.map((branch) => `<option value="${branch.id}" ${Number(branch.id) === Number(state.branchId) ? 'selected' : ''}>${esc(branch.name)}</option>`).join('');
+    const themeOptions = [
+      ['light', 'روشن', '☀️'],
+      ['dark', 'تیره', '🌙'],
+      ['system', 'خودکار', '◐'],
+    ];
+    const themeSettings = supportsStaffTheme ? `
+        <fieldset class="role-user-theme">
+          <legend>شخصی‌سازی ظاهر</legend>
+          <div class="role-user-theme__options" role="radiogroup" aria-label="انتخاب تم پنل">
+            ${themeOptions.map(([value, label, icon]) => `<label class="role-user-theme__option"><input type="radio" name="role-user-theme" value="${value}" ${staffThemePreference === value ? 'checked' : ''}><span aria-hidden="true">${icon}</span><strong>${label}</strong></label>`).join('')}
+          </div>
+          <p class="role-user-theme__hint" id="role-user-theme-hint" role="status">این انتخاب روی صندوق و صفحهٔ گارسون همین دستگاه ذخیره و همگام می‌شود.</p>
+        </fieldset>` : '';
     openDialog('حساب کاربری', user.name || user.roleLabel || 'کاربر فعال', `
       <div class="role-user-dialog">
         <div class="role-user-dialog__identity">
@@ -245,10 +569,19 @@
           <span>شعبهٔ فعال</span>
           <select id="role-user-branch-select" aria-label="انتخاب شعبه">${branchOptions || '<option value="">شعبه‌ای ثبت نشده</option>'}</select>
         </label>
+        ${themeSettings}
         <button class="role-danger" id="role-logout" type="button">خروج از حساب</button>
       </div>
     `);
     document.getElementById('role-user-branch-select')?.addEventListener('change', (event) => setActiveBranch(event.target.value));
+    dialogBody.querySelectorAll('input[name="role-user-theme"]').forEach((input) => {
+      input.addEventListener('change', () => {
+        if (!input.checked) return;
+        const selected = applyStaffTheme(input.value, true);
+        const hint = dialogBody.querySelector('#role-user-theme-hint');
+        if (hint) hint.textContent = `تم ${selected === 'dark' ? 'تیره' : selected === 'system' ? 'خودکار' : 'روشن'} فعال شد و برای صندوق و گارسون ذخیره شد.`;
+      });
+    });
   }
 
   async function loadSession() {
@@ -412,10 +745,11 @@
       const activeClass = state.activeView === id ? 'active' : '';
       const lockedClass = !enabled ? 'is-feature-locked' : '';
       const lockIcon = !enabled ? ' 🔒' : '';
-      return `<button type="button" data-view="${id}" class="${activeClass} ${lockedClass}" ${!enabled ? 'title="این بخش توسط کنترل‌پلن NEEM غیرفعال است"' : ''}>${esc(label)}${lockIcon}</button>`;
+      return `<button type="button" data-view="${id}" class="${activeClass} ${lockedClass}" ${!enabled ? 'title="این بخش توسط کنترل‌پلن سالسا (SALSA) غیرفعال است"' : ''}>${esc(label)}${lockIcon}</button>`;
     }).join('');
     nav.querySelectorAll('[data-view]').forEach((button) => button.addEventListener('click', () => {
       state.activeView = button.dataset.view;
+      if (role === 'waiter') state.waiterUnmappedOnly = false;
       if (role === 'kitchen') state.kdsPage = 0;
       paintNav();
       render();
@@ -434,34 +768,45 @@
     }
   }
 
-  const POS_MODIFIERS = [
-    { group: 'روش سرو', items: [{ name: 'تند', price: 0 }, { name: 'بدون پیاز', price: 0 }, { name: 'بدون سس', price: 0 }, { name: 'بدون پنیر', price: 0 }] },
-    { group: 'افزودنی‌ها', items: [{ name: 'پنیر اضافه', price: 120000 }, { name: 'آووکادو', price: 180000 }, { name: 'بیکن', price: 220000 }, { name: 'سس اضافه', price: 60000 }] },
-  ];
-
   function menuModifierGroupsForItem(item) {
-    if (Array.isArray(item?.modifierGroups)) return item.modifierGroups;
-    // Compatibility for an older staff endpoint. New responses always carry
-    // the server-side contextual groups, including an intentional empty list.
-    return POS_MODIFIERS.map((legacy, groupIndex) => ({
-      id: `legacy-group-${groupIndex + 1}`,
-      title: legacy.group,
-      selection: 'multiple',
-      required: false,
-      options: legacy.items.map((option, optionIndex) => ({
-        id: `legacy-option-${groupIndex + 1}-${optionIndex + 1}`,
-        name: option.name,
-        price: option.price,
-        available: true,
-      })),
-    }));
+    return Array.isArray(item?.modifierGroups) ? item.modifierGroups : [];
+  }
+
+  function modifierGroupMinimum(group) {
+    const min = Number(group?.minSelections);
+    return Number.isInteger(min) && min >= 0 && min <= 16 ? min : (group?.required === true ? 1 : 0);
+  }
+
+  function modifierGroupMaximum(group) {
+    const activeOptions = (Array.isArray(group?.options) ? group.options : []).filter((option) => option?.available !== false).length;
+    if (group?.selection === 'single') return Math.min(1, activeOptions);
+    const max = Number(group?.maxSelections);
+    return Math.min(Number.isInteger(max) && max >= 1 && max <= 16 ? max : 16, activeOptions);
+  }
+
+  function validateMenuModifierChoices(groups, modifiers) {
+    if (!Array.isArray(modifiers)) return { ok: false, missing: [], exceeded: [] };
+    const counts = new Map();
+    const seen = new Set();
+    for (const modifier of modifiers) {
+      const groupId = String(modifier?.groupId || '');
+      const optionId = String(modifier?.id || '');
+      const identity = `${groupId}:${optionId}`;
+      if (!groupId || !optionId || seen.has(identity)) return { ok: false, missing: [], exceeded: [] };
+      seen.add(identity);
+      counts.set(groupId, (counts.get(groupId) || 0) + 1);
+    }
+    const missing = groups.filter((group) => (counts.get(String(group.id)) || 0) < modifierGroupMinimum(group));
+    const exceeded = groups.filter((group) => (counts.get(String(group.id)) || 0) > modifierGroupMaximum(group));
+    return { ok: !missing.length && !exceeded.length, missing, exceeded };
   }
 
   function modifierOptionForInput(groups, input) {
     const id = String(input?.dataset?.modifierOption || '');
     const groupId = String(input?.dataset?.modifierGroup || '');
     const group = groups.find((entry) => String(entry.id) === groupId);
-    return (group?.options || []).find((option) => String(option.id) === id) || null;
+    const option = (group?.options || []).find((entry) => String(entry.id) === id);
+    return option ? { ...option, groupId: group.id, groupTitle: group.title } : null;
   }
 
   function posUnitTotal(line) {
@@ -480,16 +825,189 @@
     return posBaseLineTotal(line) + posComplementTotal(line);
   }
 
-  function posTotal(check = state.posCheck) {
+  function posSubtotal(check = state.posCheck) {
     return (check?.lines || []).reduce((sum, line) => sum + posLineTotal(line), 0);
   }
 
+  function posDiscount(check = state.posCheck) {
+    if (!check) return 0;
+    if (check.discountAmount) return Number(check.discountAmount);
+    if (check.discountRate) return Math.round(posSubtotal(check) * Number(check.discountRate) / 100);
+    return Number(check.discount || 0);
+  }
+
+  function posTotal(check = state.posCheck) {
+    const sub = posSubtotal(check);
+    const disc = posDiscount(check);
+    return Math.max(0, sub - disc);
+  }
+
   function orderIsOpen(order) {
-    return !['done', 'picked_up', 'delivered', 'cancelled'].includes(String(order.status || ''));
+    const status = String(order?.status || '').trim().toLowerCase();
+    if (status === 'cancelled') return false;
+    const serviceComplete = ['done', 'completed', 'picked_up', 'delivered'].includes(status);
+    if (!serviceComplete) return true;
+    // Keep a served table occupied until the shared payment model confirms a
+    // consistent settlement. Missing/new payment states must fail closed.
+    const workflow = globalThis.WestoOrderPaymentState?.deriveOrderPaymentWorkflow(order);
+    return !(workflow?.settled === true
+      || (workflow?.isConsistent === true && workflow?.paymentStatus === 'refunded'));
+  }
+
+  function waiterWorkflowMarkup(wt) {
+    const order = wt?.order || {};
+    const status = String(order.status || '');
+    const saved = Boolean(order.id);
+    const sent = saved && !['draft', 'pay_at_cashier', 'awaiting_confirmation', 'pending_online', 'cancelled'].includes(status);
+    const served = ['done', 'completed', 'picked_up', 'delivered'].includes(status);
+    const preparationComplete = ['ready', 'done', 'completed', 'picked_up', 'delivered'].includes(status);
+    const paymentWorkflow = saved
+      ? globalThis.WestoOrderPaymentState.deriveOrderPaymentWorkflow(order)
+      : null;
+    const paid = paymentWorkflow?.settled === true;
+    const needsReconciliation = paymentWorkflow?.requiresReconciliation === true;
+    const paymentNeedsRefresh = wt?.paymentNeedsRefresh === true;
+    const paymentIntentConflict = wt?.paymentIntentConflict === true;
+    const orderSubmissionConflict = wt?.orderSubmissionConflict === true;
+    const orderSaveNeedsRefresh = wt?.orderSaveNeedsRefresh === true;
+    const paymentAmounts = paymentWorkflow?.amounts || { total: null, paid: null, due: null };
+    const steps = [
+      { label: 'سفارش', complete: sent },
+      { label: 'آماده‌سازی', complete: preparationComplete },
+      { label: 'تحویل', complete: served },
+      { label: 'تسویه', complete: paid, blocked: needsReconciliation || paymentNeedsRefresh || paymentIntentConflict },
+    ];
+    const currentStep = steps.findIndex((step) => !step.complete);
+    const hint = orderSubmissionConflict
+      ? 'نتیجهٔ ثبت سفارش قابل تطبیق نیست؛ ارسال دوباره متوقف است و مدیر شیفت باید وضعیت میز را بررسی کند.'
+      : orderSaveNeedsRefresh
+      ? 'وضعیت سفارش تازه نیست؛ پیش از هر اقدام، اطلاعات سرور را به‌روزرسانی کنید.'
+      : paymentIntentConflict
+      ? 'وضعیت فاکتور با درخواست دریافت قبلی تطبیق ندارد؛ صندوق باید آن را بررسی کند.'
+      : paymentNeedsRefresh
+      ? 'نتیجهٔ دریافت وجه هنوز روشن نیست؛ ابتدا وضعیت را تازه کنید و دوباره وجه دریافت نکنید.'
+      : needsReconciliation
+      ? 'اطلاعات سفارش یا پرداخت نیاز به بررسی دارد؛ تا تطبیق اطلاعات، دریافت وجه متوقف است.'
+      : currentStep === -1
+      ? 'سفارش تحویل و تسویه شده است.'
+      : currentStep === 0
+        ? 'غذاها را انتخاب کنید و سپس سفارش را برای آشپزخانه بفرستید.'
+        : currentStep === 1
+          ? 'سفارش ثبت شد؛ تا آماده‌شدن غذا، وضعیت آماده‌سازی را دنبال کنید.'
+          : currentStep === 2
+            ? status === 'ready'
+              ? 'غذا آماده است؛ تحویل به میز را ثبت کنید.'
+              : paid
+                ? 'پرداخت ثبت شد؛ تحویل سفارش را تکمیل کنید.'
+                : 'سفارش در حال آماده‌سازی است؛ پس از آماده‌شدن، تحویل به میز را ثبت کنید.'
+      : order.paymentStatus === 'partial'
+              ? `پرداخت بخشی ثبت شده؛ ماندهٔ ${money(paymentAmounts.due)} را دریافت کنید.`
+              : 'تحویل ثبت شد؛ مبلغ باقی‌مانده را دریافت و تسویه کنید.';
+    const flowStatus = orderSubmissionConflict
+      ? 'وضعیت سفارش نیازمند بررسی است'
+      : orderSaveNeedsRefresh
+        ? 'نتیجهٔ ثبت سفارش را بررسی کنید'
+        : paymentIntentConflict
+          ? 'پرداخت نیازمند بررسی صندوق است'
+          : paymentNeedsRefresh
+            ? 'وضعیت پرداخت را تازه کنید'
+            : needsReconciliation
+              ? 'تسویه نیازمند بررسی صندوق است'
+              : currentStep === -1
+                ? 'سفارش تکمیل شده است'
+                : `مرحلهٔ ${num(currentStep + 1)} از ۴ · ${steps[currentStep].label}`;
+
+    return `<section class="wt-flow" aria-label="مراحل سفارش">
+      <div class="wt-flow__summary">
+        <p class="wt-flow__current" role="status">${flowStatus}</p>
+        ${saved ? '<button type="button" id="wt-refresh-flow" class="wt-flow__refresh">تازه‌سازی</button>' : ''}
+      </div>
+      <details class="wt-flow__details">
+        <summary>نمایش مراحل سفارش</summary>
+        <ol class="wt-flow__steps">${steps.map((step, index) => {
+          const current = index === currentStep && !step.blocked;
+          return `<li class="wt-flow__step ${step.complete ? 'is-complete' : ''} ${current ? 'is-current' : ''} ${step.blocked ? 'is-blocked' : ''}" ${current ? 'aria-current="step"' : ''} ${step.blocked ? 'aria-disabled="true"' : ''}>
+            <span class="wt-flow__number" aria-hidden="true">${step.complete ? '✓' : index + 1}</span>
+            <span>${step.label}</span>
+          </li>`;
+        }).join('')}</ol>
+        <div class="wt-flow__meta"><p role="status">${hint}</p></div>
+      </details>
+      ${needsReconciliation ? '<p class="wt-flow__conflict role-inline-warning" role="alert">تسویه تا بررسی مالی با صندوق متوقف است؛ فعلاً وجه دریافت نکنید.</p>' : ''}
+      ${paymentIntentConflict ? '<p class="wt-flow__conflict role-inline-warning" role="alert">برای جلوگیری از دریافت تکراری، ثبت وجه متوقف است؛ مسئول صندوق باید درخواست قبلی و ماندهٔ فعلی را تطبیق دهد.</p>' : ''}
+      ${wt?.splitNeedsRefresh ? '<p class="wt-flow__conflict role-inline-warning" role="alert">نتیجهٔ تفکیک نامشخص است؛ دوباره تفکیک نکنید. فاکتورهای این میز را با مدیر شیفت تطبیق دهید؛ عملیات سفارش تا آن زمان قفل است.</p>' : ''}
+      ${orderSubmissionConflict ? '<p class="wt-flow__conflict role-inline-warning" role="alert">ارسال و ویرایش سفارش متوقف است؛ سفارش میز را با مدیر شیفت تطبیق دهید.</p>' : ''}
+      ${orderSaveNeedsRefresh && !orderSubmissionConflict ? '<p class="wt-flow__conflict role-inline-warning" role="status">نتیجهٔ ذخیره مشخص نیست؛ وضعیت تازهٔ سرور را بررسی کنید.</p>' : ''}
+      ${wt?.remoteUpdatePending ? '<div class="wt-flow__conflict" role="alert"><span>این سفارش در دستگاه دیگری تغییر کرده؛ پیش‌نویس فعلی حفظ شده است.</span><button type="button" id="wt-load-latest-order">بررسی و بارگذاری نسخهٔ تازه</button></div>' : ''}
+    </section>`;
+  }
+
+  function waiterCallsForTable(table) {
+    const tableId = table?.id;
+    const tDigits = String(tableId || '').replace(/\D/g, '');
+    const tNum = tDigits ? Number(tDigits) : null;
+    const tLabel = String(table?.label || '').trim();
+    return (state.data.calls || []).filter((call) => {
+      if (!['open', 'new'].includes(String(call.status || 'open'))) return false;
+      const callNo = String(call.tableNo || '').trim();
+      const callDigits = callNo.replace(/\D/g, '');
+      const callNum = callDigits ? Number(callDigits) : null;
+      return (tNum !== null && callNum === tNum)
+        || (callDigits && callDigits === tDigits)
+        || callNo === tLabel
+        || callNo === `میز ${tDigits}`
+        || callNo === `میز ${tNum}`
+        || callNo === tDigits;
+    });
+  }
+
+  function waiterTableContext(table) {
+    const orders = (state.data.orders || []).filter((order) => orderIsOpen(order) && tableNoBelongsToTable(order.tableNo, table.id));
+    const calls = waiterCallsForTable(table);
+    const readyOrders = orders.filter((order) => order.status === 'ready');
+    const stateName = calls.length ? 'attention' : orders.length ? 'busy' : (table.state || 'available');
+    const stateText = calls.length
+      ? `${num(calls.length)} فراخوان`
+      : readyOrders.length
+        ? `${num(readyOrders.length)} آماده تحویل`
+        : orders.length
+          ? `${num(orders.length)} فاکتور باز`
+          : (table.stateLabel || ({ available: 'آزاد', reserved: 'رزرو', busy: 'در سرویس', attention: 'نیازمند رسیدگی' })[stateName] || stateName);
+    return { orders, calls, readyOrders, state: stateName, stateLabel: stateText };
+  }
+
+  function waiterUnmappedOrders(orders = state.data.orders || []) {
+    return orders.filter((order) => order.fulfillment === 'dine_in'
+      && orderIsOpen(order)
+      && !waiterOrderHasMappedTable(order));
+  }
+
+  function waiterOrderHasMappedTable(order) {
+    return (state.data.floor?.tables || []).some((table) =>
+      table.active !== false && tableNoBelongsToTable(order?.tableNo, table.id));
+  }
+
+  function waiterAvailableAssignmentTables() {
+    return (state.data.floor?.tables || []).filter((table) => {
+      if (table.active === false || ['reserved', 'busy', 'attention'].includes(String(table.state || ''))) return false;
+      const context = waiterTableContext(table);
+      return context.state === 'available' && context.orders.length === 0 && context.calls.length === 0;
+    });
+  }
+
+  function waiterFloorModeStorageKey() {
+    return window.matchMedia?.('(max-width: 768px)').matches
+      ? 'westo_waiter_floor_mode_mobile_v2'
+      : 'westo_waiter_floor_mode_desktop';
   }
 
   function orderCanEdit(order) {
     return Boolean(order && !order.startedAt && order.paymentMethod !== 'online' && ['pay_at_cashier', 'awaiting_confirmation', 'sent_to_kitchen', 'paid'].includes(String(order.status || '')));
+  }
+
+  function waiterHasCapability(capability) {
+    const capabilities = state.session?.workspace?.capabilities;
+    return Array.isArray(capabilities) && (capabilities.includes('*') || capabilities.includes(capability));
   }
 
   function tableNoBelongsToTable(tableNo, tableId) {
@@ -497,6 +1015,24 @@
     const actual = canonical(tableNo);
     const target = canonical(tableId);
     return Boolean(actual && target && (actual === target || actual.startsWith(`${target}-`)));
+  }
+
+  function waiterOrderResponseMatchesIntent(order, intent = {}) {
+    const expectedOrderId = Number(intent.orderId);
+    const expectedBranchId = Number(intent.branchId);
+    const expectedTableNo = normalizeDigits(String(intent.tableId ?? '')).trim().replace(/^میز\s*/u, '').replace(/\s+/g, '');
+    const actualTableNo = normalizeDigits(String(order?.tableNo ?? '')).trim().replace(/^میز\s*/u, '').replace(/\s+/g, '');
+    const tableMatches = intent.exactTableNo === true
+      ? Boolean(expectedTableNo && actualTableNo === expectedTableNo)
+      : tableNoBelongsToTable(order?.tableNo, intent.tableId);
+
+    return Boolean(order
+      && Number.isSafeInteger(expectedOrderId) && expectedOrderId > 0
+      && Number(order.id) === expectedOrderId
+      && Number.isSafeInteger(expectedBranchId) && expectedBranchId > 0
+      && Number(order.branchId) === expectedBranchId
+      && String(order.fulfillment || '').trim().toLowerCase() === 'dine_in'
+      && expectedTableNo && actualTableNo && tableMatches);
   }
 
   function posCheckEditable(check = state.posCheck) {
@@ -514,10 +1050,12 @@
       phone: order.phone || '',
       note: order.note || '',
       sent: ['sent_to_kitchen', 'paid', 'preparing', 'ready'].includes(order.status),
-      paymentStatus: order.paymentStatus || 'unpaid',
+      paymentStatus: orderPaymentStatus(order),
       paymentTender: order.paymentTender || '',
       amountPaid: Number(order.amountPaid || 0),
       total: Number(order.total || 0),
+      discount: Number(order.discount || 0),
+      discountRate: Number(order.discountRate || 0),
       createdAt: order.createdAt || '',
       paidAt: order.paidAt || '',
       status: order.status,
@@ -608,6 +1146,8 @@
 
   function renderPlanTable(table, options = {}) {
     const isSelected = String(state.selectedTableId) === String(table.id);
+    const isInactive = table.active === false;
+    const isUnavailableToWaiter = Boolean(options.disableInactive && isInactive && !options.isEditMode);
     const shape = table.shape || 'rectangle';
     const seats = Number(table.seats) || 4;
     const coords = getComputedTableCoords(table, options.zone || 'all');
@@ -744,8 +1284,18 @@
       }
     }
 
+    const sharedSeatLayout = window.WestoFloorChairLayout?.layout({ shape, seats, chairModel, chairScale: table.chairScale });
+    if (sharedSeatLayout) chairsHtml = sharedSeatLayout.markup;
+
     const timerHtml = table.serviceEndsAt && !table.autoReleased && ['busy', 'attention'].includes(table.state)
       ? `<time class="plan-table-timer" data-service-ends="${esc(table.serviceEndsAt)}">${floorCountdownLabel(table.serviceEndsAt)}</time>`
+      : '';
+
+    const elapsedMinutes = ['busy', 'attention'].includes(table.state) && !table.autoReleased
+      ? Math.max(1, Math.round((Date.now() - new Date(table.occupiedAt || table.serviceStartedAt || (table.serviceEndsAt ? new Date(table.serviceEndsAt).getTime() - 45 * 60 * 1000 : Date.now() - 25 * 60 * 1000)).getTime()) / 60000))
+      : 0;
+    const elapsedBadgeHtml = elapsedMinutes > 0
+      ? `<span class="plan-table-elapsed" title="مدت زمان حضور">⏱️ ${num(elapsedMinutes)} دقیقه</span>`
       : '';
 
     const isMergedParent = table.mergedWith && Array.isArray(table.mergedWith) && table.mergedWith.length > 0;
@@ -790,23 +1340,28 @@
 
     const dataAttr = typeof options.attr === 'function' ? options.attr(table) : `data-table="${esc(table.id)}"`;
 
+    const tableState = isInactive ? 'inactive' : (table.state || 'available');
+    const tableLabel = table.label || `میز ${table.id}`;
+
     return `
-      <div class="plan-table plan-table--${esc(shape)} ${isSelected ? 'is-selected' : ''} ${isMergedParent ? 'is-merged-parent' : ''} ${isMergedSub ? 'is-merged-sub' : ''}"
+      <div class="plan-table plan-table--${esc(shape)} ${isSelected ? 'is-selected' : ''} ${isMergedParent ? 'is-merged-parent' : ''} ${isMergedSub ? 'is-merged-sub' : ''} ${isUnavailableToWaiter ? 'is-inactive' : ''}"
            ${dataAttr}
            role="button"
-           tabindex="0"
-           data-state="${esc(table.state || (table.active === false ? 'inactive' : 'available'))}"
+           tabindex="${isUnavailableToWaiter ? '-1' : '0'}"
+           aria-disabled="${isUnavailableToWaiter ? 'true' : 'false'}"
+           data-state="${esc(tableState)}"
            data-seats="${seats}"
            ${table.autoReleased ? 'data-auto-released="true"' : ''}
            style="left:${coords.x}%; top:${coords.y}%; transform: translate(-50%, -50%) rotate(${table.rotation || 0}deg); --table-rot: ${table.rotation || 0}deg;"
-           title="${esc(table.label || `میز ${table.id}`)} — ${esc(table.stateLabel || 'آزاد')}"
-           aria-label="${esc(table.label || `میز ${table.id}`)} — ${esc(table.stateLabel || 'آزاد')}، ${num(seats)} نفر">
+           title="${esc(tableLabel)} — ${esc(isInactive ? 'غیرفعال؛ برای سفارش از میز فعال استفاده کنید' : (table.stateLabel || 'آزاد'))}"
+           aria-label="${esc(tableLabel)} — ${esc(isInactive ? 'غیرفعال؛ برای سفارش از میز فعال استفاده کنید' : (table.stateLabel || 'آزاد'))}، ${num(seats)} نفر">
         ${chairsHtml}
         <div class="plan-table-surface">
           <span class="plan-table-number">${esc(table.label || `میز ${table.id}`)}</span>
-          <span class="plan-table-meta">${num(seats)} نفر · ${esc(table.zone || 'سالن')}</span>
+          <span class="plan-table-meta">${num(seats)} نفر · ${esc(normalizeRoleFloorZoneName(table.zone))}${isInactive ? ' · غیرفعال' : ''}</span>
           ${mergeBadgeHtml}
           ${timerHtml}
+          ${elapsedBadgeHtml}
         </div>
         ${paletteHtml}
       </div>`;
@@ -816,33 +1371,37 @@
     const isEditMode = Boolean(options.isEditMode);
     const dynamicZones = Array.isArray(state.data.floor?.zones) ? state.data.floor.zones : [];
     const dynamicFixtures = Array.isArray(state.data.floor?.fixtures) ? state.data.floor.fixtures : [];
+    const selectedZone = activeZone === 'all' ? 'all' : normalizeRoleFloorZoneName(activeZone);
+    const focusedDynamicZones = dynamicZones.filter((zone) => selectedZone === 'all'
+      || normalizeRoleFloorZoneName(zone.name) === selectedZone
+      || String(zone.id ?? '') === String(activeZone ?? ''));
+    const visibleFixtures = selectedZone === 'all' || dynamicZones.length === 0
+      ? dynamicFixtures
+      : dynamicFixtures.filter((fixture) => focusedDynamicZones.some((zone) => roleFloorFixtureInsideZone(fixture, zone)));
     const bgTheme = state.data.floor?.settings?.bgTheme || 'slate-blueprint';
 
     // Build zones markup
     let zonesMarkup = '';
     if (dynamicZones.length > 0) {
-      zonesMarkup = dynamicZones.map((z) => {
-        const isMatch = activeZone === 'all' || z.name === activeZone || z.id === activeZone;
+      zonesMarkup = focusedDynamicZones.map((z) => {
         return `
-          <div class="plan-zone plan-zone--dynamic plan-zone--${esc(z.color || 'blue')} ${isMatch && activeZone !== 'all' ? 'is-full-view' : ''}"
+          <div class="plan-zone plan-zone--dynamic plan-zone--${esc(z.color || 'blue')}"
                style="left:${z.x}%; top:${z.y}%; width:${z.w}%; height:${z.h}%;">
             <span class="plan-zone__tag">${esc(z.icon || '🏷️')} ${esc(z.name)}</span>
           </div>`;
       }).join('');
     } else {
       zonesMarkup = `
-        ${(activeZone === 'all' || activeZone === 'سالن') ? `<div class="plan-zone plan-zone--main ${activeZone === 'سالن' ? 'is-full-view' : ''}"><span class="plan-zone__tag">سالن اصلی</span></div>` : ''}
-        ${(activeZone === 'all' || activeZone === 'تراس') ? `<div class="plan-zone plan-zone--terrace ${activeZone === 'تراس' ? 'is-full-view' : ''}"><span class="plan-zone__tag">🌿 تراس و فضای باز</span></div>` : ''}
-        ${(activeZone === 'all' || activeZone === 'VIP' || activeZone === 'ویژه') ? `<div class="plan-zone plan-zone--vip ${(activeZone === 'VIP' || activeZone === 'ویژه') ? 'is-full-view' : ''}"><span class="plan-zone__tag">👑 سالن اختصاصی ویژه</span></div>` : ''}
+        ${(selectedZone === 'all' || selectedZone === 'سالن') ? `<div class="plan-zone plan-zone--main ${selectedZone === 'سالن' ? 'is-full-view' : ''}"><span class="plan-zone__tag">سالن اصلی</span></div>` : ''}
+        ${(selectedZone === 'all' || selectedZone === 'تراس') ? `<div class="plan-zone plan-zone--terrace ${selectedZone === 'تراس' ? 'is-full-view' : ''}"><span class="plan-zone__tag">🌿 تراس و فضای باز</span></div>` : ''}
+        ${(selectedZone === 'all' || selectedZone === 'ویژه') ? `<div class="plan-zone plan-zone--vip ${selectedZone === 'ویژه' ? 'is-full-view' : ''}"><span class="plan-zone__tag">👑 سالن اختصاصی ویژه</span></div>` : ''}
       `;
     }
 
     // Build fixtures markup
-    let fixturesMarkup = '';
-    if (dynamicFixtures.length > 0) {
-      fixturesMarkup = `
+    const fixturesMarkup = dynamicFixtures.length > 0 ? `
         <div class="plan-fixtures-layer">
-          ${dynamicFixtures.map((f) => `
+          ${visibleFixtures.map((f) => `
             <div class="plan-fixture plan-fixture--${esc(f.type)} plan-fixture--${esc(f.color || 'slate')}"
                  data-fixture-id="${esc(f.id)}"
                  style="left:${f.x}%; top:${f.y}%; width:${f.w}%; height:${f.h}%; transform: rotate(${f.rotation || 0}deg);"
@@ -853,16 +1412,8 @@
               </div>
             </div>
           `).join('')}
-        </div>`;
-    } else {
-      fixturesMarkup = `
-        <div class="plan-fixtures-layer">
-          <div class="plan-fixture plan-fixture--entrance" title="ورودی"></div>
-          <div class="plan-fixture plan-fixture--bar">☕ بار گرم و سرد</div>
-          <div class="plan-fixture plan-fixture--kitchen">🍳 تحویل غذا</div>
-          <div class="plan-fixture plan-fixture--cashier">💳 صندوق</div>
-        </div>`;
-    }
+        </div>`
+      : '';
 
     // Build SVG connectors for merged tables
     let svgConnectors = '';
@@ -1020,6 +1571,9 @@
     viewport.addEventListener('pointerdown', (e) => {
       if (state.waiterFloorEditing) return;
       if (e.target.closest('.floor-canvas-controls') || e.target.closest('.floor-canvas-legend')) return;
+      // Table presses must keep their original click target so cashier and waiter
+      // can open the selected table. Pan from the empty canvas instead.
+      if (e.target.closest('.plan-table')) return;
       isPanning = true;
       hasMoved = false;
       dragStartX = e.clientX;
@@ -1159,14 +1713,15 @@
       const activeTables = tables.filter((table) => table.active !== false);
       activeTables.forEach(ensureTableGeometry);
       state.posPickerZone = state.posPickerZone || 'all';
+      if (state.posPickerZone !== 'all') state.posPickerZone = normalizeRoleFloorZoneName(state.posPickerZone);
       state.posPickerMode = state.posPickerMode || 'plan';
 
-      const zones = ['all', ...new Set(activeTables.map((t) => t.zone || 'سالن'))];
+      const zones = ['all', ...new Set(activeTables.map((table) => normalizeRoleFloorZoneName(table.zone)))];
 
       const paintTables = () => {
         const visibleTables = state.posPickerZone === 'all'
           ? activeTables
-          : activeTables.filter((t) => (t.zone || 'سالن') === state.posPickerZone);
+          : activeTables.filter((table) => normalizeRoleFloorZoneName(table.zone) === state.posPickerZone);
 
         const freeCount = activeTables.filter((t) => t.state === 'available' || !t.state).length;
         const busyCount = activeTables.filter((t) => t.state === 'busy').length;
@@ -1191,7 +1746,7 @@
                 </button>
               </div>
               <div class="floor-zone-pills">
-                ${zones.map((z) => `<button type="button" class="floor-zone-pill ${state.posPickerZone === z ? 'active' : ''}" data-picker-zone="${esc(z)}"><span>${esc(z === 'all' ? 'همه بخش‌ها' : z)}</span><small>${num(z === 'all' ? activeTables.length : activeTables.filter((t) => (t.zone || 'سالن') === z).length)}</small></button>`).join('')}
+                ${zones.map((z) => `<button type="button" class="floor-zone-pill ${state.posPickerZone === z ? 'active' : ''}" data-picker-zone="${esc(z)}"><span>${esc(z === 'all' ? 'همه بخش‌ها' : z)}</span><small>${num(z === 'all' ? activeTables.length : activeTables.filter((table) => normalizeRoleFloorZoneName(table.zone) === z).length)}</small></button>`).join('')}
               </div>
               <div class="pos-picker-stats">
                 <span class="leg-item"><i class="leg-dot leg-dot--avail"></i> ${num(freeCount)} آزاد</span>
@@ -1213,7 +1768,7 @@
                 ${visibleTables.map((table) => `
                   <button type="button" class="floor-table" data-pos-table="${esc(table.id)}" data-state="${esc(table.state)}" ${table.autoReleased ? 'data-auto-released="true"' : ''}>
                     <strong>${esc(table.label || `میز ${table.id}`)}</strong>
-                    <small>${num(table.seats)} نفر · ${esc(table.zone || 'سالن')}</small>
+                    <small>${num(table.seats)} نفر · ${esc(normalizeRoleFloorZoneName(table.zone))}</small>
                     <span>${esc(table.stateLabel || 'آزاد')}</span>
                     ${table.serviceEndsAt && !table.autoReleased && ['busy', 'attention'].includes(table.state) ? `<time class="plan-table-timer" data-service-ends="${esc(table.serviceEndsAt)}" style="margin-top:6px;display:inline-block">${floorCountdownLabel(table.serviceEndsAt)}</time>` : ''}
                   </button>`).join('') || empty('میزی در این بخش یافت نشد.')}
@@ -1366,14 +1921,37 @@
     if (!check) return `<aside class="pos-check pos-check--empty"><div class="pos-check__head"><b>فاکتور</b></div>${empty('برای شروع، یک سفارش جدید باز کنید.')}<button class="pos-pay" id="pos-empty-new">+ سفارش جدید</button></aside>`;
     const lines = check.lines || [];
     const editable = posCheckEditable(check);
-    const statusText = check.paymentStatus === 'partial' ? 'نیازمند تکمیل پرداخت' : (check.sent ? statusLabel(check.status) : 'ثبت‌نشده');
+    const paymentStatus = orderPaymentStatus(check);
+    const statusText = paymentStatus === 'partial' ? 'نیازمند تکمیل پرداخت' : (check.sent ? statusLabel(check.status) : 'ثبت‌نشده');
+    const paymentNeedsReview = !['unpaid', 'partial'].includes(paymentStatus);
     const submitLabel = !check.orderId ? 'ارسال به آشپزخانه' : editable ? 'ذخیره تغییرات سفارش' : 'ویرایش پس از شروع آشپزخانه قفل است';
+    const subtotal = posSubtotal(check);
+    const discountAmount = posDiscount(check);
+    const finalTotal = posTotal(check);
+    const discountRate = Number(check.discountRate || 0);
+
     return `<aside class="pos-check">
       <div class="pos-check__title"><div><strong>${esc(posLocationLabel(check))}</strong><small>${check.orderNo ? `${esc(check.orderNo)}${editable && check.orderId ? ' · قابل ویرایش تا شروع آشپزخانه' : ''}` : 'فاکتور جدید'}</small></div><span class="pos-status ${check.sent ? 'is-sent' : ''}">${esc(statusText)}</span></div>
       <div class="pos-check__tabs"><button class="active" type="button">فاکتور</button><button type="button" id="pos-actions-tab">عملیات</button><button type="button" id="pos-guest-tab">مهمان</button></div>
       <div class="pos-lines">${lines.map((line) => posInvoiceRows(line)).join('') || empty('هنوز محصولی به فاکتور اضافه نشده است.')}</div>
-      <div class="pos-totals"><div><span>جمع جزء</span><b>${money(posTotal())}</b></div><div class="is-total"><span>مبلغ نهایی</span><strong>${money(posTotal())}</strong></div></div>
-      <div class="pos-check__buttons"><button type="button" class="pos-ghost" id="pos-print" ${check.orderId ? '' : 'disabled'}>چاپ</button><button type="button" class="pos-pay" id="pos-pay" ${lines.length && check.paymentStatus !== 'paid' ? '' : 'disabled'}>${check.paymentStatus === 'paid' ? 'پرداخت‌شده' : 'پرداخت'}</button></div>
+      <div class="pos-discount-strip">
+        <span style="color:var(--rp-muted);font-weight:700;">تخفیف:</span>
+        <button type="button" class="pos-discount-chip ${discountRate === 0 && !discountAmount ? 'is-active' : ''}" data-discount-rate="0">۰٪</button>
+        <button type="button" class="pos-discount-chip ${discountRate === 5 ? 'is-active' : ''}" data-discount-rate="5">۵٪</button>
+        <button type="button" class="pos-discount-chip ${discountRate === 10 ? 'is-active' : ''}" data-discount-rate="10">۱۰٪</button>
+        <button type="button" class="pos-discount-chip ${discountRate === 15 ? 'is-active' : ''}" data-discount-rate="15">۱۵٪</button>
+      </div>
+      <div class="pos-totals">
+        <div><span>جمع جزء</span><b>${money(subtotal)}</b></div>
+        ${discountAmount > 0 ? `<div class="is-discount" style="color:#f43f5e"><span>تخفیف${discountRate ? ` (${num(discountRate)}٪)` : ''}</span><b>- ${money(discountAmount)}</b></div>` : ''}
+        <div class="is-total"><span>مبلغ نهایی</span><strong>${money(finalTotal)}</strong></div>
+      </div>
+      ${paymentNeedsReview ? `<div class="role-inline-warning" role="alert"><b>وضعیت پرداخت: ${esc(orderPaymentStatusLabel(check))}</b><span>برای جلوگیری از دریافت دوباره، پرداخت تازه غیرفعال است؛ سفارش را در صف صندوق تطبیق کنید.</span></div>` : ''}
+      <div class="pos-check__buttons">
+        <button type="button" class="pos-ghost" id="pos-print" ${check.orderId ? '' : 'disabled'}>چاپ</button>
+        <button type="button" class="pos-ghost" id="pos-preview-btn" ${check.orderId || lines.length ? '' : 'disabled'}>پیش‌نمایش</button>
+        <button type="button" class="pos-pay" id="pos-pay" ${lines.length && !paymentNeedsReview ? '' : 'disabled'}>${paymentNeedsReview ? 'نیازمند تطبیق' : 'پرداخت'}</button>
+      </div>
       <button type="button" class="pos-send ${check.orderId && editable ? 'is-edit-save' : ''}" id="pos-send" ${!lines.length || (check.orderId && !editable) ? 'disabled' : ''}>${submitLabel}</button>
     </aside>`;
   }
@@ -1431,6 +2009,16 @@
     main.querySelector('#pos-actions-tab')?.addEventListener('click', openPosActions);
     main.querySelector('#pos-guest-tab')?.addEventListener('click', openPosGuest);
     main.querySelector('#pos-printer-settings')?.addEventListener('click', openPrinterSettings);
+    main.querySelectorAll('[data-discount-rate]').forEach((button) => button.addEventListener('click', () => {
+      if (!state.posCheck || !posCheckEditable()) return;
+      const rate = Number(button.dataset.discountRate) || 0;
+      state.posCheck.discountRate = rate;
+      state.posCheck.discount = Math.round(posSubtotal(state.posCheck) * rate / 100);
+      cashierMenu();
+    }));
+    main.querySelector('#pos-preview-btn')?.addEventListener('click', () => {
+      if (state.posCheck) openThermalReceiptPreview(state.posCheck);
+    });
     main.querySelector('#pos-send')?.addEventListener('click', (event) => {
       if (state.posCheck?.orderId) return action(event.currentTarget, () => saveEditedPosOrder(), 'تغییرات سفارش ذخیره و برای آشپزخانه به‌روزرسانی شد.');
       return action(event.currentTarget, async () => { await createPosOrder(true); state.posCheck = null; state.activeView = 'floor'; paintNav(); }, 'سفارش با جزئیات کامل به آشپزخانه ارسال شد.');
@@ -1524,20 +2112,54 @@
     const item = state.menuItems.find((entry) => Number(entry.id) === Number(existing?.menuItemId || menuItemId)) || existing;
     if (!item) return;
     const modifierGroups = menuModifierGroupsForItem(item);
-    const selected = new Set((existing?.modifiers || []).map((modifier) => String(modifier.id || modifier.name)));
+    const selected = new Set((existing?.modifiers || []).flatMap((modifier) => {
+      const groupId = String(modifier.groupId || '');
+      const values = [];
+      if (groupId && modifier.id != null) values.push(`${groupId}:${modifier.id}`);
+      if (groupId && modifier.name) values.push(`${groupId}:name:${modifier.name}`);
+      if (!groupId && modifier.name) values.push(`legacy-name:${modifier.name}`);
+      return values;
+    }));
     const groupsHtml = modifierGroups.length
-      ? modifierGroups.map((group) => `<div class="modifier-group" data-modifier-group-card="${esc(group.id)}"><h3>${esc(group.title)} <small>${group.selection === 'single' ? 'یک انتخاب' : 'چند انتخاب'}${group.required ? ' · الزامی' : ''}</small></h3><div>${(group.options || []).filter((option) => option.available !== false).map((option) => `<label><input type="${group.selection === 'single' ? 'radio' : 'checkbox'}" name="modifier-group-${esc(group.id)}" data-modifier-group="${esc(group.id)}" data-modifier-option="${esc(option.id)}" ${selected.has(String(option.id)) || selected.has(String(option.name)) ? 'checked' : ''}/><span>${esc(option.name)}</span><small>${option.price ? `+ ${money(option.price)}` : 'بدون هزینه'}</small></label>`).join('')}</div></div>`).join('')
+      ? modifierGroups.map((group) => {
+        const minimum = modifierGroupMinimum(group);
+        const maximum = modifierGroupMaximum(group);
+        return `<div class="modifier-group" data-modifier-group-card="${esc(group.id)}"><h3>${esc(group.title)} <small>${group.selection === 'single' ? 'یک انتخاب' : 'چند انتخاب'}${minimum ? ' · الزامی' : ''}</small></h3><p>${minimum ? `حداقل ${num(minimum)} مورد · ` : ''}حداکثر ${num(maximum)} مورد</p><div>${(group.options || []).filter((option) => option.available !== false).map((option) => `<label><input type="${group.selection === 'single' ? 'radio' : 'checkbox'}" name="modifier-group-${esc(group.id)}" data-modifier-group="${esc(group.id)}" data-modifier-option="${esc(option.id)}" ${selected.has(`${group.id}:${option.id}`) || selected.has(`${group.id}:name:${option.name}`) || selected.has(`legacy-name:${option.name}`) ? 'checked' : ''}/><span>${esc(option.name)}</span><small>${option.price ? `+ ${money(option.price)}` : 'بدون هزینه'}</small></label>`).join('')}</div></div>`;
+      }).join('')
       : '<div class="modifier-empty">برای این غذا ترجیحی تعریف نشده است.</div>';
-    openDialog('ویرایش محصول', item.name, `<div class="modifier-layout"><section><div class="modifier-base"><span>قیمت پایه</span><b>${money(item.price)}</b></div><p class="modifier-context-note">ترجیحات مخصوص همین غذا</p>${groupsHtml}</section><aside><label class="field"><span>یادداشت محصول</span><textarea id="modifier-note" rows="4" maxlength="180">${esc(existing?.note || '')}</textarea></label><label class="field"><span>شماره صندلی (اختیاری)</span><input id="modifier-seat" type="number" min="0" max="99" value="${Number(existing?.seat || 0)}" /></label><div class="modifier-qty"><button type="button" data-mod-qty="-1">−</button><b id="modifier-qty">${num(existing?.qty || 1)}</b><button type="button" data-mod-qty="1">+</button></div><button type="button" class="pos-pay" id="modifier-save">${existing ? 'ذخیره تغییرات' : 'افزودن به فاکتور'}</button>${existing ? '<button type="button" class="role-danger" id="modifier-remove">حذف از سفارش</button>' : ''}</aside></div>`);
+    openDialog('ویرایش محصول', item.name, `<div class="modifier-layout"><section><div class="modifier-base"><span>قیمت پایه</span><b>${money(item.price)}</b></div><p class="modifier-context-note">ترجیحات مخصوص همین غذا</p>${groupsHtml}</section><aside><label class="field"><span>یادداشت محصول</span><textarea id="modifier-note" rows="3" maxlength="180">${esc(existing?.note || '')}</textarea></label><div class="quick-prep-tags"><button type="button" class="quick-prep-tag" data-prep-tag="کم‌شکر">کم‌شکر</button><button type="button" class="quick-prep-tag" data-prep-tag="داغ">داغ</button><button type="button" class="quick-prep-tag" data-prep-tag="بدون یخ">بدون یخ</button><button type="button" class="quick-prep-tag" data-prep-tag="بدون پیاز">بدون پیاز</button><button type="button" class="quick-prep-tag" data-prep-tag="تند">تند</button><button type="button" class="quick-prep-tag" data-prep-tag="جداگانه">جداگانه</button><button type="button" class="quick-prep-tag" data-prep-tag="بسته‌بندی بیرون‌بر">بسته‌بندی بیرون‌بر</button></div><label class="field"><span>شماره صندلی (اختیاری)</span><input id="modifier-seat" type="number" min="0" max="99" value="${Number(existing?.seat || 0)}" /></label><div class="modifier-qty"><button type="button" data-mod-qty="-1">−</button><b id="modifier-qty">${num(existing?.qty || 1)}</b><button type="button" data-mod-qty="1">+</button></div><button type="button" class="pos-pay" id="modifier-save">${existing ? 'ذخیره تغییرات' : 'افزودن به فاکتور'}</button>${existing ? '<button type="button" class="role-danger" id="modifier-remove">حذف از سفارش</button>' : ''}</aside></div>`);
     let qty = Number(existing?.qty || 1);
     dialogBody.querySelectorAll('[data-mod-qty]').forEach((button) => button.addEventListener('click', () => { qty = Math.max(1, Math.min(99, qty + Number(button.dataset.modQty))); document.getElementById('modifier-qty').textContent = num(qty); }));
+    dialogBody.querySelectorAll('[data-prep-tag]').forEach((tagBtn) => {
+      const tag = tagBtn.dataset.prepTag;
+      const noteEl = document.getElementById('modifier-note');
+      if (noteEl && noteEl.value.includes(tag)) tagBtn.classList.add('is-active');
+      tagBtn.addEventListener('click', () => {
+        if (!noteEl) return;
+        let current = noteEl.value.trim();
+        if (current.includes(tag)) {
+          current = current.replace(new RegExp('(?:،\\s*)?' + tag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), '').trim();
+          tagBtn.classList.remove('is-active');
+        } else {
+          current = current ? `${current}، ${tag}` : tag;
+          tagBtn.classList.add('is-active');
+        }
+        noteEl.value = current;
+      });
+    });
     document.getElementById('modifier-save').addEventListener('click', () => {
       const modifiers = [...dialogBody.querySelectorAll('[data-modifier-option]:checked')]
         .map((input) => modifierOptionForInput(modifierGroups, input))
         .filter(Boolean)
         .map((option) => ({ ...option }));
-      const missingRequired = modifierGroups.find((group) => group.required && !modifiers.some((modifier) => String(modifier.groupId) === String(group.id)));
-      if (missingRequired) return showToast(`یک گزینه از «${missingRequired.title}» انتخاب کنید`, 'error');
+      const selection = validateMenuModifierChoices(modifierGroups, modifiers);
+      if (!selection.ok) {
+        const missing = selection.missing[0];
+        if (missing) return showToast(`حداقل ${num(modifierGroupMinimum(missing))} گزینه از «${missing.title}» انتخاب کنید`, 'error');
+        const exceeded = selection.exceeded[0];
+        if (exceeded) return showToast(`حداکثر ${num(modifierGroupMaximum(exceeded))} گزینه از «${exceeded.title}» مجاز است`, 'error');
+        return showToast('انتخاب گزینه‌ها معتبر نیست؛ دوباره بررسی کنید.', 'error');
+      }
       const line = { localId: existing?.localId || `line-${Date.now()}-${Math.random().toString(16).slice(2)}`, menuItemId: Number(item.menuItemId || item.id), name: item.name, price: Number(item.price || 0), qty, modifiers, complements: existing?.complements || [], note: document.getElementById('modifier-note').value.trim(), seat: Number(document.getElementById('modifier-seat').value) || 0 };
       if (existing) Object.assign(existing, line); else state.posCheck.lines.push(line);
       dialog.close(); cashierMenu();
@@ -1561,9 +2183,16 @@
   async function createPosOrder(sendToKitchen) {
     if (!state.posCheck?.lines?.length) throw new Error('حداقل یک محصول انتخاب کنید.');
     if (state.posCheck.orderId) return state.posCheck.editable ? saveEditedPosOrder() : ((state.data.orders || []).find((order) => Number(order.id) === Number(state.posCheck.orderId)) || state.posCheck);
+    const payload = { branchId: state.branchId, fulfillment: state.posCheck.fulfillment, tableNo: state.posCheck.tableNo, name: state.posCheck.customerName, phone: state.posCheck.phone, note: state.posCheck.note, paymentMethod: 'cashier', sendToKitchen, discount: state.posCheck.discount || 0, items: state.posCheck.lines.map((line) => ({ menuItemId: line.menuItemId, qty: line.qty, modifiers: line.modifiers, complements: (line.complements || []).map((entry) => ({ complementId: Number(entry.id || entry.complementId), qty: Number(entry.qty || 1) })), note: line.note, seat: line.seat })) };
+    const requestBody = JSON.stringify(payload);
+    if (state.posCheck.createIntent?.body !== requestBody) {
+      const nonce = globalThis.crypto?.randomUUID?.()
+        || `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
+      state.posCheck.createIntent = { body: requestBody, key: `pos-${nonce}` };
+    }
     const data = await api('/api/staff/orders', {
-      method: 'POST', headers: { 'Idempotency-Key': `pos-${Date.now()}-${Math.random().toString(16).slice(2)}` },
-      body: JSON.stringify({ branchId: state.branchId, fulfillment: state.posCheck.fulfillment, tableNo: state.posCheck.tableNo, name: state.posCheck.customerName, phone: state.posCheck.phone, note: state.posCheck.note, paymentMethod: 'cashier', sendToKitchen, items: state.posCheck.lines.map((line) => ({ menuItemId: line.menuItemId, qty: line.qty, modifiers: line.modifiers, complements: (line.complements || []).map((entry) => ({ complementId: Number(entry.id || entry.complementId), qty: Number(entry.qty || 1) })), note: line.note, seat: line.seat })) }),
+      method: 'POST', headers: { 'Idempotency-Key': state.posCheck.createIntent.key },
+      body: requestBody,
     });
     state.posCheck = posCheckFromOrder(data.order);
     state.data.orders.unshift(data.order);
@@ -1580,7 +2209,7 @@
     if (!check.lines?.length) throw new Error('سفارش باید حداقل یک محصول داشته باشد.');
     const data = await api(`/api/cashier/orders/${check.orderId}`, {
       method: 'PATCH',
-      body: JSON.stringify({ branchId: state.branchId, name: check.customerName, phone: check.phone, note: check.note, items: posOrderItemsPayload(check) }),
+      body: JSON.stringify({ branchId: state.branchId, name: check.customerName, phone: check.phone, note: check.note, discount: check.discount || 0, items: posOrderItemsPayload(check) }),
     });
     const index = (state.data.orders || []).findIndex((order) => Number(order.id) === Number(data.order.id));
     if (index >= 0) state.data.orders[index] = data.order;
@@ -1589,12 +2218,41 @@
     return data.order;
   }
 
-  function openPayment(order, splitAmount = 0) {
-    const total = Number(order.total || posTotal());
-    const paid = Number(order.amountPaid || 0);
-    const outstanding = Math.max(0, total - paid);
-    const charge = Math.min(outstanding, Math.max(1, Math.round(Number(splitAmount) || outstanding)));
+  function openPayment(order, splitAmount = null) {
+    // A previous split may have reached the server even when its response was
+    // lost. Never let the POS composer create a different intent until the
+    // saved one is replayed or a refreshed order proves it was recorded.
+    if (cashierPendingSettlementForOrder(order)) {
+      showToast('یک دریافت قبلی هنوز تعیین‌تکلیف نشده است؛ ابتدا همان درخواست را تکرار یا وضعیت را در صف صندوق تازه کنید.', 'warning');
+      state.activeView = 'orders';
+      paintNav();
+      cashierRegister();
+      return;
+    }
+    if (!['unpaid', 'partial'].includes(orderPaymentStatus(order)) || !cashierSettlementStageCanSettle(order)) {
+      showToast('این سفارش برای دریافت تازه مجاز نیست؛ وضعیت را در صف تطبیق صندوق بررسی کنید.', 'warning');
+      state.activeView = 'orders';
+      paintNav();
+      cashierRegister();
+      return;
+    }
+    const amounts = cashierSettlementAmounts(order);
+    if (!amounts.ok) {
+      showToast('سوابق دریافت این فاکتور نیازمند تطبیق است؛ دریافت تازه متوقف شد.', 'error');
+      state.activeView = 'orders';
+      paintNav();
+      cashierRegister();
+      return;
+    }
+    const { total, paid, due: outstanding } = amounts;
+    const charge = cashierSplitAmount(splitAmount, outstanding);
+    if (charge === null) {
+      showToast(`مبلغ انتخابی باید عدد صحیحی بین ۱ و ${money(outstanding)} تومان باشد.`, 'error');
+      return;
+    }
+    ensureCashierSettlementStyles();
     const rounded = Math.ceil(charge / 500000) * 500000 || charge;
+    const walletAllowed = cashierWalletSettlementAllowed(paid, charge, outstanding);
     openDialog('پرداخت', `مبلغ ${money(charge)}`, `<div class="payment-sheet">
       <button type="button" class="split-payment" id="split-payment">تقسیم مبلغ</button>
       <div class="payment-total">
@@ -1602,11 +2260,12 @@
         <strong>${money(charge)}</strong>
         <small>${esc(posLocationLabel(state.posCheck))}${paid ? ` · پرداخت‌شده ${money(paid)} · مانده ${money(outstanding)}` : ''}</small>
       </div>
+      ${cashierPaymentHistoryMarkup(order, amounts)}
 
-      <!-- Customer Club & Points Redemption -->
+      <!-- Customer loyalty preview; point redemption is kept out of settlement until it can be reserved atomically. -->
       <div class="loyalty-pos-box" style="margin-bottom:0.75rem; background:rgba(255,255,255,0.04); border:1px solid rgba(168,85,247,0.3); border-radius:0.5rem; padding:0.55rem; text-align:right;">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.35rem;">
-          <span style="font-size:0.8rem; font-weight:700; color:#a855f7;">💎 باشگاه مشتریان و کسر مستقیم امتیاز</span>
+          <span style="font-size:0.8rem; font-weight:700; color:#a855f7;">💎 باشگاه مشتریان</span>
           <span id="pos-loyalty-status" style="font-size:0.72rem; color:var(--text-muted);"></span>
         </div>
         <div style="display:flex; gap:0.4rem; align-items:center;">
@@ -1617,8 +2276,8 @@
           <div id="pos-loyalty-info" style="font-size:0.75rem; margin-bottom:0.4rem; line-height:1.4;"></div>
           <div style="display:flex; gap:0.4rem; flex-wrap:wrap;">
             <button type="button" class="btn btn-sm btn-accent" id="pos-apply-tier-btn" style="font-size:0.72rem; padding:0.2rem 0.5rem;">اعمال تخفیف سطح</button>
-            <button type="button" class="btn btn-sm" id="pos-apply-points-btn" style="font-size:0.72rem; padding:0.2rem 0.5rem; background:#f59e0b; border-color:#f59e0b; color:#fff;">کسر امتیاز باشگاه</button>
           </div>
+          <small style="display:block;margin-top:7px;color:var(--text-muted);font-size:12px;line-height:1.6">استفاده از امتیاز تا زمان رزرو امن آن در تسویه فعال نیست.</small>
         </div>
       </div>
 
@@ -1636,21 +2295,33 @@
           <button type="button" data-pay="cash" data-amount="${rounded}">${money(rounded)}</button>
           <button type="button" id="custom-cash">مبلغ دلخواه</button>
         </div>
+        <div class="banknote-presets">
+          <button type="button" class="banknote-chip" data-banknote="50000">+۵۰k</button>
+          <button type="button" class="banknote-chip" data-banknote="100000">+۱۰۰k</button>
+          <button type="button" class="banknote-chip" data-banknote="200000">+۲۰۰k</button>
+          <button type="button" class="banknote-chip" data-banknote="500000">+۵۰۰k</button>
+          <button type="button" class="banknote-chip" data-banknote="1000000">+۱m</button>
+        </div>
       </section>
       <div class="payment-methods">
-        <button type="button" data-pay="card"><span>کارت‌خوان</span><small>ثبت پرداخت کارت حضوری</small><b>←</b></button>
-        <button type="button" data-pay="wallet"><span>کیف پول مشتری</span><small>کسر مستقیم از مانده کیف پول</small><b>←</b></button>
-        <button type="button" data-pay="manual_card"><span>ورود دستی کارت</span><small>ثبت ممیزی‌شده تراکنش</small><b>←</b></button>
-        <button type="button" data-pay="gift_card"><span>کارت هدیه</span><small>اعتبار هدیه مجموعه</small><b>←</b></button>
-        <button type="button" data-pay="card_on_file"><span>کارت ذخیره‌شده</span><small>مشتری باشگاه</small><b>←</b></button>
+        <button type="button" data-pay="manual_card"><span>کارت بانکی · ثبت دستی</span><small>پس از تأیید موفق کارت‌خوان ثبت کنید؛ دستگاه به سامانه متصل نیست.</small><b>←</b></button>
+        ${walletAllowed
+          ? '<button type="button" data-pay="wallet"><span>کیف پول مشتری</span><small>کسر مستقیم از مانده کیف پول</small><b>←</b></button>'
+          : '<p class="payment-methods__note" role="status">کیف پول فقط برای تسویهٔ کامل در یک مرحله فعال است. برای دریافت ترکیبی، مانده را با نقدی یا کارت بانکیِ ثبت دستی بگیرید.</p>'}
       </div>
       <div id="custom-cash-row" hidden>
         <label class="field"><span>وجه دریافتی</span><input id="cash-received" inputmode="numeric" value="${charge}" /></label>
+        <div id="cash-change-calculator" style="margin:8px 0;padding:8px 12px;border-radius:8px;background:rgba(16,185,129,0.08);border:1px solid rgba(16,185,129,0.25);display:flex;justify-content:space-between;align-items:center;">
+          <div>
+            <span style="font-size:11px;color:var(--text-muted);display:block">باقی‌مانده قابل برگشت</span>
+            <strong id="pos-change-display" style="font-size:14px;color:#10b981;">۰ تومان</strong>
+          </div>
+          <span id="pos-change-badge" style="font-size:11px;padding:2px 8px;border-radius:4px;background:#10b981;color:#fff;font-weight:700;">تسویه کامل</span>
+        </div>
         <button type="button" class="pos-pay" id="cash-confirm">ثبت دریافت</button>
       </div>
     </div>`);
 
-    let currentDiscounts = null;
     const checkLoyalty = async () => {
       const p = normalizeDigits(document.getElementById('pos-loyalty-phone')?.value || '').trim();
       if (!p) return;
@@ -1659,7 +2330,6 @@
           method: 'POST',
           body: JSON.stringify({ phone: p, redeemPoints: 0, apply: false }),
         });
-        currentDiscounts = res.discounts;
         const detailsWrap = document.getElementById('pos-loyalty-details');
         const infoEl = document.getElementById('pos-loyalty-info');
         if (detailsWrap && infoEl && res.customer) {
@@ -1685,43 +2355,124 @@
       openPayment(res.order);
     });
 
-    document.getElementById('pos-apply-points-btn')?.addEventListener('click', async () => {
-      const p = normalizeDigits(document.getElementById('pos-loyalty-phone')?.value || '').trim();
-      const maxPts = currentDiscounts?.maxRedeemablePoints || 0;
-      const res = await api(`/api/cashier/orders/${order.id}/apply-loyalty`, {
-        method: 'POST',
-        body: JSON.stringify({ phone: p, apply: true, redeemPoints: maxPts }),
-      });
-      showToast(`${maxPts} امتیاز کسر و تخفیف روی فاکتور اعمال شد`);
-      openPayment(res.order);
-    });
-    dialogBody.querySelectorAll('[data-pay]').forEach((button) => button.addEventListener('click', () => settlePosOrder(order, button.dataset.pay, Number(button.dataset.amount || charge), charge, button)));
+    dialogBody.querySelectorAll('[data-pay]').forEach((button) => button.addEventListener('click', () => {
+      const amountTendered = Number(button.dataset.amount || charge);
+      if (button.dataset.pay === 'manual_card') {
+        return openManualCardReference(order, charge, (reference, confirmButton) => settlePosOrder(order, 'manual_card', amountTendered, charge, confirmButton, reference));
+      }
+      settlePosOrder(order, button.dataset.pay, amountTendered, charge, button);
+    }));
     document.getElementById('split-payment').addEventListener('click', () => { document.getElementById('split-options').hidden = !document.getElementById('split-options').hidden; });
     dialogBody.querySelectorAll('[data-split]').forEach((button) => button.addEventListener('click', () => openPayment(order, Number(button.dataset.split))));
-    document.getElementById('split-custom-apply').addEventListener('click', () => openPayment(order, parseInputNumber(document.getElementById('split-custom').value)));
-    document.getElementById('custom-cash').addEventListener('click', () => { document.getElementById('custom-cash-row').hidden = false; document.getElementById('cash-received').focus(); });
+    document.getElementById('split-custom-apply').addEventListener('click', () => {
+      const customAmount = parseCashDrawerInput(document.getElementById('split-custom'));
+      if (cashierSplitAmount(customAmount, outstanding) === null) {
+        showToast(`مبلغ دلخواه باید عدد صحیحی بین ۱ و ${money(outstanding)} تومان باشد.`, 'error');
+        document.getElementById('split-custom')?.focus();
+        return;
+      }
+      openPayment(order, customAmount);
+    });
+    const cashInput = document.getElementById('cash-received');
+    const changeDisplay = document.getElementById('pos-change-display');
+    const changeBadge = document.getElementById('pos-change-badge');
+    const cashConfirmBtn = document.getElementById('cash-confirm');
+    const updateChangeCalc = () => {
+      if (!cashInput || !changeDisplay) return;
+      const received = parseInputNumber(cashInput.value);
+      const diff = received - charge;
+      if (diff >= 0) {
+        changeDisplay.textContent = money(diff);
+        changeDisplay.style.color = '#10b981';
+        if (changeBadge) {
+          changeBadge.textContent = diff === 0 ? 'مبلغ دقیق' : 'قابل برگشت';
+          changeBadge.style.background = '#10b981';
+        }
+        if (cashConfirmBtn) cashConfirmBtn.disabled = false;
+      } else {
+        changeDisplay.textContent = `${money(Math.abs(diff))} کسری`;
+        changeDisplay.style.color = '#ef4444';
+        if (changeBadge) {
+          changeBadge.textContent = 'کسری وجه';
+          changeBadge.style.background = '#ef4444';
+        }
+        if (cashConfirmBtn) cashConfirmBtn.disabled = true;
+      }
+    };
+    cashInput?.addEventListener('input', updateChangeCalc);
+    dialogBody.querySelectorAll('[data-banknote]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        document.getElementById('custom-cash-row').hidden = false;
+        const addAmount = Number(btn.dataset.banknote) || 0;
+        const current = parseInputNumber(cashInput.value) || 0;
+        cashInput.value = (current >= charge ? current : 0) + addAmount;
+        updateChangeCalc();
+        cashInput.focus();
+      });
+    });
+    document.getElementById('custom-cash').addEventListener('click', () => { document.getElementById('custom-cash-row').hidden = false; document.getElementById('cash-received').focus(); updateChangeCalc(); });
     document.getElementById('cash-confirm').addEventListener('click', (event) => settlePosOrder(order, 'cash', parseInputNumber(document.getElementById('cash-received').value), charge, event.currentTarget));
   }
 
-  async function settlePosOrder(order, tender, amountTendered, paymentAmount, button) {
-    setBusy(button, true);
-    try {
-      if (tender === 'cash' && amountTendered < paymentAmount) throw new Error('وجه دریافتی کمتر از مبلغ این بخش است.');
-      const data = await api(`/api/cashier/orders/${order.id}/settle`, { method: 'POST', body: JSON.stringify({ tender, amountTendered, paymentAmount }) });
-      state.posCheck = posCheckFromOrder(data.order);
-      const remaining = Math.max(0, Number(data.order.total || 0) - Number(data.order.amountPaid || 0));
-      dialogBody.innerHTML = `<div class="payment-processing"><span class="payment-spinner"></span><h2>${data.order.changeDue ? `باقی‌مانده وجه: ${money(data.order.changeDue)}` : 'پرداخت ثبت شد'}</h2><p>${remaining ? `مانده فاکتور: ${money(remaining)}` : 'فاکتور به‌طور کامل تسویه شد.'}</p></div>`;
-      setTimeout(() => remaining ? openPayment(data.order) : openReceipt(data.order), 650);
-    } catch (error) { showToast(error.message, 'error'); setBusy(button, false); }
+  async function settlePosOrder(order, tender, amountTendered, paymentAmount, button, paymentReference = '') {
+    if (!['unpaid', 'partial'].includes(orderPaymentStatus(order)) || !cashierSettlementStageCanSettle(order)) {
+      showToast('وضعیت سفارش اجازهٔ دریافت تازه نمی‌دهد؛ برای تطبیق به صف صندوق بروید.', 'warning');
+      state.activeView = 'orders';
+      paintNav();
+      cashierRegister();
+      return false;
+    }
+    const amounts = cashierSettlementAmounts(order);
+    if (!amounts.ok || !Number.isSafeInteger(paymentAmount) || paymentAmount <= 0 || paymentAmount > amounts.due) {
+      showToast('مبلغ دریافت با ماندهٔ معتبر فاکتور تطبیق ندارد؛ پرداخت ارسال نشد.', 'error');
+      setBusy(button, false);
+      return false;
+    }
+    const normalizedReference = typeof paymentReference === 'string' ? paymentReference.trim() : '';
+    if (tender === 'manual_card' && !normalizedReference) {
+      showToast('کد پیگیری رسید کارت‌خوان را وارد کنید.', 'error');
+      setBusy(button, false);
+      return false;
+    }
+    if (tender === 'cash' && (!Number.isSafeInteger(amountTendered) || amountTendered < paymentAmount)) {
+      showToast('وجه دریافتی کمتر از مبلغ این بخش است.', 'error');
+      setBusy(button, false);
+      return false;
+    }
+    const intent = {
+      orderId: order.id,
+      branchId: order.branchId ?? state.branchId,
+      tender,
+      amountTendered,
+      paymentAmount,
+      paymentReference: normalizedReference,
+      actor: state.session?.user?.phone || '',
+      actorRole: state.session?.user?.role || role,
+    };
+    return submitCashierSettlement(order, intent, button, null, {
+      showQueueOnUnknown: true,
+      onSuccess: (updatedOrder) => {
+        const index = (state.data.orders || []).findIndex((item) => Number(item.id) === Number(updatedOrder.id));
+        if (index >= 0) state.data.orders[index] = updatedOrder;
+        state.posCheck = posCheckFromOrder(updatedOrder);
+        const remaining = Math.max(0, Number(updatedOrder.total || 0) - Number(updatedOrder.amountPaid || 0));
+        dialogBody.innerHTML = `<div class="payment-processing"><span class="payment-spinner"></span><h2>${updatedOrder.changeDue ? `باقی‌مانده وجه: ${money(updatedOrder.changeDue)}` : 'پرداخت ثبت شد'}</h2><p>${remaining ? `مانده فاکتور: ${money(remaining)}` : 'فاکتور به‌طور کامل تسویه شد.'}</p></div>`;
+        setTimeout(() => remaining ? openPayment(updatedOrder) : openReceipt(updatedOrder), 650);
+      },
+    });
   }
 
   function openReceipt(order) {
     document.getElementById('dialog-kicker').textContent = 'پرداخت ثبت شد';
     document.getElementById('dialog-title').textContent = order.changeDue ? `باقی‌مانده ${money(order.changeDue)}` : 'بدون باقی‌مانده';
-    dialogBody.innerHTML = `<div class="receipt-sheet"><h2>رسید چگونه تحویل شود؟</h2><div><button type="button" data-receipt="print">چاپ رسید</button><button type="button" data-receipt="email">ایمیل</button><button type="button" data-receipt="sms">پیامک</button><button type="button" data-receipt="none">بدون رسید</button></div><div id="receipt-destination" hidden><label class="field"><span id="receipt-label">مقصد</span><input id="receipt-value" /></label><button type="button" class="pos-pay" id="receipt-send">ثبت انتخاب</button></div></div>`;
+    dialogBody.innerHTML = `<div class="receipt-sheet"><h2>رسید چگونه تحویل شود؟</h2><div><button type="button" data-receipt="print">چاپ رسید</button><button type="button" data-receipt="preview">پیش‌نمایش فیش</button><button type="button" data-receipt="email">ایمیل</button><button type="button" data-receipt="sms">پیامک</button><button type="button" data-receipt="none">بدون رسید</button></div><div id="receipt-destination" hidden><label class="field"><span id="receipt-label">مقصد</span><input id="receipt-value" /></label><button type="button" class="pos-pay" id="receipt-send">ثبت انتخاب</button></div></div>`;
     let selectedMethod = 'none';
     dialogBody.querySelectorAll('[data-receipt]').forEach((button) => button.addEventListener('click', async () => {
       selectedMethod = button.dataset.receipt;
+      if (selectedMethod === 'preview') {
+        openThermalReceiptPreview(order);
+        return;
+      }
       if (selectedMethod === 'email' || selectedMethod === 'sms') {
         document.getElementById('receipt-destination').hidden = false;
         document.getElementById('receipt-label').textContent = selectedMethod === 'email' ? 'ایمیل مهمان' : 'شماره موبایل مهمان';
@@ -1731,6 +2482,95 @@
       await finishReceipt(order, selectedMethod, '');
     }));
     document.getElementById('receipt-send').addEventListener('click', () => finishReceipt(order, selectedMethod, document.getElementById('receipt-value').value));
+  }
+
+  function openThermalReceiptPreview(order = state.posCheck) {
+    if (!order) return showToast('سفارشی برای نمایش فیش انتخاب نشده است.', 'error');
+    const lines = order.lines || order.items || [];
+    const total = receiptTotal(order);
+    const dateStr = receiptDate(order);
+    const locStr = receiptLocation(order);
+    const payStr = receiptPayment(order);
+    const paymentRows = receiptPaymentRows(order);
+    const discount = Number(order.discount || 0);
+    const subtotal = lines.reduce((sum, line) => sum + receiptLineTotal(line), 0);
+    const orderNumber = esc(order.orderNo || `#${order.id || order.orderId || 'پیش‌فاکتور'}`);
+
+    const linesHtml = lines.map((line) => {
+      const lineSum = receiptLineTotal(line);
+      const mods = (line.modifiers || []).map((m) => `<div style="font-size:10px;color:#555;padding-right:8px">↳ ${esc(m.name)}</div>`).join('');
+      const comps = (line.complements || []).map((c) => `<div style="font-size:10px;color:#555;padding-right:8px">+ ${esc(c.name)} (${num(c.qty || 1)})</div>`).join('');
+      return `<tr style="border-bottom:1px dashed #eee;">
+        <td style="padding:4px 0;text-align:right;">
+          <div style="font-weight:700;">${esc(line.name)}</div>
+          ${mods}${comps}
+        </td>
+        <td style="padding:4px 0;text-align:center;">${num(line.qty || 1)}</td>
+        <td style="padding:4px 0;text-align:left;">${money(lineSum)}</td>
+      </tr>`;
+    }).join('');
+
+    const previewBody = `
+      <div class="thermal-receipt-container" style="display:flex;flex-direction:column;align-items:center;">
+        <div class="thermal-receipt-sheet" style="width:280px;background:#ffffff;color:#111827;padding:18px 14px;border-radius:4px;box-shadow:0 6px 20px rgba(0,0,0,0.15);font-family:system-ui,monospace;font-size:12px;line-height:1.4;text-align:center;direction:rtl;border:1px solid #e5e7eb;">
+          <div style="font-size:18px;font-weight:900;letter-spacing:-0.5px;margin-bottom:2px;">رستوران و کافه وستو</div>
+          <div style="font-size:10px;color:#6b7280;margin-bottom:10px;">فیش رسمی صندوق فروش</div>
+          <div style="border-top:1px dashed #9ca3af;border-bottom:1px dashed #9ca3af;padding:6px 0;margin-bottom:8px;font-size:11px;text-align:right;display:grid;grid-template-columns:1fr 1fr;gap:2px;">
+            <div>شماره: <b>${orderNumber}</b></div>
+            <div style="text-align:left;">${locStr}</div>
+            <div>تاریخ: <span>${esc(dateStr)}</span></div>
+            <div style="text-align:left;">روش پرداخت: <b>${esc(payStr)}</b></div>
+          </div>
+          <table style="width:100%;border-collapse:collapse;margin-bottom:8px;font-size:11px;">
+            <thead>
+              <tr style="border-bottom:1px solid #374151;font-size:10px;color:#4b5563;">
+                <th style="text-align:right;padding-bottom:3px;">قلم</th>
+                <th style="text-align:center;padding-bottom:3px;width:30px;">تعداد</th>
+                <th style="text-align:left;padding-bottom:3px;width:65px;">مبلغ</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${linesHtml}
+            </tbody>
+          </table>
+          <div style="border-top:1px dashed #9ca3af;padding-top:6px;font-size:11px;text-align:right;">
+            <div style="display:flex;justify-content:space-between;margin-bottom:2px;">
+              <span>جمع اقلام:</span>
+              <span>${money(subtotal)}</span>
+            </div>
+            ${discount > 0 ? `<div style="display:flex;justify-content:space-between;color:#dc2626;margin-bottom:2px;"><span>تخفیف:</span><span>- ${money(discount)}</span></div>` : ''}
+            <div style="display:flex;justify-content:space-between;font-size:14px;font-weight:900;border-top:1px solid #111827;padding-top:4px;margin-top:4px;">
+              <span>مبلغ قابل پرداخت:</span>
+              <span>${money(total)}</span>
+            </div>
+            ${paymentRows.length ? `<div style="border-top:1px dashed #9ca3af;margin-top:6px;padding-top:5px;"><b>ریز دریافت‌ها</b>${paymentRows.map((payment) => `<div style="display:flex;justify-content:space-between;"><span>${esc(payment.label)}</span><span>${money(payment.amount)}</span></div>`).join('')}</div>` : ''}
+          </div>
+          <div style="margin-top:14px;border-top:1px dashed #d1d5db;padding-top:8px;">
+            <div style="letter-spacing:3px;font-family:monospace;font-size:12px;opacity:0.65;">|||| | ||||| || ||||| | |||</div>
+            <small style="font-size:9px;color:#6b7280;display:block;margin-top:4px;">از حضور و همراهی شما سپاسگزاریم</small>
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:14px;width:100%;max-width:280px;">
+          <button type="button" class="role-primary" id="thermal-direct-print" style="flex:1;">چاپ مستقیم فیش</button>
+          <button type="button" class="role-secondary" id="thermal-close" style="width:70px;">بستن</button>
+        </div>
+      </div>
+    `;
+
+    openDialog('پیش‌نمایش فیش حرارتی', `عرض ۸۰ میلی‌متر · ${orderNumber}`, previewBody);
+    document.getElementById('thermal-close')?.addEventListener('click', () => dialog.close());
+    document.getElementById('thermal-direct-print')?.addEventListener('click', async (e) => {
+      setBusy(e.currentTarget, true);
+      try {
+        await printOrder(order);
+        showToast('فیش با موفقیت به پرینتر ارسال شد');
+        dialog.close();
+      } catch (err) {
+        showToast(err.message, 'error');
+      } finally {
+        setBusy(e.currentTarget, false);
+      }
+    });
   }
 
   function receiptLineTotal(line) {
@@ -1755,11 +2595,25 @@
   }
 
   function receiptPayment(order) {
-    const label = {
-      cash: 'نقدی', card: 'کارت‌خوان', manual_card: 'کارت دستی', gift_card: 'کارت هدیه',
-      card_on_file: 'کارت ذخیره‌شده', online: 'پرداخت اینترنتی', wallet: 'کیف پول', cashier: 'صندوق',
-    }[String(order?.paymentTender || order?.tender || '')];
+    const labels = { cash: 'نقدی', card: 'کارت‌خوان', manual_card: 'کارت بانکی · ثبت دستی', gift_card: 'کارت هدیه',
+      card_on_file: 'کارت ذخیره‌شده', online: 'پرداخت اینترنتی', wallet: 'کیف پول', cashier: 'صندوق' };
+    const tenders = [...new Set((Array.isArray(order?.partialPayments) ? order.partialPayments : [])
+      .map((payment) => labels[String(payment?.tender || '')]).filter(Boolean))];
+    if (tenders.length) return tenders.join(' + ');
+    const label = labels[String(order?.paymentTender || order?.tender || '')];
     return label || (order?.paymentStatus === 'paid' ? 'تسویه‌شده' : 'پیش‌فاکتور');
+  }
+
+  function receiptPaymentRows(order) {
+    const labels = { cash: 'نقدی', card: 'کارت‌خوان', manual_card: 'کارت بانکی · ثبت دستی', gift_card: 'کارت هدیه',
+      card_on_file: 'کارت ذخیره‌شده', online: 'پرداخت اینترنتی', wallet: 'کیف پول' };
+    return (Array.isArray(order?.partialPayments) ? order.partialPayments : []).flatMap((payment) => {
+      const tender = String(payment?.tender || '');
+      const amount = cashierIntegerAmount(payment?.amount);
+      return labels[tender] && Number.isSafeInteger(amount) && amount > 0
+        ? [{ label: labels[tender], tender, amount }]
+        : [];
+    });
   }
 
   function receiptDate(order) {
@@ -1795,6 +2649,20 @@
     return receiptLogoPromise;
   }
 
+  function waiterTestReceiptOrder(createdAt = new Date().toISOString()) {
+    return {
+      orderNo: '', tableNo: '', fulfillment: 'pickup', customerName: '', phone: '',
+      paymentStatus: 'unpaid', paymentTender: '', createdAt,
+      note: 'برگهٔ آزمایشی است؛ سفارش یا پرداختی ثبت نشده است.',
+      total: 2350000,
+      lines: [
+        { name: 'قلم آزمایشی ۱', qty: 1, price: 940000, lineTotal: 940000, modifiers: [{ name: 'گزینه آزمایشی' }], complements: [] },
+        { name: 'قلم آزمایشی ۲', qty: 2, price: 520000, lineTotal: 1040000, modifiers: [], complements: [{ name: 'مکمل آزمایشی', qty: 1, price: 180000 }] },
+        { name: 'قلم آزمایشی ۳', qty: 1, price: 190000, lineTotal: 190000, modifiers: [], complements: [] },
+      ],
+    };
+  }
+
   async function buildReceiptRasterPayload(source, { printer = {}, test = false } = {}) {
     if (document.fonts?.ready) await document.fonts.ready;
     const [logo, restaurantData] = await Promise.all([
@@ -1802,16 +2670,7 @@
       api(`/api/restaurant${qs()}`),
     ]);
     const restaurantPhone = String(restaurantData?.restaurant?.phone || '').trim();
-    const order = test ? {
-      orderNo: 'نمونه-۳۵۰', tableNo: '۷', fulfillment: 'dine_in', customerName: 'مهمان آزمایشی',
-      phone: '09120000000', paymentStatus: 'paid', paymentTender: 'card', createdAt: new Date().toISOString(),
-      note: 'نمونهٔ کامل فیش فروش صندوق', total: 2350000,
-      lines: [
-        { name: 'چیکن پارمسان', qty: 1, price: 940000, lineTotal: 940000, modifiers: [{ name: 'بدون پیاز' }], complements: [] },
-        { name: 'چای زعفرانی مخصوص وستو', qty: 2, price: 520000, lineTotal: 1040000, modifiers: [], complements: [{ name: 'کوکی شکلاتی', qty: 1, price: 180000 }] },
-        { name: 'آب معدنی', qty: 1, price: 190000, lineTotal: 190000, modifiers: [], complements: [] },
-      ],
-    } : source;
+    const order = test ? waiterTestReceiptOrder() : source;
     if (!order) throw new Error('اطلاعات فیش برای چاپ در دسترس نیست.');
 
     const width = Number(printer.paperWidth) === 58 ? 384 : 576;
@@ -1901,16 +2760,17 @@
     } else {
       drawCenter('وستو', compact ? 38 : 46, 900, 14);
     }
-    drawCenter(test ? 'نمونه فیش فروش' : 'فیش فروش', compact ? 24 : 30, 800, 12);
+    drawCenter(test ? 'برگه آزمایشی چاپگر · فاقد اعتبار مالی' : 'فیش فروش', compact ? 24 : 30, 800, 12);
     divider(22);
-    band('شماره سفارش', order.orderNo || order.orderId || order.id || '—');
+    band(test ? 'شناسه آزمایشی' : 'شماره سفارش', test ? 'سفارش ثبت نشده' : (order.orderNo || order.orderId || order.id || '—'));
     sectionTitle('جزئیات سفارش');
-    metaRow('نوع سفارش', receiptLocation(order));
+    metaRow('نوع سفارش', test ? 'آزمایشی' : receiptLocation(order));
     metaRow('تاریخ و ساعت', receiptDate(order));
-    metaRow('روش پرداخت', receiptPayment(order));
+    metaRow('روش پرداخت', test ? 'انجام نشده' : receiptPayment(order));
+    if (!test) receiptPaymentRows(order).forEach((payment) => metaRow(payment.label, money(payment.amount)));
     const customerName = order.customerName || order.name;
-    if (customerName) metaRow('نام مهمان', customerName);
-    if (restaurantPhone) metaRow('شماره تماس مجموعه', restaurantPhone);
+    if (!test && customerName) metaRow('نام مهمان', customerName);
+    if (!test && restaurantPhone) metaRow('شماره تماس مجموعه', restaurantPhone);
     if (order.note) { y += 5; drawRight(`یادداشت سفارش: ${order.note}`, compact ? 20 : 23, 600); }
     divider(24);
     band('شرح سفارش', 'مبلغ', { height: compact ? 50 : 60, size: compact ? 21 : 25 });
@@ -1939,13 +2799,14 @@
     }
 
     y += 6;
-    band('جمع کل', money(receiptTotal(order)), { height: compact ? 70 : 86, size: compact ? 27 : 34 });
+    band(test ? 'مبالغ نمایشی' : 'جمع کل', money(receiptTotal(order)), { height: compact ? 70 : 86, size: compact ? 27 : 34 });
     ctx.lineWidth = 3;
     ctx.strokeRect(left, y, contentWidth, compact ? 56 : 68);
     font(compact ? 21 : 25, 800); ctx.textAlign = 'center'; ctx.direction = 'rtl'; ctx.textBaseline = 'middle';
-    ctx.fillText(order.paymentStatus === 'paid' ? 'پرداخت‌شده' : 'پیش‌فاکتور — تسویه نشده', width / 2, y + (compact ? 28 : 34));
+    ctx.fillText(test ? 'آزمایشی · فاقد اعتبار مالی' : (order.paymentStatus === 'paid' ? 'پرداخت‌شده' : 'پیش‌فاکتور — تسویه نشده'), width / 2, y + (compact ? 28 : 34));
     ctx.textBaseline = 'top';
     y += compact ? 66 : 80;
+    if (test) drawCenter('سفارش و پرداختی ثبت نشده است', compact ? 20 : 23, 750, 8);
 
     const height = Math.min(maxHeight, Math.ceil(y + Math.round(padding * 0.8)));
     const pixels = ctx.getImageData(0, 0, width, height).data;
@@ -1972,7 +2833,6 @@
   async function finishReceipt(order, method, destination) {
     try {
       const body = { method, destination, branchId: state.branchId };
-      if (method === 'print') body.raster = await buildReceiptRasterPayload(order, { printer: await activePrinter() });
       const result = await api(`/api/cashier/orders/${order.id}/receipt`, { method: 'POST', body: JSON.stringify(body) });
       if ((method === 'email' || method === 'sms') && !result.deliveryConfigured) showToast('انتخاب ثبت شد؛ سرویس ارسال بیرونی هنوز پیکربندی نشده است.');
       state.posCheck = null; dialog.close(); await render();
@@ -1981,11 +2841,9 @@
 
   async function printOrder(check) {
     if (!check?.orderId) throw new Error('برای چاپ، ابتدا سفارش را ثبت کنید.');
-    const printer = await activePrinter();
-    const raster = await buildReceiptRasterPayload(check, { printer });
     return api(`/api/cashier/orders/${check.orderId}/print`, {
       method: 'POST',
-      body: JSON.stringify({ branchId: state.branchId, raster }),
+      body: JSON.stringify({ branchId: state.branchId }),
     });
   }
 
@@ -2040,7 +2898,7 @@
             <button type="button" class="role-secondary" id="printer-system-refresh">شناسایی دوباره</button>
             <small id="printer-system-hint">${esc(systemInfoError || (knownSystemPrinters.length ? `${knownSystemPrinters.length.toLocaleString('fa-IR')} صف چاپ پیدا شد.` : 'پرینتر USB را وصل و در تنظیمات Printers & Scanners مک اضافه کنید.'))}</small>
           </div>
-          <div class="printer-settings__actions field--full"><button type="button" class="role-secondary" id="printer-save">ذخیره تنظیمات</button><button type="button" class="role-primary" id="printer-test">ذخیره و چاپ فیش نمونه</button></div>
+      <div class="printer-settings__actions field--full"><button type="button" class="role-secondary" id="printer-save">ذخیره تنظیمات</button><button type="button" class="role-primary" id="printer-test">چاپ برگهٔ تست · فاقد اعتبار مالی</button></div>
         </div>
         <small class="printer-settings__hint">فیش همیشه با عرض کامل ۸۰ میلی‌متر، برش خودکار و ارتفاع متناسب با محتوای سفارش چاپ می‌شود.</small>
       </div>`);
@@ -2138,15 +2996,16 @@
     tables.forEach(ensureTableGeometry);
     state.cashierFloorMode = state.cashierFloorMode || 'plan';
     state.cashierFloorZone = state.cashierFloorZone || (typeof window !== 'undefined' && window.innerWidth <= 768 ? 'سالن' : 'all');
+    if (state.cashierFloorZone !== 'all') state.cashierFloorZone = normalizeRoleFloorZoneName(state.cashierFloorZone);
 
-    const zones = [...new Set(tables.map((table) => table.zone || 'سالن'))];
+    const zones = [...new Set(tables.map((table) => normalizeRoleFloorZoneName(table.zone)))];
     const visibleTables = state.cashierFloorZone === 'all'
       ? tables
-      : tables.filter((table) => (table.zone || 'سالن') === state.cashierFloorZone);
+      : tables.filter((table) => normalizeRoleFloorZoneName(table.zone) === state.cashierFloorZone);
 
     const zoneButton = (id, label, count) => `<button type="button" data-floor-zone="${esc(id)}" data-cashier-zone="${esc(id)}" class="floor-zone-pill ${state.cashierFloorZone === id ? 'active' : ''}"><span>${esc(label)}</span><small>${num(count)}</small></button>`;
 
-    const activeOrders = (state.data.orders || []).filter((item) => item.fulfillment === 'dine_in' && !['done', 'cancelled'].includes(item.status));
+    const activeOrders = (state.data.orders || []).filter((item) => item.fulfillment === 'dine_in' && orderIsOpen(item));
     const busyTables = tables.filter((t) => t.state === 'busy');
     const attentionTables = tables.filter((t) => t.state === 'attention');
 
@@ -2163,7 +3022,7 @@
           </div>
           <div class="floor-zone-pills">
             ${zoneButton('all', 'همه', tables.length)}
-            ${zones.map((z) => zoneButton(z, z, tables.filter((t) => (t.zone || 'سالن') === z).length)).join('')}
+            ${zones.map((z) => zoneButton(z, z, tables.filter((table) => normalizeRoleFloorZoneName(table.zone) === z).length)).join('')}
           </div>
         </div>
 
@@ -2203,7 +3062,7 @@
         ${visibleTables.map((table) => `
           <button type="button" class="floor-table" data-cashier-table="${esc(table.id)}" data-state="${esc(table.state)}" ${table.autoReleased ? 'data-auto-released="true"' : ''}>
             <strong>${esc(table.label || `میز ${table.id}`)}</strong>
-            <small>${num(table.seats)} نفر · ${esc(table.zone || 'سالن')}</small>
+          <small>${num(table.seats)} نفر · ${esc(normalizeRoleFloorZoneName(table.zone))}</small>
             <span>${esc(table.stateLabel || 'آزاد')}</span>
             ${table.serviceEndsAt && !table.autoReleased && ['busy', 'attention'].includes(table.state) ? `<time class="plan-table-timer" data-service-ends="${esc(table.serviceEndsAt)}" style="margin-top:6px;display:inline-block">${floorCountdownLabel(table.serviceEndsAt)}</time>` : ''}
           </button>`).join('') || empty('میزی در این بخش یافت نشد.')}
@@ -2276,70 +3135,592 @@
     const closed = orders.filter((order) => !orderIsOpen(order)).slice(0, 30);
     const row = (order) => {
       const editable = orderCanEdit(order);
-      const paymentNeedsAttention = order.paymentStatus === 'partial';
-      const displayStatus = paymentNeedsAttention ? 'نیازمند تکمیل پرداخت' : statusLabel(order.status);
-      return `<article class="pos-order-row ${editable ? 'is-editable' : ''}"><div><b>${esc(order.orderNo || `#${order.id}`)}</b><span>${esc(order.tableNo ? `میز ${order.tableNo}` : 'بیرون‌بر')} · ${time(order.createdAt)}</span></div><p>${orderItems(order)}</p><span class="pos-status">${esc(displayStatus)}</span><strong>${money(order.total)}</strong><button type="button" class="pos-order-row__action ${editable ? 'is-edit' : ''}" data-open-order="${order.id}" ${orderIsOpen(order) ? '' : 'disabled'}>${editable ? 'ویرایش سفارش' : 'مشاهده'}</button></article>`;
+      const paymentStatus = orderPaymentStatus(order);
+      const displayStatus = paymentStatus === 'partial' ? 'نیازمند تکمیل پرداخت' : statusLabel(order.status);
+      return `<article class="pos-order-row ${editable ? 'is-editable' : ''}" data-order-id="${order.id}"><div><b>${esc(order.orderNo || `#${order.id}`)}</b><span>${esc(order.tableNo ? `میز ${order.tableNo}` : 'بیرون‌بر')} · ${time(order.createdAt)}</span></div><p>${orderItems(order)}</p><span class="pos-status">${esc(displayStatus)} · ${esc(orderPaymentStatusLabel(order))}</span><strong>${money(order.total)}</strong><button type="button" class="pos-order-row__action ${editable ? 'is-edit' : ''}" data-open-order="${order.id}" ${orderIsOpen(order) ? '' : 'disabled'}>${editable ? 'ویرایش سفارش' : 'مشاهده'}</button></article>`;
     };
-    main.innerHTML = `${pageHead('کنترل سفارش', 'سفارش‌ها', 'فاکتورهای باز و بسته ایستگاه', '<button class="role-primary" id="orders-new">+ سفارش جدید</button>')}<section class="role-section"><div class="role-section__head"><h2>باز</h2><span>${num(open.length)} فاکتور</span></div><div class="pos-order-list">${open.map(row).join('') || empty('فاکتور بازی وجود ندارد.')}</div></section><section class="role-section" style="margin-top:14px"><div class="role-section__head"><h2>بسته‌شده‌های اخیر</h2><span>${num(closed.length)} فاکتور</span></div><div class="pos-order-list">${closed.map(row).join('') || empty('هنوز سفارشی بسته نشده است.')}</div></section>`;
-    document.getElementById('orders-new').addEventListener('click', openNewCheck);
+    main.innerHTML = `${pageHead('کنترل سفارش', 'تاریخچهٔ سفارش‌ها', 'فاکتورهای باز و بستهٔ ایستگاه؛ دریافت از این فهرست انجام نمی‌شود.', '<div class="cashier-register-head-actions"><button type="button" class="role-secondary" id="cashier-queue-return">بازگشت به صف صندوق</button><button type="button" class="role-primary" id="orders-new">+ سفارش جدید</button></div>')}<section class="role-section"><div class="role-section__head"><h2>باز</h2><span>${num(open.length)} فاکتور</span></div><div class="pos-order-list">${open.map(row).join('') || empty('فاکتور بازی وجود ندارد.')}</div></section><section class="role-section" style="margin-top:14px"><div class="role-section__head"><h2>بسته‌شده‌های اخیر</h2><span>${num(closed.length)} فاکتور</span></div><div class="pos-order-list">${closed.map(row).join('') || empty('هنوز سفارشی بسته نشده است.')}</div></section>`;
+    document.getElementById('orders-new')?.addEventListener('click', openNewCheck);
+    document.getElementById('cashier-queue-return')?.addEventListener('click', cashierRegister);
     main.querySelectorAll('[data-open-order]').forEach((button) => button.addEventListener('click', () => { const order = orders.find((item) => Number(item.id) === Number(button.dataset.openOrder)); state.posCheck = posCheckFromOrder(order); state.activeView = 'menu'; paintNav(); cashierMenu(); }));
+    const focusOrderId = new URLSearchParams(location.search).get('focusOrder');
+    if (focusOrderId) {
+      const row = main.querySelector(`[data-order-id="${CSS.escape(focusOrderId)}"]`);
+      row?.classList.add('is-focused');
+      row?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      row?.querySelector('[data-open-order]')?.focus({ preventScroll: true });
+    }
+  }
+
+  function cashierTransactionRows(orders = []) {
+    const transactions = [];
+    (Array.isArray(orders) ? orders : []).forEach((order) => {
+      const payments = (Array.isArray(order?.partialPayments) ? order.partialPayments : [])
+        .map((payment) => ({ payment, amount: Number(payment?.amount) }))
+        .filter((entry) => Number.isSafeInteger(entry.amount) && entry.amount > 0);
+      const recordedAmount = payments.reduce((sum, entry) => sum + entry.amount, 0);
+      const paidProjection = Number.isSafeInteger(Number(order?.amountPaid)) && Number(order?.amountPaid) >= 0
+        ? Number(order.amountPaid)
+        : String(order?.paymentStatus || '').toLowerCase() === 'paid' && Number.isSafeInteger(Number(order?.total))
+          ? Number(order.total)
+          : null;
+      const projectionMismatch = paidProjection !== null && paidProjection !== recordedAmount && payments.length > 0;
+
+      payments.forEach(({ payment, amount }) => transactions.push({
+        order,
+        payment,
+        amount,
+        tender: String(payment?.tender || '').trim(),
+        at: payment?.at || order?.paidAt || order?.createdAt || '',
+        projectionMismatch,
+        legacy: false,
+      }));
+
+      if (payments.length) {
+        if (paidProjection !== null && paidProjection > recordedAmount) {
+          transactions.push({
+            order,
+            payment: null,
+            amount: paidProjection - recordedAmount,
+            tender: '',
+            at: order?.paidAt || order?.createdAt || '',
+            projectionMismatch: true,
+            legacy: false,
+          });
+        }
+        return;
+      }
+
+      const paymentStatus = String(order?.paymentStatus || '').toLowerCase();
+      const legacyPaidAmount = paymentStatus === 'paid' ? Number(order?.total) : Number(order?.amountPaid);
+      if (!Number.isSafeInteger(legacyPaidAmount) || legacyPaidAmount <= 0) return;
+      transactions.push({
+        order,
+        payment: null,
+        amount: legacyPaidAmount,
+        tender: paymentStatus === 'paid' ? String(order?.paymentTender || '').trim() : '',
+        at: order?.paidAt || order?.createdAt || '',
+        projectionMismatch: false,
+        legacy: true,
+      });
+    });
+
+    return transactions.sort((a, b) => (Date.parse(b.at) || 0) - (Date.parse(a.at) || 0));
   }
 
   function cashierTransactions() {
     document.body.classList.remove('is-pos-station');
-    const paid = (state.data.orders || []).filter((order) => order.paymentStatus === 'paid').slice(0, 80);
-    const tenderLabel = { cash: 'نقدی', card: 'کارت‌خوان', manual_card: 'کارت دستی', gift_card: 'کارت هدیه', card_on_file: 'کارت ذخیره‌شده', online: 'پرداخت اینترنتی' };
-    const hasTender = (order) => Object.prototype.hasOwnProperty.call(tenderLabel, order.paymentTender);
-    const cash = paid.filter((order) => order.paymentTender === 'cash');
-    const nonCash = paid.filter((order) => hasTender(order) && order.paymentTender !== 'cash');
-    const missingTender = paid.filter((order) => !hasTender(order));
-    const totalOf = (orders) => orders.reduce((sum, order) => sum + Number(order.total || 0), 0);
+    const transactions = cashierTransactionRows(state.data.orders || []);
+    const tenderLabel = { cash: 'نقدی', card: 'کارت‌خوان', manual_card: 'کارت‌خوان دستی', gift_card: 'کارت هدیه', card_on_file: 'کارت ذخیره‌شده', online: 'پرداخت اینترنتی', wallet: 'کیف پول' };
+    const hasTender = (transaction) => Object.prototype.hasOwnProperty.call(tenderLabel, transaction.tender);
+    const cash = transactions.filter((transaction) => transaction.tender === 'cash');
+    const nonCash = transactions.filter((transaction) => hasTender(transaction) && transaction.tender !== 'cash');
+    const missingTender = transactions.filter((transaction) => !hasTender(transaction));
+    const projectionMismatchOrders = new Set(transactions.filter((transaction) => transaction.projectionMismatch).map((transaction) => String(transaction.order?.id))).size;
+    const totalOf = (rows) => rows.reduce((sum, transaction) => sum + transaction.amount, 0);
     main.innerHTML = `${pageHead('دریافت و پرداخت', 'تراکنش‌ها', 'پرداخت‌های ثبت‌شده و روش دریافت')}
       <section class="role-metrics">
-        ${metric('جمع پرداخت', money(totalOf(paid)), `${num(paid.length)} تراکنش`)}
-        ${metric('نقدی', money(totalOf(cash)), `${num(cash.length)} تراکنش`)}
-        ${metric('غیرنقدی معتبر', money(totalOf(nonCash)), `${num(nonCash.length)} تراکنش`)}
+        ${metric('جمع پرداخت', money(totalOf(transactions)), `${num(transactions.length)} دریافت`)}
+        ${metric('نقدی', money(totalOf(cash)), `${num(cash.length)} دریافت`)}
+        ${metric('غیرنقدی معتبر', money(totalOf(nonCash)), `${num(nonCash.length)} دریافت`)}
         ${metric('روش ثبت‌نشده', money(totalOf(missingTender)), `${num(missingTender.length)} مورد برای بازبینی`)}
       </section>
-      ${missingTender.length ? `<div class="role-inline-warning" role="status"><b>${num(missingTender.length)} پرداخت قدیمی روش دریافت ندارد.</b><span>این مبلغ نقدی یا غیرنقدی فرض نشده و برای تصمیم حسابدار جدا نگه داشته شده است.</span></div>` : ''}
-      <section class="role-section"><div class="pos-transaction-list">${paid.map((order) => {
-        const missing = !hasTender(order);
-        return `<article class="${missing ? 'is-warning' : ''}"><div><b>${esc(order.orderNo || `#${order.id}`)}</b><span>${esc(posLocationLabel(posCheckFromOrder(order)))} · ${time(order.paidAt)}</span></div><span>${esc(missing ? 'روش ثبت‌نشده' : tenderLabel[order.paymentTender])}</span><strong>${money(order.total)}</strong></article>`;
+      ${missingTender.length || projectionMismatchOrders ? `<div class="role-inline-warning" role="status"><b>${missingTender.length ? `${num(missingTender.length)} دریافت روش ثبت‌شده ندارد.` : ''}${missingTender.length && projectionMismatchOrders ? ' · ' : ''}${projectionMismatchOrders ? `${num(projectionMismatchOrders)} فاکتور با جمع ردیف‌های دریافت نیاز به تطبیق دارد.` : ''}</b><span>مبلغ‌های بدون روش یا ناسازگار جدا نمایش داده شده‌اند؛ آن‌ها را به روش نقدی یا کارت نسبت ندهید.</span></div>` : ''}
+      <section class="role-section"><div class="pos-transaction-list">${transactions.map((transaction) => {
+        const { order, payment } = transaction;
+        const missing = !hasTender(transaction);
+        const warning = missing || transaction.projectionMismatch;
+        const detail = [posLocationLabel(posCheckFromOrder(order)), time(transaction.at), transaction.legacy ? 'ثبت قدیمی فاکتور' : '', payment?.reference ? `مرجع ${payment.reference}` : ''].filter(Boolean).join(' · ');
+        const method = missing ? 'روش ثبت‌نشده' : tenderLabel[transaction.tender];
+        return `<article class="${warning ? 'is-warning' : ''}" data-payment-order="${esc(order.id)}"${payment?.id != null ? ` data-payment-id="${esc(payment.id)}"` : ''}><div><b>${esc(order.orderNo || `#${order.id}`)}</b><span>${esc(detail)}</span></div><span>${esc(method)}${transaction.projectionMismatch ? ' · نیازمند تطبیق' : ''}</span><strong>${money(transaction.amount)}</strong></article>`;
       }).join('') || empty('تراکنشی ثبت نشده است.')}</div></section>`;
   }
 
+  function cashierIntegerAmount(value) {
+    if (typeof value !== 'number' && typeof value !== 'string') return null;
+    if (typeof value === 'string' && !/^[+-]?\d+$/u.test(value.trim())) return null;
+    const amount = Number(typeof value === 'string' ? value.trim() : value);
+    return Number.isSafeInteger(amount) ? amount : null;
+  }
+
+  function cashierSettlementAmounts(order) {
+    const total = cashierIntegerAmount(order?.total);
+    if (total === null || total < 0) return { ok: false, error: 'order_total_invalid' };
+    const payments = Array.isArray(order?.partialPayments) ? order.partialPayments : [];
+    let recordedNet = 0;
+    for (const payment of payments) {
+      const amount = cashierIntegerAmount(payment?.amount);
+      const refunded = payment?.refundedAmount == null ? 0 : cashierIntegerAmount(payment.refundedAmount);
+      if (amount === null || amount <= 0 || refunded === null || refunded < 0 || refunded > amount) {
+        return { ok: false, error: 'payment_history_invalid' };
+      }
+      const netAmount = amount - refunded;
+      if (netAmount > total - recordedNet) return { ok: false, error: 'payment_history_exceeds_order_total' };
+      recordedNet += netAmount;
+    }
+
+    const projection = order?.amountPaid == null ? null : cashierIntegerAmount(order.amountPaid);
+    if (projection !== null && (projection < 0 || projection > total)) {
+      return { ok: false, error: 'payment_history_invalid' };
+    }
+    if (order?.amountPaid != null && projection === null) return { ok: false, error: 'payment_history_invalid' };
+    if (payments.length && projection !== null && projection !== recordedNet) {
+      return { ok: false, error: 'payment_history_inconsistent' };
+    }
+
+    const paid = payments.length
+      ? recordedNet
+      : projection ?? (String(order?.paymentStatus || '').toLowerCase() === 'paid' ? total : 0);
+    return { ok: true, total, paid, due: Math.max(0, total - paid) };
+  }
+
+  function cashierSplitAmount(value, outstanding) {
+    const due = cashierIntegerAmount(outstanding);
+    if (due === null || due <= 0) return null;
+    if (value == null) return due;
+    const amount = cashierIntegerAmount(value);
+    return amount !== null && amount > 0 && amount <= due ? amount : null;
+  }
+
+  function cashierPaymentHistoryMarkup(order, amounts, compact = false) {
+    const payments = Array.isArray(order?.partialPayments) ? order.partialPayments : [];
+    const labels = { cash: 'نقدی', manual_card: 'کارت بانکی · ثبت دستی', card: 'کارت‌خوان', wallet: 'کیف پول', online: 'پرداخت اینترنتی' };
+    if (!payments.length && !(Number.isSafeInteger(amounts?.paid) && amounts.paid > 0)) return '';
+    const rows = payments.map((payment, index) => {
+      const amount = cashierIntegerAmount(payment?.amount);
+      if (amount === null || amount <= 0) {
+        return `<li class="cashier-payment-history__row is-warning"><span>دریافت ${num(index + 1)} · مبلغ نیازمند تطبیق</span></li>`;
+      }
+      const refunded = payment?.refundedAmount == null ? 0 : cashierIntegerAmount(payment.refundedAmount);
+      const validRefund = refunded !== null && refunded > 0 && refunded <= amount;
+      const tender = String(payment?.tender || '').trim();
+      const label = labels[tender] || 'روش ثبت‌نشده';
+      const reference = String(payment?.reference || '').trim();
+      const cashReceived = cashierIntegerAmount(payment?.amountTendered);
+      const detail = [
+        tender === 'cash' && cashReceived !== null && cashReceived > amount
+          ? `نقد دریافتی ${money(cashReceived)} · برگشت ${money(cashReceived - amount)}` : '',
+        validRefund ? `بازپرداخت ${money(refunded)} · خالص ${money(amount - refunded)}` : '',
+        reference ? `مرجع ${esc(reference)}` : '',
+      ].filter(Boolean).join(' · ');
+      return `<li class="cashier-payment-history__row"><span><b>دریافت ${num(index + 1)} · ${label}</b>${detail ? `<small>${detail}</small>` : ''}</span><strong>${money(amount)}</strong></li>`;
+    }).join('');
+    const legacy = payments.length ? '' : '<li class="cashier-payment-history__row"><span><b>پرداخت قدیمی</b><small>ریز روش دریافت در دسترس نیست.</small></span></li>';
+    const paid = Number.isSafeInteger(amounts?.paid) ? amounts.paid : null;
+    const due = amounts?.ok && Number.isSafeInteger(amounts.due) ? amounts.due : null;
+    return `<section class="cashier-payment-history${compact ? ' is-compact' : ''}" role="group" aria-label="دریافت‌های ثبت‌شده و مانده فاکتور">
+      <div class="cashier-payment-history__head"><b>دریافت‌های ثبت‌شده</b><span>${num(payments.length || (paid ? 1 : 0))} مورد</span></div>
+      <ol class="cashier-payment-history__rows">${rows || legacy}</ol>
+      <div class="cashier-payment-history__balance"><span>پرداخت خالص ${paid === null ? 'نیازمند تطبیق' : money(paid)}</span><strong>مانده ${due === null ? 'نیازمند تطبیق' : money(due)}</strong></div>
+    </section>`;
+  }
+
+  function cashierPendingSettlementStorageKey(order) {
+    const branchId = order?.branchId ?? state.branchId ?? '_';
+    return `westo:cashier-pending-settlement:v1:${encodeURIComponent(branchId)}:${encodeURIComponent(order?.id ?? '_')}`;
+  }
+
+  function readCashierPendingSettlement(order) {
+    try {
+      const key = cashierPendingSettlementStorageKey(order);
+      const raw = sessionStorage.getItem(key);
+      if (!raw) return null;
+      const pending = JSON.parse(raw);
+      if (!pending || typeof pending !== 'object' || typeof pending.idempotencyKey !== 'string'
+        || !pending.idempotencyKey || !pending.intent || !Number.isSafeInteger(pending.baselinePaid)
+        || !Number.isSafeInteger(pending.baselineTotal)) return { invalid: true };
+      return pending;
+    } catch (_) { return { invalid: true }; }
+  }
+
+  function persistCashierPendingSettlement(order, pending) {
+    try {
+      sessionStorage.setItem(cashierPendingSettlementStorageKey(order), JSON.stringify(pending));
+      return true;
+    } catch (_) { return false; }
+  }
+
+  function clearCashierPendingSettlement(order) {
+    try { sessionStorage.removeItem(cashierPendingSettlementStorageKey(order)); } catch (_) {}
+  }
+
+  function ensureCashierSettlementStyles() {
+    if (document.getElementById('cashier-settlement-styles')) return;
+    const style = document.createElement('style');
+    style.id = 'cashier-settlement-styles';
+    style.textContent = `
+      .cashier-settlement { display:grid; gap:14px; max-height:min(72dvh,680px); overflow:auto; padding:2px; }
+      .cashier-settlement__balance { display:grid; gap:5px; padding:14px; border:1px solid var(--rp-line); border-radius:14px; background:var(--rp-surface-2); }
+      .cashier-settlement__balance span,.cashier-settlement__hint { color:var(--rp-muted); font-size:14px; line-height:1.8; }
+      .cashier-settlement__balance strong { font-size:22px; }
+      .cashier-settlement__fields { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
+      .cashier-settlement__fields .field { min-width:0; }
+      .cashier-settlement__fields input { width:100%; min-height:52px; padding:10px 12px; font:inherit; font-size:18px; }
+      .cashier-settlement__change { min-height:26px; color:var(--rp-muted); font-size:14px; }
+      .cashier-settlement__actions { display:grid; gap:8px; }
+      .cashier-settlement__actions button { width:100%; min-height:52px; font-size:16px; }
+      .cashier-settlement-action { min-height:46px !important; padding-inline:12px !important; font-size:14px; white-space:normal; }
+      .cashier-payment-history { display:grid; gap:7px; padding:10px 12px; border:1px solid var(--rp-line); border-radius:12px; background:var(--rp-surface-2); }
+      .cashier-payment-history__head,.cashier-payment-history__balance { display:flex; align-items:center; justify-content:space-between; gap:8px; font-size:13px; line-height:1.6; }
+      .cashier-payment-history__head span,.cashier-payment-history__balance span { color:var(--rp-muted); }
+      .cashier-payment-history__balance { padding-top:6px; border-top:1px solid var(--rp-line); }
+      .cashier-payment-history__balance strong { font-size:15px; }
+      .cashier-payment-history__rows { display:grid; gap:5px; max-height:112px; overflow:auto; margin:0; padding:0; list-style:none; }
+      .cashier-payment-history__row { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; font-size:13px; line-height:1.55; }
+      .cashier-payment-history__row > span { min-width:0; }
+      .cashier-payment-history__row small { display:block; color:var(--rp-muted); font-size:12px; overflow-wrap:anywhere; }
+      .cashier-payment-history__row > strong { white-space:nowrap; }
+      .cashier-payment-history__row.is-warning { color:var(--rp-danger); }
+      .cashier-payment-history.is-compact { margin-top:8px; }
+      @media (max-width:620px) {
+        .is-cashier-workspace .payment-sheet { height:auto; max-height:calc(100dvh - 118px); overflow-y:auto; grid-template-columns:minmax(0,1fr); grid-template-rows:auto; gap:12px; padding:2px; }
+        .is-cashier-workspace .payment-sheet > section { grid-column:auto; }
+        .is-cashier-workspace .payment-methods { grid-column:auto; grid-row:auto; grid-template-columns:minmax(0,1fr); }
+        .is-cashier-workspace .payment-methods > button { min-height:64px; padding:10px 12px; font-size:14px; }
+        .is-cashier-workspace .payment-methods__note { margin:0; color:var(--rp-muted); font-size:14px; line-height:1.7; }
+        .is-cashier-workspace .cash-presets { grid-template-columns:repeat(2,minmax(0,1fr)); }
+        .is-cashier-workspace .cash-presets button { min-height:48px; padding:8px; font-size:14px; }
+        .is-cashier-workspace .banknote-chip { min-height:44px; padding:7px 10px; font-size:13px; }
+        .cashier-settlement { max-height:calc(100dvh - 130px); gap:12px; }
+        .cashier-settlement__fields { grid-template-columns:1fr; gap:10px; }
+        .cashier-settlement__fields input { min-height:56px; font-size:20px; }
+        .cashier-settlement__actions button,.cashier-settlement-action { min-height:52px !important; font-size:16px; }
+        .cashier-payment-history { padding:10px; }
+        .cashier-payment-history__rows { max-height:96px; }
+        .cashier-payment-history__row,.cashier-payment-history__head,.cashier-payment-history__balance { font-size:13px; }
+      }
+    `;
+    document.head.append(style);
+  }
+
+  function cashierPendingMatchesOrder(order, pending, amounts) {
+    if (!pending || pending.invalid) return false;
+    return Number(amounts?.paid) === Number(pending.baselinePaid)
+      && Number(amounts?.total) === Number(pending.baselineTotal)
+      && Number(order?.branchId ?? state.branchId) === Number(pending.intent?.branchId ?? state.branchId)
+      && String(pending.intent?.actor || '') === String(state.session?.user?.phone || '')
+      && String(pending.intent?.actorRole || role) === String(state.session?.user?.role || role);
+  }
+
+  async function submitCashierSettlement(order, intent, button, retryPending = null, options = {}) {
+    if (!['unpaid', 'partial'].includes(orderPaymentStatus(order)) || !cashierSettlementStageCanSettle(order)) {
+      showToast('این سفارش برای دریافت تازه مجاز نیست؛ وضعیت را در صف تطبیق صندوق بررسی کنید.', 'warning');
+      return false;
+    }
+    const amounts = cashierSettlementAmounts(order);
+    const paymentReference = typeof intent?.paymentReference === 'string' ? intent.paymentReference.trim() : '';
+    if (!amounts.ok || !Number.isSafeInteger(intent?.paymentAmount) || intent.paymentAmount <= 0
+      || intent.paymentAmount > amounts.due
+      || (intent?.tender === 'manual_card'
+        && (!paymentReference || !Number.isSafeInteger(intent?.amountTendered) || intent.amountTendered !== intent.paymentAmount))
+      || (intent?.tender === 'cash'
+        && (!Number.isSafeInteger(intent?.amountTendered) || intent.amountTendered < intent.paymentAmount))) {
+      showToast('ماندهٔ فاکتور معتبر نیست یا تغییر کرده؛ ابتدا صف صندوق را تازه کنید.', 'error');
+      return false;
+    }
+    const actorIntent = settlementActorIntent(intent);
+    const idempotencyKey = retryPending?.idempotencyKey || settlementIdempotencyKey(button, actorIntent);
+    const pending = retryPending || {
+      idempotencyKey,
+      intent: actorIntent,
+      baselinePaid: amounts.paid,
+      baselineTotal: amounts.total,
+      createdAt: Date.now(),
+    };
+    if (!persistCashierPendingSettlement(order, pending)) {
+      showToast('ثبت امن درخواست روی این دستگاه ممکن نیست؛ پرداخت ارسال نشد.', 'error');
+      clearSettlementIdempotencyKey(idempotencyKey, actorIntent);
+      return false;
+    }
+
+    const form = dialogBody.querySelector('.cashier-settlement');
+    form?.setAttribute('aria-busy', 'true');
+    form?.querySelectorAll('input').forEach((input) => { input.disabled = true; });
+    setBusy(button, true);
+    try {
+      const data = await api(`/api/cashier/orders/${order.id}/settle`, {
+        method: 'POST',
+        headers: { 'Idempotency-Key': idempotencyKey },
+        body: JSON.stringify({
+          tender: actorIntent.tender,
+          paymentAmount: actorIntent.paymentAmount,
+          amountTendered: actorIntent.amountTendered,
+          paymentReference: actorIntent.tender === 'manual_card' ? String(actorIntent.paymentReference || '').trim() : actorIntent.paymentReference,
+        }),
+      });
+      const committed = data?.payment?.idempotencyKey === idempotencyKey
+        || (Array.isArray(data?.order?.partialPayments)
+          && data.order.partialPayments.some((payment) => payment?.idempotencyKey === idempotencyKey));
+      if (!data?.order?.id || Number(data.order.id) !== Number(order.id) || !committed) {
+        throw Object.assign(new Error('پاسخ ثبت دریافت قابل تأیید نیست؛ دوباره‌دریافت نکنید و وضعیت را تطبیق دهید.'), {
+          code: 'settlement_response_unverified', outcomeUnknown: true,
+        });
+      }
+      clearCashierPendingSettlement(order);
+      clearSettlementIdempotencyKey(idempotencyKey, actorIntent);
+      if (typeof options.onSuccess === 'function') {
+        try { options.onSuccess(data.order); }
+        catch (_) { showToast('دریافت ثبت شد؛ اما نمایش رسید کامل نشد. از تراکنش‌ها رسید را بازبینی کنید.', 'warning'); }
+      } else {
+        dialog.close();
+        showToast('دریافت ثبت شد؛ ماندهٔ فاکتور به‌روزرسانی شد.');
+        await render();
+      }
+      return true;
+    } catch (error) {
+      if (error.outcomeUnknown) {
+        const blockedReason = ['idempotency_key_conflict', 'idempotency_replay_unavailable', 'payment_status_reconciliation_required'].includes(String(error.code || ''))
+          ? error.code : null;
+        persistCashierPendingSettlement(order, { ...pending, ...(blockedReason ? { blockedReason } : {}) });
+        dialog.close();
+        showToast(blockedReason === 'idempotency_replay_unavailable'
+          ? 'رسید این دریافت به‌طور خودکار قابل بازیابی نیست؛ دریافت را تکرار نکنید و سوابق صندوق را با سرپرست تطبیق دهید.'
+          : 'نتیجهٔ دریافت نامشخص است؛ فقط همان درخواست یکتا را تکرار کنید یا با سرپرست تطبیق دهید.', 'warning');
+        if (options.showQueueOnUnknown) {
+          state.activeView = 'orders';
+          paintNav();
+        }
+        await render();
+      } else {
+        clearCashierPendingSettlement(order);
+        clearSettlementIdempotencyKey(idempotencyKey, actorIntent);
+        const refreshCodes = ['payment_amount_exceeds_due', 'payment_history_inconsistent', 'payment_history_invalid', 'payment_history_exceeds_order_total'];
+        if (refreshCodes.includes(String(error.code || ''))) {
+          dialog.close();
+          showToast(error.message, 'warning');
+          await render();
+        } else showToast(error.message, 'error');
+      }
+      return false;
+    } finally {
+      form?.setAttribute('aria-busy', 'false');
+      form?.querySelectorAll('input').forEach((input) => { input.disabled = false; });
+      setBusy(button, false);
+    }
+  }
+
+  function openCashierSettlementDialog(order, tender, due) {
+    ensureCashierSettlementStyles();
+    const isCash = tender === 'cash';
+    const amounts = cashierSettlementAmounts(order);
+    openDialog(
+      'ثبت دریافت در صندوق',
+      isCash ? 'دریافت نقدی' : 'دریافت کارت‌خوان',
+      `<div class="cashier-settlement" aria-describedby="cashier-settlement-hint">
+        <div class="cashier-settlement__balance"><span>ماندهٔ فعلی فاکتور</span><strong>${money(due)}</strong><small>مبلغ این دریافت را وارد کنید؛ می‌توانید بخشی از مانده را بگیرید.</small></div>
+        ${cashierPaymentHistoryMarkup(order, amounts)}
+        <div class="cashier-settlement__fields">
+          <label class="field"><span>مبلغ این دریافت · تومان</span><input id="cashier-settlement-amount" type="text" inputmode="numeric" autocomplete="off" value="${due}" aria-label="مبلغ این دریافت به تومان" /></label>
+          ${isCash
+            ? '<label class="field"><span>وجه نقد دریافتی · تومان</span><input id="cashier-settlement-tendered" type="text" inputmode="numeric" autocomplete="off" aria-label="وجه نقد دریافتی به تومان" /></label>'
+            : '<label class="field"><span>کد پیگیری رسید کارت‌خوان</span><input id="cashier-settlement-reference" type="text" maxlength="120" autocomplete="off" inputmode="text" aria-label="کد پیگیری رسید کارت‌خوان، الزامی" aria-required="true" required placeholder="کد پیگیری یا شماره مرجع رسید" /></label>'}
+        </div>
+        ${isCash ? '<div class="cashier-settlement__change" id="cashier-settlement-change" role="status"></div>' : '<p class="cashier-settlement__hint">کارت‌خوان به سامانه متصل نیست؛ فقط پس از بررسی موفق دستگاه و درج کد رسید ثبت کنید.</p>'}
+        <p class="cashier-settlement__hint" id="cashier-settlement-hint">مبلغ نباید از ماندهٔ فعلی بیشتر باشد. ثبت دریافت، مبلغ فاکتور را تغییر نمی‌دهد.</p>
+        <div class="cashier-settlement__actions"><button type="button" class="role-primary" id="cashier-settlement-submit" disabled>${isCash ? 'ثبت دریافت نقدی' : 'ثبت دریافت پس از بررسی کارت‌خوان'}</button></div>
+      </div>`,
+    );
+    const amountInput = dialogBody.querySelector('#cashier-settlement-amount');
+    const tenderedInput = dialogBody.querySelector('#cashier-settlement-tendered');
+    const referenceInput = dialogBody.querySelector('#cashier-settlement-reference');
+    const changeDisplay = dialogBody.querySelector('#cashier-settlement-change');
+    const confirmButton = dialogBody.querySelector('#cashier-settlement-submit');
+    if (isCash && tenderedInput) tenderedInput.value = String(due);
+    const readAmount = (input) => parseCashDrawerInput(input);
+    const validate = () => {
+      const amount = readAmount(amountInput);
+      const tendered = isCash ? readAmount(tenderedInput) : amount;
+      const reference = String(referenceInput?.value || '').trim();
+      const amountValid = Number.isSafeInteger(amount) && amount > 0 && amount <= due;
+      const tenderedValid = !isCash || (Number.isSafeInteger(tendered) && tendered >= amount);
+      if (changeDisplay) {
+        changeDisplay.textContent = tenderedValid && amountValid
+          ? `باقی‌ماندهٔ قابل برگشت: ${money(Math.max(0, tendered - amount))}`
+          : amountValid ? 'وجه نقد دریافتی باید حداقل برابر مبلغ این دریافت باشد.' : `مبلغ باید بین ۱ و ${money(due)} باشد.`;
+      }
+      if (confirmButton) confirmButton.disabled = !(amountValid && tenderedValid && (isCash || reference.length > 0));
+      return { amount, tendered, reference };
+    };
+    let cashTenderedEdited = false;
+    amountInput?.addEventListener('input', () => {
+      if (isCash && tenderedInput && !cashTenderedEdited) tenderedInput.value = amountInput.value;
+      validate();
+    });
+    tenderedInput?.addEventListener('input', () => { cashTenderedEdited = true; validate(); });
+    referenceInput?.addEventListener('input', validate);
+    validate();
+    confirmButton?.addEventListener('click', (event) => {
+      const values = validate();
+      if (confirmButton.disabled) return;
+      const intent = {
+        orderId: order.id,
+        branchId: order.branchId ?? state.branchId,
+        tender,
+        paymentAmount: values.amount,
+        amountTendered: values.tendered,
+        paymentReference: isCash ? '' : values.reference,
+        actor: state.session?.user?.phone || '',
+        actorRole: state.session?.user?.role || role,
+      };
+      submitCashierSettlement(order, intent, event.currentTarget);
+    });
+  }
+
+  function cashierSettlementStageCanSettle(order) {
+    const status = String(order?.status || '').toLowerCase();
+    const fulfillment = String(order?.fulfillment || '').toLowerCase();
+    if (['pay_at_cashier', 'awaiting_confirmation', 'sent_to_kitchen', 'preparing', 'ready'].includes(status)) return true;
+    if (status === 'done') return fulfillment === 'dine_in';
+    if (status === 'picked_up') return fulfillment === 'pickup';
+    if (status === 'delivered') return fulfillment === 'delivery';
+    return false;
+  }
+
+  function cashierWalletSettlementAllowed(paid, paymentAmount, due) {
+    return Number.isSafeInteger(paid) && paid === 0
+      && Number.isSafeInteger(paymentAmount) && paymentAmount > 0
+      && paymentAmount === due;
+  }
+
+  function cashierSettlementQueueOrders(orders) {
+    const reconciliationStates = new Set(['pending', 'unknown', 'failed', 'cancelled', 'refunded']);
+    return (Array.isArray(orders) ? orders : []).filter((order) => {
+      const paymentStatus = orderPaymentStatus(order);
+      const amounts = cashierSettlementAmounts(order);
+      // Keep payment-state exceptions visible even when they must not be collected again.
+      if (reconciliationStates.has(paymentStatus)) return true;
+      if (paymentStatus === 'paid') return !amounts.ok || amounts.due > 0;
+      if (paymentStatus === 'partial') return true;
+      return paymentStatus === 'unpaid' && cashierSettlementStageCanSettle(order);
+    });
+  }
+
+  function cashierPendingSettlementForOrder(order) {
+    let pendingIntent = readCashierPendingSettlement(order);
+    if (pendingIntent && !pendingIntent.invalid
+      && (Array.isArray(order?.partialPayments) ? order.partialPayments : []).some((payment) => payment?.idempotencyKey === pendingIntent.idempotencyKey)) {
+      clearCashierPendingSettlement(order);
+      clearSettlementIdempotencyKey(pendingIntent.idempotencyKey, pendingIntent.intent);
+      pendingIntent = null;
+    }
+    return pendingIntent;
+  }
+
   function cashierRegister() {
+    ensureCashierSettlementStyles();
     const orders = state.data.orders || [];
-    const pending = orders.filter((item) => ['pay_at_cashier', 'awaiting_confirmation'].includes(item.status));
-    const ready = orders.filter((item) => item.status === 'ready');
+    const pending = cashierSettlementQueueOrders(orders);
     const paidToday = orders.filter((item) => item.paymentStatus === 'paid' && new Date(item.paidAt || item.statusAt || item.createdAt).toDateString() === new Date().toDateString());
     const drawer = state.data.drawer;
-    const cards = pending.map((order) => orderCard(order, `
-      <button class="role-primary" data-settle="cash">نقدی</button>
-      <button class="role-secondary" data-settle="card">کارت</button>
-      <button class="role-danger" data-cashier-status="cancelled">لغو</button>`)).join('');
-    main.innerHTML = `${pageHead('صندوق فروش', 'صف تسویه', 'سفارش‌های پرداخت در محل، دریافت وجه و ثبت روش پرداخت', '<button class="role-primary" id="new-order">سفارش جدید</button>')}
+    const needsReview = (order) => {
+      const amounts = cashierSettlementAmounts(order);
+      const paymentStatus = orderPaymentStatus(order);
+      return Boolean(cashierPendingSettlementForOrder(order)) || !amounts.ok || !cashierSettlementStageCanSettle(order)
+        || amounts.due <= 0 || ['pending', 'unknown', 'failed', 'cancelled', 'refunded', 'paid'].includes(paymentStatus);
+    };
+    const reviewOrders = pending.filter(needsReview);
+    const receivableOrders = pending.filter((order) => !needsReview(order));
+    const cardFor = (order) => {
+      const amounts = cashierSettlementAmounts(order);
+      const paymentStatus = orderPaymentStatus(order);
+      const stageCanSettle = cashierSettlementStageCanSettle(order);
+      const pendingIntent = cashierPendingSettlementForOrder(order);
+      const retryReady = pendingIntent && !pendingIntent.invalid && !pendingIntent.blockedReason
+        && ['unpaid', 'partial'].includes(paymentStatus) && stageCanSettle
+        && cashierPendingMatchesOrder(order, pendingIntent, amounts)
+        && ['cash', 'manual_card'].includes(String(pendingIntent.intent?.tender || ''))
+        && Number.isSafeInteger(pendingIntent.intent?.paymentAmount) && pendingIntent.intent.paymentAmount > 0
+        && pendingIntent.intent.paymentAmount <= amounts.due
+        && (pendingIntent.intent.tender !== 'manual_card' || String(pendingIntent.intent.paymentReference || '').trim())
+        && (pendingIntent.intent.tender !== 'cash'
+          || (Number.isSafeInteger(pendingIntent.intent.amountTendered)
+            && pendingIntent.intent.amountTendered >= pendingIntent.intent.paymentAmount));
+      const actions = pendingIntent
+        ? retryReady
+          ? `<div class="role-inline-warning" role="alert"><span>دریافت قبلی نتیجهٔ قطعی نداشت. فقط همان مبلغ و روش را دوباره بفرستید.</span></div>
+            <button class="role-primary cashier-settlement-action" data-cashier-retry-pending>تکرار امن همان درخواست · ${money(pendingIntent.intent.paymentAmount)}</button>`
+          : '<div class="role-inline-warning" role="alert"><span>دریافت قبلی نیازمند تطبیق است؛ دریافت تازه و تکرار درخواست متوقف شده است. وضعیت تراکنش ثبت‌شده را بررسی و سپس صف را تازه کنید.</span></div><button type="button" class="role-secondary" data-cashier-refresh>تازه‌سازی وضعیت</button>'
+        : ['pending', 'unknown'].includes(paymentStatus)
+          ? `<div class="role-inline-warning" role="alert"><b>پرداخت: ${esc(orderPaymentStatusLabel(order))}</b><span>استعلام خودکار درگاه در این نسخه فعال نیست. رسید و سوابق صندوق/بانک را با سرپرست بررسی کنید؛ تا دریافت وضعیت معتبر، دریافت دوباره مجاز نیست.</span></div><button type="button" class="role-secondary" data-cashier-refresh>تازه‌سازی وضعیت</button>`
+        : ['failed', 'cancelled', 'refunded'].includes(paymentStatus)
+          ? `<div class="role-inline-warning" role="alert"><b>پرداخت: ${esc(orderPaymentStatusLabel(order))}</b><span>این وضعیت به تطبیق نیاز دارد؛ صندوق دریافت تازه را ثبت نمی‌کند.</span></div><button type="button" class="role-secondary" data-cashier-refresh>تازه‌سازی وضعیت</button>`
+        : !amounts.ok
+          ? '<div class="role-inline-warning" role="alert"><span>سوابق پرداخت با مبلغ فاکتور هم‌خوان نیست؛ دریافت را متوقف کنید و برای تطبیق به سرپرست اطلاع دهید.</span></div><button type="button" class="role-secondary" data-cashier-refresh>تازه‌سازی وضعیت</button>'
+        : paymentStatus === 'paid'
+          ? '<div class="role-inline-warning" role="alert"><span>وضعیت تسویه و مانده با هم سازگار نیست؛ دریافت دوباره غیرفعال است و باید تطبیق شود.</span></div><button type="button" class="role-secondary" data-cashier-refresh>تازه‌سازی وضعیت</button>'
+        : !stageCanSettle
+          ? '<div class="role-inline-warning" role="alert"><span>مدل عملیاتی این مرحله اجازهٔ دریافت نمی‌دهد؛ سفارش برای تطبیق نمایش داده شده است.</span></div><button type="button" class="role-secondary" data-cashier-refresh>تازه‌سازی وضعیت</button>'
+        : !Number.isSafeInteger(amounts.due) || amounts.due <= 0
+          ? '<div class="role-inline-warning" role="alert"><span>ماندهٔ قابل دریافت معتبر نیست؛ فاکتور را برای تطبیق به مدیر صندوق بسپارید.</span></div><button type="button" class="role-secondary" data-cashier-refresh>تازه‌سازی وضعیت</button>'
+          : `<button class="role-primary cashier-settlement-action" data-settle="cash">دریافت نقدی · مانده ${money(amounts.due)}</button>
+            <button class="role-secondary cashier-settlement-action" data-settle="manual_card">دریافت کارت · مانده ${money(amounts.due)}</button>
+            ${amounts.paid > 0 || (Array.isArray(order.partialPayments) && order.partialPayments.length)
+              ? '<div class="role-inline-warning" role="status"><span>برای این سفارش دریافت ثبت شده؛ لغو فقط پس از بازپرداخت مجاز است.</span></div>'
+              : '<button class="role-danger" data-cashier-status="cancelled">لغو سفارش</button>'}`;
+      return orderCard(order, actions, cashierPaymentHistoryMarkup(order, amounts, true));
+    };
+    const reviewCards = reviewOrders.map(cardFor).join('');
+    const receivableCards = receivableOrders.map(cardFor).join('');
+    const headerActions = '<div class="cashier-register-head-actions"><button type="button" class="role-secondary" id="cashier-handoff">صف تحویل</button><button type="button" class="role-secondary" id="cashier-history">تاریخچه</button><button type="button" class="role-secondary" data-cashier-refresh>تازه‌سازی صف</button><button type="button" class="role-primary" id="new-order">سفارش جدید</button></div>';
+    main.innerHTML = `${pageHead('صندوق فروش', 'صف تسویه', 'دریافت امن، مشاهدهٔ پرداخت‌های نامشخص و کنترل ماندهٔ سفارش', headerActions)}
       <section class="role-metrics">
         ${metric('منتظر تسویه', num(pending.length), pending.length ? 'نیازمند اقدام' : 'صف خالی')}
-        ${metric('آماده تحویل', num(ready.length), 'هماهنگ با آشپزخانه')}
+        ${metric('نیازمند تطبیق', num(reviewOrders.length), reviewOrders.length ? 'دریافت تازه متوقف است' : 'موردی نیست')}
         ${metric('فروش امروز', money(paidToday.reduce((sum, item) => sum + Number(item.total || 0), 0)), `${num(paidToday.length)} سفارش`)}
         ${metric('صندوق پول', drawer.session ? money(drawer.totals.expected) : 'بسته', drawer.session ? 'موجودی مورد انتظار' : 'برای نقدی باز شود')}
       </section>
-      <div class="role-grid"><section class="role-section role-section--8"><div class="role-section__head"><h2>سفارش‌های قابل تسویه</h2><span>${num(pending.length)} سفارش</span></div><div class="order-list">${cards || empty('سفارشی در انتظار تسویه نیست.')}</div></section>
-      <section class="role-section role-section--4"><div class="role-section__head"><h2>کنترل شیفت</h2><span>ایستگاه صندوق</span></div>
+      <section class="role-section"><div class="role-section__head"><h2>نیازمند تطبیق و اقدام امن</h2><span>${num(reviewOrders.length)} سفارش</span></div><div class="order-list">${reviewCards || empty('وضعیت نامعلوم یا ماندهٔ ناسازگار نداریم.')}</div></section>
+      <section class="role-section" style="margin-top:14px"><div class="role-section__head"><h2>قابل دریافت طبق مرحلهٔ عملیاتی</h2><span>${num(receivableOrders.length)} سفارش</span></div><div class="order-list">${receivableCards || empty('سفارشی در این مرحله قابل دریافت نیست.')}</div></section>
+      <section class="role-section" style="margin-top:14px"><div class="role-section__head"><h2>کنترل شیفت</h2><span>ایستگاه صندوق · ${drawer.session ? 'باز' : 'بسته'}</span></div>
         ${state.session.shift ? '<p>شیفت شما فعال است. دریافت نقدی فقط با صندوق پول باز ثبت می‌شود.</p>' : '<p>برای ثبت عملیات روز، ابتدا شیفت را شروع کنید.</p>'}
         <button class="role-secondary" data-go-view="drawer">مشاهده صندوق پول</button>
-      </section></div>`;
+      </section>`;
     main.querySelector('#new-order')?.addEventListener('click', () => showOrderComposer('cashier'));
+    main.querySelector('#cashier-history')?.addEventListener('click', cashierOrders);
+    main.querySelector('#cashier-handoff')?.addEventListener('click', cashierHandoff);
+    main.querySelectorAll('[data-cashier-refresh]').forEach((button) => button.addEventListener('click', () => refreshCashierQueue(button)));
     main.querySelectorAll('[data-settle]').forEach((button) => button.addEventListener('click', () => {
       const orderId = button.closest('[data-order-id]').dataset.orderId;
-      action(button, () => api(`/api/cashier/orders/${orderId}/settle`, { method: 'POST', body: JSON.stringify({ tender: button.dataset.settle }) }), 'پرداخت ثبت شد.');
+      const order = orders.find((item) => Number(item.id) === Number(orderId));
+      const amounts = cashierSettlementAmounts(order);
+      if (!order || !['unpaid', 'partial'].includes(orderPaymentStatus(order)) || !cashierSettlementStageCanSettle(order)
+        || !amounts.ok || amounts.due <= 0 || cashierPendingSettlementForOrder(order)) {
+        showToast('این فاکتور نیازمند تازه‌سازی یا تطبیق پرداخت است.', 'error');
+        return;
+      }
+      openCashierSettlementDialog(order, button.dataset.settle, amounts.due);
+    }));
+    main.querySelectorAll('[data-cashier-retry-pending]').forEach((button) => button.addEventListener('click', () => {
+      const orderId = button.closest('[data-order-id]').dataset.orderId;
+      const order = orders.find((item) => Number(item.id) === Number(orderId));
+      const pendingIntent = order && cashierPendingSettlementForOrder(order);
+      const amounts = cashierSettlementAmounts(order);
+      if (!order || !pendingIntent || pendingIntent.invalid || !cashierPendingMatchesOrder(order, pendingIntent, amounts)
+        || pendingIntent.blockedReason || !['unpaid', 'partial'].includes(orderPaymentStatus(order))
+        || !cashierSettlementStageCanSettle(order)) {
+        showToast('درخواست قبلی با وضعیت فعلی قابل تکرار نیست؛ با سرپرست تطبیق دهید.', 'error');
+        return;
+      }
+      submitCashierSettlement(order, pendingIntent.intent, button, pendingIntent);
     }));
     main.querySelectorAll('[data-cashier-status]').forEach((button) => button.addEventListener('click', () => {
       const orderId = button.closest('[data-order-id]').dataset.orderId;
       action(button, () => api(`/api/cashier/orders/${orderId}/status`, { method: 'PATCH', body: JSON.stringify({ status: button.dataset.cashierStatus }) }), 'وضعیت سفارش تغییر کرد.');
     }));
     main.querySelector('[data-go-view]')?.addEventListener('click', () => { state.activeView = 'drawer'; paintNav(); render(); });
+  }
+
+  async function refreshCashierQueue(button) {
+    setBusy(button, true);
+    try {
+      await fetchCashier();
+      cashierRegister();
+      showToast('وضعیت صف صندوق از سرور تازه شد.');
+    } catch (error) {
+      showToast(`صف تازه نشد: ${error.message}`, 'error');
+    } finally {
+      if (button?.isConnected) setBusy(button, false);
+    }
   }
 
   function cashierHandoff() {
@@ -2349,9 +3730,10 @@
       const label = ({ dispatched: 'تحویل به پیک', picked_up: 'تحویل شد', done: 'تحویل میز', delivered: 'رسید به مهمان' })[next];
       return orderCard(order, `<button class="role-primary" data-cashier-status="${next}">${label}</button>`);
     }).join('');
-    main.innerHTML = `${pageHead('هماهنگی تحویل', 'تحویل سفارش', 'سفارش‌های آماده از آشپزخانه تا تحویل نهایی')}
+    main.innerHTML = `${pageHead('هماهنگی تحویل', 'تحویل سفارش', 'سفارش‌های آماده از آشپزخانه تا تحویل نهایی', '<button type="button" class="role-secondary" id="cashier-handoff-return">بازگشت به صف صندوق</button>')}
       <section class="role-metrics">${metric('آماده', num(ready.filter((item) => item.status === 'ready').length))}${metric('در مسیر', num(ready.filter((item) => item.status === 'dispatched').length))}${metric('میانگین انتظار', `${num(ready.length ? Math.round(ready.reduce((s,o)=>s+ageMin(o.readyAt || o.createdAt),0)/ready.length) : 0)} دقیقه`)}${metric('کل صف', num(ready.length))}</section>
       <section class="role-section"><div class="role-section__head"><h2>صف تحویل</h2><span>قدیمی‌ترها در اولویت</span></div><div class="order-list">${cards || empty('سفارش آماده‌ای وجود ندارد.')}</div></section>`;
+    main.querySelector('#cashier-handoff-return')?.addEventListener('click', cashierRegister);
     main.querySelectorAll('[data-cashier-status]').forEach((button) => button.addEventListener('click', () => {
       const orderId = button.closest('[data-order-id]').dataset.orderId;
       action(button, () => api(`/api/cashier/orders/${orderId}/status`, { method: 'PATCH', body: JSON.stringify({ status: button.dataset.cashierStatus }) }), 'تحویل ثبت شد.');
@@ -2366,7 +3748,13 @@
         <section class="role-section role-section--8"><div class="role-section__head"><h2>باز کردن صندوق</h2><span>موجودی اول شیفت</span></div>
         <div class="field-grid"><label class="field"><span>مبلغ اولیه (تومان)</span><input id="drawer-opening" inputmode="numeric" value="0" /></label></div>
         <p>پس از باز شدن، فروش‌های نقدی به‌صورت خودکار در همین نشست ثبت می‌شوند.</p><button class="role-primary" id="drawer-open">باز کردن صندوق</button></section>`;
-      document.getElementById('drawer-open').addEventListener('click', (event) => action(event.currentTarget, () => api('/api/cashier/drawer/open', { method: 'POST', body: JSON.stringify({ branchId: state.branchId, openingAmount: parseInputNumber(document.getElementById('drawer-opening').value) || 0 }) }), 'صندوق پول باز شد.'));
+      document.getElementById('drawer-open').addEventListener('click', (event) => {
+        const openingAmount = parseCashDrawerInput(document.getElementById('drawer-opening'), { allowZero: true });
+        if (openingAmount == null) return showToast('موجودی اولیه باید عدد صحیح و نامنفی باشد.', 'error');
+        action(event.currentTarget, () => api('/api/cashier/drawer/open', {
+          method: 'POST', body: JSON.stringify({ branchId: state.branchId, openingAmount }),
+        }), 'صندوق پول باز شد.');
+      });
       return;
     }
     main.innerHTML = `${pageHead('مدیریت وجه نقد', 'صندوق پول', 'تمام جابه‌جایی‌های نقدی این نشست قابل تطبیق است')}
@@ -2375,56 +3763,169 @@
       <section class="role-section role-section--4"><div class="role-section__head"><h2>عملیات صندوق</h2><span>ثبت ممیزی‌شده</span></div><div class="field-grid">
         <label class="field field--full"><span>مبلغ</span><input id="movement-amount" inputmode="numeric" /></label><label class="field field--full"><span>شرح</span><input id="movement-note" maxlength="160" /></label>
       </div><div class="order-actions" style="margin-top:12px"><button class="role-secondary" data-movement="pay_in">ورود نقدی</button><button class="role-secondary" data-movement="pay_out">خروج نقدی</button><button class="role-danger" id="drawer-close">بستن و شمارش</button></div></section>
-      <section class="role-section"><div class="role-section__head"><h2>گردش‌های نشست</h2><span>${num(session.movements?.length || 0)} رکورد</span></div><div class="order-list">${(session.movements || []).map((item) => `<div class="order-card"><div class="order-card__top"><strong>${esc(({ sale:'فروش نقدی', pay_in:'ورود نقدی', pay_out:'خروج نقدی', refund:'بازپرداخت' })[item.type] || item.type)}</strong><span>${time(item.at)}</span></div><div class="order-card__bottom"><span>${esc(item.note || '—')}</span><b>${money(item.amount)}</b></div></div>`).join('') || empty('هنوز گردشی ثبت نشده است.')}</div></section></div>`;
-    main.querySelectorAll('[data-movement]').forEach((button) => button.addEventListener('click', () => action(button, () => api('/api/cashier/drawer/movements', { method: 'POST', body: JSON.stringify({ branchId: state.branchId, type: button.dataset.movement, amount: parseInputNumber(document.getElementById('movement-amount').value) || 0, note: document.getElementById('movement-note').value }) }), 'گردش نقدی ثبت شد.')));
+      <section class="role-section"><div class="role-section__head"><h2>گردش‌های نشست</h2><span>${num(session.movements?.length || 0)} رکورد</span></div><div class="order-list">${(session.movements || []).map((item) => `<div class="order-card"><div class="order-card__top"><strong>${esc(({ sale:'فروش نقدی', pay_in:'ورود نقدی', pay_out:'خروج نقدی', refund:'بازپرداخت' })[item.type] || item.type)}</strong><span>${time(item.at)}</span></div><div class="order-card__bottom"><span>${esc(item.note || '—')}</span><b>${money(item.amount)}</b></div>${item.financeStatus === 'blocked' ? '<small class="cash-movement-finance-state" role="status">در انتظار تعیین حساب مقابل؛ هنوز در دفتر کل ثبت نشده است.</small>' : item.financeStatus === 'posted' ? '<small class="cash-movement-finance-state is-posted" role="status">ثبت در دفتر مالی تأیید شده است.</small>' : item.financeStatus ? '<small class="cash-movement-finance-state" role="status">وضعیت ثبت دفتر مالی نیازمند بررسی است.</small>' : ''}</div>`).join('') || empty('هنوز گردشی ثبت نشده است.')}</div></section></div>`;
+    main.querySelectorAll('[data-movement]').forEach((button) => button.addEventListener('click', async () => {
+      const amount = parseCashDrawerInput(document.getElementById('movement-amount'));
+      if (amount == null) return showToast('مبلغ ورود یا خروج باید عدد صحیح و بزرگ‌تر از صفر باشد.', 'error');
+      const payload = {
+        branchId: state.branchId, type: button.dataset.movement, amount,
+        note: document.getElementById('movement-note').value,
+      };
+      const sessionId = session.id;
+      const idempotencyKey = cashDrawerMovementIdempotencyKey(button, payload, sessionId);
+      let movementResult = null;
+      const completed = await action(button, async () => {
+        movementResult = await api('/api/cashier/drawer/movements', {
+          method: 'POST', headers: { 'Idempotency-Key': idempotencyKey }, body: JSON.stringify(payload),
+        });
+      });
+      if (completed) {
+        const financeStatus = movementResult?.finance?.event?.status || movementResult?.movement?.financeStatus;
+        if (financeStatus === 'posted') showToast('گردش صندوق و ثبت دفتر مالی تأیید شد.');
+        else if (financeStatus === 'blocked') showToast('در صندوق ثبت شد؛ اما تا تعیین حساب مقابل، در دفتر کل ثبت نمی‌شود.', 'warning');
+        else showToast('گردش صندوق ثبت شد؛ وضعیت دفتر مالی را در صف تطبیق بررسی کنید.', 'warning');
+        clearCashDrawerMovementIntent(payload, sessionId);
+      }
+    }));
     document.getElementById('drawer-close').addEventListener('click', () => {
       openDialog('پایان نشست', 'شمارش صندوق', `<div class="field-grid"><label class="field field--full"><span>مبلغ شمارش‌شده</span><input id="drawer-counted" inputmode="numeric" value="${Math.round(totals.expected)}" /></label></div><p>انتظار سیستم: <b>${money(totals.expected)}</b></p><button class="role-danger" id="confirm-drawer-close">تأیید و بستن صندوق</button>`);
-      document.getElementById('confirm-drawer-close').addEventListener('click', (event) => action(event.currentTarget, async () => { await api('/api/cashier/drawer/close', { method: 'POST', body: JSON.stringify({ branchId: state.branchId, countedAmount: parseInputNumber(document.getElementById('drawer-counted').value) || 0 }) }); dialog.close(); }, 'صندوق بسته و تطبیق ثبت شد.'));
+      document.getElementById('confirm-drawer-close').addEventListener('click', async (event) => {
+        const countedAmount = parseCashDrawerInput(document.getElementById('drawer-counted'), { allowZero: true });
+        if (countedAmount == null) return showToast('مبلغ شمارش‌شده باید عدد صحیح و نامنفی باشد.', 'error');
+        let closeResult = null;
+        const completed = await action(event.currentTarget, async () => {
+          closeResult = await api('/api/cashier/drawer/close', {
+            method: 'POST', body: JSON.stringify({ branchId: state.branchId, sessionId: session.id, countedAmount }),
+          });
+          dialog.close();
+        });
+        if (completed) showToast(cashDrawerVarianceMessage(closeResult?.totals?.variance));
+      });
     });
   }
 
   async function fetchWaiter() {
-    const [floor, calls, orders, reservations, waitlist] = await Promise.all([
-      api(`/api/admin/v2/floor${qs()}`), api(`/api/waiter/calls${qs()}`), api(`/api/admin/orders${qs()}`), api(`/api/admin/reservations${qs()}`), api(`/api/waiter/waitlist${qs()}`),
-    ]);
-    state.data = { floor, calls: calls.calls || [], orders: orders.orders || [], reservations, waitlist: waitlist.waitlist || [], waitlistSummary: waitlist.summary || {} };
+    const requestedBranchId = state.branchId;
+    const requestedBranchGeneration = state.waiterBranchGeneration || 0;
+    const requestId = state.waiterSnapshotRequestId = (state.waiterSnapshotRequestId || 0) + 1;
+    const branchParam = requestedBranchId ? `?branchId=${encodeURIComponent(requestedBranchId)}` : '';
+    const isCurrentRequest = () => requestId === state.waiterSnapshotRequestId
+      && requestedBranchGeneration === (state.waiterBranchGeneration || 0)
+      && String(requestedBranchId ?? '') === String(state.branchId ?? '');
+    let snapshot;
+    try {
+      snapshot = await Promise.all([
+        Promise.all([
+          api(`/api/admin/v2/floor${branchParam}`), api(`/api/waiter/calls${branchParam}`), api(`/api/admin/orders${branchParam}`),
+        ]),
+        Promise.allSettled([
+          api(`/api/admin/reservations${branchParam}`), api(`/api/waiter/waitlist${branchParam}`),
+        ]),
+      ]);
+    } catch (error) {
+      if (!isCurrentRequest()) return false;
+      throw error;
+    }
+    if (!isCurrentRequest()) return false;
+    const [[floor, calls, orders], [reservationsResult, waitlistResult]] = snapshot;
+    const reservationsAvailable = reservationsResult.status === 'fulfilled';
+    const waitlistAvailable = waitlistResult.status === 'fulfilled';
+    state.data = {
+      floor,
+      calls: calls.calls || [],
+      orders: orders.orders || [],
+      reservations: reservationsAvailable ? reservationsResult.value : null,
+      waitlist: waitlistAvailable ? (waitlistResult.value.waitlist || []) : [],
+      waitlistSummary: waitlistAvailable ? (waitlistResult.value.summary || {}) : {},
+      waiterDataIssues: { reservations: !reservationsAvailable, waitlist: !waitlistAvailable },
+    };
+    return true;
+  }
+
+  async function refreshWaiterAfterMutation() {
+    try {
+      return await fetchWaiter();
+    } catch (error) {
+      showToast(`عملیات ثبت شد، اما تازه‌سازی اطلاعات سالن انجام نشد: ${error.message}`, 'error');
+      return false;
+    }
   }
 
   function waiterMetrics() {
-    const activeOrders = (state.data.orders || []).filter((item) => item.fulfillment === 'dine_in' && !['done', 'cancelled'].includes(item.status));
-    return `<section class="role-metrics">${metric('فراخوان باز', num(state.data.calls.length), state.data.calls.length ? 'نیازمند رسیدگی' : 'همه پاسخ داده شده')}${metric('میز در سرویس', num(state.data.floor.summary?.busy || 0))}${metric('سفارش فعال', num(activeOrders.length))}${metric('رزرو امروز', num(state.data.reservations.summary?.today || 0), `${num(state.data.reservations.summary?.todayCovers || 0)} نفر`)}</section>`;
+    const activeOrders = (state.data.orders || []).filter((item) => item.fulfillment === 'dine_in' && orderIsOpen(item));
+    const openCalls = (state.data.calls || []).filter((call) => ['open', 'new'].includes(String(call.status || 'open')));
+    const reservationsUnavailable = Boolean(state.data.waiterDataIssues?.reservations);
+    const activeTables = (state.data.floor?.tables || []).filter((table) => {
+      const context = waiterTableContext(table);
+      return context.orders.length || context.calls.length || ['busy', 'attention'].includes(table.state);
+    });
+    return `<section class="role-metrics">${metric('فراخوان باز', num(openCalls.length), openCalls.length ? 'نیازمند رسیدگی' : 'همه پاسخ داده شده')}${metric('میز در سرویس', num(activeTables.length))}${metric('سفارش فعال', num(activeOrders.length))}${metric('رزرو امروز', reservationsUnavailable ? '—' : num(state.data.reservations?.summary?.today || 0), reservationsUnavailable ? 'اطلاعات در دسترس نیست' : `${num(state.data.reservations?.summary?.todayCovers || 0)} نفر`)}</section>`;
   }
 
   function waiterFloor() {
     document.body.classList.add('is-waiter-floor-app');
     document.body.classList.remove('is-waiter-terminal');
-    paintWaiterHeaderContext();
     const tables = state.data.floor.tables || [];
     tables.forEach(ensureTableGeometry);
     const workspaceCapabilities = state.session?.workspace?.capabilities || [];
     const canEditFloor = workspaceCapabilities.includes('*') || workspaceCapabilities.includes('tables.manage');
     if (!canEditFloor) state.waiterFloorEditing = false;
-    state.waiterFloorMode = state.waiterFloorMode || 'plan';
-    state.waiterFloorZone = state.waiterFloorZone || 'all';
+    if (!state.waiterFloorMode) {
+      const isMobile = window.matchMedia?.('(max-width: 768px)').matches;
+      const preferredMode = readLocal(waiterFloorModeStorageKey(), '');
+      state.waiterFloorMode = ['plan', 'grid'].includes(preferredMode)
+        ? preferredMode
+        : (isMobile ? 'grid' : 'plan');
+    }
+    state.waiterFloorZone = state.waiterFloorZone || readLocal('westo_waiter_floor_zone', 'all') || 'all';
+    if (state.waiterFloorZone !== 'all') state.waiterFloorZone = normalizeRoleFloorZoneName(state.waiterFloorZone);
+    paintWaiterHeaderContext();
 
-    const definedZones = (state.data.floor?.zones || []).map((z) => z.name).filter(Boolean);
-    const tableZones = tables.map((t) => t.zone).filter(Boolean);
+    const definedZones = (state.data.floor?.zones || []).map((zone) => normalizeRoleFloorZoneName(zone.name)).filter(Boolean);
+    const tableZones = tables.map((table) => normalizeRoleFloorZoneName(table.zone)).filter(Boolean);
     const zones = ['all', ...new Set([...definedZones, ...tableZones, 'سالن'])];
     const visibleTables = state.waiterFloorZone === 'all'
       ? tables
-      : tables.filter((t) => (t.zone || 'سالن') === state.waiterFloorZone);
+      : tables.filter((table) => normalizeRoleFloorZoneName(table.zone) === state.waiterFloorZone);
+    const floorContexts = new Map(tables.map((table) => [String(table.id), waiterTableContext(table)]));
+    const displayTables = visibleTables.map((table) => ({ ...table, ...floorContexts.get(String(table.id)) }));
+    const priorityForTable = (table) => {
+      const context = floorContexts.get(String(table.id));
+      if (context?.calls.length) return 0;
+      if (context?.readyOrders.length) return 1;
+      if (context?.orders.length) return 2;
+      if (context?.state === 'reserved') return 3;
+      return 4;
+    };
+    const gridTables = [...displayTables].sort((a, b) => priorityForTable(a) - priorityForTable(b) || Number(a.id) - Number(b.id));
+    const activeOrders = (state.data.orders || []).filter((order) => order.fulfillment === 'dine_in' && orderIsOpen(order));
+    const readyOrders = activeOrders.filter((order) => order.status === 'ready');
+    const openCalls = (state.data.calls || []).filter((call) => ['open', 'new'].includes(String(call.status || 'open')));
+    const unmappedOrders = waiterUnmappedOrders(activeOrders);
 
     const toolbarHtml = `
       <div class="floor-toolbar">
         <div class="floor-toolbar__group">
           <div class="floor-zone-pills">
             ${zones.map((z) => {
-              const icon = z === 'سالن' ? '🛋️ ' : z === 'تراس' ? '🌿 ' : (z === 'VIP' || z === 'ویژه') ? '👑 ' : z === 'فضای باز' ? '🏷️ ' : '';
-              const label = z === 'all' ? 'همه بخش‌ها' : z === 'VIP' ? 'ویژه' : z;
-              const count = z === 'all' ? tables.length : tables.filter((t) => (t.zone || 'سالن') === z).length;
-              return `<button type="button" class="floor-zone-pill ${state.waiterFloorZone === z ? 'active' : ''}" data-zone-filter="${esc(z)}"><span>${icon}${esc(label)}</span><small>${num(count)}</small></button>`;
+              const icon = z === 'سالن' ? '🛋️ ' : z === 'تراس' ? '🌿 ' : z === 'ویژه' ? '👑 ' : z === 'فضای باز' ? '🏷️ ' : '';
+              const label = z === 'all' ? 'همه بخش‌ها' : z;
+              const count = z === 'all' ? tables.length : tables.filter((table) => normalizeRoleFloorZoneName(table.zone) === z).length;
+              return `<button type="button" class="floor-zone-pill ${state.waiterFloorZone === z ? 'active' : ''}" data-zone-filter="${esc(z)}" aria-pressed="${state.waiterFloorZone === z ? 'true' : 'false'}"><span>${icon}${esc(label)}</span><small>${num(count)}</small></button>`;
             }).join('')}
           </div>
+        </div>
+
+        <div class="floor-toolbar__group floor-toolbar__group--waiter-status" aria-label="خلاصه عملیات سالن">
+          <button type="button" class="floor-metric-chip ${openCalls.length ? 'has-calls' : ''}" data-waiter-quick-view="calls">
+            <span>🔔</span><small>${num(openCalls.length)} فراخوان</small>
+          </button>
+          <button type="button" class="floor-metric-chip ${readyOrders.length ? 'has-ready' : ''}" data-waiter-quick-view="orders">
+            <span>🍽️</span><small>${num(readyOrders.length)} آماده</small>
+          </button>
+          <button type="button" class="floor-metric-chip is-stat ${unmappedOrders.length ? 'has-unmapped' : ''}" data-waiter-quick-view="${unmappedOrders.length ? 'unmapped-orders' : 'orders'}" aria-label="${unmappedOrders.length ? `${num(unmappedOrders.length)} سفارش فعال بدون میز؛ برای بررسی و تخصیص میز باز کنید` : `${num(activeOrders.length)} سفارش فعال؛ مشاهده سفارش‌ها`}"><span>${unmappedOrders.length ? '⚠️' : '🧾'}</span><small>${num(activeOrders.length)} فعال${unmappedOrders.length ? ` · ${num(unmappedOrders.length)} بی‌میز · بررسی` : ''}</small></button>
+          <span class="floor-toolbar__hint" role="status">${waiterHasCapability('orders.create') ? 'برای سفارش‌گیری، میز را لمس کنید' : 'نمایش سالن مجاز است؛ برای ساخت سفارش از مدیر شیفت دسترسی بخواهید.'}</span>
+          ${canEditFloor ? '' : '<span class="floor-toolbar__hint" role="status" style="display:block;grid-column:1/-1;margin:0;color:#475569;font-size:12px;line-height:1.5;white-space:normal">چیدمان فقط‌خواندنی است؛ تغییر آن از این فضای کاری مجاز نیست.</span>'}
         </div>
 
         ${state.waiterFloorEditing && canEditFloor ? `
@@ -2441,22 +3942,31 @@
         ` : ''}
       </div>`;
 
-    const planCanvasHtml = buildPlanCanvasHtml(visibleTables, state.waiterFloorZone, {
+    const planCanvasHtml = buildPlanCanvasHtml(displayTables, state.waiterFloorZone, {
       isEditMode: state.waiterFloorEditing,
       id: 'floor-canvas',
       tablesLayerId: 'plan-tables-layer',
       allowEdit: canEditFloor,
+      disableInactive: true,
       attr: (t) => `data-table="${esc(t.id)}"`
     });
 
 
     const classicGridHtml = `
       <div class="floor-grid" style="overflow-y:auto;flex:1;min-height:0;padding:8px">
-        ${visibleTables.map((table) => `
-          <button class="floor-table" data-table="${esc(table.id)}" data-state="${esc(table.state)}" ${table.autoReleased ? 'data-auto-released="true"' : ''}>
-            <strong>${esc(table.label || `میز ${table.id}`)}</strong>
-            <small>${num(table.seats)} نفر · ${esc(table.zone || 'سالن')}</small>
-            <span>${esc(table.stateLabel)}</span>
+        ${gridTables.map((table) => `
+          <button class="floor-table waiter-table-card ${table.calls.length ? 'has-call' : ''} ${table.readyOrders.length ? 'has-ready' : ''}" data-table="${esc(table.id)}" data-state="${esc(table.active === false ? 'inactive' : table.state)}" ${table.autoReleased ? 'data-auto-released="true"' : ''} ${table.active === false && !state.waiterFloorEditing ? 'disabled aria-disabled="true" title="این میز غیرفعال است؛ برای سفارش از میز فعال استفاده کنید"' : ''} aria-label="${esc([
+            table.label || `میز ${table.id}`,
+            table.stateLabel,
+            `${num(table.seats)} نفر`,
+            normalizeRoleFloorZoneName(table.zone),
+            table.calls.length ? `${num(table.calls.length)} فراخوان باز` : '',
+            table.readyOrders.length ? `${num(table.readyOrders.length)} سفارش آماده تحویل` : '',
+            table.orders.length ? `${num(table.orders.length)} فاکتور باز` : '',
+          ].filter(Boolean).join('، '))}">
+            <span class="waiter-table-card__top"><strong>${esc(table.label || `میز ${table.id}`)}</strong><b>${esc(table.stateLabel)}</b></span>
+            <small>${num(table.seats)} نفر · ${esc(normalizeRoleFloorZoneName(table.zone))}</small>
+            ${table.orders.length ? `<em>${num(table.orders.reduce((sum, order) => sum + (order.items || []).length, 0))} قلم در ${num(table.orders.length)} فاکتور</em>` : '<em>آماده پذیرش مهمان</em>'}
             ${table.serviceEndsAt && !table.autoReleased && ['busy', 'attention'].includes(table.state) ? `<time class="plan-table-timer" data-service-ends="${esc(table.serviceEndsAt)}" style="margin-top:6px;display:inline-block">${floorCountdownLabel(table.serviceEndsAt)}</time>` : ''}
           </button>`).join('') || empty('میزی تعریف نشده است.')}
       </div>`;
@@ -2475,16 +3985,25 @@
     // Mode toggles
     const planBtn = document.getElementById('floor-view-plan');
     const gridBtn = document.getElementById('floor-view-grid');
-    if (planBtn) planBtn.addEventListener('click', () => { state.waiterFloorMode = 'plan'; waiterFloor(); });
-    if (gridBtn) gridBtn.addEventListener('click', () => { state.waiterFloorMode = 'grid'; waiterFloor(); });
+    if (planBtn) planBtn.addEventListener('click', () => { state.waiterFloorMode = 'plan'; localStorage.setItem(waiterFloorModeStorageKey(), JSON.stringify('plan')); waiterFloor(); });
+    if (gridBtn) gridBtn.addEventListener('click', () => { state.waiterFloorMode = 'grid'; localStorage.setItem(waiterFloorModeStorageKey(), JSON.stringify('grid')); waiterFloor(); });
 
     // Zone filters
     main.querySelectorAll('[data-zone-filter]').forEach((btn) => {
       btn.addEventListener('click', () => {
         state.waiterFloorZone = btn.dataset.zoneFilter;
+        localStorage.setItem('westo_waiter_floor_zone', JSON.stringify(state.waiterFloorZone));
         waiterFloor();
       });
     });
+
+    main.querySelectorAll('[data-waiter-quick-view]').forEach((button) => button.addEventListener('click', () => {
+      const target = button.dataset.waiterQuickView;
+      state.waiterUnmappedOnly = target === 'unmapped-orders';
+      state.activeView = state.waiterUnmappedOnly ? 'orders' : target;
+      paintNav();
+      render();
+    }));
 
     // Edit mode controls
     const toggleEditBtn = document.getElementById('floor-toggle-edit');
@@ -2592,6 +4111,7 @@
       // Click in normal mode opens detail (ignored if canvas was just panned)
       el.addEventListener('click', (e) => {
         if (state.canvasDragging) return;
+        if (table.active === false && !state.waiterFloorEditing) return;
         if (state.waiterFloorEditing) {
           if (e.target.closest('.table-floating-palette')) return;
           state.selectedTableId = table.id;
@@ -2604,6 +4124,7 @@
       // Keep the visual floor plan usable without a mouse or touch screen.
       el.addEventListener('keydown', (e) => {
         if (!['Enter', ' '].includes(e.key) || e.target.closest('.table-floating-palette')) return;
+        if (table.active === false && !state.waiterFloorEditing) return;
         e.preventDefault();
         if (state.waiterFloorEditing) {
           state.selectedTableId = table.id;
@@ -2701,48 +4222,146 @@
   }
 
   function callsHtml() {
-    return `<div class="call-list">${state.data.calls.map((call) => `<article class="call-row" data-call-id="${call.id}"><b>${esc(call.tableNo)}</b><div><p>${esc(call.note || 'درخواست گارسون')}</p><small>${num(ageMin(call.createdAt))} دقیقه قبل</small></div><button class="role-primary" data-resolve-call>رسیدگی شد</button></article>`).join('') || empty('فراخوان بازی وجود ندارد.')}</div>`;
+    const calls = [...(state.data.calls || [])]
+      .filter((call) => ['open', 'new'].includes(String(call.status || 'open')))
+      .sort((a, b) => new Date(a.createdAt || 0) - new Date(b.createdAt || 0));
+    const canResolveCalls = waiterHasCapability('service.manage');
+    return `<div class="call-list">${calls.map((call) => {
+      const key = waiterCallStateKey(call.id);
+      const needsRefresh = state.waiterCallNeedsRefresh.has(key);
+      const inFlight = state.waiterCallMutations.has(key);
+      const blocked = !canResolveCalls || needsRefresh || inFlight;
+      const label = !canResolveCalls ? 'نیازمند مجوز رسیدگی' : needsRefresh ? 'ابتدا وضعیت را بررسی کنید' : inFlight ? 'در حال ثبت…' : 'رسیدگی شد';
+      return `<article class="call-row" data-call-id="${esc(call.id)}" aria-label="فراخوان ${esc(call.tableNo || 'میز نامشخص')}"><b>${esc(call.tableNo || 'میز نامشخص')}</b><div><p>${esc(call.note || 'درخواست گارسون')}</p><small>${num(ageMin(call.createdAt))} دقیقه قبل</small>${!canResolveCalls ? '<small role="status">برای رسیدگی به فراخوان، مجوز لازم است.</small>' : ''}</div>${needsRefresh ? `<button type="button" class="role-secondary" data-refresh-call-status aria-label="بررسی وضعیت فراخوان ${esc(call.tableNo || '')}">بررسی وضعیت</button>` : ''}<button type="button" class="role-primary" data-resolve-call aria-label="رسیدگی به فراخوان ${esc(call.tableNo || '')}" title="${!canResolveCalls ? 'از مدیر شیفت دسترسی رسیدگی به فراخوان را درخواست کنید.' : ''}" ${blocked ? 'disabled aria-disabled="true"' : ''}>${label}</button></article>`;
+    }).join('') || empty('فراخوان بازی وجود ندارد.')}</div>`;
+  }
+
+  function waiterCallStateKey(callId, branchId = state.branchId) {
+    return `${String(branchId ?? '')}:${String(callId ?? '')}`;
+  }
+
+  function paintWaiterCallView() {
+    if (dialog.open) {
+      if (!(state.data.calls || []).length) {
+        dialog.close();
+        return;
+      }
+      openDialog('فراخوان‌های مهمان', `${num((state.data.calls || []).length)} درخواست`, callsHtml());
+      wireCalls(dialog);
+      return;
+    }
+    if (state.activeView === 'floor') waiterFloor();
+    else if (state.activeView === 'calls') waiterCalls();
+  }
+
+  async function refreshWaiterCallSnapshot(button = null) {
+    const requestedBranchId = state.branchId;
+    const requestedBranchGeneration = state.waiterBranchGeneration || 0;
+    const isCurrentBranch = () => String(state.branchId ?? '') === String(requestedBranchId ?? '')
+      && (state.waiterBranchGeneration || 0) === requestedBranchGeneration;
+    setBusy(button, true);
+    try {
+      const loaded = await fetchWaiter();
+      if (!loaded || !isCurrentBranch()) return false;
+      const branchPrefix = `${String(requestedBranchId ?? '')}:`;
+      for (const key of state.waiterCallNeedsRefresh) {
+        if (key.startsWith(branchPrefix)) state.waiterCallNeedsRefresh.delete(key);
+      }
+      paintWaiterCallView();
+      showToast('وضعیت فراخوان‌ها به‌روز شد.');
+      return true;
+    } catch (error) {
+      showToast(`وضعیت فراخوان تازه نشد؛ درخواست را دوباره نفرستید. ${error.message}`, 'warning');
+      return false;
+    } finally {
+      setBusy(button, false);
+    }
+  }
+
+  async function resolveWaiterCall(button) {
+    if (typeof waiterHasCapability === 'function' && !waiterHasCapability('service.manage')) {
+      showToast('رسیدگی به فراخوان در دسترسی شما نیست؛ از مدیر شیفت مجوز این کار را درخواست کنید.', 'error');
+      return false;
+    }
+    const row = button?.closest('[data-call-id]');
+    const callId = String(row?.dataset.callId || '');
+    if (!callId) return false;
+    const requestedBranchId = state.branchId;
+    const requestedBranchGeneration = state.waiterBranchGeneration || 0;
+    const key = waiterCallStateKey(callId, requestedBranchId);
+    if (state.waiterCallNeedsRefresh.has(key)) {
+      showToast('نتیجهٔ رسیدگی قبلی روشن نیست؛ ابتدا وضعیت فراخوان را بررسی کنید.', 'warning');
+      return false;
+    }
+    if (state.waiterCallMutations.has(key)) return false;
+    state.waiterCallMutations.add(key);
+    setBusy(button, true);
+    try {
+      await api(`/api/waiter/calls/${encodeURIComponent(callId)}`, {
+        method: 'PATCH', body: JSON.stringify({ status: 'done' }),
+      });
+    } catch (error) {
+      if (!error.outcomeUnknown) {
+        showToast(error.message, 'error');
+        return false;
+      }
+      state.waiterCallNeedsRefresh.add(key);
+      showToast('پاسخ رسیدگی نامشخص است؛ تا تازه‌شدن وضعیت، این فراخوان دوباره ارسال نمی‌شود.', 'warning');
+      state.waiterCallMutations.delete(key);
+      const loaded = await refreshWaiterCallSnapshot();
+      if (!loaded && String(state.branchId ?? '') === String(requestedBranchId ?? '')
+        && (state.waiterBranchGeneration || 0) === requestedBranchGeneration) paintWaiterCallView();
+      if (loaded && String(state.branchId ?? '') === String(requestedBranchId ?? '')
+        && (state.waiterBranchGeneration || 0) === requestedBranchGeneration) {
+        const stillOpen = (state.data.calls || []).some((call) => String(call.id) === callId);
+        showToast(stillOpen ? 'فراخوان هنوز باز است؛ پس از بررسی می‌توانید دوباره رسیدگی کنید.' : 'رسیدگی به فراخوان در سرور تأیید شد.');
+      }
+      return false;
+    } finally {
+      state.waiterCallMutations.delete(key);
+      setBusy(button, false);
+    }
+
+    if (String(state.branchId ?? '') !== String(requestedBranchId ?? '')
+      || (state.waiterBranchGeneration || 0) !== requestedBranchGeneration) {
+      showToast('رسیدگی ثبت شد؛ شعبه هنگام پاسخ تغییر کرده است. فهرست شعبهٔ فعلی تازه شد.', 'warning');
+      return true;
+    }
+
+    state.data.calls = (state.data.calls || []).filter((call) => String(call.id) !== callId);
+    paintWaiterCallView();
+    showToast('رسیدگی به فراخوان ثبت شد.');
+    try {
+      const loaded = await fetchWaiter();
+      if (loaded && String(state.branchId ?? '') === String(requestedBranchId ?? '')
+        && (state.waiterBranchGeneration || 0) === requestedBranchGeneration) {
+        if (dialog.open) state.waiterRefreshPending = true;
+        else refreshWaiterViewAfterSync();
+      }
+    } catch (error) {
+      showToast(`رسیدگی ثبت شد، اما تازه‌سازی فهرست ناموفق بود؛ فهرست را دستی تازه کنید. ${error.message}`, 'warning');
+    }
+    return true;
   }
 
   function wireCalls(root = document) {
-    root.querySelectorAll('[data-resolve-call]').forEach((button) => button.addEventListener('click', () => {
-      const id = button.closest('[data-call-id]').dataset.callId;
-      action(button, async () => {
-        await api(`/api/waiter/calls/${id}`, { method: 'PATCH', body: JSON.stringify({ status: 'done' }) });
-        await fetchWaiter();
-        if (dialog.open) {
-          if (state.data.calls.length) {
-            openDialog('فراخوان‌های مهمان', `${num(state.data.calls.length)} درخواست`, callsHtml());
-            wireCalls(dialog);
-          } else {
-            dialog.close();
-          }
-        }
-        if (state.activeView === 'floor') waiterFloor();
-        else if (state.activeView === 'calls') waiterCalls();
-      }, 'رسیدگی ثبت شد.');
-    }));
+    root.querySelectorAll('[data-resolve-call]').forEach((button) => button.addEventListener('click', () => resolveWaiterCall(button)));
+    root.querySelectorAll('[data-refresh-call-status]').forEach((button) => button.addEventListener('click', () => refreshWaiterCallSnapshot(button)));
+    root.querySelectorAll('[data-refresh-waiter-calls]').forEach((button) => button.addEventListener('click', () => refreshWaiterCallSnapshot(button)));
   }
 
   function showTableDetail(tableId) {
     const table = (state.data.floor?.tables || []).find((item) => String(item.id) === String(tableId));
-    const orders = (state.data.orders || []).filter((item) => tableNoBelongsToTable(item.tableNo, tableId) && !['done', 'cancelled'].includes(item.status));
-    const tDigits = String(tableId || '').replace(/\D/g, '');
-    const tNum = tDigits ? Number(tDigits) : null;
-    const tLabel = String(table?.label || '').trim();
-    const tableCalls = (state.data.calls || []).filter((c) => {
-      if (c.status !== 'open' && c.status !== 'new') return false;
-      const cNo = String(c.tableNo || '').trim();
-      const cDigits = cNo.replace(/\D/g, '');
-      const cNum = cDigits ? Number(cDigits) : null;
-      return (tNum !== null && cNum === tNum) || (cDigits && cDigits === tDigits) || cNo === tLabel || cNo === `میز ${tDigits}` || cNo === `میز ${tNum}` || cNo === tDigits;
-    });
+    const tableCalls = waiterCallsForTable(table || { id: tableId, label: `میز ${tableId}` });
 
     if (!tableCalls.length) {
       openWaiterTerminal(tableId);
       return;
     }
 
+    const canResolveCalls = waiterHasCapability('service.manage');
+    const canCreateOrders = waiterHasCapability('orders.create');
+    const hasOpenOrder = (state.data.orders || []).some((order) => tableNoBelongsToTable(order.tableNo, tableId) && orderIsOpen(order));
     let callsSectionHtml = `
       <div class="table-calls-alert-box" style="margin-bottom:14px;padding:12px 14px;background:rgba(244,63,94,0.12);border:1.5px solid #f43f5e;border-radius:14px;">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
@@ -2751,17 +4370,24 @@
           </strong>
           <span style="font-size:11px;color:#fca5a5;background:rgba(244,63,94,0.2);padding:2px 8px;border-radius:10px;">نیازمند رسیدگی فوری</span>
         </div>
-        ${tableCalls.map((c) => `
-          <div class="call-row" data-call-id="${c.id}" style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 10px;background:rgba(0,0,0,0.3);border-radius:10px;margin-bottom:6px;">
+        ${tableCalls.map((c) => {
+          const callKey = waiterCallStateKey(c.id);
+          const needsRefresh = state.waiterCallNeedsRefresh.has(callKey);
+          const inFlight = state.waiterCallMutations.has(callKey);
+          return `
+          <div class="call-row call-row--table-detail" data-call-id="${c.id}" style="padding:8px 10px;background:rgba(0,0,0,0.3);border-radius:10px;margin-bottom:6px;">
             <div>
               <p style="margin:0;font-size:13px;font-weight:700;color:#fff;">${esc(c.note || 'درخواست حضور گارسون')}</p>
               <small style="color:#94a3b8;font-size:11px;">${time(c.createdAt)} (${num(ageMin(c.createdAt))} دقیقه قبل)</small>
+              ${!canResolveCalls ? '<small role="status">برای رسیدگی، مجوز لازم است.</small>' : ''}
             </div>
-            <button class="role-primary" data-resolve-call style="padding:6px 12px;font-size:12px;background:#10b981;border:none;white-space:nowrap;">
-              رسیدگی شد ✓
+            ${needsRefresh ? '<button type="button" class="role-secondary" data-refresh-call-status>بررسی وضعیت</button>' : ''}
+            <button type="button" class="role-primary" data-resolve-call aria-label="رسیدگی به فراخوان ${esc(c.tableNo || table?.label || tableId)}" title="${!canResolveCalls ? 'از مدیر شیفت دسترسی رسیدگی به فراخوان را درخواست کنید.' : ''}" ${!canResolveCalls || needsRefresh || inFlight ? 'disabled aria-disabled="true"' : ''} style="background:#10b981;border:none;">
+              ${!canResolveCalls ? 'نیازمند مجوز' : needsRefresh ? 'ابتدا وضعیت را بررسی کنید' : inFlight ? 'در حال ثبت…' : 'رسیدگی شد ✓'}
             </button>
           </div>
-        `).join('')}
+        `;
+        }).join('')}
       </div>
     `;
 
@@ -2770,19 +4396,477 @@
       table?.label || `میز ${tableId}`,
       `${callsSectionHtml}
        <div style="display:flex;gap:8px;margin-top:12px">
-         <button class="role-primary" id="table-open-terminal" style="flex:1">📱 ورود به سفارش‌گیری سر میز</button>
+         <button type="button" class="role-primary" id="table-open-terminal" ${!canCreateOrders && !hasOpenOrder ? 'disabled aria-disabled="true" title="برای ساخت سفارش از مدیر شیفت دسترسی بخواهید."' : ''} style="flex:1">${canCreateOrders ? '📱 سفارش‌گیری / مشاهدهٔ فاکتور' : hasOpenOrder ? 'مشاهدهٔ فاکتور میز' : 'ساخت سفارش در دسترس نیست'}</button>
        </div>`
     );
 
     wireCalls(dialog);
-    document.getElementById('table-open-terminal')?.addEventListener('click', () => {
+    document.getElementById('table-open-terminal')?.addEventListener('click', async (event) => {
+      if (!canCreateOrders && !hasOpenOrder) return;
+      const button = event.currentTarget;
+      setBusy(button, true);
       dialog.close();
-      openWaiterTerminal(tableId);
+      try { await openWaiterTerminal(tableId); }
+      finally { setBusy(button, false); }
     });
   }
 
-  function openWaiterCoversPicker(table, onSelect) {
+  function highestWaiterAssignedSeat(items = []) {
+    return (Array.isArray(items) ? items : []).reduce((highest, line) => {
+      const seat = Number(line?.seat);
+      return Number.isInteger(seat) && seat > highest ? seat : highest;
+    }, 0);
+  }
+
+  function validateWaiterCovers(covers, items = []) {
+    const count = Number(covers);
+    if (!Number.isInteger(count) || count < 1 || count > 99) return { ok: false, error: 'covers_invalid' };
+    if ((Array.isArray(items) ? items : []).some((line) => {
+      const seat = Number(line?.seat || 0);
+      return !Number.isInteger(seat) || seat < 0;
+    })) return { ok: false, error: 'seat_exceeds_covers' };
+    if (highestWaiterAssignedSeat(items) > count) return { ok: false, error: 'seat_exceeds_covers' };
+    return { ok: true, covers: count };
+  }
+
+  function waiterCanIncrementItemQuantity(qty) {
+    const count = Number(qty);
+    return Number.isSafeInteger(count) && count >= 1 && count < 99;
+  }
+
+  function waiterDraftLineMergeKey(line) {
+    if (!line || typeof line !== 'object' || Array.isArray(line)) return '';
+    const menuItemId = Number(line.menuItemId ?? line.id);
+    const seat = line.seat === undefined ? 0 : Number(line.seat);
+    if (!Number.isSafeInteger(menuItemId) || menuItemId < 1
+        || !Number.isSafeInteger(seat) || seat < 0 || seat > 99) return '';
+
+    const modifiers = line.modifiers === undefined ? [] : line.modifiers;
+    const complements = line.complements === undefined ? [] : line.complements;
+    if (!Array.isArray(modifiers) || !Array.isArray(complements)) return '';
+    const modifierIdentities = [];
+    const seenModifiers = new Set();
+    for (const modifier of modifiers) {
+      if (!modifier || typeof modifier !== 'object' || Array.isArray(modifier)) return '';
+      const groupId = String(modifier.groupId ?? '').trim();
+      const optionId = String(modifier.id ?? modifier.optionId ?? '').trim();
+      if (!groupId || !optionId) return '';
+      const identity = `${groupId}\u0000${optionId}`;
+      if (seenModifiers.has(identity)) return '';
+      seenModifiers.add(identity);
+      modifierIdentities.push(identity);
+    }
+    modifierIdentities.sort((left, right) => left.localeCompare(right));
+
+    const complementQuantities = new Map();
+    for (const complement of complements) {
+      if (!complement || typeof complement !== 'object' || Array.isArray(complement)) return '';
+      const id = Number(complement.complementId ?? complement.id);
+      const qty = Number(complement.qty);
+      if (!Number.isSafeInteger(id) || id < 1 || !Number.isSafeInteger(qty) || qty < 1 || qty > 20) return '';
+      const totalQty = (complementQuantities.get(id) || 0) + qty;
+      if (totalQty > 20) return '';
+      complementQuantities.set(id, totalQty);
+    }
+    const complementIdentities = [...complementQuantities.entries()]
+      .sort(([left], [right]) => left - right);
+
+    const course = String(line.course || 'starters').trim().toLowerCase();
+    const courseStatus = String(line.courseStatus || 'fired').trim().toLowerCase();
+    if (!['straight_fire', 'starters', 'entrees', 'dessert'].includes(course)
+        || !['fired', 'hold', 'served'].includes(courseStatus)) return '';
+
+    return JSON.stringify({
+      menuItemId,
+      seat,
+      modifiers: modifierIdentities,
+      complements: complementIdentities,
+      course,
+      courseStatus,
+      note: String(line.note || '').trim(),
+    });
+  }
+
+  function mergeWaiterDraftLine(lines, incoming) {
+    if (!Array.isArray(lines)) return { ok: false, error: 'lines_invalid' };
+    const incomingKey = waiterDraftLineMergeKey(incoming);
+    if (!incomingKey) return { ok: false, error: 'line_identity_invalid' };
+    const existing = lines.find((line) => waiterDraftLineMergeKey(line) === incomingKey);
+    if (!existing) {
+      lines.push(incoming);
+      return { ok: true, merged: false, line: incoming };
+    }
+
+    const currentQty = Number(existing.qty);
+    const addedQty = Number(incoming.qty);
+    if (!Number.isSafeInteger(currentQty) || currentQty < 1 || currentQty > 99
+        || !Number.isSafeInteger(addedQty) || addedQty < 1 || addedQty > 99) {
+      return { ok: false, error: 'quantity_invalid', line: existing };
+    }
+    if (currentQty + addedQty > 99) return { ok: false, error: 'quantity_limit', line: existing };
+
+    existing.qty = currentQty + addedQty;
+    delete existing.lineTotal;
+    existing.localSaved = false;
+    return { ok: true, merged: true, line: existing };
+  }
+
+  function waiterTerminalHasUnsentWork(wt) {
+    return Boolean(wt && (wt.dirty
+      || wt.lines?.some((line) => !line.localSaved)
+      || wt.pendingPayment
+      || wt.paymentNeedsRefresh
+      || wt.paymentIntentConflict
+      || wt.pendingOrderSubmission
+      || wt.pendingSplit
+      || wt.splitNeedsRefresh
+      || wt.orderSaveNeedsRefresh
+      || wt.orderSubmissionConflict));
+  }
+
+  function waiterTerminalMutationLocked(wt) {
+    return Boolean(wt?.orderSaveNeedsRefresh || wt?.orderSubmissionConflict || wt?.saving
+      || wt?.pendingSplit || wt?.splitNeedsRefresh || wt?.splitSaving
+      || wt?.pendingPayment || wt?.paymentNeedsRefresh || wt?.paymentIntentConflict);
+  }
+
+  function waiterPendingPaymentCanRecover(pending, order, branchId) {
+    const intent = pending?.intent;
+    const paymentAmount = Number(intent?.paymentAmount);
+    const amountTendered = Number(intent?.amountTendered);
+    const baselinePaid = Number(pending?.baselinePaid);
+    const tender = String(intent?.tender || '');
+    const paymentReference = typeof intent?.paymentReference === 'string' ? intent.paymentReference.trim() : '';
+    return Boolean(order?.id
+      && Number(intent?.orderId) === Number(order.id)
+      && String(intent?.branchId ?? branchId) === String(branchId)
+      && ['cash', 'manual_card'].includes(tender)
+      && Number.isSafeInteger(paymentAmount) && paymentAmount > 0
+      && Number.isSafeInteger(amountTendered)
+      && (tender === 'cash' ? amountTendered >= paymentAmount : amountTendered === paymentAmount)
+      && Number.isSafeInteger(baselinePaid) && baselinePaid >= 0
+      && Number.isSafeInteger(Number(order?.total)) && baselinePaid <= Number(order.total)
+      && paymentAmount <= Number(order.total) - baselinePaid
+      && typeof pending?.idempotencyKey === 'string'
+      && pending.idempotencyKey.length >= 8
+      && pending.idempotencyKey.length <= 160
+      && paymentReference.length <= 120
+      && (tender !== 'manual_card' || paymentReference.length > 0));
+  }
+
+  function waiterPaymentAmount(value, outstanding) {
+    const due = cashierIntegerAmount(outstanding);
+    if (due === null || due <= 0) return null;
+    const normalized = normalizeDigits(String(value ?? '').trim());
+    if (!normalized || !/^(?:\d+|\d{1,3}(?:[,٬]\d{3})+)$/.test(normalized)) return null;
+    const amount = Number(normalized.replace(/[,٬]/g, ''));
+    return Number.isSafeInteger(amount) && amount > 0 && amount <= due ? amount : null;
+  }
+
+  function waiterPaymentActionState(wt, capabilities, branchId, paymentState = globalThis.WestoOrderPaymentState) {
+    const allowedCapabilities = Array.isArray(capabilities) ? capabilities : [];
+    if (!allowedCapabilities.includes('*') && !allowedCapabilities.includes('payments.collect')) {
+      return { ready: false, reason: 'permission' };
+    }
+    if (!wt?.order?.id) return { ready: false, reason: 'order' };
+
+    const orderStatus = String(wt.order.status || '');
+    const orderSent = !['draft', 'pay_at_cashier', 'awaiting_confirmation', 'pending_online', 'cancelled'].includes(orderStatus);
+    const serviceComplete = ['done', 'completed', 'picked_up', 'delivered'].includes(orderStatus);
+    if (!orderSent || !serviceComplete) return { ready: false, reason: 'service' };
+    if (wt.paymentNeedsRefresh || wt.paymentPending) return { ready: false, reason: 'refresh' };
+    if (wt.paymentIntentConflict) return { ready: false, reason: 'reconciliation' };
+    if (wt.orderSaveNeedsRefresh || wt.orderSubmissionConflict || wt.saving
+        || wt.pendingSplit || wt.splitNeedsRefresh || wt.splitSaving) {
+      return { ready: false, reason: 'refresh' };
+    }
+
+    const workflow = paymentState?.deriveOrderPaymentWorkflow(wt.order);
+    if (workflow?.settled) return { ready: false, reason: 'settled' };
+    if (workflow?.requiresReconciliation || workflow?.isConsistent !== true) {
+      return { ready: false, reason: 'reconciliation' };
+    }
+    if (wt.pendingPayment && !waiterPendingPaymentCanRecover(wt.pendingPayment, wt.order, branchId)) {
+      return { ready: false, reason: 'reconciliation' };
+    }
+    const settlementStage = workflow.stages?.find((stage) => stage.id === 'settlement');
+    const amountDue = Number(workflow.amounts?.due);
+    if (settlementStage?.state !== 'current' || !Number.isFinite(amountDue) || amountDue <= 0) {
+      return { ready: false, reason: 'balance' };
+    }
+    return { ready: true, reason: 'ready' };
+  }
+
+  function waiterDraftHasRecordedPayment(draft, orders = []) {
+    const orderId = Number(draft?.orderId);
+    const key = String(draft?.pendingPayment?.idempotencyKey || '');
+    if (!orderId || !key) return false;
+    const order = (Array.isArray(orders) ? orders : []).find((entry) => Number(entry?.id) === orderId);
+    return Boolean(order && Array.isArray(order.partialPayments)
+      && order.partialPayments.some((payment) => String(payment?.idempotencyKey || '') === key));
+  }
+
+  function waiterOrderSubmissionCanRecover(pending, tableId, branchId) {
+    const payload = pending?.payload;
+    const covers = Number(payload?.covers);
+    return Boolean(typeof pending?.idempotencyKey === 'string'
+      && pending.idempotencyKey.length >= 8 && pending.idempotencyKey.length <= 160
+      && Number(payload?.branchId) === Number(branchId)
+      && String(payload?.tableNo || '') === String(tableId)
+      && payload?.fulfillment === 'dine_in'
+      && payload?.sendToKitchen === true
+      && Number.isSafeInteger(covers) && covers >= 1 && covers <= 99
+      && Array.isArray(payload.items) && payload.items.length > 0
+      && payload.items.every((line) => Number.isSafeInteger(Number(line?.menuItemId)) && Number(line.menuItemId) > 0
+        && Number.isSafeInteger(Number(line?.qty)) && Number(line.qty) > 0
+        && Number.isSafeInteger(Number(line?.seat ?? 0)) && Number(line?.seat ?? 0) >= 0 && Number(line?.seat ?? 0) <= covers));
+  }
+
+  function splitWaiterCourseLines(lines, course) {
+    const heldLines = (Array.isArray(lines) ? lines : []).filter((line) =>
+      (line.course || 'starters') === course && line.courseStatus === 'hold');
+    return {
+      heldLines,
+      savedLines: heldLines.filter((line) => Boolean(line.localSaved)),
+      unsavedLines: heldLines.filter((line) => !line.localSaved),
+    };
+  }
+
+  function waiterOrderDraftSignature(order) {
+    if (!order?.id) return '';
+    return JSON.stringify({
+      id: Number(order.id),
+      editRevision: Number(order.editRevision) || 0,
+      editedAt: String(order.editedAt || ''),
+      updatedAt: String(order.updatedAt || order.updated_at || ''),
+      status: String(order.status || ''),
+      paymentStatus: String(order.paymentStatus || ''),
+      amountPaid: Number(order.amountPaid) || 0,
+      covers: Number(order.covers) || 0,
+      total: Number(order.total) || 0,
+      name: String(order.name || ''),
+      phone: String(order.phone || ''),
+      note: String(order.note || ''),
+      items: (Array.isArray(order.items) ? order.items : []).map((line) => ({
+        menuItemId: Number(line.menuItemId) || 0,
+        qty: Number(line.qty) || 0,
+        seat: Number(line.seat) || 0,
+        course: String(line.course || ''),
+        courseStatus: String(line.courseStatus || ''),
+        firedAt: String(line.firedAt || ''),
+        note: String(line.note || ''),
+        modifiers: (Array.isArray(line.modifiers) ? line.modifiers : []).map((modifier) => ({
+          id: Number(modifier.id) || 0,
+          groupId: String(modifier.groupId || ''),
+          name: String(modifier.name || ''),
+          price: Number(modifier.price) || 0,
+        })),
+      })),
+    });
+  }
+
+  function waiterDraftStorageKey(tableId) {
+    if (!state.branchId || tableId === undefined || tableId === null) return '';
+    return `westo_waiter_draft_v1:${state.branchId}:${encodeURIComponent(String(tableId))}`;
+  }
+
+  function persistWaiterTerminalDraft(wt) {
+    const key = waiterDraftStorageKey(wt?.table?.id);
+    if (!key) return false;
+    try {
+      const storage = window.sessionStorage;
+      if (!storage) return false;
+      if (!waiterTerminalHasUnsentWork(wt)) {
+        storage.removeItem(key);
+        return true;
+      }
+      const payload = {
+        version: 1,
+        branchId: state.branchId,
+        tableId: String(wt.table.id),
+        orderId: wt.order?.id ? Number(wt.order.id) : null,
+        baseOrderSignature: waiterOrderDraftSignature(wt.order),
+        savedAt: Date.now(),
+        covers: Number(wt.covers),
+        seatsCount: Number(wt.seatsCount),
+        checkNo: String(wt.checkNo || ''),
+        idempotencyKey: String(wt.idempotencyKey || ''),
+        pendingPayment: wt.pendingPayment ? {
+          intent: {
+            orderId: Number(wt.pendingPayment.intent?.orderId),
+            branchId: wt.pendingPayment.intent?.branchId ?? state.branchId,
+            tender: String(wt.pendingPayment.intent?.tender || ''),
+            paymentAmount: Number(wt.pendingPayment.intent?.paymentAmount),
+            amountTendered: Number(wt.pendingPayment.intent?.amountTendered),
+            paymentReference: String(wt.pendingPayment.intent?.paymentReference || ''),
+          },
+          idempotencyKey: String(wt.pendingPayment.idempotencyKey || ''),
+          baselinePaid: Number(wt.pendingPayment.baselinePaid),
+        } : null,
+        paymentIntentConflict: Boolean(wt.paymentIntentConflict),
+        pendingOrderSubmission: wt.pendingOrderSubmission ? JSON.parse(JSON.stringify(wt.pendingOrderSubmission)) : null,
+        pendingSplit: wt.pendingSplit ? JSON.parse(JSON.stringify(wt.pendingSplit)) : null,
+        splitNeedsRefresh: Boolean(wt.splitNeedsRefresh),
+        orderSaveNeedsRefresh: Boolean(wt.orderSaveNeedsRefresh),
+        orderSubmissionConflict: Boolean(wt.orderSubmissionConflict),
+        dirty: Boolean(wt.dirty),
+        activeTab: wt.activeTab === 'guest' ? 'guest' : 'check',
+        guestName: String(wt.guestName || ''),
+        guestPhone: String(wt.guestPhone || ''),
+        note: String(wt.note || ''),
+        lines: (wt.lines || []).map((line) => ({
+          ...line,
+          modifiers: Array.isArray(line.modifiers) ? line.modifiers : [],
+          complements: Array.isArray(line.complements) ? line.complements : [],
+        })),
+      };
+      storage.setItem(key, JSON.stringify(payload));
+      return true;
+    } catch {
+      // Callers that are about to mutate the server must treat a failed save as a hard stop.
+      return false;
+    }
+  }
+
+  function clearWaiterTerminalDraft(tableId) {
+    const key = waiterDraftStorageKey(tableId);
+    if (!key) return;
+    try { window.sessionStorage?.removeItem(key); } catch { /* best-effort cleanup */ }
+  }
+
+  function readWaiterTerminalDraft(tableId) {
+    const key = waiterDraftStorageKey(tableId);
+    if (!key) return null;
+    try { return JSON.parse(window.sessionStorage?.getItem(key) || 'null'); }
+    catch { clearWaiterTerminalDraft(tableId); return null; }
+  }
+
+  function waiterDraftCanRecover(draft, context) {
+    if (!draft || draft.version !== 1
+      || String(draft.branchId) !== String(context.branchId)
+      || String(draft.tableId) !== String(context.tableId)
+      || !Array.isArray(draft.lines)) return false;
+    if (!draft.orderId) return true;
+    const currentOrder = context.order;
+    const savedSignature = String(draft.baseOrderSignature || '');
+    return Boolean(currentOrder?.id
+      && Number(currentOrder.id) === Number(draft.orderId)
+      && savedSignature
+      && waiterOrderDraftSignature(currentOrder) === savedSignature);
+  }
+
+  function offerWaiterDraftRecovery(table, existingOrder) {
+    const draft = readWaiterTerminalDraft(table.id);
+    if (!draft) return false;
+
+    const structurallyValid = draft.version === 1
+      && Array.isArray(draft.lines)
+      && Number.isInteger(Number(draft.covers))
+      && Number(draft.covers) >= 1
+      && Number(draft.covers) <= 99
+      && draft.lines.every((line) => line && typeof line === 'object'
+        && Number.isFinite(Number(line.menuItemId))
+        && Number(line.menuItemId) > 0
+        && Number.isInteger(Number(line.seat || 0))
+        && Number(line.seat || 0) >= 0);
+    const pendingPaymentValid = !draft.pendingPayment
+      || waiterPendingPaymentCanRecover(draft.pendingPayment, existingOrder, state.branchId);
+    const legacyUnverifiedOrderSubmission = Boolean(!draft.orderId && draft.idempotencyKey && !draft.pendingOrderSubmission);
+    const hasProtectedOrderSubmission = Boolean(draft.pendingOrderSubmission || draft.pendingSplit || draft.splitNeedsRefresh || draft.orderSaveNeedsRefresh || draft.orderSubmissionConflict || legacyUnverifiedOrderSubmission);
+    const pendingOrderSubmissionValid = !draft.pendingOrderSubmission
+      || waiterOrderSubmissionCanRecover(draft.pendingOrderSubmission, table.id, state.branchId);
+    const canRecover = structurallyValid && waiterDraftCanRecover(draft, {
+      branchId: state.branchId,
+      tableId: table.id,
+      order: existingOrder,
+      }) && validateWaiterCovers(draft.covers, draft.lines).ok && pendingPaymentValid && pendingOrderSubmissionValid && !draft.pendingSplit && !draft.splitNeedsRefresh && !legacyUnverifiedOrderSubmission;
+    const savedTime = Number(draft.savedAt);
+    const timeLabel = Number.isFinite(savedTime)
+      ? new Date(savedTime).toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' })
+      : '—';
+    const missingCardReference = draft.pendingPayment?.intent?.tender === 'manual_card'
+      && !String(draft.pendingPayment.intent.paymentReference || '').trim();
+    const description = canRecover
+      ? `یک پیش‌نویس از ${timeLabel} با ${num(draft.lines.length)} قلم و ${num(draft.covers)} مهمان در همین نشست مرورگر پیدا شد.${draft.orderId ? ' تغییرات سفارش با نسخهٔ فعلی سرور تطبیق دارد.' : ' این پیش‌نویس به‌صورت فاکتور جدید بازیابی می‌شود.'}${draft.pendingPayment ? ' یک دریافت در انتظار بررسی است؛ پیش از هر تلاش دوباره، وضعیت وجه تازه می‌شود و همان کلید یکتا حفظ خواهد شد.' : ''}${draft.pendingOrderSubmission ? ' ثبت سفارش پاسخ نهایی نداده است؛ فقط همان payload و کلید یکتا برای بازیابی استفاده می‌شود.' : ''}`
+      : draft.pendingPayment
+        ? missingCardReference
+          ? 'درخواست قدیمی کارت بانکی کد پیگیری رسید ندارد؛ با این اطلاعات تکرار امن همان درخواست ممکن نیست. دریافت تازه یا درخواست جدید نسازید، پیش‌نویس را حذف نکنید و فاکتور را برای تطبیق به صندوق‌دار بسپارید.'
+          : 'درخواست دریافت قبلی با وضعیت فعلی سفارش تطبیق ندارد. برای جلوگیری از ثبت یا دریافت دوباره، این درخواست را حذف نکنید و فاکتور را برای تطبیق به صندوق‌دار بسپارید.'
+      : draft.pendingSplit || draft.splitNeedsRefresh
+        ? 'تفکیک فاکتور پاسخ نهایی نداده است. تفکیک را دوباره اجرا نکنید؛ فاکتور اصلی و فاکتورهای جداشده را با مدیر شیفت تطبیق دهید.'
+      : hasProtectedOrderSubmission
+          ? 'درخواست ثبت سفارش با اطلاعات فعلی قابل بازیابی نیست. آن را حذف یا دوباره ارسال نکنید؛ ابتدا سفارش‌های همین میز را با مدیر شیفت تطبیق دهید.'
+        : 'پیش‌نویس ذخیره‌شده با سفارش یا تعداد صندلی‌های فعلی هماهنگ نیست؛ برای جلوگیری از بازنویسی اطلاعات تازه، بازیابی آن انجام نمی‌شود.';
+    openDialog('پیش‌نویس سفارش', canRecover ? 'ادامهٔ سفارش نیمه‌تمام؟' : 'پیش‌نویس قدیمی است', `
+      <div class="wt-draft-recovery">
+        <p role="${canRecover ? 'status' : 'alert'}">${esc(description)}</p>
+        <div class="wt-draft-recovery__actions">
+          ${canRecover ? '<button type="button" class="role-primary" id="wt-draft-resume">بازیابی پیش‌نویس</button>' : ''}
+          ${draft.pendingPayment || hasProtectedOrderSubmission
+          ? `<button type="button" class="role-secondary" id="wt-draft-close-protected">${draft.pendingPayment ? 'بستن و ارجاع فاکتور به صندوق' : draft.pendingSplit || draft.splitNeedsRefresh ? 'بستن و ارجاع تفکیک به مدیر شیفت' : 'بستن و ارجاع سفارش به مدیر شیفت'}</button>`
+            : `<button type="button" class="role-danger" id="wt-draft-discard">${canRecover ? 'حذف پیش‌نویس و ادامه' : 'حذف پیش‌نویس قدیمی و ادامه'}</button>`}
+        </div>
+      </div>
+    `);
+    dialogBody.querySelector('#wt-draft-resume')?.addEventListener('click', () => {
+      const wt = state.waiterTerminal;
+      if (!wt) return;
+      wt.order = draft.orderId ? wt.order : null;
+      wt.lines = draft.lines.map((line, index) => ({
+        ...line,
+        localId: String(line.localId || `recovered-${draft.orderId || 'new'}-${index}`),
+        localSaved: Boolean(line.localSaved && draft.orderId),
+      }));
+      const covers = validateWaiterCovers(draft.covers, wt.lines);
+      if (!covers.ok) {
+        showToast('پیش‌نویس با تعداد صندلی‌های سفارش هماهنگ نیست.', 'error');
+        return;
+      }
+      wt.covers = covers.covers;
+      wt.seatsCount = Math.max(covers.covers, highestWaiterAssignedSeat(wt.lines), 1);
+      wt.checkNo = draft.orderId ? (wt.order?.checkNo || draft.checkNo || wt.checkNo) : (draft.checkNo || wt.checkNo);
+      wt.idempotencyKey = String(draft.idempotencyKey || '') || null;
+      wt.pendingPayment = draft.pendingPayment
+        ? JSON.parse(JSON.stringify(draft.pendingPayment))
+        : null;
+      wt.paymentNeedsRefresh = Boolean(wt.pendingPayment);
+      wt.paymentIntentConflict = Boolean(draft.paymentIntentConflict);
+      wt.pendingOrderSubmission = draft.pendingOrderSubmission
+        ? JSON.parse(JSON.stringify(draft.pendingOrderSubmission))
+        : null;
+      wt.orderSaveNeedsRefresh = Boolean(draft.orderSaveNeedsRefresh || wt.pendingOrderSubmission);
+      wt.orderSubmissionConflict = Boolean(draft.orderSubmissionConflict || (draft.orderSaveNeedsRefresh && !draft.pendingOrderSubmission));
+      wt.dirty = Boolean(draft.dirty || wt.lines.some((line) => !line.localSaved));
+      wt.guestName = String(draft.guestName || '');
+      wt.guestPhone = String(draft.guestPhone || '');
+      wt.note = String(draft.note || '');
+      wt.activeTab = draft.activeTab === 'guest' ? 'guest' : 'check';
+      dialog.close();
+      renderWaiterTerminal();
+      showToast('پیش‌نویس این نشست بازیابی شد.');
+    });
+    dialogBody.querySelector('#wt-draft-discard')?.addEventListener('click', () => {
+      clearWaiterTerminalDraft(table.id);
+      dialog.close();
+      renderWaiterTerminal();
+      showToast(canRecover ? 'پیش‌نویس حذف شد.' : 'پیش‌نویس قدیمی حذف شد.');
+    });
+    dialogBody.querySelector('#wt-draft-close-protected')?.addEventListener('click', () => {
+      dialog.close();
+      showToast(wt.pendingPayment
+        ? 'درخواست دریافت حفظ شد؛ فاکتور برای تطبیق به صندوق‌دار ارجاع شود.'
+        : wt.pendingSplit || wt.splitNeedsRefresh
+          ? 'وضعیت تفکیک حفظ شد؛ فاکتورهای میز را با مدیر شیفت تطبیق دهید.'
+          : 'درخواست ثبت سفارش حفظ شد؛ سفارش‌های میز را با مدیر شیفت تطبیق دهید.', 'warning');
+    });
+    return true;
+  }
+
+  function openWaiterCoversPicker(table, onSelect, minimumCovers = 1, selectedCovers = 2) {
     const tableSeats = Number(table?.seats) || 4;
+    const minimum = Math.max(1, Math.min(99, Number(minimumCovers) || 1));
+    const maximum = Math.min(99, Math.max(minimum, tableSeats, Number(selectedCovers) || 1));
+    const selected = Math.max(minimum, Math.min(maximum, Number(selectedCovers) || 2));
     openDialog(
       'تعداد مهمان',
       table?.label || `میز ${table?.id}`,
@@ -2790,15 +4874,12 @@
       <div class="wt-covers-modal">
         <p style="margin:0 0 8px;font-size:13px;color:var(--rp-muted)">تعداد مهمانان حاضر بر سر میز را مشخص کنید:</p>
         <div class="wt-covers-grid">
-          ${Array.from({ length: Math.min(20, Math.max(1, tableSeats)) }, (_, index) => index + 1).map((n) => `
-            <button type="button" class="wt-cover-btn ${n === Math.min(tableSeats, 2) ? 'active' : ''}" data-covers="${n}">
+          ${Array.from({ length: maximum - minimum + 1 }, (_, index) => index + minimum).map((n) => `
+            <button type="button" class="wt-cover-btn ${n === selected ? 'active' : ''}" data-covers="${n}" aria-pressed="${n === selected ? 'true' : 'false'}">
               ${num(n)}
             </button>
           `).join('')}
         </div>
-        <button type="button" class="btn btn-ghost" id="covers-skip-btn" style="margin-top:10px;font-size:13px;padding:8px">
-          بدون تعداد (ادامه)
-        </button>
       </div>
       `
     );
@@ -2809,17 +4890,43 @@
       if (typeof onSelect === 'function') onSelect(covers);
     }));
 
-    dialogBody.querySelector('#covers-skip-btn')?.addEventListener('click', () => {
-      dialog.close();
-      if (typeof onSelect === 'function') onSelect(0);
-    });
   }
 
   async function openWaiterTerminal(tableId, options = {}) {
-    try { await loadMenu(); } catch (e) { showToast(e.message, 'error'); }
+    const openingBranchId = state.branchId;
+    const openingBranchGeneration = state.waiterBranchGeneration || 0;
+    const openingKey = [openingBranchId ?? '', tableId, options.selectedOrderId ?? '', options.forceNew ? 'new' : 'existing', options.covers ?? ''].join(':');
+    if (state.waiterTerminalOpenings.has(openingKey)) {
+      showToast('ترمینال این میز در حال آماده‌سازی است؛ چند لحظه صبر کنید.', 'warning');
+      return;
+    }
+    state.waiterTerminalOpenings.add(openingKey);
+    try { await loadMenu(); } catch (e) {
+      openDialog('منو بارگذاری نشد', 'تا دریافت منوی معتبر، سفارش‌گیری موقتاً متوقف است.', `
+        <p class="wt-stage-message is-warning" role="alert">${esc(e.message || 'اتصال به منوی این شعبه برقرار نشد.')}</p>
+        <button type="button" class="role-primary" id="wt-menu-retry" style="width:100%;min-height:48px">تلاش دوباره</button>
+      `);
+      dialogBody.querySelector('#wt-menu-retry')?.addEventListener('click', async (event) => {
+        setBusy(event.currentTarget, true);
+        try { await loadMenu(true); dialog.close(); await openWaiterTerminal(tableId, options); }
+        catch (retryError) { showToast(retryError.message, 'error'); setBusy(event.currentTarget, false); }
+      });
+      return;
+    } finally {
+      state.waiterTerminalOpenings.delete(openingKey);
+    }
+    if (String(state.branchId ?? '') !== String(openingBranchId ?? '')
+      || (state.waiterBranchGeneration || 0) !== openingBranchGeneration) {
+      showToast('شعبه هنگام بارگذاری تغییر کرد؛ میز را از سالنِ شعبهٔ فعال دوباره انتخاب کنید.', 'warning');
+      return;
+    }
     const tables = state.data.floor?.tables || [];
     const table = tables.find((t) => String(t.id) === String(tableId)) || { id: tableId, label: `میز ${tableId}` };
-    const activeOrders = (state.data.orders || []).filter((o) => tableNoBelongsToTable(o.tableNo, tableId) && !['done', 'cancelled'].includes(o.status));
+    const savedDraft = readWaiterTerminalDraft(table.id);
+    if (waiterDraftHasRecordedPayment(savedDraft, state.data.orders)) {
+      clearWaiterTerminalDraft(table.id);
+    }
+    const activeOrders = (state.data.orders || []).filter((o) => tableNoBelongsToTable(o.tableNo, tableId) && orderIsOpen(o));
 
     if (activeOrders.length > 1 && !options.selectedOrderId) {
       openDialog(
@@ -2837,7 +4944,7 @@
               <b style="color:#0284c7;font-size:14px">${money(o.total)}</b>
             </button>
           `).join('')}
-          <button type="button" class="role-secondary" id="create-sub-check" style="margin-top:6px">+ باز کردن فاکتور جدید برای این میز</button>
+          <button type="button" class="role-secondary" id="create-sub-check" ${waiterHasCapability('orders.create') ? '' : 'disabled aria-disabled="true" title="برای ساخت فاکتور جدید از مدیر شیفت مجوز بخواهید."'} style="margin-top:6px">${waiterHasCapability('orders.create') ? '+ باز کردن فاکتور جدید برای این میز' : 'ساخت فاکتور جدید نیازمند مجوز'}</button>
         </div>
         `
       );
@@ -2856,13 +4963,37 @@
       ? activeOrders.find((o) => Number(o.id) === Number(options.selectedOrderId))
       : (!options.forceNew && activeOrders.length === 1 ? activeOrders[0] : null);
 
-    if (!existingOrder && typeof options.covers === 'undefined' && !options.forceNew) {
-      openWaiterCoversPicker(table, (covers) => openWaiterTerminal(tableId, { covers, forceNew: true }));
+    if (options.selectedOrderId && !existingOrder) {
+      showToast('این فاکتور دیگر در سفارش‌های باز این میز نیست؛ برای جلوگیری از سفارش تکراری، فاکتور تازه باز نشد. سالن را به‌روزرسانی کنید.', 'warning');
       return;
     }
 
-    const numCovers = options.covers ?? existingOrder?.covers ?? 2;
-    const initialSeats = Math.max(numCovers || 1, 1);
+    if (!waiterHasCapability('orders.create') && !existingOrder) {
+      showToast('ساخت سفارش در دسترسی شما نیست؛ از مدیر شیفت دسترسی لازم را درخواست کنید.', 'error');
+      return false;
+    }
+
+    if (!existingOrder && typeof options.covers === 'undefined' && !options.forceNew) {
+      const draft = readWaiterTerminalDraft(table.id);
+      const canRestoreNewDraft = draft?.version === 1
+        && !draft.orderId
+        && String(draft.branchId) === String(state.branchId)
+        && String(draft.tableId) === String(table.id)
+        && Number.isInteger(Number(draft.covers))
+        && Number(draft.covers) >= 1
+        && Number(draft.covers) <= 99;
+      if (canRestoreNewDraft) {
+        options = { ...options, covers: Number(draft.covers), forceNew: true };
+      } else {
+        openWaiterCoversPicker(table, (covers) => openWaiterTerminal(tableId, { covers, forceNew: true }));
+        return;
+      }
+    }
+
+    const assignedSeatCount = highestWaiterAssignedSeat(existingOrder?.items || []);
+    const requestedCovers = Number(options.covers ?? existingOrder?.covers ?? 2);
+    const numCovers = Math.max(1, Math.ceil(Number.isFinite(requestedCovers) && requestedCovers > 0 ? requestedCovers : 2), assignedSeatCount);
+    const initialSeats = Math.max(numCovers, assignedSeatCount, 1);
 
     state.waiterTerminal = {
       table,
@@ -2878,6 +5009,17 @@
       })) : [],
       checkNo: existingOrder?.checkNo || existingOrder?.tableNo || String(table.id),
       idempotencyKey: null,
+      pendingPayment: null,
+      paymentNeedsRefresh: false,
+      paymentRefreshPending: false,
+      paymentIntentConflict: false,
+      pendingOrderSubmission: null,
+      pendingSplit: savedDraft?.pendingSplit ? JSON.parse(JSON.stringify(savedDraft.pendingSplit)) : null,
+      splitNeedsRefresh: Boolean(savedDraft?.splitNeedsRefresh || savedDraft?.pendingSplit),
+      splitSaving: false,
+      orderSaveNeedsRefresh: false,
+      orderSubmissionConflict: false,
+      serveNeedsRefresh: false,
       dirty: false,
       searchQuery: '',
       guestName: existingOrder?.name || '',
@@ -2885,6 +5027,7 @@
       note: existingOrder?.note || '',
     };
 
+    if (offerWaiterDraftRecovery(table, existingOrder)) return;
     renderWaiterTerminal();
   }
 
@@ -2897,6 +5040,8 @@
       waiterFloor();
       return;
     }
+    const waiterDraftPersisted = persistWaiterTerminalDraft(wt);
+    wt.draftStorageUnavailable = Boolean(waiterTerminalHasUnsentWork(wt) && !waiterDraftPersisted);
 
     const headerHtml = `
       <header class="wt-header">
@@ -2908,21 +5053,23 @@
           </div>
         </div>
       </header>
-      <nav class="wt-tabs">
-        <button type="button" class="wt-tab ${wt.activeTab === 'menu' ? 'active' : ''}" data-wt-tab="menu">
+      ${wt.draftStorageUnavailable ? '<p class="wt-stage-message is-warning" role="alert" aria-live="assertive">پیش‌نویس این سفارش در حافظهٔ نشست ذخیره نشد؛ تا ذخیرهٔ موفق، صفحه را نبندید یا بازخوانی نکنید.</p>' : ''}
+      ${waiterWorkflowMarkup(wt)}
+      <nav class="wt-tabs" aria-label="بخش‌های سفارش">
+        <button type="button" class="wt-tab ${wt.activeTab === 'menu' ? 'active' : ''}" data-wt-tab="menu" ${wt.activeTab === 'menu' ? 'aria-current="page"' : ''}>
           <span>📋</span>
           <span>منو</span>
         </button>
-        <button type="button" class="wt-tab ${wt.activeTab === 'check' ? 'active' : ''}" data-wt-tab="check">
+        <button type="button" class="wt-tab ${wt.activeTab === 'check' ? 'active' : ''}" data-wt-tab="check" ${wt.activeTab === 'check' ? 'aria-current="page"' : ''}>
           <span>🧾</span>
           <span>فاکتور</span>
           ${wt.lines.length ? `<span class="wt-tab-badge">${num(wt.lines.length)}</span>` : ''}
         </button>
-        <button type="button" class="wt-tab ${wt.activeTab === 'actions' ? 'active' : ''}" data-wt-tab="actions">
+        <button type="button" class="wt-tab ${wt.activeTab === 'actions' ? 'active' : ''}" data-wt-tab="actions" ${wt.activeTab === 'actions' ? 'aria-current="page"' : ''}>
           <span>⚙️</span>
           <span>عملیات</span>
         </button>
-        <button type="button" class="wt-tab ${wt.activeTab === 'guest' ? 'active' : ''}" data-wt-tab="guest">
+        <button type="button" class="wt-tab ${wt.activeTab === 'guest' ? 'active' : ''}" data-wt-tab="guest" ${wt.activeTab === 'guest' ? 'aria-current="page"' : ''}>
           <span>👤</span>
           <span>مهمان</span>
         </button>
@@ -2932,19 +5079,127 @@
     main.innerHTML = `
       <div class="waiter-terminal-screen">
         ${headerHtml}
-        <div class="wt-viewport" id="wt-viewport"></div>
+        <div class="wt-viewport" id="wt-viewport" aria-label="محتوای ${esc(({ menu: 'منو', check: 'فاکتور', actions: 'عملیات', guest: 'مهمان' })[wt.activeTab] || 'سفارش')}"></div>
       </div>
     `;
 
     document.getElementById('wt-back-floor')?.addEventListener('click', () => {
-      state.waiterTerminal = null;
-      waiterFloor();
+      if (wt.serveNeedsRefresh) {
+        showToast('نتیجهٔ تحویل هنوز روشن نیست؛ ابتدا وضعیت سفارش را از مرحله‌ها تازه کنید.', 'warning');
+        return;
+      }
+      if (!waiterTerminalHasUnsentWork(wt)) {
+        clearWaiterTerminalDraft(wt.table.id);
+        state.waiterTerminal = null;
+        waiterFloor();
+        return;
+      }
+      const hasPendingPayment = Boolean(wt.pendingPayment || wt.paymentNeedsRefresh || wt.paymentIntentConflict);
+      const hasPendingSplit = Boolean(wt.pendingSplit || wt.splitNeedsRefresh);
+      const hasPendingOrderSubmission = Boolean(wt.pendingOrderSubmission || wt.orderSaveNeedsRefresh || wt.orderSubmissionConflict || (!wt.order?.id && wt.idempotencyKey));
+      const hasProtectedIntent = hasPendingPayment || hasPendingSplit || hasPendingOrderSubmission;
+      openDialog('پیش‌نویس سفارش', hasPendingPayment ? 'دریافت وجه نیازمند بررسی است' : hasPendingSplit ? 'تفکیک فاکتور نیازمند بررسی است' : hasPendingOrderSubmission ? 'ثبت سفارش نیازمند بررسی است' : 'با سفارش نیمه‌تمام چه کنیم؟', `
+        <div class="wt-draft-recovery">
+          <p id="wt-draft-return-status" tabindex="-1" role="${hasProtectedIntent || wt.draftStorageUnavailable ? 'alert' : 'status'}">${hasPendingPayment
+            ? 'یک درخواست دریافت وجه هنوز با وضعیت سفارش تطبیق داده نشده است. درخواست را حفظ کنید و پیش از هر تکراری، آن را از همان فاکتور تازه‌سازی کنید یا به صندوق‌دار بسپارید.'
+            : hasPendingSplit
+              ? 'نتیجهٔ تفکیک فاکتور روشن نیست. درخواست را حفظ کنید؛ تا تطبیق فاکتورهای میز با مدیر شیفت، تفکیک یا ویرایش را تکرار نکنید.'
+            : hasPendingOrderSubmission
+              ? wt.pendingOrderSubmission
+                ? 'ثبت سفارش پاسخ نهایی نداده است. درخواست را حفظ کنید و فقط همان سفارش با همان کلید یکتا را بازیابی کنید؛ سفارش تازه نسازید.'
+                : 'نتیجهٔ ثبت یا به‌روزرسانی قابل تطبیق نیست. پیش از هر تغییر یا ارسال دوباره، سفارش میز را با مدیر شیفت بررسی کنید.'
+            : `${num(wt.lines.length)} قلم یا تغییر ثبت‌نشده دارید. می‌توانید آن را برای همین نشست نگه دارید و بعداً ادامه دهید، یا کامل حذف کنید.`}${wt.draftStorageUnavailable ? ' پیش‌نویس در حافظهٔ نشست ذخیره نشده است؛ بازگشت امن نیست.' : ''}</p>
+          <div class="wt-draft-recovery__actions">
+            <button type="button" class="role-primary" id="wt-draft-save-return">${hasPendingPayment ? 'حفظ درخواست دریافت و بازگشت به سالن' : hasPendingSplit ? 'حفظ وضعیت تفکیک و بازگشت به سالن' : hasPendingOrderSubmission ? 'حفظ وضعیت سفارش و بازگشت به سالن' : 'نگه‌داشتن و بازگشت به سالن'}</button>
+            ${hasProtectedIntent ? '' : '<button type="button" class="role-danger" id="wt-draft-discard-return">حذف پیش‌نویس و بازگشت</button>'}
+            <button type="button" class="role-secondary" id="wt-draft-stay">ادامهٔ سفارش</button>
+          </div>
+        </div>
+      `);
+      dialogBody.querySelector('#wt-draft-save-return')?.addEventListener('click', () => {
+        if (!persistWaiterTerminalDraft(wt)) {
+          wt.draftStorageUnavailable = true;
+          const status = dialogBody.querySelector('#wt-draft-return-status');
+          if (status) {
+            status.setAttribute('role', 'alert');
+            status.textContent = 'ذخیرهٔ پیش‌نویس در این نشست انجام نشد؛ سفارش باز می‌ماند. فضای مرورگر را بررسی کنید و تا ذخیرهٔ موفق از این صفحه خارج نشوید.';
+            status.focus();
+          }
+          showToast('پیش‌نویس ذخیره نشد؛ برای جلوگیری از گم‌شدن تغییرها، در صفحه بمانید.', 'error');
+          return;
+        }
+        wt.draftStorageUnavailable = false;
+        dialog.close();
+        state.waiterTerminal = null;
+        waiterFloor();
+        showToast('پیش‌نویس در همین نشست مرورگر نگه داشته شد.');
+      });
+      dialogBody.querySelector('#wt-draft-discard-return')?.addEventListener('click', () => {
+        clearWaiterTerminalDraft(wt.table.id);
+        dialog.close();
+        state.waiterTerminal = null;
+        waiterFloor();
+        showToast('پیش‌نویس حذف شد.');
+      });
+      dialogBody.querySelector('#wt-draft-stay')?.addEventListener('click', () => dialog.close());
     });
 
     main.querySelectorAll('[data-wt-tab]').forEach((btn) => btn.addEventListener('click', () => {
       wt.activeTab = btn.dataset.wtTab;
       renderWaiterTerminal();
     }));
+
+    main.querySelector('#wt-refresh-flow')?.addEventListener('click', async (event) => {
+      const button = event.currentTarget;
+      setBusy(button, true);
+      try {
+        await fetchWaiter();
+        refreshWaiterViewAfterSync();
+        if (state.waiterTerminal === wt) setBusy(button, false);
+      } catch (error) {
+        showToast(error.message, 'error');
+        setBusy(button, false);
+      }
+    });
+
+    main.querySelector('#wt-load-latest-order')?.addEventListener('click', () => {
+      if (wt.pendingSplit || wt.splitNeedsRefresh) {
+        showToast('بارگذاری نسخهٔ تازه، نتیجهٔ تفکیک را تطبیق نمی‌دهد؛ ابتدا فاکتورهای میز را با مدیر شیفت بررسی کنید.', 'warning');
+        return;
+      }
+      openDialog('جایگزینی پیش‌نویس محلی', 'بارگذاری نسخهٔ تازهٔ سفارش', `
+        <div class="wt-draft-recovery">
+          <p>این سفارش در دستگاه دیگری تغییر کرده است. با بارگذاری نسخهٔ تازه، همهٔ تغییرهای ثبت‌نشدهٔ این دستگاه جایگزین می‌شوند.</p>
+          <div class="wt-draft-recovery__actions">
+            <button type="button" class="role-primary" id="wt-confirm-load-latest">بارگذاری نسخهٔ تازه و جایگزینی پیش‌نویس</button>
+            <button type="button" class="role-secondary" id="wt-cancel-load-latest">ادامه با پیش‌نویس فعلی</button>
+          </div>
+        </div>
+      `);
+      dialogBody.querySelector('#wt-cancel-load-latest')?.addEventListener('click', () => dialog.close());
+      dialogBody.querySelector('#wt-confirm-load-latest')?.addEventListener('click', async (event) => {
+        const button = event.currentTarget;
+        setBusy(button, true);
+        try {
+          await fetchWaiter();
+          const latest = state.data.orders.find((order) => Number(order.id) === Number(wt.order?.id));
+          if (!latest) {
+            showToast('نسخهٔ تازهٔ سفارش پیدا نشد؛ پیش‌نویس فعلی حفظ شد.', 'error');
+            setBusy(button, false);
+            return;
+          }
+          applyLatestWaiterOrder(wt, latest);
+          wt.serveNeedsRefresh = false;
+          clearWaiterTerminalDraft(wt.table.id);
+          dialog.close();
+          renderWaiterTerminal();
+          showToast('نسخهٔ تازهٔ سفارش بارگذاری شد.');
+        } catch (error) {
+          showToast(error.message, 'error');
+          setBusy(button, false);
+        }
+      });
+    });
 
     const viewport = document.getElementById('wt-viewport');
     if (wt.activeTab === 'menu') paintTerminalMenu(viewport);
@@ -2955,7 +5210,9 @@
 
   function paintTerminalMenu(container) {
     const wt = state.waiterTerminal;
-    const compact = window.innerWidth <= 520;
+    const orderSubmissionLocked = waiterTerminalMutationLocked(wt);
+    const canCreateOrders = waiterHasCapability('orders.create');
+    const compact = window.innerWidth <= 640;
     const { categories, validCategoryIds, orphanItems } = resolveUnifiedCategories(state.menuCategories, state.menuItems);
     const query = String(wt.searchQuery || '').trim();
     const normalizedQuery = query.toLocaleLowerCase('fa-IR');
@@ -2967,7 +5224,7 @@
       if (isOther) return !validCategoryIds.has(Number(item.categoryId));
       return activeCategory && Number(item.categoryId) === Number(activeCategory.id);
     });
-    const itemColumns = compact ? 3 : 5;
+    const itemColumns = compact ? 1 : 5;
     const itemDensity = matchedItems.length > 22 ? 'tight' : matchedItems.length > 15 ? 'compact' : matchedItems.length > 8 ? 'medium' : 'relaxed';
 
     function menuVisualForName(value) {
@@ -3004,7 +5261,7 @@
     const categoriesHtml = !showingItems ? `
       <section class="wt-menu-category-section wt-menu-stage" aria-label="انتخاب دستهٔ غذا">
         <div class="wt-menu-stage-head">
-          <div><span>مرحلهٔ اول</span><strong>دستهٔ غذا را انتخاب کنید</strong><small>برای شروع سفارش، یکی از دسته‌ها را لمس کنید.</small></div>
+          <div><strong>دسته‌های غذا</strong></div>
           ${searchHtml}
         </div>
         <div class="wt-cat-grid">
@@ -3027,13 +5284,20 @@
         <div class="wt-items-list" data-item-density="${itemDensity}" style="--wt-item-cols:${itemColumns}">
           ${matchedItems.map((item) => {
             const outOfStock = isItemOutOfStock(item);
+            const actionLabel = orderSubmissionLocked
+              ? 'ابتدا ثبت سفارش قبلی را بازیابی کنید'
+              : !canCreateOrders
+                ? `برای افزودن ${item.name} به سفارش، مجوز ساخت سفارش لازم است`
+              : outOfStock
+                ? `${item.name} ناموجود است`
+                : `افزودن ${item.name} به فاکتور`;
             const stockBadge = outOfStock
               ? `<span class="wt-stock-badge is-out">ناموجود</span>`
               : (item.capacity !== null && item.capacity !== undefined && item.capacity < 15)
                 ? `<span class="wt-stock-badge is-low">${num(item.capacity)} عدد</span>`
                 : '';
             return `
-            <button type="button" class="wt-item-row wt-item-card ${outOfStock ? 'is-out-of-stock' : ''}" data-open-item="${item.id}" ${outOfStock ? 'data-out-of-stock="true"' : ''} aria-label="افزودن ${esc(item.name)} به فاکتور">
+            <button type="button" class="wt-item-row wt-item-card ${outOfStock ? 'is-out-of-stock' : ''}" data-open-item="${item.id}" ${outOfStock ? 'data-out-of-stock="true"' : ''} ${outOfStock || orderSubmissionLocked || !canCreateOrders ? 'disabled' : ''} aria-label="${esc(actionLabel)}" title="${!canCreateOrders ? 'از مدیر شیفت دسترسی ساخت سفارش را درخواست کنید.' : ''}">
               ${menuMediaMarkup(item.img || item.image || item.imageUrl, item.name, menuVisualForName(item.name || activeCategory?.title), 'wt-item-card__visual')}
               <span class="wt-item-row__info wt-item-card__info">
                 <strong>${esc(item.name)}</strong>
@@ -3048,7 +5312,22 @@
       </section>
     ` : '';
 
-    container.innerHTML = `<div class="wt-menu-screen">${categoriesHtml}${itemsHtml}</div>`;
+    const cartUnits = wt.lines.reduce((sum, line) => sum + Math.max(1, Number(line.qty) || 1), 0);
+    const cartTotal = wt.lines.reduce((sum, line) => sum + receiptLineTotal(line), 0);
+    const cartDock = wt.lines.length
+      ? `<button type="button" class="wt-menu-cart-dock" id="wt-menu-open-check" aria-label="مشاهدهٔ فاکتور، ${num(cartUnits)} قلم، جمع ${money(cartTotal)}">
+          <span class="wt-menu-cart-dock__count">فاکتور · ${num(cartUnits)} قلم</span>
+          <strong>${money(cartTotal)}</strong>
+          <span class="wt-menu-cart-dock__action">مشاهده ←</span>
+        </button>`
+      : '';
+    const permissionNotice = canCreateOrders ? '' : '<p class="wt-stage-message is-warning" role="status">منو فقط برای مشاهده است؛ افزودن یا ثبت سفارش نیازمند مجوز ساخت سفارش است. فاکتور باز را از بخش «فاکتور» ببینید یا به صندوق‌دار بسپارید.</p>';
+    container.innerHTML = `<div class="wt-menu-screen">${permissionNotice}${categoriesHtml}${itemsHtml}${cartDock}</div>`;
+
+    document.getElementById('wt-menu-open-check')?.addEventListener('click', () => {
+      wt.activeTab = 'check';
+      renderWaiterTerminal();
+    });
 
     container.querySelectorAll('.wt-menu-media img').forEach((image) => image.addEventListener('error', () => {
       image.hidden = true;
@@ -3078,6 +5357,7 @@
     });
 
     container.querySelectorAll('[data-open-item]').forEach((row) => row.addEventListener('click', () => {
+      if (orderSubmissionLocked) return;
       const id = Number(row.dataset.openItem);
       const item = state.menuItems.find((i) => Number(i.id) === id);
       if (!item) return;
@@ -3088,9 +5368,21 @@
 
   function openItemCustomization(item) {
     const wt = state.waiterTerminal;
-    let selectedSeat = 1;
+    if (waiterTerminalMutationLocked(wt)) {
+      showToast(wt?.pendingOrderSubmission
+        ? 'ابتدا ثبت سفارش قبلی را با همان کلید یکتا بازیابی کنید.'
+        : wt?.pendingSplit || wt?.splitNeedsRefresh
+          ? 'نتیجهٔ تفکیک قبلی نامشخص است؛ تا تطبیق با مدیر شیفت تغییری در سفارش ندهید.'
+          : 'ابتدا وضعیت سفارش را با مدیر شیفت تطبیق دهید.', 'warning');
+      return;
+    }
+    // Never silently assign every new item to guest 1. Seat attribution is an explicit choice.
+    let selectedSeat = 0;
     const itemName = String(item.name || '');
     const inferredCourse = item.course || (itemName.includes('سالاد') || itemName.includes('سوپ') || itemName.includes('پیش‌غذا') ? 'starters' : itemName.includes('دسر') || itemName.includes('قهوه') || itemName.includes('نوشیدنی') || itemName.includes('بار') ? 'dessert' : 'entrees');
+    let selectedCourse = inferredCourse;
+    let selectedCourseStatus = 'fired';
+    const canManageCourses = waiterHasCapability('orders.course.manage');
     let qty = 1;
     let note = '';
     const selectedMods = new Map();
@@ -3120,16 +5412,30 @@
             </div>
             ${modifierGroups.length ? modifierGroups.map((group) => `
               <div class="wt-preference-group" data-preference-group="${esc(group.id)}">
-                <div class="wt-preference-group__head"><strong>${esc(group.title)}</strong><small>${group.selection === 'single' ? 'یک انتخاب' : 'چند انتخاب'}${group.required ? ' · الزامی' : ''}</small></div>
+                <div class="wt-preference-group__head"><strong>${esc(group.title)}</strong><small>${modifierGroupMinimum(group) ? `حداقل ${num(modifierGroupMinimum(group))} انتخاب` : 'اختیاری'} · حداکثر ${num(modifierGroupMaximum(group))}</small></div>
                 <div class="wt-modifier-chips">
                   ${(group.options || []).filter((option) => option.available !== false).map((option) => `
-                    <button type="button" class="wt-seat-chip ${selectedMods.has(String(option.id)) ? 'active' : ''}" data-modifier-group="${esc(group.id)}" data-modifier-option="${esc(option.id)}" aria-pressed="${selectedMods.has(String(option.id)) ? 'true' : 'false'}">
+                    <button type="button" class="wt-seat-chip ${selectedMods.has(`${group.id}:${option.id}`) ? 'active' : ''}" data-modifier-group="${esc(group.id)}" data-modifier-option="${esc(option.id)}" aria-pressed="${selectedMods.has(`${group.id}:${option.id}`) ? 'true' : 'false'}">
                       <span>${esc(option.name)}</span>${Number(option.price || 0) > 0 ? `<small>+ ${money(option.price)}</small>` : ''}
                     </button>
                   `).join('')}
                 </div>
               </div>
             `).join('') : '<div class="wt-preferences-empty">برای این غذا ترجیحی تعریف نشده است.</div>'}
+          </div>
+
+          <div class="wt-drawer-section wt-course-picker">
+            <label for="drawer-course">مرحلهٔ سرو</label>
+            <select id="drawer-course" class="role-search" ${canManageCourses ? '' : 'disabled title="تغییر مرحلهٔ سرو به مجوز مدیر نیاز دارد."'}>
+              <option value="straight_fire" ${selectedCourse === 'straight_fire' ? 'selected' : ''}>پخت فوری</option>
+              <option value="starters" ${selectedCourse === 'starters' ? 'selected' : ''}>پیش‌غذا</option>
+              <option value="entrees" ${selectedCourse === 'entrees' ? 'selected' : ''}>غذای اصلی</option>
+              <option value="dessert" ${selectedCourse === 'dessert' ? 'selected' : ''}>دسر و بار</option>
+            </select>
+            <div class="wt-course-picker__timing" role="group" aria-label="زمان ارسال به آشپزخانه">
+              <button type="button" class="${selectedCourseStatus === 'fired' ? 'active' : ''}" data-course-status="fired" aria-pressed="${selectedCourseStatus === 'fired'}">ارسال همراه سفارش</button>
+              ${canManageCourses ? `<button type="button" class="${selectedCourseStatus === 'hold' ? 'active' : ''}" data-course-status="hold" aria-pressed="${selectedCourseStatus === 'hold'}">نگه‌داشتن برای نوبت بعد</button>` : '<small role="status">نگه‌داشتن مرحله برای بعد در دسترسی شما نیست.</small>'}
+            </div>
           </div>
 
           <div class="wt-drawer-section">
@@ -3139,9 +5445,9 @@
 
           <div style="display:flex;align-items:center;justify-content:space-between;margin-top:8px">
             <div style="display:flex;align-items:center;gap:8px">
-              <button type="button" class="btn btn-sm" id="drawer-dec-qty" style="width:36px;height:36px;font-size:18px">−</button>
-              <b style="font-size:16px;min-width:24px;text-align:center">${num(qty)}</b>
-              <button type="button" class="btn btn-sm" id="drawer-inc-qty" style="width:36px;height:36px;font-size:18px">+</button>
+              <button type="button" class="btn btn-sm" id="drawer-dec-qty" aria-label="کاهش تعداد" ${qty <= 1 ? 'disabled' : ''} style="width:36px;height:36px;font-size:18px">−</button>
+              <b aria-live="polite" style="font-size:16px;min-width:24px;text-align:center">${num(qty)}</b>
+              <button type="button" class="btn btn-sm" id="drawer-inc-qty" aria-label="افزایش تعداد" ${!waiterCanIncrementItemQuantity(qty) ? 'disabled' : ''} style="width:36px;height:36px;font-size:18px">+</button>
             </div>
             <button type="button" class="role-primary" id="drawer-add-to-check" style="flex:1;margin-right:12px;padding:12px">
               افزودن به فاکتور
@@ -3149,7 +5455,7 @@
           </div>
         </div>
         `,
-        { variant: 'waiter-item' }
+        { variant: 'waiter-item', reuse: true }
       );
 
       dialogBody.querySelectorAll('[data-seat]').forEach((btn) => btn.addEventListener('click', () => {
@@ -3158,24 +5464,35 @@
       }));
 
       dialogBody.querySelector('#drawer-add-seat')?.addEventListener('click', () => {
+        if (wt.seatsCount >= 24) return showToast('حداکثر ۲۴ صندلی برای هر میز قابل ثبت است.', 'warning');
         wt.seatsCount++;
+        wt.covers = Math.max(Number(wt.covers) || 1, wt.seatsCount);
         selectedSeat = wt.seatsCount;
         renderDrawer();
       });
+
+      dialogBody.querySelector('#drawer-course')?.addEventListener('change', (event) => {
+        selectedCourse = event.target.value;
+      });
+      dialogBody.querySelectorAll('[data-course-status]').forEach((button) => button.addEventListener('click', () => {
+        selectedCourseStatus = button.dataset.courseStatus;
+        renderDrawer();
+      }));
 
       dialogBody.querySelectorAll('[data-modifier-option]').forEach((btn) => btn.addEventListener('click', () => {
         const group = modifierGroups.find((entry) => String(entry.id) === String(btn.dataset.modifierGroup));
         const option = (group?.options || []).find((entry) => String(entry.id) === String(btn.dataset.modifierOption));
         if (!group || !option) return;
         const optionId = String(option.id);
-        if (selectedMods.has(optionId)) selectedMods.delete(optionId);
+        const selectionId = `${group.id}:${optionId}`;
+        if (selectedMods.has(selectionId)) selectedMods.delete(selectionId);
         else {
           if (group.selection === 'single') {
             for (const [selectedId, selected] of selectedMods) {
               if (String(selected.groupId || '') === String(group.id)) selectedMods.delete(selectedId);
             }
           }
-          selectedMods.set(optionId, { ...option, groupId: group.id, groupTitle: group.title });
+          selectedMods.set(selectionId, { ...option, groupId: group.id, groupTitle: group.title });
         }
         renderDrawer();
       }));
@@ -3183,18 +5500,25 @@
       dialogBody.querySelector('#drawer-item-note')?.addEventListener('input', (event) => { note = event.target.value; });
 
       dialogBody.querySelector('#drawer-dec-qty')?.addEventListener('click', () => {
-        if (qty > 1) { qty--; renderDrawer(); }
+        if (qty > 1) { qty = Math.max(1, qty - 1); renderDrawer(); }
       });
       dialogBody.querySelector('#drawer-inc-qty')?.addEventListener('click', () => {
+        if (!waiterCanIncrementItemQuantity(qty)) return showToast('حداکثر تعداد هر قلم ۹۹ است.', 'warning');
         qty++; renderDrawer();
       });
 
       dialogBody.querySelector('#drawer-add-to-check')?.addEventListener('click', () => {
         const lineNote = (document.getElementById('drawer-item-note')?.value || '').trim();
         const modifiers = Array.from(selectedMods.values()).map((option) => ({ ...option }));
-        const missingRequired = modifierGroups.find((group) => group.required && !modifiers.some((modifier) => String(modifier.groupId) === String(group.id)));
-        if (missingRequired) return showToast(`یک گزینه از «${missingRequired.title}» انتخاب کنید`, 'error');
-        wt.lines.push({
+        const selection = validateMenuModifierChoices(modifierGroups, modifiers);
+        if (!selection.ok) {
+          const missing = selection.missing[0];
+          if (missing) return showToast(`حداقل ${num(modifierGroupMinimum(missing))} گزینه از «${missing.title}» انتخاب کنید`, 'error');
+          const exceeded = selection.exceeded[0];
+          if (exceeded) return showToast(`حداکثر ${num(modifierGroupMaximum(exceeded))} گزینه از «${exceeded.title}» مجاز است`, 'error');
+          return showToast('انتخاب گزینه‌ها معتبر نیست؛ دوباره بررسی کنید.', 'error');
+        }
+        const addResult = mergeWaiterDraftLine(wt.lines, {
           localId: `line-${Date.now()}-${Math.random().toString(16).slice(2)}`,
           menuItemId: item.id,
           name: item.name,
@@ -3204,11 +5528,17 @@
           complements: [],
           note: lineNote,
           seat: selectedSeat,
-          course: inferredCourse,
-          courseStatus: 'fired',
-          firedAt: new Date().toISOString(),
+          course: selectedCourse,
+          courseStatus: selectedCourseStatus,
+          firedAt: selectedCourseStatus === 'fired' ? new Date().toISOString() : null,
           localSaved: false,
         });
+        if (!addResult.ok) {
+          return showToast(addResult.error === 'quantity_limit'
+            ? 'حداکثر تعداد یک ترکیب یکسان ۹۹ است؛ تعداد فاکتور را بازبینی کنید.'
+            : 'این قلم به دلیل اطلاعات نامعتبر به فاکتور افزوده نشد.', 'warning');
+        }
+        wt.dirty = true;
         dialog.close();
         showToast(`«${item.name}» به فاکتور افزوده شد.`);
         renderWaiterTerminal();
@@ -3220,23 +5550,71 @@
 
   function paintTerminalCheck(container) {
     const wt = state.waiterTerminal;
+    const orderSubmissionLocked = waiterTerminalMutationLocked(wt);
     const orderLocked = Boolean(wt.order?.id && !orderCanEdit(wt.order));
-    const canEdit = !orderLocked;
+    const canCreateOrders = waiterHasCapability('orders.create');
+    const canManageCourses = waiterHasCapability('orders.course.manage');
+    const canEdit = canCreateOrders && !orderLocked && !orderSubmissionLocked;
     const coursesMeta = [
       { id: 'straight_fire', name: '⚡ پخت فوری' },
       { id: 'starters', name: '🥗 پیش‌غذا' },
       { id: 'entrees', name: '🥩 غذای اصلی' },
       { id: 'dessert', name: '🍰 دسر و بار' },
     ];
+    const orderStatus = String(wt.order?.status || '');
+    const orderSent = Boolean(wt.order?.id) && !['draft', 'pay_at_cashier', 'awaiting_confirmation', 'pending_online'].includes(orderStatus);
 
     const coursesWithItems = coursesMeta.map((c) => {
       const items = wt.lines.filter((l) => (l.course || 'starters') === c.id);
+      const hasFired = items.some((l) => l.courseStatus === 'fired');
       const isFired = items.length > 0 && items.every((l) => l.courseStatus === 'fired');
       const hasHold = items.some((l) => l.courseStatus === 'hold');
-      return { ...c, items, isFired, hasHold };
+      const hasUnsentLines = items.some((line) => !line.localSaved);
+      const hasSavedLines = items.some((line) => line.localSaved);
+      return { ...c, items, isFired, hasFired, hasHold, hasUnsentLines, hasSavedLines };
     }).filter((c) => c.items.length > 0);
 
-    const total = wt.lines.reduce((sum, line) => sum + receiptLineTotal(line), 0);
+    const calculatedTotal = wt.lines.reduce((sum, line) => sum + receiptLineTotal(line), 0);
+    const total = wt.order?.id && Number.isFinite(Number(wt.order.total)) ? Number(wt.order.total) : calculatedTotal;
+    const subtotal = wt.order?.id && Number.isSafeInteger(Number(wt.order.subtotal)) && Number(wt.order.subtotal) >= 0
+      ? Number(wt.order.subtotal)
+      : calculatedTotal;
+    const discount = wt.order?.id && Number.isSafeInteger(Number(wt.order.discount)) && Number(wt.order.discount) >= 0
+      ? Number(wt.order.discount)
+      : 0;
+    const deliveryFee = wt.order?.id && Number.isSafeInteger(Number(wt.order.deliveryFee)) && Number(wt.order.deliveryFee) >= 0
+      ? Number(wt.order.deliveryFee)
+      : 0;
+    const otherAdjustment = total - subtotal - deliveryFee + discount;
+    const paymentWorkflow = wt.order?.id
+      ? globalThis.WestoOrderPaymentState.deriveOrderPaymentWorkflow(wt.order)
+      : null;
+    const paymentAmounts = paymentWorkflow
+      ? paymentWorkflow.amounts
+      : globalThis.WestoOrderPaymentState.getOrderPaymentAmounts({}, total);
+    const amountPaid = paymentAmounts.paid;
+    const amountDue = paymentAmounts.due;
+    const paymentUnknown = paymentWorkflow?.requiresReconciliation === true;
+    const paymentIntentConflict = wt.paymentIntentConflict === true;
+    const pendingPaymentCanRetry = !wt.pendingPayment
+      || waiterPendingPaymentCanRecover(wt.pendingPayment, wt.order, state.branchId);
+    const serviceComplete = ['done', 'completed', 'picked_up', 'delivered'].includes(orderStatus);
+    const hasUnsentChanges = wt.dirty || wt.lines.some((line) => !line.localSaved);
+    const hasFiredCourse = wt.lines.some((line) => line.courseStatus === 'fired');
+    const canSend = canEdit && !orderSubmissionLocked && !wt.remoteUpdatePending
+      && wt.lines.length > 0 && hasFiredCourse && (!orderSent || hasUnsentChanges);
+    const canServe = waiterHasCapability('service.manage') && Boolean(wt.order?.id) && orderStatus === 'ready' && !serviceComplete && !wt.serveNeedsRefresh && !orderSubmissionLocked;
+    const settlementStage = paymentWorkflow?.stages.find((stage) => stage.id === 'settlement');
+    const capabilities = state.session?.workspace?.capabilities || [];
+    const canCollectPayment = capabilities.includes('*') || capabilities.includes('payments.collect');
+    const canPay = Boolean(wt.order?.id) && orderSent && serviceComplete
+      && canCollectPayment && !wt.paymentNeedsRefresh && !wt.paymentPending
+      && !wt.orderSaveNeedsRefresh && !wt.orderSubmissionConflict && !wt.saving
+      && !wt.pendingSplit && !wt.splitNeedsRefresh && !wt.splitSaving
+      && !paymentIntentConflict && pendingPaymentCanRetry
+      && paymentWorkflow?.isConsistent === true
+      && settlementStage?.state === 'current'
+      && Number.isFinite(amountDue) && amountDue > 0;
 
     const sectionsHtml = coursesWithItems.map((c) => `
       <div class="wt-course-section" data-section-course="${c.id}">
@@ -3244,13 +5622,19 @@
           <div class="wt-course-title">
             <span>${c.name}</span>
             <span class="wt-course-badge ${c.isFired ? 'is-fired' : 'is-hold'}">
-              ${c.isFired ? '🔥 ارسال‌شده برای پخت' : '⏳ در انتظار ارسال'}
+              ${c.isFired
+                ? (wt.order?.id && orderSent && !c.hasUnsentLines
+                  ? '🔥 ارسال‌شده برای پخت'
+                  : wt.order?.id && orderSent && c.hasSavedLines && c.hasUnsentLines
+                    ? '◐ بخشی ارسال شد؛ اقلام تازه پس از ثبت'
+                    : '📤 پس از ثبت به آشپزخانه می‌رود')
+                : c.hasFired ? '◐ بخشی آمادهٔ ارسال' : '⏳ در انتظار ارسال'}
             </span>
           </div>
           ${c.hasHold ? `
-            <button type="button" class="wt-fire-btn" data-fire-course="${c.id}">
+            <button type="button" class="wt-fire-btn" data-fire-course="${c.id}" ${orderSubmissionLocked || !canManageCourses ? 'disabled aria-disabled="true"' : ''} title="${!canManageCourses ? 'برای ارسال یا تغییر مرحلهٔ پخت از مدیر شیفت دسترسی بخواهید.' : ''}">
               <span>🔥</span>
-              <span>ارسال پخت</span>
+              <span>${!canManageCourses ? 'نیازمند مجوز ارسال پخت' : wt.order?.id && c.items.some((line) => line.localSaved && line.courseStatus === 'hold') ? 'ارسال پخت' : 'آماده‌سازی برای ثبت'}</span>
             </button>
           ` : ''}
         </div>
@@ -3267,7 +5651,7 @@
               </div>
               <div style="display:flex;align-items:center;gap:10px">
                 <strong class="wt-line-item__price">${money(receiptLineTotal(line))}</strong>
-                <button type="button" class="btn btn-sm btn-ghost wt-line-remove" data-remove-line="${line.localId}" ${canEdit ? '' : 'disabled'} title="${esc(canEdit ? 'حذف قلم' : 'این سفارش قفل شده است')}" aria-label="${esc(canEdit ? 'حذف قلم' : 'سفارش قفل شده')}" style="color:#ef4444;font-size:14px">${canEdit ? '✕' : '🔒'}</button>
+                <button type="button" class="btn btn-sm btn-ghost wt-line-remove" data-remove-line="${line.localId}" ${canEdit ? '' : 'disabled'} title="${esc(!canCreateOrders ? 'برای ویرایش سفارش از مدیر شیفت دسترسی بخواهید.' : canEdit ? 'حذف قلم' : 'این سفارش قفل شده است')}" aria-label="${esc(canEdit ? 'حذف قلم' : !canCreateOrders ? 'حذف قلم؛ نیازمند مجوز ویرایش سفارش' : 'سفارش قفل شده')}" style="color:#ef4444;font-size:14px">${canEdit ? '✕' : '🔒'}</button>
               </div>
             </div>
           `).join('')}
@@ -3277,80 +5661,306 @@
 
     const emptyHtml = !wt.lines.length ? empty('هنوز محصولی به فاکتور افزوده نشده است.') : '';
 
+    const nextActionHtml = wt.splitNeedsRefresh
+      ? '<p class="wt-stage-message is-warning" role="alert">نتیجهٔ تفکیک نامشخص است؛ تفکیک را دوباره اجرا نکنید و فاکتورهای میز را با مدیر شیفت تطبیق دهید.</p>'
+      : wt.orderSubmissionConflict
+      ? '<p class="wt-stage-message is-warning" role="alert">نتیجهٔ ثبت سفارش با وضعیت فعلی قابل تطبیق نیست؛ ارسال دوباره متوقف شد. سفارش‌های همین میز را با مدیر شیفت بررسی کنید.</p>'
+      : wt.saving
+        ? '<button type="button" class="wt-send-btn" disabled aria-disabled="true">در حال ثبت سفارش…</button><p class="wt-stage-message" role="status" aria-live="polite">لطفاً تا دریافت نتیجه، این صفحه را نبندید.</p>'
+      : wt.pendingOrderSubmission && wt.orderSaveNeedsRefresh
+        ? '<button type="button" class="wt-send-btn" id="wt-retry-order-submission"><span>↻</span><span>بازیابی همان سفارش ثبت‌شده</span></button><p class="wt-stage-message is-warning" role="status">فقط همان اقلام و همان کلید یکتا ارسال می‌شود؛ سفارش تازه‌ای ساخته نمی‌شود.</p>'
+      : wt.orderSaveNeedsRefresh
+        ? '<p class="wt-stage-message is-warning" role="alert">نتیجهٔ ذخیرهٔ سفارش روشن نیست؛ ابتدا «به‌روزرسانی وضعیت» را بزنید و نسخهٔ سرور را با مدیر شیفت تطبیق دهید.</p>'
+      : canSend
+      ? `<button type="button" class="wt-send-btn" id="wt-send-check"><span>📤</span><span>${wt.order?.id ? 'ذخیره و ارسال سفارش به آشپزخانه' : 'ثبت سفارش و ارسال به آشپزخانه'}</span></button>`
+      : canEdit && wt.lines.length > 0 && !hasFiredCourse
+        ? '<p class="wt-stage-message is-warning" role="status">برای ثبت سفارش، دست‌کم یک دوره را با «ارسال هنگام ثبت» به آشپزخانه بفرستید.</p>'
+      : orderStatus === 'ready' && !waiterHasCapability('service.manage')
+        ? '<p class="wt-stage-message" role="status">سفارش آماده است؛ ثبت تحویل به مجوز مسئول شیفت نیاز دارد. آن را به مسئول مجاز بسپارید.</p>'
+      : canServe
+        ? '<button type="button" class="wt-serve-btn" id="wt-serve-order"><span>🍽️</span><span>تحویل سفارش به میز</span></button>'
+      : wt.serveNeedsRefresh && orderStatus === 'ready'
+        ? '<p class="wt-stage-message is-warning" role="alert">نتیجهٔ ثبت تحویل روشن نیست؛ پیش از تکرار، وضعیت سفارش را از سرور به‌روزرسانی کنید.</p>'
+      : wt.paymentNeedsRefresh
+        ? '<button type="button" class="wt-pay-btn" id="wt-refresh-payment-status"><span>↻</span><span>بررسی دوبارهٔ وضعیت دریافت وجه</span></button><p class="wt-stage-message is-warning" role="alert">نتیجهٔ دریافت وجه نامشخص است؛ پیش از هر تکراری وضعیت سفارش را تازه کنید.</p>'
+      : paymentIntentConflict
+        ? '<p class="wt-stage-message is-warning" role="alert">مبلغ فاکتور پس از درخواست دریافت تغییر کرده است؛ از تکرار یا دریافت دوباره خودداری کنید و فاکتور را برای تطبیق به صندوق‌دار بسپارید.</p>'
+      : wt.pendingPayment && !pendingPaymentCanRetry
+        ? '<p class="wt-stage-message is-warning" role="alert">درخواست قبلی کارت بانکی کد پیگیری رسید ندارد یا با فاکتور فعلی سازگار نیست؛ درخواست تازه نسازید و وجه را دوباره دریافت نکنید. فاکتور را برای تطبیق به صندوق‌دار بسپارید.</p>'
+      : wt.pendingPayment && canPay
+        ? `<button type="button" class="wt-pay-btn" id="wt-pay-btn"><span>↻</span><span>تکرار امن همان ثبت دریافت · ${money(amountDue)}</span></button><p class="wt-stage-message is-warning" role="status">این تلاش با همان کلید یکتا تکرار می‌شود و دریافت جدیدی ایجاد نمی‌کند.</p>`
+      : canPay
+          ? `<button type="button" class="wt-pay-btn" id="wt-pay-btn"><span>💳</span><span>تسویه ماندهٔ ${money(amountDue)}</span></button>`
+          : wt.order?.id && !canCreateOrders && hasUnsentChanges
+            ? '<p class="wt-stage-message" role="status">ویرایش یا ثبت اقلام این سفارش به مجوز ساخت یا ویرایش نیاز دارد؛ نسخهٔ فعلی فقط‌خواندنی است.</p>'
+          : wt.order?.id && serviceComplete && !canCollectPayment
+            ? '<p class="wt-stage-message" role="status">برای ثبت دریافت وجه، فاکتور را به صندوق‌دار بسپارید.</p>'
+          : paymentUnknown
+            ? '<p class="wt-stage-message is-warning" role="alert">اطلاعات سفارش یا پرداخت با هم سازگار نیست؛ تسویه تا بررسی صندوق غیرفعال است.</p>'
+          : paymentWorkflow?.settled && serviceComplete
+            ? '<p class="wt-stage-message is-complete" role="status">سفارش تحویل و تسویه شده است.</p>'
+              : paymentWorkflow?.settled
+              ? `<p class="wt-stage-message" role="status">پرداخت ثبت شد؛ ${orderStatus === 'ready' ? 'تحویل سفارش به میز را ثبت کنید.' : 'پس از آماده‌شدن، سفارش را تحویل دهید.'}</p>`
+              : wt.order?.id && !serviceComplete
+                ? `<p class="wt-stage-message" role="status">${orderStatus === 'ready' ? 'سفارش آمادهٔ تحویل است.' : 'سفارش در حال آماده‌سازی است؛ تسویه پس از ثبت تحویل فعال می‌شود.'}</p>`
+                : '';
+
     const summaryHtml = `
       <div class="wt-summary-bar">
         <div class="wt-summary-bar__total">
-          <span>جمع کل صورت‌حساب</span>
-          <strong>${money(total)}</strong>
+          <span>${amountPaid > 0 && amountDue > 0 ? 'ماندهٔ قابل پرداخت' : 'جمع کل صورت‌حساب'}</span>
+          <strong>${money(amountPaid > 0 && amountDue > 0 ? amountDue : total)}</strong>
         </div>
-        <div class="wt-summary-bar__buttons">
-          <button type="button" class="wt-pay-btn" id="wt-pay-btn" ${orderLocked ? 'disabled' : ''}>
-            <span>💳</span>
-            <span>تسویه و پرداخت</span>
-          </button>
-          <button type="button" class="wt-send-btn" id="wt-send-check" ${orderLocked ? 'disabled' : ''}>
-            <span>📤</span>
-            <span>ثبت و ارسال سفارش</span>
-          </button>
-        </div>
+        ${amountPaid > 0 && amountDue > 0 ? `<div class="wt-summary-bar__paid">پرداخت‌شده: ${money(amountPaid)} · مانده: ${money(amountDue)}</div>` : ''}
+        <div class="wt-summary-bar__buttons">${nextActionHtml}</div>
       </div>
     `;
 
-    container.innerHTML = `<div class="wt-check-view">${sectionsHtml || emptyHtml}</div>` + (wt.lines.length ? summaryHtml : '');
+    const invoiceBreakdown = wt.lines.length ? `
+      <section class="wt-invoice-breakdown" aria-label="جزئیات مبلغ فاکتور">
+        <div><span>جمع اقلام</span><strong>${money(subtotal)}</strong></div>
+        ${deliveryFee > 0 ? `<div><span>هزینهٔ ارسال</span><strong>${money(deliveryFee)}</strong></div>` : ''}
+        ${discount > 0 ? `<div class="is-discount"><span>تخفیف</span><strong>− ${money(discount)}</strong></div>` : ''}
+        ${otherAdjustment !== 0 ? `<div><span>تعدیل دیگر</span><strong>${otherAdjustment < 0 ? '− ' : '+ '}${money(Math.abs(otherAdjustment))}</strong></div>` : ''}
+        <div class="is-total"><span>مبلغ نهایی</span><strong>${money(total)}</strong></div>
+      </section>
+    ` : '';
+    container.innerHTML = `<div class="wt-check-view">${sectionsHtml || emptyHtml}${invoiceBreakdown}</div>` + (wt.lines.length ? summaryHtml : '');
 
     container.querySelectorAll('[data-fire-course]').forEach((btn) => btn.addEventListener('click', async () => {
       const course = btn.dataset.fireCourse;
-      await fireCourse(course);
+      await fireCourse(course, btn);
     }));
 
     container.querySelectorAll('[data-remove-line]').forEach((btn) => btn.addEventListener('click', () => {
       const localId = btn.dataset.removeLine;
       if (!canEdit) return;
+      if (wt.lines.some((line) => line.localId === localId && line.localSaved)) wt.dirty = true;
       wt.lines = wt.lines.filter((l) => l.localId !== localId);
       renderWaiterTerminal();
     }));
 
     document.getElementById('wt-pay-btn')?.addEventListener('click', () => payWaiterCheck());
-    document.getElementById('wt-send-check')?.addEventListener('click', () => saveAndSendTerminalOrder());
+    document.getElementById('wt-refresh-payment-status')?.addEventListener('click', (event) => refreshWaiterPaymentState(event.currentTarget));
+    document.getElementById('wt-send-check')?.addEventListener('click', () => saveAndSendTerminalOrder(false));
+    document.getElementById('wt-retry-order-submission')?.addEventListener('click', () => saveAndSendTerminalOrder(false));
+    document.getElementById('wt-serve-order')?.addEventListener('click', (event) => serveWaiterOrder(event.currentTarget));
   }
 
-  async function fireCourse(course) {
+  async function refreshWaiterPaymentState(button) {
+    const wt = state.waiterTerminal;
+    if (!wt?.order?.id || wt.paymentRefreshPending) return;
+    const orderId = Number(wt.order.id);
+    const previousPaid = Number(wt.pendingPayment?.baselinePaid ?? globalThis.WestoOrderPaymentState.deriveOrderPaymentWorkflow(wt.order).amounts.paid) || 0;
+    wt.paymentRefreshPending = true;
+    setBusy(button, true);
+    try {
+      await fetchWaiter();
+      const latest = (state.data.orders || []).find((order) => Number(order.id) === orderId);
+      if (!latest) {
+        wt.paymentNeedsRefresh = true;
+        wt.paymentRefreshPending = false;
+        renderWaiterTerminal();
+        showToast('سفارش در تازه‌سازی پیدا نشد؛ دریافت وجه را تکرار نکنید و دسترسی شعبه را بررسی کنید.', 'error');
+        return;
+      }
+      const refreshed = JSON.parse(JSON.stringify(latest));
+      const workflow = globalThis.WestoOrderPaymentState.deriveOrderPaymentWorkflow(refreshed);
+      if (workflow.isConsistent !== true || workflow.requiresReconciliation) {
+        wt.order = refreshed;
+        wt.paymentNeedsRefresh = true;
+        wt.paymentRefreshPending = false;
+        wt.activeTab = 'check';
+        renderWaiterTerminal();
+        showToast('وضعیت سفارش تازه شد اما مغایرت مالی دارد؛ دریافت دوباره متوقف است.', 'error');
+        return;
+      }
+      wt.order = refreshed;
+      wt.paymentNeedsRefresh = false;
+      wt.paymentRefreshPending = false;
+      wt.paymentIntentConflict = false;
+      if (workflow.settled || workflow.amounts.paid > previousPaid) {
+        const pending = wt.pendingPayment;
+        const matchingReceipt = !pending || (Array.isArray(refreshed.partialPayments)
+          && refreshed.partialPayments.some((payment) => String(payment?.idempotencyKey || '') === String(pending.idempotencyKey || '')));
+        if (!matchingReceipt) {
+          wt.paymentIntentConflict = true;
+          wt.activeTab = 'check';
+          renderWaiterTerminal();
+          showToast('فاکتور هم‌زمان تغییر کرده اما رسیدی با شناسهٔ همین درخواست پیدا نشد؛ صندوق باید دو وضعیت را تطبیق دهد.', 'error');
+          return;
+        }
+        if (pending?.idempotencyKey && pending.intent) clearSettlementIdempotencyKey(pending.idempotencyKey, pending.intent);
+        wt.pendingPayment = null;
+        clearWaiterTerminalDraft(wt.table.id);
+        if (workflow.settled) {
+          state.waiterTerminal = null;
+          waiterFloor();
+          showToast('وضعیت تازه شد؛ فاکتور تسویه شده و میز آزاد است.');
+        } else {
+          wt.activeTab = 'check';
+          renderWaiterTerminal();
+          showToast(`دریافت وجه ثبت شده؛ ماندهٔ ${money(workflow.amounts.due)} را بررسی کنید.`, 'warning');
+        }
+        return;
+      }
+      if (wt.pendingPayment
+        && Number(wt.pendingPayment.intent?.paymentAmount) !== Number(workflow.amounts.due)) {
+        wt.paymentIntentConflict = true;
+        wt.activeTab = 'check';
+        renderWaiterTerminal();
+        showToast('ماندهٔ فاکتور پس از درخواست دریافت تغییر کرده است؛ تکرار خودکار متوقف شد و صندوق باید مبلغ را تطبیق دهد.', 'error');
+        return;
+      }
+      // No payment evidence appeared. Retain the original idempotency key and
+      // intent so a later retry cannot create a second collection.
+      wt.activeTab = 'check';
+      renderWaiterTerminal();
+      showToast('در وضعیت تازه، پرداختی ثبت نشده است؛ در صورت تکرار، همان درخواست یکتا استفاده می‌شود.', 'warning');
+    } catch (error) {
+      wt.paymentNeedsRefresh = true;
+      wt.paymentRefreshPending = false;
+      wt.activeTab = 'check';
+      renderWaiterTerminal();
+      showToast(`تازه‌سازی وضعیت وجه انجام نشد: ${error.message} دریافت را تکرار نکنید.`, 'error');
+    }
+  }
+
+  async function fireCourse(course, button) {
     const wt = state.waiterTerminal;
     if (!wt) return;
+    if (!waiterHasCapability('orders.course.manage')) {
+      showToast('ارسال مرحلهٔ پخت در دسترسی شما نیست؛ از مدیر شیفت دسترسی لازم را درخواست کنید.', 'error');
+      return;
+    }
+    if (waiterTerminalMutationLocked(wt)) {
+      if (wt.pendingSplit || wt.splitNeedsRefresh) {
+        showToast('نتیجهٔ تفکیک قبلی نامشخص است؛ تا تطبیق با مدیر شیفت، ارسال جدید متوقف است.', 'warning');
+        return;
+      }
+      showToast('ابتدا ثبت سفارش قبلی را تعیین تکلیف کنید.', 'warning');
+      return;
+    }
+    wt.firingCourses ||= new Set();
+    if (wt.firingCourses.has(course)) return;
     const courseLabels = { starters: 'پیش‌غذا', entrees: 'غذای اصلی', dessert: 'دسر', straight_fire: 'پخت فوری' };
     const label = courseLabels[course] || course;
-
-    wt.lines.forEach((line) => {
-      if ((line.course || 'starters') === course && line.courseStatus === 'hold') {
-        line.courseStatus = 'fired';
-        line.firedAt = new Date().toISOString();
-      }
-    });
-
-    if (wt.order?.id) {
-      try {
-        await api(`/api/waiter/orders/${wt.order.id}/fire-course`, {
+    const { heldLines: courseLines, savedLines, unsavedLines: localLines } = splitWaiterCourseLines(wt.lines, course);
+    if (!courseLines.length) return;
+    wt.firingCourses.add(course);
+    setBusy(button, true);
+    try {
+      if (wt.order?.id && savedLines.length) {
+        const result = await api(`/api/waiter/orders/${wt.order.id}/fire-course`, {
           method: 'PATCH',
           body: JSON.stringify({ course }),
         });
+        const responseOrder = result?.order;
+        const responseCourse = String(result?.course || '').trim().toLowerCase();
+        const confirmedCourseItems = Array.isArray(responseOrder?.items)
+          ? responseOrder.items.filter((line) => String(line?.course || 'starters').trim().toLowerCase() === course)
+          : [];
+        const courseConfirmed = confirmedCourseItems.length > 0
+          && confirmedCourseItems.every((line) => String(line?.courseStatus || 'fired').trim().toLowerCase() === 'fired');
+        if (result?.ok !== true
+          || !waiterOrderResponseMatchesIntent(responseOrder, {
+            orderId: wt.order.id,
+            branchId: state.branchId,
+            tableId: wt.table.id,
+          })
+          || responseCourse !== course
+          || !courseConfirmed) {
+          throw Object.assign(new Error('پاسخ ارسال دوره با شناسه، شعبه یا میز جاری تطبیق ندارد؛ پیش از اقدام دوباره، وضعیت سفارش را تازه کنید.'), {
+            code: 'waiter_course_response_unverified',
+            outcomeUnknown: true,
+          });
+        }
+        // Firing the first saved course may also advance pay_at_cashier to
+        // sent_to_kitchen. Keep the stepper and next action on that server state.
+        wt.order = JSON.parse(JSON.stringify(responseOrder));
+        wt.checkNo = wt.order.checkNo || wt.checkNo;
+      }
+      const firedAt = new Date().toISOString();
+      courseLines.forEach((line) => {
+        line.courseStatus = 'fired';
+        line.firedAt = firedAt;
+      });
+      if (localLines.length) wt.dirty = true;
+      if (savedLines.length && localLines.length) {
+        showToast(`مرحلهٔ «${label}» ارسال شد؛ اقلام ثبت‌نشده پس از ذخیره به آشپزخانه می‌روند.`);
+      } else if (savedLines.length) {
         showToast(`دستور پخت «${label}» به آشپزخانه ارسال شد.`);
-      } catch (err) {
+      } else {
+        showToast(`مرحلهٔ «${label}» آماده شد و هنگام ثبت سفارش ارسال می‌شود.`);
+      }
+    } catch (err) {
+      if (err.outcomeUnknown && savedLines.length) {
+        wt.orderSaveNeedsRefresh = true;
+        wt.activeTab = 'check';
+        persistWaiterTerminalDraft(wt);
+        showToast('نتیجهٔ ارسال دوره روشن نیست؛ وضعیت سفارش را تازه کنید و تا آن زمان دوباره ارسال نکنید.', 'warning');
+      } else {
         showToast(err.message, 'error');
       }
-    } else {
-      showToast(`وضعیت «${label}» به آماده پخت تغییر یافت.`);
+    } finally {
+      wt.firingCourses.delete(course);
+      renderWaiterTerminal();
     }
-
-    renderWaiterTerminal();
   }
 
   async function saveAndSendTerminalOrder(shouldReturn = true) {
     const wt = state.waiterTerminal;
     if (!wt) return;
     if (wt.saving) return;
-    if (!wt.lines.length) {
+    if (wt.pendingPayment || wt.paymentNeedsRefresh || wt.paymentIntentConflict) {
+      showToast('درخواست دریافت وجه هنوز تعیین تکلیف نشده است؛ تا تطبیق با صندوق، سفارش را ویرایش یا دوباره ارسال نکنید.', 'warning');
+      return false;
+    }
+    if (wt.pendingSplit || wt.splitNeedsRefresh || wt.splitSaving) {
+      showToast('نتیجهٔ تفکیک قبلی روشن نیست؛ پیش از ارسال یا ویرایش، فاکتور را با مدیر شیفت تطبیق دهید.', 'warning');
+      return false;
+    }
+    const isCreate = !wt.order?.id;
+    const replayingCreate = isCreate && Boolean(wt.pendingOrderSubmission);
+    if (wt.orderSubmissionConflict) {
+      showToast('نتیجهٔ قبلی با وضعیت فعلی قابل تطبیق نیست؛ سفارش را با مدیر شیفت بررسی کنید.', 'warning');
+      return false;
+    }
+    if (wt.orderSaveNeedsRefresh && !replayingCreate) {
+      showToast('ابتدا وضعیت سفارش را تازه کنید و با مدیر شیفت تطبیق دهید؛ ارسال دوباره متوقف است.', 'warning');
+      return false;
+    }
+    if (isCreate && wt.idempotencyKey && !wt.pendingOrderSubmission) {
+      wt.orderSaveNeedsRefresh = true;
+      wt.orderSubmissionConflict = true;
+      persistWaiterTerminalDraft(wt);
+      renderWaiterTerminal();
+      showToast('کلید قدیمی بدون payload قابل بازیابی پیدا شد؛ سفارش را با مدیر شیفت تطبیق دهید.', 'warning');
+      return false;
+    }
+    if (replayingCreate && !waiterOrderSubmissionCanRecover(wt.pendingOrderSubmission, wt.table.id, state.branchId)) {
+      wt.orderSaveNeedsRefresh = true;
+      wt.orderSubmissionConflict = true;
+      persistWaiterTerminalDraft(wt);
+      renderWaiterTerminal();
+      showToast('درخواست ذخیره‌شده با این میز یا شعبه تطبیق ندارد؛ ارسال متوقف شد.', 'error');
+      return false;
+    }
+    if (!replayingCreate && !wt.lines.length) {
       showToast('حداقل یک غذا را به فاکتور اضافه کنید.', 'error');
       return;
+    }
+    if (!replayingCreate && !wt.lines.some((line) => line.courseStatus === 'fired')) {
+      showToast('همهٔ غذاها برای نوبت بعد نگه داشته شده‌اند؛ یک مرحله را برای ارسال به آشپزخانه انتخاب کنید.', 'error');
+      return;
+    }
+    if (!replayingCreate) {
+      const coversState = validateWaiterCovers(wt.covers, wt.lines);
+      if (!coversState.ok) {
+        showToast(coversState.error === 'covers_invalid' ? 'تعداد مهمان باید عددی بین ۱ تا ۹۹ باشد.' : 'تعداد مهمان را با صندلی‌های تخصیص‌یافته هماهنگ کنید.', 'error');
+        return;
+      }
+      wt.covers = coversState.covers;
     }
     wt.saving = true;
 
@@ -3366,30 +5976,60 @@
       firedAt: line.firedAt || null,
     }));
 
+    const disableTerminalControls = () => {
+      const screen = main.querySelector('.waiter-terminal-screen');
+      if (!screen) return;
+      screen.setAttribute('aria-busy', 'true');
+      screen.querySelectorAll('button, input, select, textarea').forEach((control) => { control.disabled = true; });
+    };
+
+    let createdPendingOrderSubmission = false;
     try {
-      if (wt.order?.id) {
-        const res = await api(`/api/cashier/orders/${wt.order.id}`, {
+      if (!isCreate) {
+        // The edit route is not idempotent. Persist a reconciliation lock before sending
+        // so a hard page close cannot make an uncertain kitchen update look retryable.
+        wt.orderSaveNeedsRefresh = true;
+        wt.orderSubmissionConflict = true;
+        if (!persistWaiterTerminalDraft(wt)) {
+          wt.orderSaveNeedsRefresh = false;
+          wt.orderSubmissionConflict = false;
+          wt.saving = false;
+          renderWaiterTerminal();
+          showToast('پیش‌نویس امن ذخیره نشد؛ برای جلوگیری از گم‌شدن تغییرات، سفارش هنوز ارسال نشده است.', 'error');
+          return false;
+        }
+        disableTerminalControls();
+        const res = await api(`/api/waiter/orders/${wt.order.id}`, {
           method: 'PATCH',
           body: JSON.stringify({
             branchId: state.branchId,
             items: payloadItems,
+            covers: wt.covers,
             note: wt.note || '',
             name: wt.guestName || '',
             phone: wt.guestPhone || '',
             sendToKitchen: true,
           }),
         });
+        if (res?.ok !== true || !waiterOrderResponseMatchesIntent(res.order, {
+          orderId: wt.order.id,
+          branchId: state.branchId,
+          tableId: wt.table.id,
+        })) {
+          throw Object.assign(new Error('پاسخ ذخیرهٔ سفارش با شناسه، شعبه یا میز جاری تطبیق ندارد؛ وضعیت فاکتور را با مدیر شیفت بررسی کنید.'), { code: 'waiter_order_response_unverified', outcomeUnknown: true });
+        }
         wt.order = res.order || wt.order;
         wt.checkNo = wt.order?.checkNo || wt.checkNo;
         wt.lines.forEach((l) => { l.localSaved = true; });
         wt.dirty = false;
+        wt.orderSaveNeedsRefresh = false;
+        wt.orderSubmissionConflict = false;
+        clearWaiterTerminalDraft(wt.table.id);
         showToast('سفارش به‌روزرسانی و برای آشپزخانه ارسال شد.');
       } else {
-        wt.idempotencyKey = wt.idempotencyKey || `waiter-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-        const res = await api('/api/staff/orders', {
-          method: 'POST',
-          headers: { 'Idempotency-Key': wt.idempotencyKey },
-          body: JSON.stringify({
+        if (!wt.pendingOrderSubmission) {
+          const idempotencyKey = `waiter-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+          const payload = {
             branchId: state.branchId,
             fulfillment: 'dine_in',
             tableNo: String(wt.table.id),
@@ -3401,23 +6041,90 @@
             paymentMethod: 'cashier',
             sendToKitchen: true,
             items: payloadItems,
-          }),
+          };
+          wt.idempotencyKey = idempotencyKey;
+          wt.pendingOrderSubmission = { idempotencyKey, payload: JSON.parse(JSON.stringify(payload)) };
+          createdPendingOrderSubmission = true;
+        }
+        const pending = wt.pendingOrderSubmission;
+        wt.idempotencyKey = pending.idempotencyKey;
+        wt.orderSaveNeedsRefresh = true;
+        if (!persistWaiterTerminalDraft(wt)) {
+          if (createdPendingOrderSubmission) {
+            wt.pendingOrderSubmission = null;
+            wt.idempotencyKey = null;
+            wt.orderSaveNeedsRefresh = false;
+          }
+          wt.saving = false;
+          renderWaiterTerminal();
+          showToast(createdPendingOrderSubmission
+            ? 'پیش‌نویس در حافظهٔ این نشست ذخیره نشد؛ برای جلوگیری از گم‌شدن سفارش، هنوز چیزی به سرور ارسال نشده است.'
+            : 'درخواست قبلی حفظ شده اما ذخیرهٔ امن نشست در دسترس نیست؛ فعلاً تکرار ارسال نشد.', 'error');
+          return false;
+        }
+        disableTerminalControls();
+        const res = await api('/api/staff/orders', {
+          method: 'POST',
+          headers: { 'Idempotency-Key': pending.idempotencyKey },
+          body: JSON.stringify(pending.payload),
         });
+        if (res?.ok !== true || !waiterOrderResponseMatchesIntent(res.order, {
+          orderId: res.order?.id,
+          branchId: state.branchId,
+          tableId: wt.table.id,
+          exactTableNo: true,
+        })) {
+          throw Object.assign(new Error('پاسخ ثبت سفارش با شناسه، شعبه یا میز جاری تطبیق ندارد؛ آن را با مدیر شیفت بررسی کنید.'), { code: 'waiter_order_response_unverified', outcomeUnknown: true });
+        }
         wt.order = res.order;
         wt.checkNo = wt.order?.checkNo || wt.checkNo;
         wt.lines.forEach((l) => { l.localSaved = true; });
         wt.dirty = false;
+        wt.pendingOrderSubmission = null;
+        wt.idempotencyKey = null;
+        wt.orderSaveNeedsRefresh = false;
+        wt.orderSubmissionConflict = false;
+        clearWaiterTerminalDraft(wt.table.id);
         showToast('سفارش ثبت و برای آشپزخانه ارسال شد.');
       }
-      await fetchFloor();
+      const refreshed = await refreshWaiterAfterMutation();
+      wt.saving = false;
       if (shouldReturn) {
-        state.waiterTerminal = null;
-        waiterFloor();
+        if (refreshed) {
+          state.waiterTerminal = null;
+          waiterFloor();
+        } else {
+          renderWaiterTerminal();
+        }
       } else {
         renderWaiterTerminal();
       }
       return true;
     } catch (err) {
+      const unsafeCreateReplay = isCreate && ['idempotency_key_conflict', 'idempotency_replay_unavailable', 'waiter_order_response_unverified'].includes(String(err.code || ''));
+      if (isCreate) {
+        if (unsafeCreateReplay) {
+          wt.orderSubmissionConflict = true;
+          wt.orderSaveNeedsRefresh = true;
+        } else if (err.outcomeUnknown) {
+          wt.orderSaveNeedsRefresh = true;
+        } else {
+          wt.pendingOrderSubmission = null;
+          wt.idempotencyKey = null;
+          wt.orderSaveNeedsRefresh = false;
+          wt.orderSubmissionConflict = false;
+        }
+      } else if (err.outcomeUnknown) {
+        // The edit route has no idempotency contract. Never replay an uncertain kitchen update blindly.
+        wt.orderSaveNeedsRefresh = true;
+        wt.orderSubmissionConflict = true;
+      } else if (!isCreate) {
+        wt.orderSaveNeedsRefresh = false;
+        wt.orderSubmissionConflict = false;
+      }
+      wt.saving = false;
+      persistWaiterTerminalDraft(wt);
+      renderWaiterTerminal();
       showToast(err.message, 'error');
       return false;
     } finally {
@@ -3427,37 +6134,70 @@
 
   function paintTerminalActions(container) {
     const wt = state.waiterTerminal;
+    const orderSubmissionLocked = waiterTerminalMutationLocked(wt);
+    const splitBlockedByDraft = Boolean(wt.dirty || wt.remoteUpdatePending || wt.lines.some((line) => !line.localSaved));
+    const splitOrderStatus = String(wt.order?.status || '').trim().toLowerCase();
+    const splitBlockedByKitchen = ['sent_to_kitchen', 'preparing', 'ready'].includes(splitOrderStatus)
+      || (Boolean(wt.order?.startedAt) && !['done', 'completed'].includes(splitOrderStatus));
+    const splitBlockedByCancelled = splitOrderStatus === 'cancelled';
+    const canEditOrder = waiterHasCapability('orders.create') && !orderSubmissionLocked
+      && (!wt.order?.id || orderCanEdit(wt.order));
+    const canSplitOrder = waiterHasCapability('orders.split') && Boolean(wt.order?.id)
+      && !orderSubmissionLocked && !splitBlockedByDraft && !splitBlockedByKitchen && !splitBlockedByCancelled;
+    const hasAvailableMoveTarget = waiterAvailableAssignmentTables()
+      .some((table) => String(table.id) !== String(wt.table?.id));
+    const canMoveOrder = waiterHasCapability('orders.move_table') && Boolean(wt.order?.id)
+      && canEditOrder && hasAvailableMoveTarget;
+    const actionCapabilities = state.session?.workspace?.capabilities || [];
+    const paymentAction = waiterPaymentActionState(
+      wt,
+      actionCapabilities,
+      state.branchId,
+    );
+    const canCollectCash = actionCapabilities.includes('*') || actionCapabilities.includes('cash.manage');
+    const paymentActionHints = {
+      permission: 'دسترسی دریافت وجه ندارید؛ فاکتور را به صندوق‌دار بسپارید.',
+      order: 'پس از ثبت سفارش و ارسال به آشپزخانه فعال می‌شود.',
+      service: 'پس از ثبت تحویل سفارش به میز فعال می‌شود.',
+      refresh: 'ابتدا وضعیت سفارش یا دریافت قبلی را تازه کنید.',
+      reconciliation: 'دریافت متوقف است؛ فاکتور باید با صندوق تطبیق داده شود.',
+      settled: 'این فاکتور قبلاً تسویه شده است.',
+      balance: 'ماندهٔ قابل پرداختی وجود ندارد.',
+      ready: canCollectCash
+        ? 'ثبت نقدی یا ثبت دستی کارت پس از تحویل سفارش.'
+        : 'ثبت دستی کارت پس از تحویل؛ دریافت نقدی از صندوق انجام می‌شود.',
+    };
     container.innerHTML = `
       <div class="wt-actions-grid">
-        <button type="button" class="wt-action-btn" id="act-split-check">
+        <button type="button" class="wt-action-btn" id="act-split-check" ${canSplitOrder ? '' : 'disabled aria-disabled="true"'} title="${!waiterHasCapability('orders.split') ? 'برای تفکیک فاکتور از مدیر شیفت مجوز بخواهید.' : !wt.order?.id ? 'ابتدا سفارش را ثبت کنید.' : splitBlockedByDraft ? 'ابتدا تغییرهای سفارش را ثبت یا تطبیق کنید.' : splitBlockedByKitchen ? 'تفکیک پس از ارسال به آشپزخانه، تا پایان سرو متوقف است.' : splitBlockedByCancelled ? 'سفارش لغوشده قابل تفکیک نیست.' : ''}">
           <span>✂️</span>
           <strong>تفکیک فاکتور</strong>
-          <small style="font-size:11px;color:var(--rp-muted)">تفکیک بر اساس صندلی یا اقلام</small>
+          <small style="font-size:11px;color:var(--rp-muted)">${!waiterHasCapability('orders.split') ? 'نیازمند مجوز تفکیک فاکتور' : !wt.order?.id ? 'پس از ثبت سفارش فعال می‌شود' : splitBlockedByDraft ? wt.remoteUpdatePending ? 'ابتدا نسخهٔ تازهٔ سفارش را بارگذاری کنید' : 'ابتدا تغییرهای سفارش را ثبت کنید' : splitBlockedByKitchen ? 'پس از تحویل سفارش به میز دوباره فعال می‌شود' : splitBlockedByCancelled ? 'سفارش لغوشده قابل تفکیک نیست' : 'تفکیک بر اساس صندلی یا اقلام'}</small>
         </button>
-        <button type="button" class="wt-action-btn" id="act-move-table">
+        <button type="button" class="wt-action-btn" id="act-move-table" ${canMoveOrder ? '' : 'disabled aria-disabled="true"'} title="${!waiterHasCapability('orders.move_table') ? 'برای انتقال سفارش از مدیر شیفت مجوز بخواهید.' : !wt.order?.id ? 'ابتدا سفارش را ثبت کنید.' : !canEditOrder ? 'این سفارش در مرحلهٔ فعلی قابل انتقال نیست.' : ''}">
           <span>🔄</span>
           <strong>انتقال میز</strong>
-          <small style="font-size:11px;color:var(--rp-muted)">جابه‌جایی کل میز به شماره دیگر</small>
+          <small style="font-size:11px;color:var(--rp-muted)">${!waiterHasCapability('orders.move_table') ? 'نیازمند مجوز انتقال میز' : !wt.order?.id ? 'پس از ثبت سفارش فعال می‌شود' : !canEditOrder ? 'این سفارش قفل است' : !hasAvailableMoveTarget ? 'میز آزاد دیگری وجود ندارد' : 'فقط به میز آزاد منتقل می‌شود'}</small>
         </button>
-        <button type="button" class="wt-action-btn" id="act-cover-count">
+        <button type="button" class="wt-action-btn" id="act-cover-count" ${canEditOrder ? '' : 'disabled aria-disabled="true"'} title="${!waiterHasCapability('orders.create') ? 'برای ویرایش سفارش از مدیر شیفت مجوز بخواهید.' : !canEditOrder ? 'این سفارش در مرحلهٔ فعلی قابل ویرایش نیست.' : ''}">
           <span>👥</span>
           <strong>تعداد مهمان (${num(wt.covers || wt.seatsCount)})</strong>
           <small style="font-size:11px;color:var(--rp-muted)">تغییر نفرات و صندلی‌ها</small>
         </button>
-        <button type="button" class="wt-action-btn" id="act-table-note">
+        <button type="button" class="wt-action-btn" id="act-table-note" ${canEditOrder ? '' : 'disabled aria-disabled="true"'} title="${!waiterHasCapability('orders.create') ? 'برای ویرایش سفارش از مدیر شیفت مجوز بخواهید.' : !canEditOrder ? 'این سفارش در مرحلهٔ فعلی قابل ویرایش نیست.' : ''}>
           <span>📝</span>
           <strong>یادداشت سفارش</strong>
           <small style="font-size:11px;color:var(--rp-muted)">پیام اختصاصی میز</small>
         </button>
-        <button type="button" class="wt-action-btn" id="act-clear-order" style="border-color:#fecdd3">
+        <button type="button" class="wt-action-btn" id="act-clear-order" ${canEditOrder ? '' : 'disabled aria-disabled="true"'} title="${!waiterHasCapability('orders.create') ? 'برای ویرایش سفارش از مدیر شیفت مجوز بخواهید.' : !canEditOrder ? 'این سفارش در مرحلهٔ فعلی قابل ویرایش نیست.' : ''}" style="border-color:#fecdd3">
           <span>🗑️</span>
           <strong style="color:#e11d48">پاک کردن اقلام</strong>
           <small style="font-size:11px;color:#f43f5e">شروع مجدد سفارش</small>
         </button>
-        <button type="button" class="wt-action-btn" id="act-pay-side" style="border-color:#bae6fd">
+        <button type="button" class="wt-action-btn" id="act-pay-side" ${paymentAction.ready ? '' : 'disabled'} style="border-color:#bae6fd">
           <span>💳</span>
           <strong style="color:#0284c7">تسویه و پرداخت</strong>
-          <small style="font-size:11px;color:#0284c7">پرداخت کارت/نقدی سر میز</small>
+          <small id="wt-payment-action-hint" style="font-size:11px;color:#0284c7">${paymentActionHints[paymentAction.reason]}</small>
         </button>
       </div>
     `;
@@ -3465,14 +6205,18 @@
     document.getElementById('act-split-check')?.addEventListener('click', () => splitOrderCheck());
     document.getElementById('act-move-table')?.addEventListener('click', () => moveOrderTable());
     document.getElementById('act-cover-count')?.addEventListener('click', () => {
+      if (!canEditOrder) return;
+      const minimumSeat = Math.max(1, ...wt.lines.map((line) => Number(line.seat) || 0));
       openWaiterCoversPicker(wt.table, (covers) => {
         wt.covers = covers;
-        wt.seatsCount = Math.max(covers || 1, 1);
-        showToast(`تعداد مهمانان به ${num(covers)} نفر تغییر یافت.`);
+        wt.seatsCount = covers;
+        wt.dirty = true;
+        showToast(`تعداد مهمانان در پیش‌نویس به ${num(covers)} نفر تغییر کرد؛ همراه سفارش ذخیره می‌شود.`);
         renderWaiterTerminal();
-      });
+      }, minimumSeat, wt.covers);
     });
     document.getElementById('act-table-note')?.addEventListener('click', () => {
+      if (!canEditOrder) return;
       openDialog('یادداشت سفارش', wt.table.label, `
         <div style="padding:6px 0">
           <label class="field">
@@ -3486,11 +6230,12 @@
         wt.note = document.getElementById('wt-note-input')?.value.trim() || '';
         wt.dirty = true;
         dialog.close();
-        showToast('یادداشت ذخیره شد.');
+        showToast('یادداشت در پیش‌نویس ثبت شد؛ با ارسال سفارش به سرور ذخیره می‌شود.');
         renderWaiterTerminal();
       });
     });
     document.getElementById('act-clear-order')?.addEventListener('click', () => {
+      if (!canEditOrder) return;
       if (confirm('آیا از پاک کردن اقلام ثبت‌نشده مطمئن هستید؟')) {
         wt.lines = wt.lines.filter((l) => l.localSaved);
         renderWaiterTerminal();
@@ -3499,8 +6244,119 @@
     document.getElementById('act-pay-side')?.addEventListener('click', () => payWaiterCheck());
   }
 
+  async function submitWaiterSplit(payload, successMessage) {
+    const wt = state.waiterTerminal;
+    if (!waiterHasCapability('orders.split')) {
+      showToast('تفکیک فاکتور در دسترسی شما نیست؛ از مدیر شیفت مجوز لازم را درخواست کنید.', 'error');
+      return false;
+    }
+    if (!wt?.order?.id || waiterTerminalMutationLocked(wt)) return false;
+    if (wt.dirty || wt.remoteUpdatePending || wt.lines.some((line) => !line.localSaved)) {
+      showToast('ابتدا تغییرهای سفارش را ثبت کنید؛ تفکیک پیش‌نویس ذخیره‌نشده را انجام نمی‌دهد.', 'warning');
+      return false;
+    }
+    const splitNonce = globalThis.crypto?.randomUUID?.()
+      || `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
+    const pending = {
+      orderId: Number(wt.order.id),
+      branchId: Number(state.branchId),
+      tableId: String(wt.table.id),
+      payload: JSON.parse(JSON.stringify(payload)),
+      idempotencyKey: `waiter-split-${splitNonce}`,
+      baseOrderSignature: waiterOrderDraftSignature(wt.order),
+      startedAt: Date.now(),
+    };
+    wt.pendingSplit = pending;
+    wt.splitSaving = true;
+    if (!persistWaiterTerminalDraft(wt)) {
+      wt.pendingSplit = null;
+      wt.splitSaving = false;
+      showToast('ثبت امن وضعیت تفکیک در این نشست انجام نشد؛ هیچ درخواستی ارسال نشد.', 'error');
+      return false;
+    }
+    dialogBody.querySelectorAll('button, input').forEach((control) => { control.disabled = true; });
+    try {
+      const result = await api(`/api/waiter/orders/${pending.orderId}/split`, {
+        method: 'POST',
+        headers: { 'Idempotency-Key': pending.idempotencyKey },
+        body: JSON.stringify(pending.payload),
+      });
+      const primary = result?.primaryOrder;
+      const split = result?.splitOrder;
+      const modeMatches = split?.splitMode === pending.payload.mode;
+      const seatMatches = pending.payload.mode !== 'seat' || Number(split?.splitSeat) === Number(pending.payload.seat);
+      const indicesMatch = pending.payload.mode !== 'items'
+        || JSON.stringify(split?.splitItemIndices || []) === JSON.stringify(pending.payload.itemIndices || []);
+      if (result?.ok !== true
+        || !waiterOrderResponseMatchesIntent(primary, {
+          orderId: pending.orderId,
+          branchId: pending.branchId,
+          tableId: pending.tableId,
+        })
+        || !waiterOrderResponseMatchesIntent(split, {
+          orderId: split?.id,
+          branchId: pending.branchId,
+          tableId: pending.tableId,
+        })
+        || Number(split?.splitFromOrderId) !== pending.orderId || !modeMatches || !seatMatches || !indicesMatch) {
+        throw Object.assign(new Error('پاسخ تفکیک با فاکتور، شعبه یا میز انتخاب‌شده تطبیق ندارد؛ نتیجه را با مدیر شیفت بررسی کنید.'), { outcomeUnknown: true });
+      }
+      wt.pendingSplit = null;
+      wt.splitNeedsRefresh = false;
+      wt.splitSaving = false;
+      wt.order = JSON.parse(JSON.stringify(primary));
+      wt.lines = (primary.items || []).map((line, index) => ({
+        ...JSON.parse(JSON.stringify(line)),
+        localId: line.localId || `split-primary-${primary.id}-${index}`,
+        localSaved: true,
+      }));
+      wt.dirty = false;
+      state.data.orders = [
+        ...(state.data.orders || []).filter((order) => Number(order.id) !== Number(primary.id) && Number(order.id) !== Number(split.id)),
+        primary,
+        split,
+      ];
+      persistWaiterTerminalDraft(wt);
+      dialog.close();
+      showToast(successMessage(split));
+      await refreshWaiterAfterMutation();
+      state.waiterTerminal = null;
+      waiterFloor();
+      return true;
+    } catch (error) {
+      wt.splitSaving = false;
+      if (error.outcomeUnknown) {
+        wt.splitNeedsRefresh = true;
+        persistWaiterTerminalDraft(wt);
+        dialog.close();
+        wt.activeTab = 'check';
+        renderWaiterTerminal();
+        showToast('نتیجهٔ تفکیک نامشخص است؛ درخواست دوباره ارسال نمی‌شود. فاکتورهای میز را با مدیر شیفت تطبیق دهید.', 'error');
+      } else {
+        wt.pendingSplit = null;
+        wt.splitNeedsRefresh = false;
+        persistWaiterTerminalDraft(wt);
+        dialogBody.querySelectorAll('button, input').forEach((control) => { control.disabled = false; });
+        showToast(error.message, 'error');
+      }
+      return false;
+    }
+  }
+
   function splitOrderCheck() {
     const wt = state.waiterTerminal;
+    if (!waiterHasCapability('orders.split')) {
+      showToast('تفکیک فاکتور در دسترسی شما نیست؛ از مدیر شیفت مجوز لازم را درخواست کنید.', 'error');
+      return;
+    }
+    if (waiterTerminalMutationLocked(wt)) {
+      showToast('نتیجهٔ تفکیک قبلی روشن نیست؛ تا تطبیق فاکتورهای میز با مدیر شیفت، دوباره اقدام نکنید.', 'warning');
+      return;
+    }
+    if (wt.dirty || wt.remoteUpdatePending || wt.lines.some((line) => !line.localSaved)) {
+      showToast('ابتدا تغییرهای سفارش را ثبت کنید؛ تفکیک پیش‌نویس ذخیره‌نشده را انجام نمی‌دهد.', 'warning');
+      return;
+    }
     if (!wt.order?.id) {
       showToast('برای تفکیک فاکتور ابتدا سفارش را به سیستم ارسال کنید.', 'error');
       return;
@@ -3555,18 +6411,7 @@
 
     dialogBody.querySelectorAll('[data-split-seat]').forEach((btn) => btn.addEventListener('click', async () => {
       const seat = Number(btn.dataset.splitSeat);
-      try {
-        const res = await api(`/api/waiter/orders/${wt.order.id}/split`, {
-          method: 'POST',
-          body: JSON.stringify({ mode: 'seat', seat }),
-        });
-        dialog.close();
-        showToast(`فاکتور صندلی ${num(seat)} با موفقیت تفکیک و به شماره ${res.splitOrder.tableNo} ایجاد شد.`);
-        await fetchFloor();
-        openWaiterTerminal(wt.table.id);
-      } catch (err) {
-        showToast(err.message, 'error');
-      }
+      await submitWaiterSplit({ mode: 'seat', seat }, (split) => `فاکتور صندلی ${num(seat)} با موفقیت تفکیک و به شماره ${split.tableNo} ایجاد شد.`);
     }));
 
     dialogBody.querySelector('#btn-split-by-items')?.addEventListener('click', async () => {
@@ -3580,29 +6425,42 @@
         showToast('نمی‌توانید همه اقلام را منتقل کنید؛ باید حداقل یک قلم در فاکتور قبلی باقی بماند.', 'error');
         return;
       }
-      try {
-        const res = await api(`/api/waiter/orders/${wt.order.id}/split`, {
-          method: 'POST',
-          body: JSON.stringify({ mode: 'items', itemIndices }),
-        });
-        dialog.close();
-        showToast(`فاکتور مجزا (${res.splitOrder.tableNo}) با موفقیت ایجاد شد.`);
-        await fetchFloor();
-        openWaiterTerminal(wt.table.id);
-      } catch (err) {
-        showToast(err.message, 'error');
-      }
+      await submitWaiterSplit({ mode: 'items', itemIndices }, (split) => `فاکتور مجزا (${split.tableNo}) با موفقیت ایجاد شد.`);
     });
   }
 
   function moveOrderTable() {
     const wt = state.waiterTerminal;
+    if (!waiterHasCapability('orders.move_table')) {
+      showToast('انتقال میز در دسترسی شما نیست؛ از مدیر شیفت مجوز لازم را درخواست کنید.', 'error');
+      return;
+    }
+    if (waiterTerminalMutationLocked(wt)) {
+      showToast('تا تعیین تکلیف وضعیت سفارش یا دریافت وجه، انتقال میز متوقف است.', 'warning');
+      return;
+    }
     if (!wt.order?.id) {
       showToast('ابتدا سفارش را ثبت کنید.', 'error');
       return;
     }
-    const allTables = state.data.floor?.tables || [];
-    const otherTables = allTables.filter((t) => String(t.id) !== String(wt.table.id));
+    const branchId = state.branchId;
+    const branchGeneration = state.waiterBranchGeneration || 0;
+    const isCurrentBranch = () => String(state.branchId ?? '') === String(branchId ?? '')
+      && (state.waiterBranchGeneration || 0) === branchGeneration;
+    if (!waiterOrderResponseMatchesIntent(wt.order, {
+      orderId: wt.order.id,
+      branchId,
+      tableId: wt.table.id,
+    })) {
+      showToast('فاکتور با شعبه یا میز فعال تطبیق ندارد؛ انتقال متوقف شد. ابتدا وضعیت سالن را تازه کنید.', 'error');
+      return;
+    }
+    const otherTables = waiterAvailableAssignmentTables()
+      .filter((table) => String(table.id) !== String(wt.table.id));
+    if (!otherTables.length) {
+      showToast('میز آزاد دیگری برای انتقال وجود ندارد؛ وضعیت سالن را تازه کنید.', 'warning');
+      return;
+    }
 
     openDialog(
       'انتقال میز',
@@ -3622,122 +6480,504 @@
       `
     );
 
-    dialogBody.querySelector('#btn-confirm-move')?.addEventListener('click', async () => {
-      const nextTableNo = document.getElementById('move-table-select').value;
+    let uncertainTargetNo = null;
+    dialogBody.querySelector('#btn-confirm-move')?.addEventListener('click', async (event) => {
+      const button = event.currentTarget;
+      if (button.disabled) return;
+      const select = document.getElementById('move-table-select');
+      const nextTableNo = uncertainTargetNo || select?.value;
+      if (!nextTableNo) return;
+      if (!isCurrentBranch()) {
+        showToast('شعبه هنگام بازبودن فرم تغییر کرده است؛ انتقال از شعبهٔ فعال انجام نمی‌شود.', 'warning');
+        return;
+      }
+      setBusy(button, true);
+      if (select) select.disabled = true;
       try {
-        await api(`/api/waiter/orders/${wt.order.id}/move-table`, {
+        const result = await api(`/api/waiter/orders/${wt.order.id}/move-table`, {
           method: 'PATCH',
           body: JSON.stringify({ tableNo: nextTableNo }),
         });
+        if (result?.ok !== true || !waiterOrderResponseMatchesIntent(result.order, {
+          orderId: wt.order.id,
+          branchId,
+          tableId: nextTableNo,
+          exactTableNo: true,
+        })) {
+          throw Object.assign(new Error('پاسخ انتقال با شناسه، شعبه یا میز مقصد تطبیق ندارد؛ نتیجه نامشخص است و فقط همین مقصد را دوباره بررسی کنید.'), {
+            code: 'waiter_move_response_unverified', outcomeUnknown: true,
+          });
+        }
         dialog.close();
+        if (!isCurrentBranch()) {
+          if (state.waiterTerminal === wt) state.waiterTerminal = null;
+          showToast(`انتقال به میز ${nextTableNo} در شعبهٔ قبلی تأیید شد؛ فهرست شعبهٔ فعال را تازه کنید.`, 'warning');
+          return;
+        }
         showToast(`سفارش با موفقیت به میز ${nextTableNo} منتقل شد.`);
-        await fetchFloor();
-        openWaiterTerminal(nextTableNo);
+        if (await refreshWaiterAfterMutation()) openWaiterTerminal(nextTableNo);
       } catch (err) {
-        showToast(err.message, 'error');
+        setBusy(button, false);
+        if (err.outcomeUnknown) {
+          uncertainTargetNo = nextTableNo;
+          if (select?.isConnected) {
+            select.value = nextTableNo;
+            select.disabled = true;
+          }
+          button.textContent = `تلاش دوبارهٔ انتقال به میز ${nextTableNo}`;
+          button.title = 'برای جلوگیری از انتقال تکراری، فقط همین مقصد را دوباره امتحان کنید.';
+          showToast(`نتیجهٔ انتقال نامشخص است؛ وضعیت را بررسی کنید یا فقط انتقال به میز ${nextTableNo} را دوباره امتحان کنید.`, 'warning');
+        } else if (uncertainTargetNo) {
+          if (select?.isConnected) select.disabled = true;
+          button.textContent = `تلاش دوبارهٔ انتقال به میز ${nextTableNo}`;
+          button.title = 'مقصد تا روشن شدن نتیجهٔ درخواست قبلی قابل تغییر نیست.';
+          showToast(err.message, 'error');
+        } else if (select?.isConnected) {
+          select.disabled = false;
+          showToast(err.message, 'error');
+        }
       }
     });
   }
 
   function paintTerminalGuest(container) {
     const wt = state.waiterTerminal;
+    const orderSubmissionLocked = waiterTerminalMutationLocked(wt);
+    const canEditOrder = waiterHasCapability('orders.create');
+    const orderEditLocked = Boolean(wt.order?.id && !orderCanEdit(wt.order));
+    const guestLocked = orderSubmissionLocked || orderEditLocked || !canEditOrder;
     container.innerHTML = `
       <div style="padding:14px 12px;display:flex;flex-direction:column;gap:12px;max-width:480px;margin:0 auto">
+        <p class="wt-stage-message ${guestLocked ? 'is-warning' : ''}" role="${guestLocked ? 'status' : 'note'}">
+          ${orderSubmissionLocked
+            ? 'ثبت سفارش نیازمند تعیین تکلیف است؛ اطلاعات مهمان فعلاً قفل شده است.'
+            : !canEditOrder
+              ? 'ویرایش اطلاعات مهمان در دسترسی شما نیست؛ فاکتور را فقط می‌توانید مشاهده کنید.'
+            : orderEditLocked
+              ? 'این سفارش وارد مرحله‌ای شده که اطلاعات مهمان از این صفحه قابل ویرایش نیست.'
+              : 'اطلاعات این بخش ابتدا در پیش‌نویس می‌ماند و هنگام ذخیره و ارسال سفارش ثبت می‌شود.'}
+        </p>
         <label class="field">
           <span>نام مهمان (اختیاری):</span>
-          <input type="text" id="wt-guest-name" class="role-search" value="${esc(wt.guestName || '')}" placeholder="مثال: آقای رضایی" />
+          <input type="text" id="wt-guest-name" class="role-search" value="${esc(wt.guestName || '')}" placeholder="مثال: آقای رضایی" ${guestLocked ? 'disabled' : ''} />
         </label>
         <label class="field">
           <span>موبایل مهمان (جهت ارسال پیامک فاکتور و امتیاز وفاداری):</span>
-          <input type="tel" id="wt-guest-phone" class="role-search" value="${esc(wt.guestPhone || '')}" placeholder="0912..." />
+          <input type="tel" id="wt-guest-phone" class="role-search" value="${esc(wt.guestPhone || '')}" placeholder="0912..." ${guestLocked ? 'disabled' : ''} />
         </label>
-        <button type="button" class="role-primary" id="wt-save-guest" style="margin-top:8px">
-          ذخیره اطلاعات مهمان
+        <button type="button" class="role-primary" id="wt-save-guest" ${guestLocked ? 'disabled' : ''} style="margin-top:8px">
+          ${guestLocked ? 'ویرایش اطلاعات در این مرحله بسته است' : 'اعمال اطلاعات در پیش‌نویس فاکتور'}
         </button>
       </div>
     `;
     document.getElementById('wt-save-guest')?.addEventListener('click', () => {
+      if (guestLocked) return;
       wt.guestName = document.getElementById('wt-guest-name')?.value.trim() || '';
       wt.guestPhone = document.getElementById('wt-guest-phone')?.value.trim() || '';
       wt.dirty = true;
-      showToast('اطلاعات مهمان ثبت شد.');
+      if (!persistWaiterTerminalDraft(wt)) {
+        showToast('ذخیرهٔ پیش‌نویس در این نشست انجام نشد؛ اطلاعات را کپی کنید و تا رفع مشکل از سفارش خارج نشوید.', 'error');
+        return;
+      }
+      showToast('اطلاعات مهمان به پیش‌نویس فاکتور اعمال شد؛ برای ثبت نهایی، سفارش را ذخیره و ارسال کنید.');
       wt.activeTab = 'check';
       renderWaiterTerminal();
     });
+    document.getElementById('wt-guest-name')?.addEventListener('input', (event) => {
+      if (guestLocked) return;
+      wt.guestName = event.target.value;
+      wt.dirty = true;
+      persistWaiterTerminalDraft(wt);
+    });
+    document.getElementById('wt-guest-phone')?.addEventListener('input', (event) => {
+      if (guestLocked) return;
+      wt.guestPhone = event.target.value;
+      wt.dirty = true;
+      persistWaiterTerminalDraft(wt);
+    });
+  }
+
+  async function serveWaiterOrder(button) {
+    const wt = state.waiterTerminal;
+    if (!wt?.order?.id || wt.serving) return;
+    if (!waiterHasCapability('service.manage')) {
+      showToast('ثبت تحویل سفارش در دسترسی شما نیست؛ سفارش را به مسئول مجاز بسپارید.', 'error');
+      return;
+    }
+    const orderId = Number(wt.order.id);
+    const branchId = state.branchId;
+    const branchGeneration = state.waiterBranchGeneration || 0;
+    const isCurrentBranch = () => String(state.branchId ?? '') === String(branchId ?? '')
+      && (state.waiterBranchGeneration || 0) === branchGeneration;
+    if (!waiterOrderResponseMatchesIntent(wt.order, { orderId, branchId, tableId: wt.table.id })) {
+      showToast('فاکتور با شعبه یا میز فعال تطبیق ندارد؛ ثبت تحویل متوقف شد. ابتدا وضعیت سالن را تازه کنید.', 'error');
+      return;
+    }
+    wt.serving = true;
+    setBusy(button, true);
+    try {
+      const result = await api(`/api/waiter/orders/${orderId}/status`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status: 'done' }),
+      });
+      if (result?.ok !== true || !waiterOrderResponseMatchesIntent(result.order, {
+        orderId, branchId, tableId: wt.table.id,
+      })) {
+        throw Object.assign(new Error('پاسخ ثبت تحویل با شناسه، شعبه یا میز فعال تطبیق ندارد؛ نتیجه نامشخص است.'), {
+          code: 'waiter_serve_response_unverified', outcomeUnknown: true,
+        });
+      }
+      wt.order = JSON.parse(JSON.stringify(result.order));
+      if (!isCurrentBranch()) {
+        if (state.waiterTerminal === wt) state.waiterTerminal = null;
+        showToast('تحویل در شعبهٔ قبلی تأیید شد؛ وضعیت را در همان شعبه بررسی کنید.', 'warning');
+        return;
+      }
+      let refreshError = null;
+      try { await fetchWaiter(); } catch (error) { refreshError = error; }
+      const latest = refreshError || !isCurrentBranch() ? null : (state.data.orders || []).find((order) =>
+        waiterOrderResponseMatchesIntent(order, { orderId, branchId, tableId: wt.table.id }));
+      if (latest) wt.order = JSON.parse(JSON.stringify(latest));
+      else if (!responseOrder) {
+        wt.serveNeedsRefresh = true;
+        wt.activeTab = 'check';
+        renderWaiterTerminal();
+        showToast('پاسخ تحویل ثبت شد اما سفارش تازه پیدا نشد؛ پیش از تکرار وضعیت را بررسی کنید.', 'warning');
+        return;
+      }
+      wt.serveNeedsRefresh = false;
+      const serviceComplete = ['done', 'completed', 'picked_up', 'delivered'].includes(String(wt.order.status || ''));
+      if (!serviceComplete) {
+        wt.activeTab = 'check';
+        renderWaiterTerminal();
+        showToast('سرور هنوز تحویل سفارش را تأیید نکرده است؛ وضعیت را بررسی و سپس دوباره اقدام کنید.', 'warning');
+        return;
+      }
+      if (globalThis.WestoOrderPaymentState.deriveOrderPaymentWorkflow(wt.order).settled) {
+        state.waiterTerminal = null;
+        waiterFloor();
+        showToast('تحویل و پرداخت ثبت شد؛ میز آزاد است.');
+      } else {
+        wt.activeTab = 'check';
+        renderWaiterTerminal();
+        showToast(refreshError
+          ? `تحویل ثبت شد؛ فاکتور برای تسویه باز است. تازه‌سازی سالن ناموفق بود: ${refreshError.message}`
+          : 'تحویل ثبت شد؛ فاکتور برای تسویه باز است.');
+      }
+    } catch (error) {
+      if (error.outcomeUnknown) {
+        try {
+          await fetchWaiter();
+          const latest = isCurrentBranch() ? (state.data.orders || []).find((order) =>
+            waiterOrderResponseMatchesIntent(order, { orderId, branchId, tableId: wt.table.id })) : null;
+          if (latest) {
+            wt.order = JSON.parse(JSON.stringify(latest));
+            wt.serveNeedsRefresh = false;
+            wt.activeTab = 'check';
+            renderWaiterTerminal();
+            const alreadyServed = ['done', 'completed', 'picked_up', 'delivered'].includes(String(latest.status || ''));
+            showToast(alreadyServed
+              ? 'تحویل در سرور ثبت شده و وضعیت تازه تأیید شد.'
+              : 'سرور وضعیت آماده را تأیید کرد؛ تحویل ثبت نشده و می‌توانید پس از بررسی دوباره اقدام کنید.', alreadyServed ? '' : 'warning');
+            return;
+          }
+        } catch { /* keep the retry locked until the operator refreshes successfully */ }
+        wt.serveNeedsRefresh = true;
+        wt.activeTab = 'check';
+        renderWaiterTerminal();
+        showToast(`${error.message} نتیجهٔ تحویل نامشخص است؛ پیش از تکرار وضعیت را از سرور تازه کنید.`, 'error');
+      } else {
+        showToast(error.message, 'error');
+        setBusy(button, false);
+      }
+    } finally {
+      wt.serving = false;
+    }
   }
 
   function payWaiterCheck() {
     const wt = state.waiterTerminal;
-    if (!wt?.lines?.length) {
-      showToast('برای تسویه ابتدا حداقل یک غذا به فاکتور اضافه کنید.', 'error');
+    if (wt?.paymentIntentConflict) {
+      showToast('مبلغ فاکتور با درخواست دریافت قبلی تطبیق ندارد؛ فاکتور را به صندوق‌دار بسپارید.', 'error');
       return;
     }
-    if (wt.order?.paymentStatus === 'paid') {
-      showToast('این فاکتور قبلاً پرداخت شده است.', 'error');
+    if (wt?.paymentNeedsRefresh) {
+      showToast('ابتدا وضعیت دریافت وجه را تازه کنید؛ پرداخت را دوباره ثبت نکنید.', 'error');
       return;
     }
-    const calculatedTotal = wt.lines.reduce((sum, line) => sum + receiptLineTotal(line), 0);
-    const total = wt.order?.id && Number.isFinite(Number(wt.order.total)) ? Number(wt.order.total) : calculatedTotal;
-    const canCollectCash = (state.session?.workspace?.capabilities || []).includes('cash.manage');
+    if (!wt?.order?.id) {
+      showToast('ابتدا سفارش را ثبت و برای آشپزخانه ارسال کنید.', 'error');
+      return;
+    }
+    if (!['done', 'completed', 'picked_up', 'delivered'].includes(String(wt.order.status || ''))) {
+      showToast('ابتدا تحویل سفارش به میز را ثبت کنید؛ سپس فاکتور قابل تسویه است.', 'error');
+      return;
+    }
+    const paymentWorkflow = globalThis.WestoOrderPaymentState.deriveOrderPaymentWorkflow(wt.order);
+    if (paymentWorkflow.requiresReconciliation) {
+      wt.activeTab = 'check';
+      renderWaiterTerminal();
+      showToast('اطلاعات مالی این فاکتور نیاز به بررسی دارد؛ تا رفع مغایرت امکان ثبت دریافت وجه نیست.', 'error');
+      return;
+    }
+    if (paymentWorkflow.settled) {
+      showToast('این فاکتور قبلاً تسویه شده است.', 'error');
+      return;
+    }
+    const capabilities = state.session?.workspace?.capabilities || [];
+    const canCollectPayment = capabilities.includes('*') || capabilities.includes('payments.collect');
+    const canCollectCash = capabilities.includes('*') || capabilities.includes('cash.manage');
+    if (!canCollectPayment) {
+      showToast('ثبت پرداخت در دسترسی شما نیست؛ فاکتور را به صندوق بسپارید.', 'error');
+      return;
+    }
+
+    const settlementStage = paymentWorkflow.stages.find((stage) => stage.id === 'settlement');
+    const { total: orderTotal, paid: amountPaid, due: amountDue } = paymentWorkflow.amounts;
+    if (settlementStage?.state !== 'current' || !Number.isFinite(amountDue) || !amountDue) {
+      showToast('مانده‌ای برای پرداخت وجود ندارد.', 'error');
+      return;
+    }
 
     openDialog(
-      'تسویه و پرداخت سر میز',
-      `${wt.table.label || `میز ${wt.table.id}`} · ${money(total)}`,
-      `
-      <div style="display:flex;flex-direction:column;gap:14px;padding:6px 0">
-        <div style="background:var(--rp-surface-2);border-radius:14px;padding:14px;text-align:center">
-          <small style="color:var(--rp-muted);font-size:12px;display:block">مبلغ کل قابل پرداخت</small>
-          <strong style="font-size:24px;color:#0284c7;display:block;margin-top:4px">${money(total)}</strong>
-          <span style="font-size:12px;color:var(--rp-muted);margin-top:6px;display:block">${num(wt.lines.length)} قلم برای ${num(wt.covers || wt.seatsCount)} مهمان</span>
-        </div>
-
-        <div style="display:grid;grid-template-columns:${canCollectCash ? '1fr 1fr' : '1fr'};gap:10px">
-          <button type="button" class="btn" id="btn-pay-pos" style="display:flex;flex-direction:column;align-items:center;padding:16px 10px;border-radius:14px;background:#0284c7;color:#fff;border:none;gap:6px">
-            <span style="font-size:24px">💳</span>
-            <strong style="font-size:13px">کارتخوان / پوز</strong>
-            <small style="font-size:10.5px;opacity:0.9">تراکنش کارت سر میز</small>
-          </button>
-          ${canCollectCash ? `<button type="button" class="btn" id="btn-pay-cash" style="display:flex;flex-direction:column;align-items:center;padding:16px 10px;border-radius:14px;background:#10b981;color:#fff;border:none;gap:6px">
-            <span style="font-size:24px">💵</span>
-            <strong style="font-size:13px">وجه نقد</strong>
-            <small style="font-size:10.5px;opacity:0.9">دریافت نقدی</small>
-          </button>` : ''}
-        </div>
-
-        <p class="wt-payment-note">پرداخت کارت از همین دستگاه ثبت می‌شود. چاپ یا ارسال پیامک رسید از صندوق انجام خواهد شد.</p>
-      </div>
-      `
+      'مرحلهٔ چهارم · تسویه',
+      `${wt.table.label || `میز ${wt.table.id}`} · ${money(amountDue)}`,
+      '<div class="wt-payment-flow" id="wt-payment-flow" role="region" aria-label="ثبت دریافت وجه"></div>'
     );
 
-    const completePayment = async (method) => {
+    const completePayment = async (method, requestedAmount, amountTendered, confirmButton) => {
+      if (wt.paymentPending) return;
+      wt.paymentPending = true;
+      setBusy(confirmButton, true);
+      let intent = null;
+      let idempotencyKey = '';
+      const alreadyPending = Boolean(wt.pendingPayment);
       try {
-        const needsSave = !wt.order?.id || wt.dirty || wt.lines.some((line) => !line.localSaved);
-        if (needsSave) {
-          const saved = await saveAndSendTerminalOrder(false);
-          if (!saved) return;
+        const retry = wt.pendingPayment;
+        const paymentReference = retry
+          ? String(retry.intent.paymentReference || '')
+          : method === 'cash' ? '' : String(dialogBody.querySelector('#wt-card-reference')?.value || '').trim();
+        intent = retry ? retry.intent : {
+          orderId: wt.order.id,
+          branchId: wt.order.branchId || state.branchId,
+          tender: method === 'cash' ? 'cash' : 'manual_card',
+          paymentAmount: requestedAmount,
+          amountTendered: method === 'cash' ? amountTendered : requestedAmount,
+          paymentReference,
+        };
+        if (Number(intent.orderId) !== Number(wt.order.id)
+          || !Number.isSafeInteger(Number(intent.paymentAmount))
+          || Number(intent.paymentAmount) <= 0
+          || Number(intent.paymentAmount) > amountDue
+          || (retry && Number(retry.baselinePaid) !== Number(amountPaid))) {
+          throw Object.assign(new Error('ماندهٔ سفارش تغییر کرده است؛ ابتدا وضعیت تازهٔ فاکتور را بررسی کنید.'), { outcomeUnknown: true });
         }
-        if (!wt.order?.id) return;
-        if (method === 'cash' && !canCollectCash) {
-          showToast('ثبت وجه نقد از این دستگاه مجاز نیست؛ از صندوق استفاده کنید.', 'error');
-          return;
+        idempotencyKey = retry?.idempotencyKey || settlementIdempotencyKey(confirmButton, intent);
+        wt.pendingPayment ||= { intent, idempotencyKey, baselinePaid: amountPaid };
+        if (!persistWaiterTerminalDraft(wt)) {
+          if (!alreadyPending) {
+            wt.pendingPayment = null;
+            clearSettlementIdempotencyKey(idempotencyKey, intent);
+          }
+          throw Object.assign(new Error('پیش‌نویس امن درخواست دریافت ذخیره نشد؛ هیچ درخواستی به سرور ارسال نشد.'), { notSent: true });
         }
-        const paymentAmount = Number.isFinite(Number(wt.order.total)) ? Number(wt.order.total) : total;
-        await api(`/api/cashier/orders/${wt.order.id}/settle`, {
+        const result = await api(`/api/staff/orders/${wt.order.id}/settle`, {
           method: 'POST',
-          body: JSON.stringify({ tender: method === 'pos' ? 'card' : 'cash', paymentAmount, amountTendered: paymentAmount }),
+          headers: { 'Idempotency-Key': idempotencyKey },
+          body: JSON.stringify({
+            tender: method === 'cash' ? 'cash' : 'manual_card',
+            paymentAmount: intent.paymentAmount,
+            amountTendered: intent.amountTendered,
+            paymentReference,
+          }),
         });
+        const responseOrder = result?.order;
+        const responseWorkflow = responseOrder && Number(responseOrder.id) === Number(wt.order.id)
+          ? globalThis.WestoOrderPaymentState.deriveOrderPaymentWorkflow(responseOrder)
+          : null;
+        const paymentAmount = Number(result?.payment?.amount);
+        const hasRecordedPayment = result?.ok === true
+          && responseWorkflow?.isConsistent === true
+          && result.payment && Number.isFinite(paymentAmount) && paymentAmount > 0
+          && paymentAmount === Number(intent.paymentAmount)
+          && String(result.payment.idempotencyKey || '') === String(idempotencyKey)
+          && responseWorkflow.amounts.paid > amountPaid
+          && responseWorkflow.amounts.paid >= amountPaid + paymentAmount;
+        if (!hasRecordedPayment) {
+          throw Object.assign(new Error('پاسخ ثبت وجه، تأیید قابل‌اعتماد ندارد؛ برای جلوگیری از دریافت دوباره، وضعیت را تازه کنید.'), {
+            code: 'settlement_response_unverified',
+            outcomeUnknown: true,
+          });
+        }
+        clearSettlementIdempotencyKey(idempotencyKey, intent);
+        wt.pendingPayment = null;
+        wt.paymentNeedsRefresh = false;
+        clearWaiterTerminalDraft(wt.table.id);
+        wt.order = JSON.parse(JSON.stringify(responseOrder));
         dialog.close();
-        showToast(`تسویه سفارش با موفقیت ثبت و میز ${wt.table.id} آزاد شد.`);
-        state.waiterTerminal = null;
-        await fetchFloor();
-        waiterFloor();
-      } catch (err) {
-        showToast(err.message, 'error');
+        const localOrderIndex = (state.data.orders || []).findIndex((order) => Number(order.id) === Number(wt.order.id));
+        if (localOrderIndex >= 0) state.data.orders[localOrderIndex] = wt.order;
+        else state.data.orders = [...(state.data.orders || []), wt.order];
+        try {
+          await fetchWaiter();
+          const latest = state.data.orders.find((order) => Number(order.id) === Number(wt.order.id));
+          if (latest) {
+            const latestWorkflow = globalThis.WestoOrderPaymentState.deriveOrderPaymentWorkflow(latest);
+            if (latestWorkflow.isConsistent === true && latestWorkflow.amounts.paid >= responseWorkflow.amounts.paid) {
+              wt.order = JSON.parse(JSON.stringify(latest));
+            }
+          }
+        } catch (refreshError) {
+          // The settlement endpoint has already committed. Keep its response as
+          // the source of truth instead of presenting a successful payment as
+          // failed just because the follow-up refresh was unavailable.
+          console.warn('[waiter-payment] post-settlement refresh failed:', refreshError?.message || refreshError);
+        }
+        const updatedWorkflow = globalThis.WestoOrderPaymentState.deriveOrderPaymentWorkflow(wt.order);
+        if (updatedWorkflow.settled) {
+          state.waiterTerminal = null;
+          waiterFloor();
+          showToast('پرداخت ثبت شد؛ فاکتور تسویه و میز آزاد شد.');
+        } else if (updatedWorkflow.requiresReconciliation) {
+          wt.activeTab = 'check';
+          renderWaiterTerminal();
+          showToast('پرداخت ثبت شد؛ اما وضعیت مالی پاسخ نیاز به تطبیق دارد. تا بررسی، فاکتور تسویه‌شده نمایش داده نمی‌شود.', 'warning');
+        } else {
+          wt.activeTab = 'check';
+          renderWaiterTerminal();
+          showToast(`پرداخت ثبت شد؛ ماندهٔ ${money(updatedWorkflow.amounts.due)} باقی مانده است.`, 'warning');
+        }
+      } catch (error) {
+        if (error.notSent) {
+          setBusy(confirmButton, false);
+          showToast(error.message, 'error');
+          return false;
+        }
+        if (intent && idempotencyKey) {
+          wt.pendingPayment ||= { intent, idempotencyKey, baselinePaid: amountPaid };
+        }
+        wt.paymentNeedsRefresh = true;
+        wt.activeTab = 'check';
+        dialog.close();
+        renderWaiterTerminal();
+        const explanation = error.outcomeUnknown
+          ? 'نتیجهٔ درخواست روشن نیست.'
+          : 'سامانه ثبت را نپذیرفت؛ چون دریافت ممکن است بیرون از سامانه انجام شده باشد، وضعیت فاکتور باید بررسی شود.';
+        showToast(`${error.message} ${explanation} درخواست و کلید یکتا حفظ شد؛ ابتدا وضعیت را تازه کنید.`, 'error');
+      } finally {
+        wt.paymentPending = false;
       }
     };
 
-    dialogBody.querySelector('#btn-pay-pos')?.addEventListener('click', () => completePayment('pos'));
-    dialogBody.querySelector('#btn-pay-cash')?.addEventListener('click', () => completePayment('cash'));
+    const renderPaymentChoices = () => {
+      const flow = dialogBody.querySelector('#wt-payment-flow');
+      if (!flow) return;
+      if (wt.pendingPayment) {
+        const tender = wt.pendingPayment.intent.tender;
+        flow.innerHTML = `
+          <section class="wt-payment-flow__amount"><span>درخواست قبلی · ${tender === 'cash' ? 'نقدی' : 'کارت بانکی'}</span><strong>${money(wt.pendingPayment.intent.paymentAmount)}</strong></section>
+          <p class="wt-payment-flow__instruction" role="status">همان درخواست با همان کلید یکتا تکرار می‌شود؛ دریافت تازه‌ای ثبت نمی‌شود.</p>
+          <div class="wt-payment-flow__methods"><button type="button" class="wt-payment-method" id="btn-pay-pending"><span aria-hidden="true">↻</span><span><strong>ادامهٔ ثبت امن همان دریافت</strong><small>دریافت فیزیکی را دوباره انجام ندهید.</small></span></button></div>
+        `;
+        flow.querySelector('#btn-pay-pending')?.addEventListener('click', () => renderPaymentConfirmation(tender === 'cash' ? 'cash' : 'card', true));
+        return;
+      }
+      flow.innerHTML = `
+        <section class="wt-payment-flow__amount"><span>ماندهٔ قابل پرداخت</span><strong>${money(amountDue)}</strong><small>جمع کل ${money(orderTotal)} · پرداخت‌شده ${money(amountPaid)}</small></section>
+        <p class="wt-payment-flow__instruction">روش دریافت وجه را انتخاب کنید. پرداخت فقط پس از ثبت تحویل سفارش فعال می‌شود.</p>
+        <div class="wt-payment-flow__methods">
+          <button type="button" class="wt-payment-method" id="btn-pay-pos"><span aria-hidden="true">💳</span><span><strong>کارت بانکی · ثبت دستی</strong><small>پس از تأیید دستگاه دریافت وجه؛ کارت‌خوان به سامانه متصل نیست.</small></span></button>
+          ${canCollectCash ? '<button type="button" class="wt-payment-method" id="btn-pay-cash"><span aria-hidden="true">💵</span><span><strong>وجه نقد</strong><small>دریافت نقدی از صندوق باز</small></span></button>' : ''}
+        </div>
+        ${!canCollectCash ? '<p class="wt-payment-flow__note">برای دریافت نقدی، تسویه از صندوق انجام می‌شود.</p>' : ''}
+      `;
+      flow.querySelector('#btn-pay-pos')?.addEventListener('click', () => renderPaymentConfirmation('card'));
+      flow.querySelector('#btn-pay-cash')?.addEventListener('click', () => renderPaymentConfirmation('cash'));
+    };
+
+    const renderPaymentConfirmation = (method, retrying = false) => {
+      const flow = dialogBody.querySelector('#wt-payment-flow');
+      if (!flow) return;
+      const retryIntent = retrying ? wt.pendingPayment?.intent : null;
+      const isCash = method === 'cash';
+      const retryAmount = retryIntent?.paymentAmount ?? amountDue;
+      flow.innerHTML = `
+        <section class="wt-payment-flow__amount"><span>ماندهٔ کل فاکتور</span><strong>${money(amountDue)}</strong><small>مبلغ هر دریافت می‌تواند بخشی از مانده باشد؛ برای روش بعدی، همین فاکتور را دوباره باز کنید.</small></section>
+        <div class="wt-payment-flow__confirm">
+          <strong>${isCash ? 'دریافت وجه نقد را تأیید کنید' : 'ثبت دستی پرداخت کارت را تأیید کنید'}</strong>
+          <p>${isCash ? 'پس از دریافت وجه و اطمینان از بازبودن صندوق، پرداخت را ثبت کنید.' : `ابتدا مبلغ انتخابی را روی کارت‌خوان مستقل دریافت کنید و نتیجهٔ موفق را ببینید؛ این سامانه دستگاه را کنترل نمی‌کند.`}</p>
+          <label class="field"><span>مبلغ این دریافت (تومان)</span><input id="wt-payment-amount" inputmode="numeric" autocomplete="off" aria-label="مبلغ این دریافت به تومان" aria-describedby="wt-payment-amount-hint" value="${num(retryAmount)}" ${retrying ? 'disabled' : ''} /></label>
+          <small id="wt-payment-amount-hint">بین ۱ تا ${money(amountDue)} تومان؛ برای ترکیب نقد و کارت، هر دریافت را جدا ثبت کنید.</small>
+          ${isCash ? `<label class="field"><span>وجه نقد دریافتی (تومان)</span><input id="wt-cash-tendered" inputmode="numeric" autocomplete="off" aria-describedby="wt-payment-change" value="${num(retryIntent?.amountTendered ?? retryAmount)}" ${retrying ? 'disabled' : ''} /></label><p class="wt-payment-flow__change" id="wt-payment-change" role="status" aria-live="polite"></p>` : ''}
+          ${!isCash ? `<label class="field"><span>کد پیگیری روی رسید کارت‌خوان</span><input id="wt-card-reference" type="text" maxlength="120" autocomplete="off" aria-label="کد پیگیری روی رسید کارت‌خوان، الزامی" aria-required="true" required placeholder="کد پیگیری یا شماره مرجع رسید" value="${esc(retryIntent?.paymentReference || '')}" ${retrying ? 'disabled' : ''} /></label><small>برای تطبیق مالی لازم است؛ کارت‌خوان به سامانه متصل نیست.</small>${retrying && !String(retryIntent?.paymentReference || '').trim() ? '<p class="role-inline-warning" role="alert">درخواست قبلی کد پیگیری ندارد؛ فقط همان درخواست یکتا تکرار می‌شود. اگر دریافت روی دستگاه موفق بوده، دریافت تازه انجام ندهید و رسید را با سرپرست تطبیق دهید.</p>' : ''}` : ''}
+        </div>
+        <div class="wt-payment-flow__actions"><button type="button" class="wt-payment-back" id="wt-payment-back">بازگشت</button><button type="button" class="wt-payment-confirm" id="wt-payment-confirm">${retrying ? 'تکرار امن همان درخواست' : isCash ? 'ثبت دریافت نقدی' : 'ثبت دستی کارت پس از تأیید دستگاه'}</button></div>
+      `;
+      const cashInput = flow.querySelector('#wt-cash-tendered');
+      const changeNote = flow.querySelector('#wt-payment-change');
+      const confirmButton = flow.querySelector('#wt-payment-confirm');
+      const cardReferenceInput = flow.querySelector('#wt-card-reference');
+      const paymentAmountInput = flow.querySelector('#wt-payment-amount');
+      const readPaymentAmount = () => waiterPaymentAmount(paymentAmountInput?.value, amountDue);
+      const updateChange = () => {
+        const paymentAmount = readPaymentAmount();
+        if (paymentAmountInput) {
+          paymentAmountInput.setAttribute('aria-invalid', String(paymentAmount === null));
+        }
+        if (!cashInput || !changeNote) {
+          if (confirmButton && !retrying) {
+            const hasReference = Boolean(String(cardReferenceInput?.value || '').trim());
+            confirmButton.disabled = paymentAmount === null || (!isCash && !hasReference);
+          }
+          return;
+        }
+        const parsedTendered = parseInputNumber(cashInput.value);
+        const validTender = paymentAmount !== null && Number.isSafeInteger(parsedTendered) && parsedTendered >= paymentAmount;
+        const tendered = Number.isFinite(parsedTendered) ? parsedTendered : 0;
+        changeNote.textContent = paymentAmount === null
+          ? `مبلغ دریافت باید عدد صحیحی بین ۱ و ${money(amountDue)} باشد.`
+          : !validTender && tendered >= paymentAmount
+          ? 'مبلغ دریافتی باید عدد صحیح و معتبر باشد.'
+          : tendered >= paymentAmount
+          ? `باقی‌مانده برای بازگرداندن: ${money(tendered - paymentAmount)}`
+          : `مبلغ دریافتی باید دست‌کم ${money(paymentAmount)} باشد.`;
+        changeNote.classList.toggle('is-error', !validTender);
+        cashInput.setAttribute('aria-invalid', String(!validTender));
+        if (confirmButton && !retrying) confirmButton.disabled = !validTender;
+      };
+      const updateCardReferenceValidity = () => {
+        if (!cardReferenceInput || retrying || !confirmButton) return;
+        confirmButton.disabled = readPaymentAmount() === null || !String(cardReferenceInput.value || '').trim();
+      };
+      paymentAmountInput?.addEventListener('input', updateChange);
+      cashInput?.addEventListener('input', updateChange);
+      cardReferenceInput?.addEventListener('input', updateCardReferenceValidity);
+      updateChange();
+      updateCardReferenceValidity();
+      flow.querySelector('#wt-payment-back')?.addEventListener('click', renderPaymentChoices);
+      confirmButton?.addEventListener('click', (event) => {
+        const paymentAmount = retrying ? Number(retryIntent?.paymentAmount) : readPaymentAmount();
+        const parsedTendered = isCash ? parseInputNumber(cashInput?.value || '') : paymentAmount;
+        const tendered = Number.isSafeInteger(parsedTendered) ? parsedTendered : 0;
+        if (!Number.isSafeInteger(paymentAmount) || paymentAmount <= 0 || paymentAmount > amountDue) {
+          showToast(`مبلغ این دریافت باید عدد صحیحی بین ۱ و ${money(amountDue)} باشد.`, 'error');
+          paymentAmountInput?.focus();
+          return;
+        }
+        if (isCash && tendered < paymentAmount) {
+          showToast(`مبلغ نقد دریافتی باید دست‌کم ${money(paymentAmount)} باشد.`, 'error');
+          return;
+        }
+        if (!isCash && !retrying && !String(cardReferenceInput?.value || '').trim()) {
+          showToast('کد پیگیری رسید کارت‌خوان را وارد کنید.', 'error');
+          cardReferenceInput?.focus();
+          return;
+        }
+        completePayment(method, paymentAmount, tendered, event.currentTarget);
+      });
+    };
+
+    renderPaymentChoices();
   }
 
 
@@ -3745,31 +6985,286 @@
   function waiterCalls() {
     clearRoleHeaderContext();
     document.body.classList.remove('is-waiter-floor-app');
-    main.innerHTML = `${pageHead('رسیدگی به مهمان', 'فراخوان‌های مهمان', 'درخواست‌ها بر اساس زمان انتظار مرتب شده‌اند')}${waiterMetrics()}<section class="role-section"><div class="role-section__head"><h2>صف رسیدگی</h2><span>${num(state.data.calls.length)} فراخوان باز</span></div>${callsHtml()}</section>`;
+    main.innerHTML = `${pageHead('رسیدگی به مهمان', 'فراخوان‌های مهمان', 'درخواست‌ها بر اساس زمان انتظار مرتب شده‌اند')}${waiterMetrics()}<section class="role-section"><div class="role-section__head"><h2>صف رسیدگی</h2><div class="order-actions"><span>${num(state.data.calls.length)} فراخوان باز</span><button type="button" class="role-secondary" data-refresh-waiter-calls>تازه‌سازی وضعیت</button></div></div>${callsHtml()}</section>`;
     wireCalls();
   }
 
   function waiterOrders() {
     clearRoleHeaderContext();
     document.body.classList.remove('is-waiter-floor-app');
-    const orders = (state.data.orders || []).filter((item) => item.fulfillment === 'dine_in' && !['done', 'cancelled'].includes(item.status));
-    const cards = orders.map((order) => orderCard(order, order.status === 'ready' ? '<button class="role-primary" data-serve>تحویل به میز</button>' : '')).join('');
-    main.innerHTML = `${pageHead('خدمت‌رسانی میز', 'سفارش‌های سالن', 'پیگیری سفارش از ثبت تا آماده‌شدن و تحویل به میز', '<button class="role-primary" id="new-order">سفارش جدید</button>')}${waiterMetrics()}<section class="role-section"><div class="role-section__head"><h2>سفارش‌های فعال</h2><span>میزهای من</span></div><div class="order-list">${cards || empty('سفارش فعالی در سالن نیست.')}</div></section>`;
-    document.getElementById('new-order').addEventListener('click', () => showOrderComposer('waiter'));
-    main.querySelectorAll('[data-serve]').forEach((button) => button.addEventListener('click', () => {
-      const id = button.closest('[data-order-id]').dataset.orderId;
-      action(button, () => api(`/api/waiter/orders/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status: 'done' }) }), 'تحویل به میز ثبت شد.');
+    const canCreateOrders = waiterHasCapability('orders.create');
+    const canMoveOrders = waiterHasCapability('orders.move_table');
+    const canServeOrders = waiterHasCapability('service.manage');
+    const canCollectPayments = waiterHasCapability('payments.collect');
+    const statusPriority = { ready: 0, preparing: 1, sent_to_kitchen: 2, paid: 3, pay_at_cashier: 4, awaiting_confirmation: 5, pending_online: 6 };
+    const activeOrders = (state.data.orders || [])
+      .filter((item) => item.fulfillment === 'dine_in' && orderIsOpen(item));
+    const unmappedIds = new Set(waiterUnmappedOrders(activeOrders).map((order) => String(order.id)));
+    const orders = activeOrders
+      .filter((item) => !state.waiterUnmappedOnly || unmappedIds.has(String(item.id)))
+      .sort((a, b) => (statusPriority[a.status] ?? 9) - (statusPriority[b.status] ?? 9) || new Date(a.createdAt || 0) - new Date(b.createdAt || 0));
+    const cards = orders.map((order) => {
+      const served = ['done', 'completed', 'picked_up', 'delivered'].includes(String(order.status || ''));
+      const canAssignTable = !waiterOrderHasMappedTable(order);
+      const actions = canAssignTable
+        ? `<button type="button" class="role-secondary" data-assign-waiter-table="${esc(order.id)}" ${canMoveOrders ? '' : 'disabled aria-disabled="true" title="برای تخصیص میز از مدیر شیفت دسترسی بخواهید."'}>${canMoveOrders ? 'تخصیص میز' : 'تخصیص میز · نیازمند مجوز'}</button>`
+        : orderCanEdit(order)
+        ? `<button type="button" class="role-secondary" data-edit-waiter-order="${esc(order.id)}" ${canCreateOrders ? '' : 'disabled aria-disabled="true" title="برای ویرایش سفارش از مدیر شیفت دسترسی بخواهید."'}>${canCreateOrders ? 'ویرایش و ارسال سفارش' : 'ویرایش · نیازمند مجوز'}</button>`
+        : order.status === 'ready' && !served
+        ? `<button type="button" class="role-primary" data-serve ${canServeOrders ? '' : 'disabled aria-disabled="true" title="برای ثبت تحویل از مدیر شیفت دسترسی بخواهید."'}>${canServeOrders ? 'بررسی و تحویل' : 'تحویل · نیازمند مجوز'}</button>`
+        : served && order.paymentStatus !== 'paid'
+          ? `<button type="button" class="role-primary" data-collect>${canCollectPayments ? 'تسویه فاکتور' : 'مشاهده و سپردن فاکتور به صندوق'}</button>`
+          : '';
+      return orderCard(order, actions);
+    }).join('');
+    const filterActions = state.waiterUnmappedOnly
+      ? '<button type="button" class="role-secondary" id="waiter-show-all-orders">نمایش همهٔ سفارش‌ها</button>'
+      : '';
+    const emptyMessage = state.waiterUnmappedOnly
+      ? 'سفارش فعالِ بدون میز برای رسیدگی وجود ندارد.'
+      : 'سفارش فعالی در سالن نیست.';
+    const createOrderAction = canCreateOrders
+      ? '<button type="button" class="role-primary" id="new-order">سفارش جدید</button>'
+      : '<button type="button" class="role-primary" id="new-order" disabled aria-disabled="true" title="برای ساخت سفارش از مدیر شیفت دسترسی بخواهید.">سفارش جدید · بدون مجوز</button>';
+    const createPermissionNote = canCreateOrders ? '' : '<p class="wt-stage-message" role="status">نمایش سفارش‌ها مجاز است؛ برای ایجاد یا ویرایش، از مدیر شیفت دسترسی لازم را درخواست کنید.</p>';
+    main.innerHTML = `${pageHead('خدمت‌رسانی میز', 'سفارش‌های سالن', 'پیگیری سفارش از ثبت تا آماده‌شدن و تحویل به میز', createOrderAction)}${waiterMetrics()}<section class="role-section">${createPermissionNote}<div class="role-section__head"><h2>${state.waiterUnmappedOnly ? 'سفارش‌های نیازمند تعیین میز' : 'سفارش‌های فعال'}</h2><div class="order-actions">${filterActions}<span>${num(orders.length)} سفارش</span></div></div><div class="order-list">${cards || empty(emptyMessage)}</div></section>`;
+    if (canCreateOrders) document.getElementById('new-order')?.addEventListener('click', () => showOrderComposer('waiter'));
+    document.getElementById('waiter-show-all-orders')?.addEventListener('click', () => {
+      state.waiterUnmappedOnly = false;
+      waiterOrders();
+    });
+    main.querySelectorAll('[data-edit-waiter-order]').forEach((button) => button.addEventListener('click', () => {
+      openWaiterOrderEditor(button.dataset.editWaiterOrder, button);
     }));
+    main.querySelectorAll('[data-serve]').forEach((button) => button.addEventListener('click', () => {
+      const orderId = Number(button.closest('[data-order-id]')?.dataset.orderId);
+      const order = orders.find((item) => Number(item.id) === orderId);
+      if (!order?.tableNo) return showToast('شمارهٔ میز سفارش مشخص نیست؛ آن را از صف سفارش‌ها به یک میز فعال تخصیص دهید.', 'error');
+      openWaiterTerminal(order.tableNo, { selectedOrderId: orderId });
+    }));
+    main.querySelectorAll('[data-collect]').forEach((button) => button.addEventListener('click', () => {
+      const order = orders.find((item) => Number(item.id) === Number(button.closest('[data-order-id]').dataset.orderId));
+      if (order) openWaiterTerminal(order.tableNo, { selectedOrderId: Number(order.id) });
+    }));
+    main.querySelectorAll('[data-assign-waiter-table]').forEach((button) => button.addEventListener('click', () => {
+      const order = orders.find((item) => String(item.id) === String(button.dataset.assignWaiterTable));
+      if (order) openUnmappedOrderTableAssignment(order);
+    }));
+  }
+
+  async function openWaiterOrderEditor(orderId, button) {
+    if (typeof waiterHasCapability === 'function' && !waiterHasCapability('orders.create')) {
+      showToast('ویرایش سفارش در دسترسی شما نیست؛ از مدیر شیفت دسترسی لازم را درخواست کنید.', 'error');
+      return false;
+    }
+    const requestedBranchId = state.branchId;
+    const requestedBranchGeneration = state.waiterBranchGeneration || 0;
+    const isCurrentBranch = () => String(state.branchId ?? '') === String(requestedBranchId ?? '')
+      && (state.waiterBranchGeneration || 0) === requestedBranchGeneration;
+    setBusy(button, true);
+    try {
+      const loaded = await fetchWaiter();
+      if (!loaded || !isCurrentBranch()) {
+        showToast('فهرست سفارش‌ها در حال تازه‌شدن است؛ دوباره تلاش کنید.', 'warning');
+        return false;
+      }
+      const latest = (state.data.orders || []).find((order) => String(order.id) === String(orderId));
+      if (!latest || latest.fulfillment !== 'dine_in' || !orderIsOpen(latest) || !orderCanEdit(latest)) {
+        refreshWaiterViewAfterSync();
+        showToast('این سفارش دیگر قابل ویرایش نیست؛ مرحلهٔ تازهٔ سفارش نمایش داده شد.', 'warning');
+        return false;
+      }
+      if (!waiterOrderHasMappedTable(latest)) {
+        openUnmappedOrderTableAssignment(latest);
+        return true;
+      }
+      await openWaiterTerminal(latest.tableNo, { selectedOrderId: Number(latest.id) });
+      return true;
+    } catch (error) {
+      showToast(`بازکردن سفارش ناموفق بود: ${error.message}`, 'error');
+      return false;
+    } finally {
+      setBusy(button, false);
+    }
+  }
+
+  function openUnmappedOrderTableAssignment(order) {
+    const canMoveOrders = waiterHasCapability('orders.move_table');
+    const requestedBranchId = state.branchId;
+    const requestedBranchGeneration = state.waiterBranchGeneration || 0;
+    const isCurrentBranch = () => String(state.branchId ?? '') === String(requestedBranchId ?? '')
+      && (state.waiterBranchGeneration || 0) === requestedBranchGeneration;
+    const assignmentIntents = state.waiterUnmappedAssignmentIntents
+      || (state.waiterUnmappedAssignmentIntents = new Map());
+    const intentKey = `${String(requestedBranchId ?? '')}:${String(order.id)}`;
+    let uncertainTargetNo = String(assignmentIntents.get(intentKey)?.tableNo || '');
+    const candidates = waiterAvailableAssignmentTables();
+    const uncertainTable = uncertainTargetNo
+      ? (state.data.floor?.tables || []).find((table) => String(table.id) === uncertainTargetNo)
+      : null;
+    const uncertainTableLabel = uncertainTable?.label || `میز ${uncertainTargetNo}`;
+    const tableOptions = uncertainTargetNo
+      ? `<option value="${esc(uncertainTargetNo)}" selected>${esc(uncertainTableLabel)} · مقصد قفل‌شده برای بررسی نتیجه</option>`
+      : candidates.map((table) => `<option value="${esc(table.id)}">${esc(table.label || `میز ${table.id}`)} · ${esc(table.zone || 'سالن')} · ${num(table.seats || 0)} نفر</option>`).join('');
+    openDialog('رفع هشدار', 'اتصال سفارش به میز', `
+      <div class="wt-table-assignment">
+        <p>سفارش <strong>${esc(order.orderNo || `شمارهٔ ${order.id}`)}</strong> به هیچ میز فعالی روی نقشه وصل نیست.</p>
+        ${!canMoveOrders
+          ? '<div class="empty-state" role="status">تخصیص میز در دسترسی شما نیست؛ از مدیر شیفت دسترسی لازم را درخواست کنید.</div>'
+          : uncertainTargetNo || candidates.length
+          ? `<label class="field"><span>${uncertainTargetNo ? 'مقصد همان درخواست قبلی' : 'میز آزاد مقصد'}</span><select id="waiter-order-table-target" ${uncertainTargetNo ? 'disabled' : ''}>${tableOptions}</select></label>
+            <p id="waiter-order-table-outcome" class="wt-stage-message ${uncertainTargetNo ? 'is-warning' : ''}" role="status" ${uncertainTargetNo ? '' : 'hidden'}>${uncertainTargetNo ? `نتیجهٔ انتقال قبلی روشن نیست؛ فقط همان مقصد (${esc(uncertainTableLabel)}) را دوباره بررسی کنید. انتخاب مقصد دیگر تا تطبیق وضعیت مجاز نیست.` : ''}</p>
+            <button type="button" class="role-primary" id="waiter-order-table-confirm" data-order-id="${esc(order.id)}">${uncertainTargetNo ? `تلاش امن دوباره برای ${esc(uncertainTableLabel)}` : 'اتصال به میز انتخاب‌شده'}</button>`
+          : '<div class="empty-state">در این شعبه میز آزادی برای اتصال وجود ندارد؛ ابتدا وضعیت یا چیدمان میزها را بررسی کنید.</div>'}
+        <button type="button" class="role-secondary" id="waiter-order-table-cancel">بازگشت</button>
+      </div>
+    `);
+    dialogBody.querySelector('#waiter-order-table-cancel')?.addEventListener('click', () => dialog.close());
+    dialogBody.querySelector('#waiter-order-table-confirm')?.addEventListener('click', async (event) => {
+      const confirmButton = event.currentTarget;
+      if (confirmButton.disabled) return;
+      if (!waiterHasCapability('orders.move_table')) {
+        showToast('تخصیص میز در دسترسی شما نیست؛ از مدیر شیفت دسترسی لازم را درخواست کنید.', 'error');
+        return;
+      }
+      const selection = dialogBody.querySelector('#waiter-order-table-target');
+      const isUncertainRetry = Boolean(uncertainTargetNo);
+      const tableNo = isUncertainRetry ? uncertainTargetNo : String(selection?.value || '');
+      if (!tableNo) return showToast('یک میز آزاد انتخاب کنید.', 'error');
+      if (!isCurrentBranch()) {
+        return showToast('شعبهٔ فعال تغییر کرده است؛ فهرست سفارش‌ها را تازه کنید و دوباره اقدام کنید.', 'warning');
+      }
+      if (isUncertainRetry && String(selection?.value || '') !== uncertainTargetNo) {
+        return showToast('نتیجهٔ درخواست قبلی روشن نیست؛ فقط همان مقصد را دوباره امتحان کنید.', 'warning');
+      }
+      let availableTable = null;
+      if (!isUncertainRetry) {
+        const latestOrder = (state.data.orders || []).find((item) => String(item.id) === String(order.id));
+        if (!latestOrder || latestOrder.fulfillment !== 'dine_in' || !orderIsOpen(latestOrder) || waiterOrderHasMappedTable(latestOrder)) {
+          return showToast('این سفارش دیگر نیازمند تعیین میز نیست؛ فهرست را تازه کنید.', 'error');
+        }
+        availableTable = waiterAvailableAssignmentTables().find((table) => String(table.id) === String(tableNo));
+        if (!availableTable) return showToast('این میز دیگر آزاد نیست؛ یک میز آزاد دیگر انتخاب کنید.', 'error');
+      } else {
+        availableTable = (state.data.floor?.tables || []).find((table) => String(table.id) === String(tableNo));
+      }
+      setBusy(confirmButton, true);
+      if (selection && !isUncertainRetry) selection.disabled = true;
+      try {
+        const result = await api(`/api/waiter/orders/${encodeURIComponent(order.id)}/move-table`, {
+          method: 'PATCH',
+          body: JSON.stringify({ tableNo }),
+        });
+        const confirmedOrder = result?.order;
+        if (result?.ok !== true || !waiterOrderResponseMatchesIntent(confirmedOrder, {
+          orderId: order.id,
+          branchId: requestedBranchId,
+          tableId: tableNo,
+          exactTableNo: true,
+        })) {
+          throw Object.assign(new Error('پاسخ اتصال سفارش با شناسه، شعبه یا میز مقصد تطبیق ندارد؛ برای جلوگیری از انتقال دوباره، مقصد قفل شد.'), {
+            code: 'waiter_assignment_response_unverified', outcomeUnknown: true,
+          });
+        }
+        assignmentIntents.delete(intentKey);
+        if (isCurrentBranch()) {
+          const savedOrder = JSON.parse(JSON.stringify(confirmedOrder));
+          const orderIndex = (state.data.orders || []).findIndex((item) => String(item.id) === String(order.id));
+          if (orderIndex >= 0) state.data.orders[orderIndex] = savedOrder;
+          else state.data.orders = [...(state.data.orders || []), savedOrder];
+          state.activeView = 'orders';
+          state.waiterUnmappedOnly = true;
+        }
+        dialog.close();
+        let refreshed = false;
+        let refreshError = null;
+        if (isCurrentBranch()) {
+          try { refreshed = await fetchWaiter(); } catch (error) { refreshError = error; }
+        }
+        if (isCurrentBranch()) {
+          if (refreshed) {
+            const refreshedOrder = (state.data.orders || []).find((item) => String(item.id) === String(order.id));
+            if (!refreshedOrder || !refreshedOrder.tableNo) {
+              const savedOrder = JSON.parse(JSON.stringify(confirmedOrder));
+              const orderIndex = (state.data.orders || []).findIndex((item) => String(item.id) === String(order.id));
+              if (orderIndex >= 0) state.data.orders[orderIndex] = savedOrder;
+              else state.data.orders = [...(state.data.orders || []), savedOrder];
+              refreshError = new Error('فهرست تازه با نتیجهٔ ثبت‌شده هم‌خوان نیست.');
+              refreshed = false;
+            } else if (String(refreshedOrder.tableNo) !== String(tableNo)) {
+              refreshError = new Error(`فهرست تازه سفارش را روی میز ${refreshedOrder.tableNo} نشان می‌دهد.`);
+              refreshed = false;
+            }
+          }
+          render();
+          if (refreshed) {
+            showToast(`سفارش به ${availableTable?.label || `میز ${tableNo}`} متصل شد.`);
+          } else {
+            showToast(`اتصال سفارش به ${availableTable?.label || `میز ${tableNo}`} تأیید شد، اما فهرست تازه ناموفق یا ناسازگار بود${refreshError?.message ? `: ${refreshError.message}` : '؛ وضعیت را دوباره تازه کنید'}. تا تطبیق، انتقال دیگری انجام ندهید.`, 'warning');
+          }
+        } else {
+          showToast(`اتصال سفارش به میز ${tableNo} از سرور تأیید شد؛ شعبهٔ فعال تغییر کرده، پس وضعیت همان سفارش را در شعبهٔ قبلی تازه کنید.`, 'warning');
+        }
+      } catch (error) {
+        if (error.outcomeUnknown) {
+          uncertainTargetNo = String(tableNo);
+          assignmentIntents.set(intentKey, { orderId: String(order.id), branchId: String(requestedBranchId ?? ''), tableNo: uncertainTargetNo });
+          if (selection?.isConnected) {
+            selection.value = uncertainTargetNo;
+            selection.disabled = true;
+          }
+          const outcomeNote = dialogBody.querySelector('#waiter-order-table-outcome');
+          const lockedTable = (state.data.floor?.tables || []).find((table) => String(table.id) === uncertainTargetNo);
+          const lockedLabel = lockedTable?.label || `میز ${uncertainTargetNo}`;
+          if (outcomeNote) {
+            outcomeNote.hidden = false;
+            outcomeNote.classList.add('is-warning');
+            outcomeNote.textContent = `نتیجهٔ درخواست روشن نیست؛ مقصد ${lockedLabel} قفل شد. برای جلوگیری از انتقال دوباره، فقط همین مقصد را دوباره امتحان کنید.`;
+          }
+          confirmButton.dataset.label = `تلاش امن دوباره برای ${lockedLabel}`;
+          confirmButton.title = 'مقصد تا روشن شدن نتیجهٔ درخواست قبلی قابل تغییر نیست.';
+          showToast(`نتیجهٔ اتصال به ${lockedLabel} روشن نیست؛ مقصد قفل شد و فقط همان درخواست را دوباره امتحان کنید.`, 'warning');
+        } else if (isUncertainRetry) {
+          let refreshed = false;
+          let refreshError = null;
+          try { refreshed = await fetchWaiter(); } catch (error) { refreshError = error; }
+          if (refreshed) {
+            const latestOrder = (state.data.orders || []).find((item) => String(item.id) === String(order.id));
+            assignmentIntents.delete(intentKey);
+            dialog.close();
+            state.activeView = 'orders';
+            state.waiterUnmappedOnly = true;
+            render();
+            if (latestOrder?.tableNo) {
+              showToast(`وضعیت تازه تأیید کرد سفارش اکنون به میز ${latestOrder.tableNo} وصل است؛ انتقال دیگری انجام ندادیم.`, 'warning');
+            } else if (latestOrder && latestOrder.fulfillment === 'dine_in' && orderIsOpen(latestOrder)) {
+              showToast(`درخواست اتصال به میز ${tableNo} ثبت نشد؛ فهرست تازه است و می‌توانید پس از بررسی میز آزاد دوباره انتخاب کنید.`, 'error');
+            } else {
+              showToast('وضعیت تازهٔ سفارش نمایش داده شد؛ این سفارش دیگر در صف تخصیص میز نیست.', 'warning');
+            }
+            return;
+          }
+          showToast(`${error.message} وضعیت انتقال قبلی هم تازه نشد${refreshError?.message ? `: ${refreshError.message}` : ''}؛ مقصد قفل می‌ماند و فقط همان را دوباره امتحان کنید.`, 'warning');
+        } else {
+          showToast(error.message, 'error');
+        }
+        setBusy(confirmButton, false);
+        if (selection?.isConnected && !uncertainTargetNo) selection.disabled = false;
+      }
+    });
   }
 
   function waiterReservations() {
     clearRoleHeaderContext();
     document.body.classList.remove('is-waiter-floor-app');
-    const active = (state.data.waitlist || []).filter((entry) => ['waiting', 'called', 'seated'].includes(entry.status));
-    const history = (state.data.waitlist || []).filter((entry) => ['left', 'cancelled'].includes(entry.status)).slice(0, 8);
+    const waitlistUnavailable = Boolean(state.data.waiterDataIssues?.waitlist);
+    const reservationsUnavailable = Boolean(state.data.waiterDataIssues?.reservations);
+    const active = waitlistUnavailable ? [] : (state.data.waitlist || []).filter((entry) => ['waiting', 'called', 'seated'].includes(entry.status));
+    const history = waitlistUnavailable ? [] : (state.data.waitlist || []).filter((entry) => ['left', 'cancelled'].includes(entry.status)).slice(0, 8);
     const todayKey = String(state.data.reservations?.serverTime || new Date().toISOString()).slice(0, 10);
-    const timedToday = (state.data.reservations?.reservations || []).filter((item) => item.date === todayKey && !['cancelled', 'no_show'].includes(item.status)).slice(0, 8);
+    const timedToday = reservationsUnavailable ? [] : (state.data.reservations?.reservations || []).filter((item) => item.date === todayKey && !['cancelled', 'no_show'].includes(item.status)).slice(0, 8);
     const summary = state.data.waitlistSummary || {};
+    const unavailablePanel = (title, message) => `<div class="empty-state" role="status"><strong>${title}</strong><p>${message}</p><button type="button" class="role-secondary" data-waiter-data-retry>تلاش دوباره</button></div>`;
     const card = (entry) => {
       const label = entry.name || 'مهمان حضوری';
       const party = entry.partySize ? `${num(entry.partySize)} نفر` : 'تعداد نفرات مشخص نشده';
@@ -3785,12 +7280,34 @@
       </article>`;
     };
     const timedCards = timedToday.map((item) => `<article class="reservation-mini-card"><div><strong>${esc(item.name || item.phone)}</strong><span>${esc(item.time || '—')} · ${num(item.partySize || 0)} نفر</span></div><b>${esc(({ pending: 'در انتظار تأیید', confirmed: 'تأییدشده', seated: 'نشسته' })[item.status] || item.status)}</b></article>`).join('');
-    main.innerHTML = `${pageHead('پذیرش مهمان', 'صف انتظار', 'شماره تماس کافی است؛ میز را فقط وقتی مهمان آمادهٔ نشستن است انتخاب کنید.', '<button class="role-primary" id="waitlist-add">+ پذیرش مهمان حضوری</button>')}
-      <section class="waitlist-summary" aria-label="خلاصه صف"><article><strong>${num(summary.waiting || 0)}</strong><span>در انتظار</span></article><article class="is-called"><strong>${num(summary.called || 0)}</strong><span>منتظر آمدن</span></article><article class="is-seated"><strong>${num(summary.seated || 0)}</strong><span>نشسته</span></article></section>
-      <section class="role-section waitlist-panel"><div class="role-section__head"><h2>مهمان‌های منتظر</h2><span>${num(active.length)} نفر فعال</span></div><div class="waitlist-list">${active.map(card).join('') || empty('صف انتظار خالی است؛ مهمان حضوری بعدی را همین‌جا ثبت کنید.')}</div></section>
-      <section class="role-section reservation-panel"><div class="role-section__head"><h2>رزروهای زمان‌دار امروز</h2><span>${num(timedToday.length)} رزرو</span></div><div class="reservation-mini-list">${timedCards || empty('برای امروز رزرو زمان‌داری ثبت نشده است.')}</div></section>
+    const waitlistAction = waitlistUnavailable
+      ? '<button class="role-secondary" id="waitlist-add" type="button" disabled title="ابتدا اطلاعات صف را تازه کنید">پذیرش موقتاً در دسترس نیست</button>'
+      : '<button class="role-primary" id="waitlist-add">+ پذیرش مهمان حضوری</button>';
+    const waitlistContent = waitlistUnavailable
+      ? unavailablePanel('صف انتظار بارگیری نشد', 'فهرست خالی بودن تأیید نشده؛ تا بارگیری موفق، ثبت و تغییر مهمانان متوقف است.')
+      : active.map(card).join('') || empty('صف انتظار خالی است؛ مهمان حضوری بعدی را همین‌جا ثبت کنید.');
+    const reservationContent = reservationsUnavailable
+      ? unavailablePanel('رزروهای امروز بارگیری نشد', 'برای جلوگیری از نمایش اطلاعات ناقص، این بخش خالی فرض نمی‌شود.')
+      : timedCards || empty('برای امروز رزرو زمان‌داری ثبت نشده است.');
+    const summaryCount = (key) => waitlistUnavailable ? '—' : num(summary[key] || 0);
+    main.innerHTML = `${pageHead('پذیرش مهمان', 'صف انتظار', 'شماره تماس کافی است؛ میز را فقط وقتی مهمان آمادهٔ نشستن است انتخاب کنید.', waitlistAction)}
+      <section class="waitlist-summary" aria-label="خلاصه صف"><article><strong>${summaryCount('waiting')}</strong><span>در انتظار</span></article><article class="is-called"><strong>${summaryCount('called')}</strong><span>منتظر آمدن</span></article><article class="is-seated"><strong>${summaryCount('seated')}</strong><span>نشسته</span></article></section>
+      <section class="role-section waitlist-panel"><div class="role-section__head"><h2>مهمان‌های منتظر</h2><span>${waitlistUnavailable ? 'وضعیت نامشخص' : `${num(active.length)} نفر فعال`}</span></div><div class="waitlist-list">${waitlistContent}</div></section>
+      <section class="role-section reservation-panel"><div class="role-section__head"><h2>رزروهای زمان‌دار امروز</h2><span>${reservationsUnavailable ? 'وضعیت نامشخص' : `${num(timedToday.length)} رزرو`}</span></div><div class="reservation-mini-list">${reservationContent}</div></section>
       ${history.length ? `<section class="role-section waitlist-history"><div class="role-section__head"><h2>پایان‌یافته‌های اخیر</h2><span>فقط برای پیگیری</span></div><div class="reservation-mini-list">${history.map((entry) => `<article class="reservation-mini-card"><div><strong>${esc(entry.name || 'مهمان حضوری')}</strong><span dir="ltr">${esc(entry.phone)}</span></div><b>${entry.status === 'left' ? 'خارج شد' : 'لغو شد'}</b></article>`).join('')}</div></section>` : ''}`;
-    document.getElementById('waitlist-add')?.addEventListener('click', openWaitlistDialog);
+    if (!waitlistUnavailable) document.getElementById('waitlist-add')?.addEventListener('click', openWaitlistDialog);
+    main.querySelectorAll('[data-waiter-data-retry]').forEach((button) => button.addEventListener('click', async () => {
+      setBusy(button, true);
+      try {
+        await fetchWaiter();
+        waiterReservations();
+        const remainingIssues = Object.values(state.data.waiterDataIssues || {}).some(Boolean);
+        showToast(remainingIssues ? 'بعضی اطلاعات هنوز در دسترس نیست؛ وضعیت نامشخص نمایش داده شد.' : 'اطلاعات پذیرش مهمان تازه شد.', remainingIssues ? 'warning' : '');
+      } catch (error) {
+        showToast(`اطلاعات سالن تازه نشد: ${error.message}`, 'error');
+        if (button.isConnected) setBusy(button, false);
+      }
+    }));
     main.querySelectorAll('[data-waitlist-action]').forEach((button) => button.addEventListener('click', () => {
       const status = button.dataset.waitlistAction;
       if (status === 'cancelled' && !window.confirm('این مهمان از صف خارج شود؟')) return;
@@ -3802,13 +7319,27 @@
   async function openWaitlistDialog() {
     openDialog('پذیرش سریع', 'مهمان حضوری جدید', `<div class="waitlist-dialog"><div class="waitlist-dialog__intro"><strong>شماره تماس، مهمان را وارد صف می‌کند</strong><span>انتخاب میز لازم نیست؛ هنگام آماده‌شدن، میز مناسب را انتخاب می‌کنید.</span></div><div class="waitlist-form"><label class="field field--primary"><span>شماره موبایل *</span><input id="waitlist-phone" inputmode="tel" autocomplete="tel" dir="ltr" placeholder="۰۹۱۲۱۲۳۴۵۶۷۸" maxlength="11" required /></label><div class="field-grid"><label class="field"><span>نام (اختیاری)</span><input id="waitlist-name" maxlength="80" placeholder="مثلاً سارا" /></label><label class="field"><span>تعداد نفرات (اختیاری)</span><input id="waitlist-party" inputmode="numeric" maxlength="2" placeholder="بعداً هم می‌شود" /></label></div><label class="field"><span>یادداشت کوتاه (اختیاری)</span><input id="waitlist-note" maxlength="200" placeholder="مثلاً کنار پنجره" /></label><button class="role-primary" id="waitlist-submit" type="button">افزودن به صف</button></div></div>`, { variant: 'waitlist' });
     document.getElementById('waitlist-phone')?.focus();
+    let retryFingerprint = '';
+    let retryIdempotencyKey = '';
     document.getElementById('waitlist-submit')?.addEventListener('click', async (event) => {
       const button = event.currentTarget;
       const phone = normalizeDigits(document.getElementById('waitlist-phone')?.value || '').replace(/\D/g, '');
       if (!/^09\d{9}$/.test(phone)) return showToast('شماره موبایل ۱۱ رقمی وارد کنید.', 'error');
+      const payload = {
+        branchId: state.branchId,
+        phone,
+        name: document.getElementById('waitlist-name')?.value || '',
+        partySize: normalizeDigits(document.getElementById('waitlist-party')?.value || ''),
+        note: document.getElementById('waitlist-note')?.value || '',
+      };
+      const fingerprint = JSON.stringify(payload);
+      if (fingerprint !== retryFingerprint) {
+        retryFingerprint = fingerprint;
+        retryIdempotencyKey = `waitlist-${state.branchId}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+      }
       setBusy(button, true);
       try {
-        await api('/api/waiter/waitlist', { method: 'POST', headers: { 'Idempotency-Key': `waitlist-${state.branchId}-${Date.now()}-${Math.random().toString(16).slice(2)}` }, body: JSON.stringify({ branchId: state.branchId, phone, name: document.getElementById('waitlist-name')?.value || '', partySize: normalizeDigits(document.getElementById('waitlist-party')?.value || ''), note: document.getElementById('waitlist-note')?.value || '' }) });
+        await api('/api/waiter/waitlist', { method: 'POST', headers: { 'Idempotency-Key': retryIdempotencyKey }, body: JSON.stringify(payload) });
         dialog.close();
         showToast('مهمان به صف انتظار اضافه شد.');
         await render();
@@ -3842,8 +7373,14 @@
 
   async function loadMenu(force = false) {
     if (!force && state.menuItems.length) return;
-    const branchParam = state.branchId ? `&branchId=${encodeURIComponent(state.branchId)}` : '';
+    const requestedBranchId = state.branchId;
+    const requestedBranchGeneration = state.waiterBranchGeneration || 0;
+    const requestId = state.waiterMenuRequestId = (state.waiterMenuRequestId || 0) + 1;
+    const branchParam = requestedBranchId ? `&branchId=${encodeURIComponent(requestedBranchId)}` : '';
     const data = await api(`/api/staff/menu?lang=fa${branchParam}`);
+    if (String(state.branchId ?? '') !== String(requestedBranchId ?? '')
+      || (state.waiterBranchGeneration || 0) !== requestedBranchGeneration
+      || state.waiterMenuRequestId !== requestId) return;
     state.menuItems = data.menuItems || data.items || [];
     state.menuCategories = data.menuCategories || [];
     state.menuComplements = data.menuComplements || [];
@@ -3905,11 +7442,52 @@
   }
 
   async function fetchKitchen() {
-    const data = await api(`/api/kitchen/orders${qs()}`);
-    const openCount = (data.tickets || []).filter((ticket) => ticket.column !== 'ready').length;
-    if (state.kdsLastOpenCount !== null && openCount > state.kdsLastOpenCount) kdsBeep();
-    state.kdsLastOpenCount = openCount;
-    state.data = { kitchen: data };
+    if (state.kdsSnapshotInFlight) {
+      const inFlight = state.kdsSnapshotInFlight;
+      state.kdsSnapshotRefreshQueued = true;
+      return inFlight.then(() => {
+        if (state.kdsSnapshotInFlight && state.kdsSnapshotInFlight !== inFlight) return state.kdsSnapshotInFlight;
+        if (state.kdsSnapshotRefreshQueued) {
+          state.kdsSnapshotRefreshQueued = false;
+          return fetchKitchen();
+        }
+        return state.data.kitchen;
+      });
+    }
+
+    const request = (async () => {
+      let data;
+      do {
+        state.kdsSnapshotRefreshQueued = false;
+        data = await api(`/api/kitchen/orders${qs()}`);
+      } while (state.kdsSnapshotRefreshQueued);
+
+      const visibleTicketItems = new Map((data.tickets || []).map((ticket) => [
+        String(ticket.id), new Set([...(ticket.items || []), ...kdsHeldCourseItems(ticket)].map((item) => String(item.key))),
+      ]));
+      for (const [ticketId, hiddenKeys] of state.kdsHeldNotices) {
+        const currentKeys = visibleTicketItems.get(String(ticketId));
+        if (!currentKeys) {
+          state.kdsHeldNotices.delete(ticketId);
+          continue;
+        }
+        for (const key of [...hiddenKeys]) if (currentKeys.has(key)) hiddenKeys.delete(key);
+        if (!hiddenKeys.size) state.kdsHeldNotices.delete(ticketId);
+      }
+
+      const openCount = (data.tickets || []).filter((ticket) => ticket.column !== 'ready').length;
+      if (state.kdsLastOpenCount !== null && openCount > state.kdsLastOpenCount) kdsBeep();
+      state.kdsLastOpenCount = openCount;
+      state.kdsActionNeedsRefresh = false;
+      state.data = { kitchen: data };
+      return data;
+    })();
+
+    state.kdsSnapshotInFlight = request;
+    try { return await request; }
+    finally {
+      if (state.kdsSnapshotInFlight === request) state.kdsSnapshotInFlight = null;
+    }
   }
 
   async function fetchKitchenInventory() {
@@ -4540,6 +8118,21 @@
     }).sort((a, b) => Number(b.kds?.priority) - Number(a.kds?.priority) || Number(b.ageSec) - Number(a.ageSec));
   }
 
+  function kdsHeldCourseItems(ticket) {
+    const candidates = [ticket?.heldCourseItems, ticket?.heldItems, ticket?.kds?.heldCourseItems, ticket?.kds?.heldItems];
+    return candidates.find((items) => Array.isArray(items) && items.length)
+      || (ticket?.items || []).filter((item) => String(item.courseStatus || '').toLowerCase() === 'hold');
+  }
+
+  function kdsHeldCourseItemMarkup(item) {
+    const courseLabels = { starters: 'پیش‌غذا', entrees: 'غذای اصلی', dessert: 'دسر', straight_fire: 'پخت فوری' };
+    const course = courseLabels[item.course] || 'مرحلهٔ بعد';
+    const modifiers = (item.modifiers || []).map((entry) => esc(entry.name)).join('، ');
+    return `<div class="kds-item is-held" aria-label="${esc(item.name)}؛ در انتظار ارسال از سالن">
+      <span class="kds-item__qty">${num(item.qty)}×</span><span class="kds-item__body"><b>${esc(item.name)} <span class="kds-course-tag is-hold">⏳ ${esc(course)} · منتظر اعلام سالن</span></b>${modifiers ? `<small class="kds-item__mods">${modifiers}</small>` : ''}${item.note ? `<small class="kds-item__note">${esc(item.note)}</small>` : ''}</span><span class="kds-item__check" aria-hidden="true">⏳</span>
+    </div>`;
+  }
+
   function kdsItemMarkup(item, ticket) {
     const completed = !!item.completedAt;
     const modifiers = (item.modifiers || []).map((entry) => `<span>${esc(entry.name)}</span>`).join('');
@@ -4547,60 +8140,136 @@
     const courseLabels = { starters: 'پیش‌غذا', entrees: 'غذای اصلی', dessert: 'دسر', straight_fire: 'پخت فوری' };
     const courseLabel = courseLabels[item.course] || '';
     const isHold = item.courseStatus === 'hold';
+    if (isHold) return kdsHeldCourseItemMarkup(item);
     const courseTag = isHold
       ? `<span class="kds-course-tag is-hold" style="background:#fef3c7;color:#b45309;padding:1px 6px;border-radius:6px;font-size:10px;font-weight:900">⏳ ${courseLabel || 'در انتظار فراخوان'} (Hold)</span>`
       : courseLabel ? `<span class="kds-course-tag" style="background:#e0f2fe;color:#0369a1;padding:1px 6px;border-radius:6px;font-size:10px;font-weight:900">🔥 ${courseLabel}</span>` : '';
     const seatTag = Number(item.seat) > 0 ? `<span style="background:#f1f5f9;color:#475569;padding:1px 5px;border-radius:6px;font-size:9.5px;font-weight:800">ص${num(item.seat)}</span>` : '';
 
-    return `<button class="kds-item ${completed ? 'is-complete' : ''} ${isHold ? 'is-held' : ''} ${Number(item.qty) > 1 ? 'is-multi' : ''}" type="button" data-kds-item="${esc(item.key)}" data-ticket-id="${ticket.id}" data-completed="${completed}" aria-label="${completed ? 'بازگردانی' : 'تکمیل'} ${esc(item.name)}">
+    return `<button class="kds-item ${completed ? 'is-complete' : ''} ${Number(item.qty) > 1 ? 'is-multi' : ''}" type="button" data-kds-item="${esc(item.key)}" data-ticket-id="${ticket.id}" data-completed="${completed}" aria-label="${completed ? 'بازگردانی' : 'تکمیل'} ${esc(item.name)}" ${state.kdsActionNeedsRefresh ? 'disabled' : ''}>
       <span class="kds-item__qty">${num(item.qty)}×</span><span class="kds-item__body"><b>${esc(item.name)} ${seatTag} ${courseTag}</b>${item.kind === 'complement' ? `<small>مکمل ${esc(item.parentName || '')}</small>` : ''}${modifiers ? `<small class="kds-item__mods">${modifiers}</small>` : ''}${item.note ? `<small class="kds-item__note">${esc(item.note)}</small>` : ''}${allergens ? `<strong class="kds-item__allergen">⚠ ${esc(allergens)}</strong>` : ''}</span><span class="kds-item__check">${completed ? '✓' : ''}</span>
     </button>`;
   }
 
 
+  function kdsActionOutcome(ticket, payload) {
+    if (!ticket || !payload) return false;
+    const items = (ticket.items || []).filter((item) => String(item.courseStatus || '').toLowerCase() !== 'hold');
+    const item = items.find((entry) => String(entry.key) === String(payload.lineKey));
+    if (payload.action === 'start_ticket') return ticket.column !== 'new';
+    if (payload.action === 'complete_item') return !!item?.completedAt;
+    if (payload.action === 'undo_item') return !!item && !item.completedAt;
+    if (payload.action === 'complete_station') {
+      const stationItems = items.filter((entry) => entry.station === payload.station);
+      return stationItems.length > 0 && stationItems.every((entry) => !!entry.completedAt);
+    }
+    if (payload.action === 'complete_ticket') return ticket.column === 'ready';
+    if (payload.action === 'recall_ticket') return ticket.column === 'preparing';
+    if (payload.action === 'prioritize') return !!ticket.kds?.priority === (payload.priority !== false);
+    if (payload.action === 'note') return String(ticket.kitchenNote || '').trim() === String(payload.note || '').trim();
+    return false;
+  }
+
+  function kdsActionRecovery(error, payload, ticket) {
+    const responseError = error?.data?.error;
+    const code = error?.code || (typeof responseError === 'object' ? responseError.code : responseError);
+    const incomplete = Array.isArray(error?.data?.incomplete) ? error.data.incomplete.map(String) : [];
+    const visibleKeys = new Set((ticket?.items || [])
+      .map((item) => String(item.key)));
+    kdsHeldCourseItems(ticket).forEach((item) => { if (item.key != null) visibleKeys.add(String(item.key)); });
+    const hiddenIncompleteKeys = code === 'kds_ticket_incomplete' && payload?.action === 'complete_ticket' && ticket
+      ? [...new Set(incomplete.filter((key) => !visibleKeys.has(key)))]
+      : [];
+    return {
+      applied: kdsActionOutcome(ticket, payload),
+      conflict: Number(error?.status) === 409,
+      code,
+      hiddenIncompleteKeys,
+    };
+  }
+
+  function kdsShouldRefreshAfterReconnect(currentRole, reconnected, activeView) {
+    return currentRole === 'kitchen' && !!reconnected && activeView !== 'inventory';
+  }
+
   function kdsTicketMarkup(ticket, shortcut) {
-    const settings = normalizeKdsSettings();
-    const allDone = (ticket.items || []).length > 0 && (ticket.items || []).every((item) => item.completedAt);
-    const stationItems = ticket.items || [];
+    const heldItems = kdsHeldCourseItems(ticket);
+    const visibleItems = (ticket.items || []).filter((item) => String(item.courseStatus || '').toLowerCase() !== 'hold');
+    const hiddenHeldKeys = state.kdsHeldNotices.get(String(ticket.id)) || new Set();
+    const actionBlocked = state.kdsActionNeedsRefresh;
+    const allDone = visibleItems.length > 0 && visibleItems.every((item) => item.completedAt) && heldItems.length === 0;
+    const stationItems = visibleItems;
     const selected = String(state.kdsSelectedTicketId || '') === String(ticket.id);
     const fulfillment = ticket.fulfillment === 'delivery' ? 'ارسال' : ticket.fulfillment === 'pickup' ? 'بیرون‌بر' : 'داخل مجموعه';
     const location = ticket.tableNo ? `میز ${ticket.tableNo}` : ticket.fulfillment === 'delivery' ? 'ارسال با پیک' : 'تحویل پیشخوان';
     const primary = ticket.column === 'ready'
-      ? `<button class="kds-ticket__primary is-recall" type="button" data-kds-action="recall_ticket" data-ticket-id="${ticket.id}">بازگردانی به صف</button>`
+      ? `<button class="kds-ticket__primary is-recall" type="button" data-kds-action="recall_ticket" data-ticket-id="${ticket.id}" ${actionBlocked ? 'disabled' : ''}>بازگردانی به صف</button>`
       : ticket.column === 'new'
-        ? `<button class="kds-ticket__primary" type="button" data-kds-action="start_ticket" data-ticket-id="${ticket.id}">شروع آماده‌سازی</button>`
-        : `<button class="kds-ticket__primary" type="button" data-kds-action="complete_ticket" data-ticket-id="${ticket.id}" ${allDone ? '' : 'disabled'}>${allDone ? 'آماده تحویل' : `منتظر ${num(stationItems.filter((item) => !item.completedAt).length)} قلم`}</button>`;
+        ? `<button class="kds-ticket__primary" type="button" data-kds-action="start_ticket" data-ticket-id="${ticket.id}" ${actionBlocked || visibleItems.length === 0 ? 'disabled' : ''}>${visibleItems.length ? 'شروع آماده‌سازی' : 'منتظر اعلام سالن'}</button>`
+        : `<button class="kds-ticket__primary" type="button" data-kds-action="complete_ticket" data-ticket-id="${ticket.id}" ${allDone && !actionBlocked ? '' : 'disabled'}>${allDone ? 'آماده تحویل' : `منتظر ${num(stationItems.filter((item) => !item.completedAt).length + heldItems.length)} قلم`}</button>`;
+    const heldNotice = hiddenHeldKeys.size
+      ? `<p class="kds-note is-held-course"><b>⏳ ${num(hiddenHeldKeys.size)} قلم خارج از صف جاری</b>مرحله‌ای هنوز وارد صف پخت نشده است؛ نوبت نگه‌داشته یا تغییر هم‌زمان سفارش را با سالن بررسی کنید.</p>`
+      : '';
     return `<article class="kds-ticket kds-ticket--${esc(ticket.fulfillment || 'pickup')} ${ticket.kds?.priority ? 'is-priority' : ''} ${ticket.kitchenNote ? 'needs-attention' : ''} ${selected ? 'is-selected' : ''}" data-ticket-id="${ticket.id}" data-age-sec="${Number(ticket.ageSec) || 0}" data-rendered-at="${Date.now()}" tabindex="${selected ? '0' : '-1'}" aria-selected="${selected}">
       <header class="kds-ticket__head"><div><span class="kds-shortcut">${num(shortcut)}</span><div><b>${esc(location)}</b><small>${esc(ticket.orderNo || `#${ticket.id}`)}</small></div></div><div><span>${esc(fulfillment)}</span><time data-kds-age>${kdsAgeLabel(ticket.ageSec)}</time></div></header>
       <div class="kds-ticket__meta"><span>${ticket.column === 'new' ? 'جدید' : ticket.column === 'preparing' ? 'در حال آماده‌سازی' : 'آماده'}</span>${ticket.name ? `<b>${esc(ticket.name)}</b>` : ''}${ticket.kds?.priority ? '<strong>اولویت</strong>' : ''}</div>
-      <div class="kds-ticket__items">${(ticket.items || []).map((item) => kdsItemMarkup(item, ticket)).join('') || empty('غذایی برای این ایستگاه نیست.')}</div>
+      <div class="kds-ticket__items">${visibleItems.map((item) => kdsItemMarkup(item, ticket)).join('')}${heldItems.map(kdsHeldCourseItemMarkup).join('')}${visibleItems.length || heldItems.length ? '' : empty('غذایی برای این ایستگاه نیست.')}</div>
       ${ticket.note ? `<p class="kds-note"><b>یادداشت سفارش</b>${esc(ticket.note)}</p>` : ''}${ticket.kitchenNote ? `<p class="kds-note is-kitchen"><b>پیام آشپزخانه</b>${esc(ticket.kitchenNote)}</p>` : ''}
-      <footer class="kds-ticket__footer"><button type="button" data-kds-priority data-ticket-id="${ticket.id}" aria-label="${ticket.kds?.priority ? 'برداشتن اولویت' : 'اولویت دادن'}">${ticket.kds?.priority ? '★' : '↑'}</button><button type="button" data-kds-note data-ticket-id="${ticket.id}" aria-label="یادداشت آشپزخانه">✎</button>${primary}</footer>
+      ${heldNotice}<footer class="kds-ticket__footer"><button type="button" data-kds-priority data-ticket-id="${ticket.id}" aria-label="${ticket.kds?.priority ? 'برداشتن اولویت' : 'اولویت دادن'}" ${actionBlocked ? 'disabled' : ''}>${ticket.kds?.priority ? '★' : '↑'}</button><button type="button" data-kds-note data-ticket-id="${ticket.id}" aria-label="یادداشت آشپزخانه" ${actionBlocked ? 'disabled' : ''}>✎</button>${primary}</footer>
     </article>`;
   }
 
   function kdsUndoMarkup() {
     if (!state.kdsUndo || Date.now() >= state.kdsUndo.expiresAt) return '';
-    return `<div class="kds-undo" role="status"><span>${esc(state.kdsUndo.label)}</span><button type="button" id="kds-undo-action">بازگردانی</button><i style="--undo-duration:${state.kdsUndo.expiresAt - Date.now()}ms"></i></div>`;
+    return `<div class="kds-undo" role="status"><span>${esc(state.kdsUndo.label)}</span><button type="button" id="kds-undo-action" ${state.kdsActionNeedsRefresh ? 'disabled' : ''}>بازگردانی</button><i style="--undo-duration:${state.kdsUndo.expiresAt - Date.now()}ms"></i></div>`;
+  }
+
+  function kdsCancellationTimeLabel(ticket) {
+    if (!ticket?.cancelledAt) return 'زمان ثبت نامشخص';
+    const timestamp = new Date(ticket.cancelledAt);
+    if (!Number.isFinite(timestamp.getTime())) return 'زمان ثبت نامشخص';
+    return timestamp.toLocaleString('fa-IR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+  }
+
+  function kdsCancelledTicketMarkup(ticket) {
+    const items = [...(ticket.items || []), ...(ticket.heldCourseItems || [])];
+    const location = ticket.tableNo ? `میز ${ticket.tableNo}` : ticket.fulfillment === 'delivery' ? 'ارسال با پیک' : 'تحویل پیشخوان';
+    return `<article class="kds-cancelled-ticket" aria-label="سفارش لغوشده ${esc(ticket.orderNo || `شماره ${ticket.id}`)}">
+      <header><strong>${esc(location)}</strong><span>${esc(ticket.orderNo || `#${ticket.id}`)}</span></header>
+      <p class="kds-cancelled-ticket__time">لغو شد · ${esc(kdsCancellationTimeLabel(ticket))}</p>
+      <ul>${items.map((item) => `<li><b>${num(item.qty)}×</b> ${esc(item.name)}</li>`).join('') || '<li>اقلام سفارش ثبت نشده است</li>'}</ul>
+      ${ticket.note ? `<p class="kds-cancelled-ticket__note"><b>یادداشت سفارش</b>${esc(ticket.note)}</p>` : ''}
+    </article>`;
   }
 
   function kitchenBoard(readyOnly = false) {
     const data = state.data.kitchen;
     const settings = normalizeKdsSettings();
     const filtered = kdsFilteredTickets(readyOnly);
+    const cancelledTickets = data.cancelledTickets || [];
     const pageSize = kdsPageSize();
     const pages = Math.max(1, Math.ceil(filtered.length / pageSize));
     state.kdsPage = Math.min(state.kdsPage, pages - 1);
     const visible = filtered.slice(state.kdsPage * pageSize, (state.kdsPage + 1) * pageSize);
     const average = Number(data.performance?.averagePrepSec || 0);
+    const paymentReviewCount = Math.max(0, Number(data.paymentReview?.blockedCount) || 0);
+    const queueSummary = state.kdsActionNeedsRefresh
+      ? 'وضعیت عملیات تأیید نشده؛ به‌روزرسانی کنید.'
+      : paymentReviewCount
+        ? `⚠ تطبیق پرداخت: ${num(paymentReviewCount)} · صندوق`
+        : `${num(filtered.length)} سفارش · میانگین ${average ? kdsAgeLabel(average) : 'بدون سابقه'}`;
+    const queueSummaryLabel = paymentReviewCount
+      ? `${num(paymentReviewCount)} سفارش به دلیل وضعیت پرداخت وارد صف پخت نشده‌اند؛ برای تطبیق با صندوق پیگیری کنید.`
+      : queueSummary;
     const openUnits = (data.tickets || []).filter((ticket) => ticket.column !== 'ready').reduce((sum, ticket) => sum + (ticket.items || []).filter((item) => !item.completedAt).reduce((count, item) => count + Math.max(1, Number(item.qty) || 1), 0), 0);
     main.innerHTML = `<section class="kds-shell is-${settings.layout} is-text-${settings.textSize}" style="--kds-columns:${kdsColumns()};--kds-rows:${settings.layout === 'rail' ? 1 : innerHeight >= 840 ? 3 : 2}">
-      <header class="kds-command"><div class="kds-command__summary"><span class="kds-live ${state.kdsConnected ? 'is-online' : ''}"><i></i>${state.kdsConnected ? 'زنده' : 'در حال اتصال'}</span><strong>${readyOnly ? 'آماده تحویل' : 'صف آشپزخانه'}</strong><small>${num(filtered.length)} سفارش · میانگین ${average ? kdsAgeLabel(average) : 'بدون سابقه'}</small></div>
+      <header class="kds-command"><div class="kds-command__summary"><span class="kds-live ${state.kdsConnected ? 'is-online' : ''} ${state.kdsActionNeedsRefresh ? 'is-stale' : ''}"><i></i>${state.kdsActionNeedsRefresh ? 'صف قدیمی' : state.kdsConnected ? 'زنده' : 'در حال اتصال'}</span><strong>${readyOnly ? 'آماده تحویل' : 'صف آشپزخانه'}</strong><small class="${state.kdsActionNeedsRefresh ? 'is-stale' : paymentReviewCount ? 'is-payment-review' : ''}" aria-label="${esc(queueSummaryLabel)}" title="${esc(queueSummaryLabel)}" ${state.kdsActionNeedsRefresh ? 'role="alert"' : paymentReviewCount ? 'role="status"' : ''}>${esc(queueSummary)}</small></div>
         <div class="kds-unified-station" role="status" aria-label="صف یکپارچه آشپزخانه"><span class="kds-unified-station__icon">⌘</span><span><b>${kdsStationLabel()}</b><small>غذا · قهوه · نوشیدنی</small></span><strong>${num(openUnits)} قلم</strong></div>
         <div class="kds-command__actions"><label><span>⌕</span><input id="kds-search" value="${esc(state.kdsSearch)}" placeholder="سفارش، میز یا غذا" /></label><button type="button" id="kds-all-day">شمارش کل</button><button type="button" id="kds-availability">موجودی</button><button type="button" id="kds-settings">تنظیمات</button></div>
       </header>
-      <div class="kds-subbar"><div class="kds-fulfillment">${[['all','همه'],['dine_in','سالن'],['pickup','بیرون‌بر'],['delivery','ارسال']].map(([id,label]) => `<button type="button" data-kds-fulfillment="${id}" class="${state.kdsFulfillment === id ? 'active' : ''}">${label}</button>`).join('')}</div><div class="kds-pressure"><span>جدید <b>${num(data.counts?.new || 0)}</b></span><span>در تولید <b>${num(data.counts?.preparing || 0)}</b></span><span>آماده <b>${num(data.counts?.ready || 0)}</b></span>${state.kdsHighlightItem ? `<button type="button" id="kds-clear-highlight">نمایش: ${esc(state.kdsHighlightItem)} ×</button>` : ''}</div><div class="kds-pager"><button type="button" data-kds-page="-1" ${state.kdsPage <= 0 ? 'disabled' : ''}>→</button><span>${num(state.kdsPage + 1)} / ${num(pages)}</span><button type="button" data-kds-page="1" ${state.kdsPage >= pages - 1 ? 'disabled' : ''}>←</button></div></div>
+      <div class="kds-subbar"><div class="kds-fulfillment">${[['all','همه'],['dine_in','سالن'],['pickup','بیرون‌بر'],['delivery','ارسال']].map(([id,label]) => `<button type="button" data-kds-fulfillment="${id}" class="${state.kdsFulfillment === id ? 'active' : ''}">${label}</button>`).join('')}</div><div class="kds-pressure"><span>جدید <b>${num(data.counts?.new || 0)}</b></span><span>در تولید <b>${num(data.counts?.preparing || 0)}</b></span><span>آماده <b>${num(data.counts?.ready || 0)}</b></span>${state.kdsHighlightItem ? `<button type="button" id="kds-clear-highlight">نمایش: ${esc(state.kdsHighlightItem)} ×</button>` : ''}</div><div class="kds-subbar__end"><button type="button" class="kds-cancelled-jump ${cancelledTickets.length ? 'has-cancellations' : ''}" id="kds-cancelled-jump" aria-controls="kds-cancelled-lane">لغوها <b>${num(cancelledTickets.length)}</b></button><div class="kds-pager"><button type="button" data-kds-page="-1" ${state.kdsPage <= 0 ? 'disabled' : ''}>→</button><span>${num(state.kdsPage + 1)} / ${num(pages)}</span><button type="button" data-kds-page="1" ${state.kdsPage >= pages - 1 ? 'disabled' : ''}>←</button></div></div></div>
       <section class="kds-ticket-grid">${visible.map((ticket, index) => kdsTicketMarkup(ticket, index + 1)).join('') || `<div class="kds-empty"><b>${readyOnly ? 'سفارش آماده‌ای نیست' : 'صف آشپزخانه خالی است'}</b><span>سفارش جدید به‌صورت زنده اینجا ظاهر می‌شود.</span></div>`}</section>
+      <section class="kds-cancelled-lane" id="kds-cancelled-lane" role="region" aria-labelledby="kds-cancelled-title" tabindex="-1"><header><div><h2 id="kds-cancelled-title">لغوهای ۲۴ ساعت اخیر</h2><p>این سفارش‌ها از صف فعال خارج شده‌اند؛ اقلام لغوشده را پیش از دورریختن یا ادامهٔ آماده‌سازی بررسی کنید.</p></div><span>${num(cancelledTickets.length)} سفارش</span></header><div class="kds-cancelled-lane__list">${cancelledTickets.map(kdsCancelledTicketMarkup).join('') || '<p class="kds-cancelled-lane__empty">در ۲۴ ساعت اخیر سفارش لغوشده‌ای که به آشپزخانه رسیده باشد ثبت نشده است.</p>'}</div></section>
       <footer class="kds-shortcuts"><span id="kds-order-entry" class="kds-order-entry" aria-live="polite" hidden></span><span><kbd>شماره + ۰</kbd> انتخاب سفارش</span><span><kbd>Enter / ۰ خالی</kbd> گام بعدی</span><span><kbd>↑↓</kbd> جابه‌جایی</span><span><kbd>Ins</kbd> اولویت</span><span><kbd>*</kbd> شمارش کل</span><button type="button" id="kds-keyboard-help">راهنمای نام‌پد</button></footer>${kdsUndoMarkup()}${state.kdsAllDayOpen ? kdsAllDayDrawerMarkup(data) : ''}
     </section>`;
     wireKitchen(readyOnly, visible);
@@ -4615,6 +8284,7 @@
       main.querySelectorAll('.kds-ticket[data-age-sec]').forEach((ticket) => {
         const age = Number(ticket.dataset.ageSec || 0) + Math.floor((Date.now() - Number(ticket.dataset.renderedAt || Date.now())) / 1000);
         ticket.querySelector('[data-kds-age]').textContent = kdsAgeLabel(age);
+        ticket.classList.toggle('is-fresh', age < settings.warnMinutes * 60);
         ticket.classList.toggle('is-warn', age >= settings.warnMinutes * 60 && age < settings.lateMinutes * 60);
         ticket.classList.toggle('is-late', age >= settings.lateMinutes * 60);
       });
@@ -4625,12 +8295,47 @@
 
   function setKdsUndo(label, orderId, payload) {
     clearTimeout(state.kdsUndoTimer);
-    state.kdsUndo = { label, orderId, payload, expiresAt: Date.now() + 5000 };
-    state.kdsUndoTimer = setTimeout(() => { state.kdsUndo = null; document.querySelector('.kds-undo')?.remove(); }, 5050);
+    state.kdsUndo = { label, orderId, payload, expiresAt: Date.now() + 10000 };
+    state.kdsUndoTimer = setTimeout(() => { state.kdsUndo = null; document.querySelector('.kds-undo')?.remove(); }, 10050);
+  }
+
+  async function requestKdsAction(orderId, payload) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 20000);
+    try {
+      const response = await fetch(`/api/kitchen/orders/${orderId}`, {
+        method: 'PATCH',
+        headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        signal: controller.signal,
+        body: JSON.stringify({ ...payload, branchId: state.branchId }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (response.status === 401) {
+        location.href = '/login';
+        throw new Error('نشست شما تمام شده است.');
+      }
+      if (!response.ok) {
+        const error = new Error(errorMessage(response.status, data));
+        const responseError = data?.error;
+        error.status = response.status;
+        error.code = typeof responseError === 'object' ? responseError.code : responseError;
+        error.data = data;
+        throw error;
+      }
+      return data;
+    } catch (error) {
+      if (error.name === 'AbortError') throw new Error('پاسخ سرور طول کشید؛ نتیجه را با تازه‌سازی صف بررسی کنید.');
+      throw error;
+    } finally { clearTimeout(timer); }
   }
 
   async function runKdsAction(button, orderId, payload, success, undo = null) {
     const ticketKey = String(orderId);
+    if (state.kdsActionNeedsRefresh) {
+      showToast('وضعیت آخرین عملیات هنوز از سرور تأیید نشده؛ ابتدا پنل را تازه‌سازی کنید.', 'error');
+      return;
+    }
     if (state.kdsPendingTickets.has(ticketKey)) return;
     state.kdsPendingTickets.add(ticketKey);
     const ticket = button?.closest?.('.kds-ticket');
@@ -4638,12 +8343,45 @@
     ticket?.querySelectorAll('button').forEach((control) => { control.disabled = true; });
     setBusy(button, true);
     try {
-      await api(`/api/kitchen/orders/${orderId}`, { method: 'PATCH', body: JSON.stringify({ ...payload, branchId: state.branchId }) });
+      await requestKdsAction(orderId, payload);
       if (undo) setKdsUndo(undo.label, orderId, undo.payload);
       showToast(success);
-      await fetchKitchen();
-      kitchenBoard(state.activeView === 'ready');
-    } catch (error) { showToast(error.message, 'error'); }
+      try {
+        await fetchKitchen();
+        kitchenBoard(state.activeView === 'ready');
+      } catch (refreshError) {
+        state.kdsActionNeedsRefresh = true;
+        kitchenBoard(state.activeView === 'ready');
+        showToast('عملیات ثبت شد، اما صف تازه نشد؛ برای جلوگیری از اقدام تکراری، تا تازه‌سازی بعدی هیچ تغییری ارسال نمی‌شود.', 'error');
+      }
+    } catch (error) {
+      let refreshed = false;
+      try {
+        await fetchKitchen();
+        refreshed = true;
+      } catch (refreshError) {
+        state.kdsActionNeedsRefresh = true;
+      }
+      const currentTicket = (state.data.kitchen?.tickets || []).find((entry) => String(entry.id) === ticketKey);
+      const recovery = kdsActionRecovery(error, payload, currentTicket);
+      if (recovery.hiddenIncompleteKeys.length) {
+        state.kdsHeldNotices.set(ticketKey, new Set(recovery.hiddenIncompleteKeys));
+      }
+      if (refreshed) kitchenBoard(state.activeView === 'ready');
+      if (recovery.applied && refreshed) {
+        showToast(`${success} · وضعیت از سرور تأیید شد.`);
+      } else if (recovery.conflict && refreshed) {
+        const heldHint = recovery.hiddenIncompleteKeys.length
+          ? `؛ ${num(recovery.hiddenIncompleteKeys.length)} قلمِ خارج از صف آشکار شد، نوبت نگه‌داشته را با سالن بررسی کنید`
+          : '';
+        showToast(`${error.message} · صف تازه شد${heldHint}؛ پس از بررسی، در صورت نیاز دوباره اقدام کنید.`, 'error');
+      } else if (refreshed) {
+        showToast(`${error.message} · صف از سرور تازه شد؛ اگر وضعیت تغییر نکرده، پس از بررسی دوباره تلاش کنید.`, 'error');
+      } else {
+        kitchenBoard(state.activeView === 'ready');
+        showToast('پاسخ عملیات و صف از سرور دریافت نشد؛ تا تازه‌سازی موفق، اقدام دیگری روی سفارش ارسال نمی‌شود.', 'error');
+      }
+    }
     finally {
       state.kdsPendingTickets.delete(ticketKey);
       if (button?.isConnected) setBusy(button, false);
@@ -4700,13 +8438,17 @@
 
   function openKdsAvailability() {
     const rows = state.data.kitchen?.availability || [];
-    openDialog('دسترسی منو', 'موجودی فوری منو', `<label class="kds-dialog-search"><span>⌕</span><input id="kds-availability-search" placeholder="جست‌وجوی غذا" /></label><div class="kds-availability-list">${rows.map((item) => `<button type="button" data-kds-availability-id="${item.id}" data-available="${item.available}"><span><b>${esc(item.name)}</b><small>${esc(item.categoryName)}</small></span><strong>${item.available ? 'موجود' : 'ناموجود'}</strong></button>`).join('')}</div>`);
+    openDialog('دسترسی منو', 'وضعیت فروش این شعبه', `<label class="kds-dialog-search"><span>⌕</span><input id="kds-availability-search" placeholder="جست‌وجوی غذا" /></label><div class="kds-availability-list">${rows.map((item) => {
+      const status = item.inventoryBlocked ? 'کمبود موجودی' : item.globallyAvailable === false ? 'غیرفعال در منوی اصلی' : item.available ? 'موجود' : 'ناموجود در این شعبه';
+      const locked = item.inventoryBlocked || item.globallyAvailable === false;
+      return `<button type="button" data-kds-availability-id="${item.id}" data-available="${item.manualAvailable}" aria-label="${esc(`${item.name}؛ ${status}${locked ? '؛ تغییر از این صفحه ممکن نیست' : ''}`)}" ${locked ? 'disabled title="برای تغییر، موجودی یا تنظیم منوی اصلی را بررسی کنید."' : ''}><span><b>${esc(item.name)}</b><small>${esc(item.categoryName)}</small></span><strong>${status}</strong></button>`;
+    }).join('')}</div>`);
     const filter = () => { const q = document.getElementById('kds-availability-search').value.trim(); dialogBody.querySelectorAll('[data-kds-availability-id]').forEach((button) => { button.hidden = q && !button.innerText.includes(q); }); };
     document.getElementById('kds-availability-search').addEventListener('input', filter);
     dialogBody.querySelectorAll('[data-kds-availability-id]').forEach((button) => button.addEventListener('click', async () => {
       setBusy(button, true);
       try {
-        await api(`/api/kitchen/items/${button.dataset.kdsAvailabilityId}/availability`, { method: 'PATCH', body: JSON.stringify({ available: button.dataset.available !== 'true' }) });
+        await api(`/api/kitchen/items/${button.dataset.kdsAvailabilityId}/availability`, { method: 'PATCH', body: JSON.stringify({ branchId: state.branchId, available: button.dataset.available !== 'true' }) });
         await fetchKitchen();
         dialog.close();
         openKdsAvailability();
@@ -4864,6 +8606,11 @@
   }
 
   function wireKitchen(readyOnly, visible) {
+    main.querySelector('#kds-cancelled-jump')?.addEventListener('click', () => {
+      const lane = document.getElementById('kds-cancelled-lane');
+      lane?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      lane?.focus({ preventScroll: true });
+    });
     main.querySelectorAll('[data-kds-fulfillment]').forEach((button) => button.addEventListener('click', () => { state.kdsFulfillment = button.dataset.kdsFulfillment; state.kdsPage = 0; kitchenBoard(readyOnly); }));
     main.querySelectorAll('[data-kds-page]').forEach((button) => button.addEventListener('click', () => { state.kdsPage += Number(button.dataset.kdsPage); kitchenBoard(readyOnly); }));
     document.getElementById('kds-all-day')?.addEventListener('click', openKdsAllDay);
@@ -4888,7 +8635,7 @@
     }));
     main.querySelectorAll('[data-kds-priority]').forEach((button) => button.addEventListener('click', () => { const ticket = visible.find((entry) => String(entry.id) === String(button.dataset.ticketId)); setKdsSelection(button.closest('.kds-ticket'), false); runKdsAction(button, button.dataset.ticketId, { action: 'prioritize', priority: !ticket?.kds?.priority }, ticket?.kds?.priority ? 'اولویت برداشته شد.' : 'سفارش به ابتدای صف منتقل شد.', ticket?.kds?.priority ? null : { label: 'سفارش اولویت گرفت.', payload: { action: 'prioritize', priority: false } }); }));
     main.querySelectorAll('[data-kds-note]').forEach((button) => button.addEventListener('click', () => { const ticket = visible.find((entry) => String(entry.id) === String(button.dataset.ticketId)); if (ticket) openKdsNote(ticket); }));
-    document.getElementById('kds-undo-action')?.addEventListener('click', async (event) => { const undo = state.kdsUndo; if (!undo) return; clearTimeout(state.kdsUndoTimer); state.kdsUndo = null; await runKdsAction(event.currentTarget, undo.orderId, undo.payload, 'عملیات بازگردانده شد.'); });
+    document.getElementById('kds-undo-action')?.addEventListener('click', async (event) => { const undo = state.kdsUndo; if (!undo || state.kdsActionNeedsRefresh) return; clearTimeout(state.kdsUndoTimer); state.kdsUndo = null; await runKdsAction(event.currentTarget, undo.orderId, undo.payload, 'عملیات بازگردانده شد.'); });
   }
 
   function handleKdsShortcut(event) {
@@ -4925,18 +8672,27 @@
   }
 
   async function render() {
+    const waiterRenderRequestId = role === 'waiter'
+      ? state.waiterRenderRequestId = (state.waiterRenderRequestId || 0) + 1
+      : null;
+    const waiterBranchId = role === 'waiter' ? state.branchId : null;
+    const waiterBranchGeneration = role === 'waiter' ? (state.waiterBranchGeneration || 0) : null;
+    const isCurrentWaiterRender = () => role !== 'waiter'
+      || (waiterRenderRequestId === state.waiterRenderRequestId
+        && waiterBranchGeneration === (state.waiterBranchGeneration || 0)
+        && String(waiterBranchId ?? '') === String(state.branchId ?? ''));
     clearFloorCountdown();
     if (role === 'waiter') clearRoleHeaderContext();
     document.getElementById('role-app').setAttribute('aria-busy', 'true');
     try {
       if (!isViewFeatureEnabled(state.activeView)) {
-        main.innerHTML = `${pageHead('قابلیت غیرفعال', 'دسترسی محدود شده است', 'این بخش توسط کنترل‌پلن NEEM برای این مجموعه غیرفعال شده است.')}
+        main.innerHTML = `${pageHead('قابلیت غیرفعال', 'دسترسی محدود شده است', 'این بخش توسط کنترل‌پلن سالسا (SALSA) برای این مجموعه غیرفعال شده است.')}
           <section class="role-section">
             <div class="empty-state" style="padding:48px 24px; text-align:center;">
               <div style="font-size:48px; margin-bottom:16px;">🔒</div>
-              <h2 style="font-size:18px; font-weight:700; margin-bottom:8px; color:var(--text, #f8fafc);">این بخش توسط کنترل‌پلن NEEM غیرفعال شده است</h2>
+              <h2 style="font-size:18px; font-weight:700; margin-bottom:8px; color:var(--text, #f8fafc);">این بخش توسط کنترل‌پلن سالسا (SALSA) غیرفعال شده است</h2>
               <p style="color:var(--muted, #94a3b8); max-width:440px; margin:0 auto 20px; font-size:13px; line-height:1.7;">
-                برای دسترسی و فعال‌سازی این بخش، قابلیت مربوطه را در مرکز کنترل NEEM (پورت ۳۰۵۰) فعال نمایید.
+                برای دسترسی و فعال‌سازی این بخش، قابلیت مربوطه را در مرکز کنترل سالسا (پورت ۳۰۵۰) فعال نمایید.
               </p>
             </div>
           </section>`;
@@ -4945,20 +8701,30 @@
       if (role === 'cashier') {
         await fetchCashier();
         if (state.activeView === 'floor') cashierFloor();
-        else if (state.activeView === 'orders') cashierOrders();
+        else if (state.activeView === 'orders') cashierRegister();
         else if (state.activeView === 'transactions') cashierTransactions();
         else if (state.activeView === 'drawer') cashierDrawer();
         else cashierMenu();
       }
-      if (role === 'waiter') { await fetchWaiter(); if (state.activeView === 'calls') waiterCalls(); else if (state.activeView === 'orders') waiterOrders(); else if (state.activeView === 'reservations') waiterReservations(); else waiterFloor(); }
+      if (role === 'waiter') {
+        const snapshotLoaded = await fetchWaiter();
+        if (!snapshotLoaded || !isCurrentWaiterRender()) return;
+        if (state.activeView === 'calls') waiterCalls();
+        else if (state.activeView === 'orders') waiterOrders();
+        else if (state.activeView === 'reservations') waiterReservations();
+        else waiterFloor();
+      }
       if (role === 'kitchen') {
         if (state.activeView === 'inventory') { await fetchKitchenInventory(); kitchenInventoryPage(); }
         else { await fetchKitchen(); kitchenBoard(state.activeView === 'ready'); }
       }
     } catch (error) {
+      if (!isCurrentWaiterRender()) return;
       main.innerHTML = `${pageHead('خطا', 'فضای کاری بارگذاری نشد', error.message)}<section class="role-section">${empty(error.message)}<button class="role-primary" id="retry" style="margin-top:12px">تلاش دوباره</button></section>`;
       document.getElementById('retry')?.addEventListener('click', render);
-    } finally { document.getElementById('role-app').setAttribute('aria-busy', 'false'); }
+    } finally {
+      if (isCurrentWaiterRender()) document.getElementById('role-app').setAttribute('aria-busy', 'false');
+    }
   }
 
   let waiterAudioElement = null;
@@ -5046,10 +8812,16 @@
     if (state.waiterLiveSyncTimer) clearInterval(state.waiterLiveSyncTimer);
     state.waiterLiveSyncTimer = setInterval(async () => {
       if (role !== 'waiter' || state.waiterFloorEditing) return;
+      const requestedBranchId = state.branchId;
+      const requestedBranchGeneration = state.waiterBranchGeneration || 0;
+      const isCurrentBranch = () => String(state.branchId ?? '') === String(requestedBranchId ?? '')
+        && (state.waiterBranchGeneration || 0) === requestedBranchGeneration;
       try {
-        const callsData = await api(`/api/waiter/calls${qs()}`);
+        const branchParam = requestedBranchId ? `?branchId=${encodeURIComponent(requestedBranchId)}` : '';
+        const callsData = await api(`/api/waiter/calls${branchParam}`);
+        if (!isCurrentBranch()) return;
         const currentCalls = callsData?.calls || [];
-        const currentKeys = currentCalls.map((c) => `${c.id}:${c.status}:${c.tableNo}`).join('|');
+        const currentKeys = currentCalls.map((c) => `${c.id}:${c.status}:${c.tableNo}:${ageMin(c.createdAt)}`).join('|');
 
         if (!state.lastWaiterCallsKey) {
           state.lastWaiterCallsKey = currentKeys;
@@ -5066,15 +8838,72 @@
             playWaiterCallChime();
           }
 
-          await fetchWaiter();
-          if (!dialog.open) {
-            if (state.activeView === 'floor') waiterFloor();
-            else if (state.activeView === 'calls') waiterCalls();
-            else if (state.activeView === 'reservations') waiterReservations();
+          const snapshotLoaded = await fetchWaiter();
+          if (snapshotLoaded && isCurrentBranch()) {
+            if (dialog.open) state.waiterRefreshPending = true;
+            else refreshWaiterViewAfterSync();
           }
         }
       } catch (e) {}
     }, 1500);
+  }
+
+  function applyLatestWaiterOrder(wt, latest) {
+    wt.order = JSON.parse(JSON.stringify(latest));
+    wt.checkNo = wt.order?.checkNo || wt.order?.tableNo || wt.checkNo;
+    wt.covers = Math.max(1, Number(wt.order?.covers) || Number(wt.covers) || 1);
+    wt.seatsCount = Math.max(wt.covers, highestWaiterAssignedSeat(wt.order?.items || []), 1);
+    wt.lines = (wt.order?.items || []).map((line, index) => ({
+      ...JSON.parse(JSON.stringify(line)),
+      localId: line.localId || `saved-${wt.order.id}-${index}`,
+      localSaved: true,
+    }));
+    wt.guestName = wt.order?.name || '';
+    wt.guestPhone = wt.order?.phone || '';
+    wt.note = wt.order?.note || '';
+    wt.dirty = false;
+    wt.remoteUpdatePending = false;
+  }
+
+  function refreshWaiterViewAfterSync() {
+    const wt = state.waiterTerminal;
+    if (wt) {
+      const latest = wt.order?.id
+        ? state.data.orders.find((order) => Number(order.id) === Number(wt.order.id))
+        : null;
+      if (!latest) return;
+      const clearedUncertainEdit = Boolean(wt.orderSaveNeedsRefresh && !wt.pendingOrderSubmission);
+      if (clearedUncertainEdit) {
+        // A read confirms the current snapshot, but an ambiguous PATCH has no safe replay contract.
+        // Keep the reconciliation lock and only clear the "needs refresh" indicator.
+        wt.orderSaveNeedsRefresh = false;
+        persistWaiterTerminalDraft(wt);
+      }
+      const unchanged = waiterOrderDraftSignature(latest) === waiterOrderDraftSignature(wt.order);
+      if (unchanged) {
+        if (wt.serveNeedsRefresh || clearedUncertainEdit) {
+          if (wt.serveNeedsRefresh) wt.serveNeedsRefresh = false;
+          renderWaiterTerminal();
+        }
+        return;
+      }
+      if (waiterTerminalHasUnsentWork(wt)) {
+        if (!wt.remoteUpdatePending) {
+          wt.remoteUpdatePending = true;
+          renderWaiterTerminal();
+          showToast('سفارش در دستگاه دیگری تغییر کرده؛ پیش‌نویس شما حفظ شد.', 'warning');
+        }
+        return;
+      }
+      if (wt.serveNeedsRefresh) wt.serveNeedsRefresh = false;
+      applyLatestWaiterOrder(wt, latest);
+      renderWaiterTerminal();
+      return;
+    }
+    if (state.activeView === 'floor') waiterFloor();
+    else if (state.activeView === 'calls') waiterCalls();
+    else if (state.activeView === 'orders') waiterOrders();
+    else if (state.activeView === 'reservations') waiterReservations();
   }
 
   function startStream() {
@@ -5087,12 +8916,17 @@
       clearTimeout(timer);
       const delay = immediate ? 0 : 150;
       timer = setTimeout(async () => {
+        if (role === 'waiter' && dialog.open) {
+          state.waiterRefreshPending = true;
+          return;
+        }
         if (!dialog.open && !state.waiterFloorEditing) {
           if (role === 'waiter') {
-            await fetchWaiter();
-            if (state.activeView === 'floor') waiterFloor();
-            else if (state.activeView === 'calls') waiterCalls();
-            else if (state.activeView === 'reservations') waiterReservations();
+            const branchId = state.branchId;
+            const branchGeneration = state.waiterBranchGeneration || 0;
+            const snapshotLoaded = await fetchWaiter();
+            if (snapshotLoaded && String(state.branchId ?? '') === String(branchId ?? '')
+              && (state.waiterBranchGeneration || 0) === branchGeneration) refreshWaiterViewAfterSync();
           } else {
             render();
           }
@@ -5100,11 +8934,41 @@
       }, delay);
     };
 
+    if (role === 'waiter') {
+      if (state.waiterDialogRefreshListener) dialog.removeEventListener('close', state.waiterDialogRefreshListener);
+      state.waiterDialogRefreshListener = () => {
+        if (!state.waiterRefreshPending) return;
+        state.waiterRefreshPending = false;
+        const branchId = state.branchId;
+        const branchGeneration = state.waiterBranchGeneration || 0;
+        fetchWaiter().then((snapshotLoaded) => {
+          if (snapshotLoaded && String(state.branchId ?? '') === String(branchId ?? '')
+            && (state.waiterBranchGeneration || 0) === branchGeneration) refreshWaiterViewAfterSync();
+        }).catch((error) => showToast(`پنجره بسته شد، اما تازه‌سازی وضعیت انجام نشد: ${error.message}`, 'warning'));
+      };
+      dialog.addEventListener('close', state.waiterDialogRefreshListener);
+    }
+
+    if (role === 'kitchen') {
+      if (state.kdsDialogRefreshListener) dialog.removeEventListener('close', state.kdsDialogRefreshListener);
+      state.kdsDialogRefreshListener = () => {
+        if (!state.kdsRefreshPending) return;
+        state.kdsRefreshPending = false;
+        if (state.activeView !== 'inventory') schedule(true);
+      };
+      dialog.addEventListener('close', state.kdsDialogRefreshListener);
+    }
+
     state.stream.addEventListener('open', () => {
+      const reconnected = !state.kdsConnected;
       state.kdsConnected = true;
       document.querySelector('.kds-live')?.classList.add('is-online');
       const label = document.querySelector('.kds-live');
       if (label) label.lastChild.textContent = 'زنده';
+      if (kdsShouldRefreshAfterReconnect(role, reconnected, state.activeView)) {
+        if (dialog.open) state.kdsRefreshPending = true;
+        else schedule(true);
+      }
     });
 
     state.stream.addEventListener('error', () => {
@@ -5131,9 +8995,18 @@
 
   function handlePosShortcut(event) {
     if (role !== 'cashier') return;
+    const activeEl = document.activeElement;
+    const isEditingText = activeEl?.tagName === 'INPUT' || activeEl?.tagName === 'TEXTAREA';
+
     if (event.key === 'F2') {
       event.preventDefault();
-      openNewCheck();
+      const search = document.getElementById('pos-search');
+      if (search) {
+        search.focus();
+        search.select();
+      } else {
+        openNewCheck();
+      }
       return;
     }
     if (event.key === 'F4') {
@@ -5141,7 +9014,25 @@
       document.getElementById('pos-pay')?.click();
       return;
     }
-    if (event.key === '/' && document.activeElement?.tagName !== 'INPUT' && document.activeElement?.tagName !== 'TEXTAREA') {
+    if (event.key === 'F8') {
+      event.preventDefault();
+      const printBtn = document.getElementById('pos-print');
+      if (printBtn && !printBtn.disabled) {
+        printBtn.click();
+      } else if (state.posCheck) {
+        openThermalReceiptPreview(state.posCheck);
+      }
+      return;
+    }
+    if (event.key === ' ' && !isEditingText && !dialog.open) {
+      const sendBtn = document.getElementById('pos-send');
+      if (sendBtn && !sendBtn.disabled) {
+        event.preventDefault();
+        sendBtn.click();
+        return;
+      }
+    }
+    if (event.key === '/' && !isEditingText) {
       event.preventDefault();
       const search = document.getElementById('pos-search');
       if (search) {
@@ -5211,10 +9102,13 @@
             startStream();
           }
           if (role === 'waiter') {
-            fetchWaiter().then(() => {
-              if (!dialog.open && !state.waiterFloorEditing) {
-                if (state.activeView === 'floor') waiterFloor();
-                else if (state.activeView === 'calls') waiterCalls();
+            const branchId = state.branchId;
+            const branchGeneration = state.waiterBranchGeneration || 0;
+            fetchWaiter().then((snapshotLoaded) => {
+              if (snapshotLoaded && String(state.branchId ?? '') === String(branchId ?? '')
+                && (state.waiterBranchGeneration || 0) === branchGeneration) {
+                if (dialog.open) state.waiterRefreshPending = true;
+                else if (!state.waiterFloorEditing) refreshWaiterViewAfterSync();
               }
             });
           } else {

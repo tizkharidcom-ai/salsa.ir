@@ -1,4 +1,8 @@
 node_modules/
+.env
+.env.local
+.env.*.local
+!.env.example
 .checkpoints/
 .cursor/
 .claude/
@@ -14,5 +18,8 @@ dist/
 dist-desktop/
 backups/
 artifacts/
-docs/
+docs/*
+!docs/neem/
 lighthouse*.json
+test-results/
+playwright-report/

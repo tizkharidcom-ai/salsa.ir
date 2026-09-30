@@ -23,17 +23,27 @@ const {
 
 function normalizedBranchId(branchId) {
   const value = Number(branchId);
-  return Number.isSafeInteger(value) && value > 0 ? value : 1;
+  return Number.isSafeInteger(value) && value > 0 ? value : null;
+}
+
+function optionalBranchId(branchId) {
+  if (branchId == null || branchId === '') return null;
+  const value = normalizedBranchId(branchId);
+  if (value === null) throw new Error('شعبهٔ معتبر برای محدودسازی گزارش یا عملیات انبار الزامی است.');
+  return value;
 }
 
 function sameBranch(row, branchId) {
-  return row?.branchId == null || Number(row.branchId) === Number(branchId);
+  const scope = normalizedBranchId(branchId);
+  return scope !== null && row?.branchId != null && Number(row.branchId) === scope;
 }
 
 function findInventoryItem(acc, itemId, branchId) {
   const key = String(itemId ?? '').trim();
+  const scope = normalizedBranchId(branchId);
+  if (!key || scope === null) return null;
   const items = acc.inventoryItems || [];
-  const scoped = items.filter((item) => sameBranch(item, branchId));
+  const scoped = items.filter((item) => sameBranch(item, scope));
   return scoped.find((item) => String(item.id) === key)
     || scoped.find((item) => String(item.sku || '').trim() === key)
     || null;
@@ -54,6 +64,16 @@ function nonNegativeNumber(value, label) {
   const quantity = Number(value);
   if (!Number.isFinite(quantity) || quantity < 0) throw new Error(`${label} معتبر نیست.`);
   return quantity;
+}
+
+function exceedsAvailable(requested, available) {
+  // Allow only the rounding noise inherent in IEEE-754 arithmetic, not a
+  // fixed stock-sized epsilon that can silently authorize a real overdraw.
+  const tolerance = Math.min(
+    1e-9,
+    Number.EPSILON * Math.max(1, Math.abs(requested), Math.abs(available)) * 4,
+  );
+  return requested - available > tolerance;
 }
 
 function availableInventoryQuantity(item) {
@@ -120,7 +140,9 @@ function recipeIngredientCost(acc, recipe, ingredient, branchId) {
 
 function ensureInventory(acc) {
   if (!Array.isArray(acc.inventoryItems)) acc.inventoryItems = [];
-  if (process.env.WESTO_ACCOUNTING_DEMO_SEED === 'true' && acc.inventoryItems.length === 0) {
+  const allowDemoSeed = String(process.env.NODE_ENV || '').trim().toLowerCase() !== 'production'
+    && process.env.WESTO_ACCOUNTING_DEMO_SEED === 'true';
+  if (allowDemoSeed && acc.inventoryItems.length === 0) {
     acc.inventoryItems = [
       { id: 'inv-1', sku: 'ING-MEAT-01', name: 'راسته گوساله بیات‌شده', category: 'پروتئین', unit: 'کیلوگرم', qtyOnHand: 35, avgCost: 720000, minStock: 10, branchId: 1 },
       { id: 'inv-2', sku: 'ING-CHICK-01', name: 'فیله مرغ پاک‌شده زعفرانی', category: 'پروتئین', unit: 'کیلوگرم', qtyOnHand: 55, avgCost: 380000, minStock: 15, branchId: 1 },
@@ -139,7 +161,7 @@ function ensureInventory(acc) {
   if (!Array.isArray(acc.inventoryCounts)) acc.inventoryCounts = [];
   if (!Array.isArray(acc.wasteLog)) acc.wasteLog = [];
   if (!Array.isArray(acc.recipes)) acc.recipes = [];
-  if (process.env.WESTO_ACCOUNTING_DEMO_SEED === 'true' && acc.recipes.length === 0) {
+  if (allowDemoSeed && acc.recipes.length === 0) {
     acc.recipes = [
       {
         id: 'rcp-1',
@@ -224,6 +246,7 @@ function ensureInventory(acc) {
 function receiveStock(acc, { itemId, itemName, qty, unitCost, vendorId, date, branchId }) {
   ensureInventory(acc);
   const targetBranchId = normalizedBranchId(branchId);
+  if (targetBranchId === null) throw new Error('شعبهٔ معتبر برای دریافت موجودی الزامی است.');
   const receivedQty = positiveQuantity(qty, 'مقدار دریافت');
   const rawUnitCost = unitCost == null || unitCost === '' ? 0 : Number(unitCost);
   const costPerUnit = toIRR(rawUnitCost);
@@ -280,6 +303,7 @@ function receiveStock(acc, { itemId, itemName, qty, unitCost, vendorId, date, br
 function consumeStock(acc, { itemId, qty, reason, orderId, date, branchId }) {
   ensureInventory(acc);
   const targetBranchId = normalizedBranchId(branchId);
+  if (targetBranchId === null) return { error: 'شعبهٔ معتبر برای مصرف موجودی الزامی است.' };
   const item = findInventoryItem(acc, itemId, targetBranchId);
   if (!item && findInventoryItemAnyBranch(acc, itemId)) return { error: 'قلم موجودی به شعبهٔ دیگری تعلق دارد.' };
   if (!item) return { error: `آیتم موجودی با شناسه «${itemId}» یافت نشد.` };
@@ -292,13 +316,13 @@ function consumeStock(acc, { itemId, qty, reason, orderId, date, branchId }) {
   } catch (error) {
     return { error: error.message };
   }
-  if (consumeQty > available + 1e-9) return { error: 'موجودی کافی برای مصرف وجود ندارد.' };
+  if (exceedsAvailable(consumeQty, available)) return { error: 'موجودی کافی برای مصرف وجود ندارد.' };
   const unitCost = inventoryUnitCost(item);
   if (unitCost == null) return { error: 'بهای میانگین موجودی معتبر نیست.' };
   const cogsAmount = Math.round(consumeQty * unitCost);
   if (!Number.isSafeInteger(cogsAmount)) return { error: 'ارزش مصرف از محدودهٔ امن خارج است.' };
   const onHand = Number(item.qtyOnHand ?? item.onHand ?? item.quantity);
-  setInventoryOnHand(item, onHand - consumeQty);
+  setInventoryOnHand(item, Math.max(0, onHand - consumeQty));
 
   const txn = {
     id: `itx-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
@@ -327,13 +351,14 @@ function recordWaste(acc, { itemId, qty, reason, date, branchId, createdById }, 
   const { postJournalFn } = opts;
 
   const targetBranchId = normalizedBranchId(branchId);
+  if (targetBranchId === null) throw new Error('شعبهٔ معتبر برای ثبت ضایعات الزامی است.');
   const item = findInventoryItem(acc, itemId, targetBranchId);
   if (!item && findInventoryItemAnyBranch(acc, itemId)) throw new Error('قلم موجودی به شعبهٔ دیگری تعلق دارد.');
   if (!item) throw new Error(`آیتم موجودی «${itemId}» یافت نشد.`);
 
   const wasteQty = positiveQuantity(qty, 'مقدار ضایعات');
   const onHand = nonNegativeNumber(item.qtyOnHand ?? item.onHand ?? item.quantity, 'موجودی فعلی');
-  if (wasteQty > availableInventoryQuantity(item) + 1e-9) throw new Error('موجودی کافی برای ثبت ضایعات وجود ندارد.');
+  if (exceedsAvailable(wasteQty, availableInventoryQuantity(item))) throw new Error('موجودی کافی برای ثبت ضایعات وجود ندارد.');
 
   const unitCost = inventoryUnitCost(item);
   if (unitCost == null) throw new Error('بهای میانگین موجودی معتبر نیست.');
@@ -387,7 +412,7 @@ function recordWaste(acc, { itemId, qty, reason, date, branchId, createdById }, 
 
   // The journal must succeed before changing physical stock. This keeps the
   // inventory and the accounting entry atomic when the journal adapter fails.
-  setInventoryOnHand(item, onHand - wasteQty);
+  setInventoryOnHand(item, Math.max(0, onHand - wasteQty));
 
   const wasteRecord = {
     id: wasteId,
@@ -437,9 +462,9 @@ function recordWaste(acc, { itemId, qty, reason, date, branchId, createdById }, 
  * Returns current inventory valuation.
  */
 function getInventoryValuation(acc, branchId) {
+  const targetBranchId = optionalBranchId(branchId);
   ensureInventory(acc);
   let totalValue = 0;
-  const targetBranchId = branchId == null || branchId === '' ? null : normalizedBranchId(branchId);
   const unvaluedItems = [];
   const items = (acc.inventoryItems || [])
     .filter((i) => targetBranchId == null || sameBranch(i, targetBranchId))
@@ -465,8 +490,8 @@ function getInventoryValuation(acc, branchId) {
  * Calculates Theoretical vs Actual COGS Variance Analysis.
  */
 function getCOGSVarianceAnalysis(acc, db, branchId = null, options = {}) {
+  const targetBranchId = optionalBranchId(branchId);
   ensureInventory(acc);
-  const targetBranchId = branchId == null || branchId === '' ? null : normalizedBranchId(branchId);
   const parseBoundary = (value, endOfDay = false) => {
     if (!value) return null;
     const text = String(value).trim();
@@ -501,8 +526,13 @@ function getCOGSVarianceAnalysis(acc, db, branchId = null, options = {}) {
     const soldAt = order.paidAt || order.createdAt || order.date;
     for (const line of order.items || []) {
       const menuItemId = line.menuItemId ?? line.id;
+      const menuItemCandidates = recipes.filter((candidate) => String(candidate.menuItemId) === String(menuItemId));
+      // A name-only compatibility lookup is safe only when there is no recipe
+      // history for this menu item. If versioned history exists but no version
+      // was effective on the sale date, keep the line incomplete instead of
+      // borrowing a later recipe and inventing theoretical COGS.
       const recipe = effectiveRecipeForSale(recipes, menuItemId, soldAt)
-        || recipes.find((candidate) => candidate.name && candidate.name === line.name);
+        || (!menuItemCandidates.length ? recipes.find((candidate) => candidate.name && candidate.name === line.name) : null);
       const soldQty = Number(line.quantity ?? line.qty ?? 1);
       if (!recipe) {
         coverageIssues.push({ code: 'recipe_missing', orderId: order.id || null, menuItemId: menuItemId || null });
@@ -638,8 +668,8 @@ function getCOGSVarianceAnalysis(acc, db, branchId = null, options = {}) {
  * Computes BCG Menu Engineering Matrix (Stars, Plowhorses, Puzzles, Dogs).
  */
 function getMenuEngineeringMatrix(acc, db, branchId = null, options = {}) {
+  const targetBranchId = optionalBranchId(branchId);
   ensureInventory(acc);
-  const targetBranchId = branchId == null || branchId === '' ? null : normalizedBranchId(branchId);
   const fromAt = options.from ? new Date(options.from).getTime() : null;
   const toAt = options.to ? new Date(options.to).getTime() : null;
   const orders = (db.orders || []).filter((o) => {
@@ -738,11 +768,11 @@ function getMenuEngineeringMatrix(acc, db, branchId = null, options = {}) {
  * Saves or updates a Recipe.
  */
 function saveRecipe(acc, recipe) {
-  ensureInventory(acc);
   const input = recipe || {};
+  const branchId = optionalBranchId(input.branchId);
+  ensureInventory(acc);
   const ingredients = Array.isArray(input.ingredients) ? input.ingredients : [];
   if (ingredients.length === 0) throw new Error('رسپی باید حداقل یک مادهٔ اولیه داشته باشد.');
-  const branchId = input.branchId == null || input.branchId === '' ? null : normalizedBranchId(input.branchId);
   const existingById = (input.id || input.recipeId)
     ? acc.recipes.findIndex((r) => r.id === (input.id || input.recipeId))
     : -1;
@@ -800,12 +830,16 @@ function saveRecipe(acc, recipe) {
 function getRecipeCostCards(acc) {
   ensureInventory(acc);
   return (acc.recipes || []).map((recipe) => {
-    const branchId = recipe.branchId == null || recipe.branchId === '' ? null : normalizedBranchId(recipe.branchId);
+    const explicitBranch = recipe.branchId != null && recipe.branchId !== '';
+    const branchId = explicitBranch ? normalizedBranchId(recipe.branchId) : null;
+    const invalidBranchScope = explicitBranch && branchId === null;
     const issues = [];
     const ingredients = (recipe.ingredients || []).map((ing) => {
       let result;
       try {
-        result = recipeIngredientCost(acc, recipe, ing, branchId);
+        result = invalidBranchScope
+          ? { ok: false, code: 'recipe_branch_invalid', item: null, message: 'شعبهٔ رسپی معتبر نیست؛ محاسبهٔ بهای مواد متوقف شد.' }
+          : recipeIngredientCost(acc, recipe, ing, branchId);
       } catch (error) {
         result = { ok: false, code: 'recipe_inventory_item_ambiguous', item: null, message: error.message };
       }

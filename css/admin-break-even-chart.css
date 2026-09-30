@@ -662,6 +662,79 @@ html[data-theme='dark'] .club-section-title {
   text-overflow: ellipsis;
 }
 
+.tier-config-toolbar,
+.tier-config-footer,
+.tier-config-card__head,
+.tier-color-control {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+.tier-config-toolbar { margin-bottom: 0.9rem; }
+.tier-config-toolbar .club-section-title { margin-bottom: 0.2rem; }
+.tier-config-hint,
+.tier-config-card__head small,
+.tier-perks-field small {
+  display: block;
+  margin: 0;
+  color: var(--v-muted, #64748b);
+  font-size: 0.76rem;
+  line-height: 1.6;
+}
+.tier-config-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 310px), 1fr));
+  gap: 0.85rem;
+  align-items: start;
+}
+.tier-config-card {
+  min-width: 0;
+  margin: 0;
+  padding: 0.9rem;
+  border: 1px solid var(--v-line, #334155);
+  border-top: 3px solid var(--tier-color, #a855f7);
+  border-radius: 0.85rem;
+  background: var(--v-panel-muted, rgba(148, 163, 184, 0.06));
+}
+.tier-config-card__head { justify-content: flex-start; margin-bottom: 0.85rem; }
+.tier-config-card__head h3 { margin: 0 0 0.12rem; color: var(--v-ink, #0f172a); font-size: 0.95rem; }
+.tier-config-card__badge {
+  display: grid;
+  width: 2.45rem;
+  height: 2.45rem;
+  flex: 0 0 2.45rem;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--tier-color, #a855f7) 55%, transparent);
+  border-radius: 0.75rem;
+  background: color-mix(in srgb, var(--tier-color, #a855f7) 14%, transparent);
+  font-size: 1.25rem;
+}
+.tier-config-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.65rem;
+}
+.tier-config-card .field { min-width: 0; }
+.tier-config-card .field > span:first-child { display: block; margin-bottom: 0.3rem; color: var(--v-muted, #64748b); font-size: 0.75rem; }
+.tier-config-card .input { box-sizing: border-box; width: 100%; min-width: 0; }
+.tier-config-card .input:disabled { opacity: 0.62; cursor: not-allowed; }
+.tier-color-control { justify-content: flex-start; }
+.tier-color-control input[type="color"] { width: 2.55rem; height: 2.5rem; flex: 0 0 2.55rem; padding: 0.2rem; border: 1px solid var(--v-line, #334155); border-radius: 0.55rem; background: transparent; cursor: pointer; }
+.tier-color-hex { flex: 1 1 auto; direction: ltr; text-align: left; }
+.tier-perks-field { display: block; margin-top: 0.75rem; }
+.tier-perks-field small { display: inline; margin-inline-start: 0.35rem; }
+.tier-perks { min-height: 4.5rem; resize: vertical; line-height: 1.6; }
+.tier-config-footer { justify-content: flex-end; flex-wrap: wrap; margin-top: 0.9rem; }
+.tier-config-footer .hint { margin-inline-end: auto; }
+@media (max-width: 520px) {
+  .tier-config-toolbar { align-items: flex-start; flex-direction: column; }
+  .tier-config-toolbar > button { width: 100%; }
+  .tier-config-fields { grid-template-columns: minmax(0, 1fr); }
+  .tier-config-footer { align-items: stretch; flex-direction: column; }
+  .tier-config-footer > * { width: 100%; }
+}
+
 .club-kpi-strip {
   display: flex;
   gap: 0.75rem;
@@ -878,4 +951,504 @@ html[data-theme='light'] .dossier-modal-box {
 @keyframes modalPop {
   0% { transform: scale(0.95); opacity: 0; }
   100% { transform: scale(1); opacity: 1; }
+}
+
+/* ==========================================================================
+   Phase 6: Advanced Customer CRM, Reservations, Feedback & Loyalty
+   ========================================================================== */
+
+/* RFM Segmentation Badges */
+.rfm-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.2rem 0.6rem;
+  border-radius: 9999px;
+  font-size: 0.76rem;
+  font-weight: 700;
+  white-space: nowrap;
+  letter-spacing: -0.01em;
+}
+
+.rfm-badge--champion {
+  background: rgba(245, 158, 11, 0.16);
+  color: #fbbf24;
+  border: 1px solid rgba(245, 158, 11, 0.45);
+  box-shadow: 0 0 10px rgba(245, 158, 11, 0.15);
+}
+
+.rfm-badge--loyal {
+  background: rgba(16, 185, 129, 0.16);
+  color: #34d399;
+  border: 1px solid rgba(16, 185, 129, 0.4);
+}
+
+.rfm-badge--potential {
+  background: rgba(14, 165, 233, 0.16);
+  color: #38bdf8;
+  border: 1px solid rgba(14, 165, 233, 0.4);
+}
+
+.rfm-badge--at-risk {
+  background: rgba(249, 115, 22, 0.16);
+  color: #fb923c;
+  border: 1px solid rgba(249, 115, 22, 0.4);
+}
+
+.rfm-badge--churned {
+  background: rgba(239, 68, 68, 0.16);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.4);
+}
+
+.rfm-badge--new {
+  background: rgba(99, 102, 241, 0.16);
+  color: #818cf8;
+  border: 1px solid rgba(99, 102, 241, 0.4);
+}
+
+/* CRM KPI Cards Deck */
+.crm-kpi-deck {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.85rem;
+  margin-bottom: 1.25rem;
+}
+
+.crm-kpi-card {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 1rem;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  position: relative;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+html[data-theme='light'] .crm-kpi-card {
+  background: rgba(255, 255, 255, 0.9);
+  border-color: rgba(0, 0, 0, 0.08);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.04);
+}
+
+.crm-kpi-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.2);
+}
+
+.crm-kpi-card .num {
+  font-size: 1.45rem;
+  font-weight: 800;
+  color: #f1f5f9;
+}
+
+html[data-theme='light'] .crm-kpi-card .num {
+  color: #0f172a;
+}
+
+.crm-kpi-card .lbl {
+  font-size: 0.82rem;
+  color: #94a3b8;
+  font-weight: 600;
+}
+
+.crm-kpi-card .sub {
+  font-size: 0.72rem;
+  color: #64748b;
+  margin-top: 0.2rem;
+}
+
+.crm-kpi-card.is-gold .num { color: #f59e0b; }
+.crm-kpi-card.is-emerald .num { color: #10b981; }
+.crm-kpi-card.is-amber .num { color: #f97316; }
+.crm-kpi-card.is-purple .num { color: #a855f7; }
+
+/* RFM Filter Strip */
+.crm-rfm-filters {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-bottom: 0.85rem;
+}
+
+.crm-rfm-btn {
+  padding: 0.35rem 0.8rem;
+  border-radius: 9999px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #94a3b8;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+html[data-theme='light'] .crm-rfm-btn {
+  background: rgba(0, 0, 0, 0.04);
+  border-color: rgba(0, 0, 0, 0.08);
+  color: #475569;
+}
+
+.crm-rfm-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #f1f5f9;
+}
+
+html[data-theme='light'] .crm-rfm-btn:hover {
+  background: rgba(0, 0, 0, 0.08);
+  color: #0f172a;
+}
+
+.crm-rfm-btn.is-active {
+  background: #7357ce;
+  border-color: #7357ce;
+  color: #ffffff;
+  box-shadow: 0 0 12px rgba(115, 87, 206, 0.4);
+}
+
+/* Dossier Tags & Actions */
+.dossier-tags-wrap {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  align-items: center;
+  margin-top: 0.35rem;
+}
+
+.dossier-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.2rem 0.55rem;
+  border-radius: 0.5rem;
+  font-size: 0.76rem;
+  font-weight: 600;
+}
+
+.dossier-tag--dietary {
+  background: rgba(16, 185, 129, 0.14);
+  color: #10b981;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.dossier-tag--allergy {
+  background: rgba(239, 68, 68, 0.14);
+  color: #ef4444;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.dossier-tag--vip {
+  background: rgba(168, 85, 247, 0.14);
+  color: #a855f7;
+  border: 1px solid rgba(168, 85, 247, 0.3);
+}
+
+.dossier-actions-strip {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin: 0.85rem 0;
+}
+
+.dossier-comm-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.4rem 0.85rem;
+  border-radius: 0.6rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-decoration: none;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.dossier-comm-btn--call {
+  background: rgba(16, 185, 129, 0.15);
+  color: #10b981;
+  border-color: rgba(16, 185, 129, 0.3);
+}
+
+.dossier-comm-btn--sms {
+  background: rgba(14, 165, 233, 0.15);
+  color: #0ea5e9;
+  border-color: rgba(14, 165, 233, 0.3);
+}
+
+.dossier-comm-btn--whatsapp {
+  background: rgba(34, 197, 94, 0.15);
+  color: #22c55e;
+  border-color: rgba(34, 197, 94, 0.3);
+}
+
+.dossier-comm-btn:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.15);
+}
+
+.dossier-wallet-presets {
+  display: flex;
+  gap: 0.35rem;
+  margin-top: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.dossier-preset-chip {
+  padding: 0.2rem 0.5rem;
+  border-radius: 0.4rem;
+  font-size: 0.74rem;
+  font-weight: 700;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: #38bdf8;
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+
+html[data-theme='light'] .dossier-preset-chip {
+  background: rgba(0, 0, 0, 0.05);
+  border-color: rgba(0, 0, 0, 0.1);
+  color: #0284c7;
+}
+
+.dossier-preset-chip:hover {
+  background: #0284c7;
+  color: #ffffff;
+  border-color: #0284c7;
+}
+
+/* Table Reservations Desk */
+.res-table-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.18rem 0.5rem;
+  border-radius: 0.4rem;
+  font-size: 0.76rem;
+  font-weight: 700;
+  background: rgba(115, 87, 206, 0.15);
+  color: #a78bfa;
+  border: 1px solid rgba(115, 87, 206, 0.3);
+}
+
+.res-table-select {
+  padding: 0.2rem 0.4rem;
+  border-radius: 0.4rem;
+  font-size: 0.78rem;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: inherit;
+  font-family: inherit;
+}
+
+html[data-theme='light'] .res-table-select {
+  background: #ffffff;
+  border-color: rgba(0, 0, 0, 0.15);
+}
+
+.res-actions-wrap {
+  display: flex;
+  gap: 0.3rem;
+  flex-wrap: nowrap;
+}
+
+.res-action-btn {
+  padding: 0.2rem 0.5rem;
+  border-radius: 0.4rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  border: none;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.12s ease;
+}
+
+.res-btn--seat {
+  background: #10b981;
+  color: #ffffff;
+}
+
+.res-btn--confirm {
+  background: #3b82f6;
+  color: #ffffff;
+}
+
+.res-btn--complete {
+  background: #8b5cf6;
+  color: #ffffff;
+}
+
+.res-btn--noshow {
+  background: rgba(239, 68, 68, 0.2);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.4);
+}
+
+.res-btn--cancel {
+  background: rgba(255, 255, 255, 0.1);
+  color: #94a3b8;
+}
+
+.res-action-btn:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.15);
+}
+
+.res-shift-filters {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+  margin-bottom: 0.85rem;
+  flex-wrap: wrap;
+}
+
+.res-shift-btn {
+  padding: 0.35rem 0.8rem;
+  border-radius: 0.5rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #94a3b8;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.res-shift-btn.is-active {
+  background: #7357ce;
+  border-color: #7357ce;
+  color: #ffffff;
+}
+
+.res-occasion-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 0.15rem 0.45rem;
+  border-radius: 0.35rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  background: rgba(236, 72, 153, 0.15);
+  color: #f472b6;
+  border: 1px solid rgba(236, 72, 153, 0.3);
+}
+
+/* Feedback NPS & Recovery */
+.nps-dashboard-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+
+.nps-meter-card {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 1.2rem;
+  padding: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+}
+
+html[data-theme='light'] .nps-meter-card {
+  background: #ffffff;
+  border-color: rgba(0, 0, 0, 0.08);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.05);
+}
+
+.nps-score-big {
+  font-size: 2.8rem;
+  font-weight: 900;
+  letter-spacing: -0.02em;
+  margin: 0.3rem 0;
+}
+
+.nps-score-big.is-excellent { color: #10b981; }
+.nps-score-big.is-good { color: #38bdf8; }
+.nps-score-big.is-warning { color: #f59e0b; }
+.nps-score-big.is-danger { color: #ef4444; }
+
+.nps-segments-bar {
+  display: flex;
+  width: 100%;
+  height: 12px;
+  border-radius: 9999px;
+  overflow: hidden;
+  margin: 0.75rem 0 0.4rem 0;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.nps-seg--promoter { background: #10b981; }
+.nps-seg--passive { background: #f59e0b; }
+.nps-seg--detractor { background: #ef4444; }
+
+.fb-recovery-card {
+  border-right: 4px solid #ef4444 !important;
+  background: rgba(239, 68, 68, 0.04) !important;
+}
+
+.fb-alert-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.15rem 0.5rem;
+  border-radius: 9999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  background: rgba(239, 68, 68, 0.18);
+  color: #ef4444;
+  border: 1px solid rgba(239, 68, 68, 0.4);
+}
+
+.fb-status-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.2rem 0.5rem;
+  border-radius: 0.4rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.fb-status-pill.new { background: rgba(59, 130, 246, 0.15); color: #3b82f6; }
+.fb-status-pill.in_progress { background: rgba(245, 158, 11, 0.15); color: #f59e0b; }
+.fb-status-pill.resolved { background: rgba(16, 185, 129, 0.15); color: #10b981; }
+.fb-status-pill.archived { background: rgba(148, 163, 184, 0.15); color: #94a3b8; }
+
+/* Customer-club behavioral goals share the loyalty page without changing tier rules. */
+.achievement-config-list { display: grid; gap: 1rem; margin-top: 1rem; }
+body.admin-app .achievement-config-card { min-width: 0; padding: 1rem; border: 1px solid var(--v-line, var(--p-border, rgba(148,163,184,.2))); border-radius: 1rem; background: var(--v-panel, var(--p-surface, #fff)); color: var(--v-ink, var(--p-text, #111214)); box-shadow: var(--v-shadow, none); }
+.achievement-config-card__head { display: flex; align-items: center; gap: .75rem; margin-bottom: 1rem; }
+.achievement-config-card__head h3 { margin: 0; font-size: 1rem; }
+.achievement-config-card__head small { color: var(--v-muted, var(--p-text-dim, #64748b)); }
+.achievement-config-icon { display: grid; place-items: center; width: 2.5rem; height: 2.5rem; border-radius: .8rem; background: color-mix(in srgb, var(--p-accent, #2a7a86) 12%, transparent); font-size: 1.35rem; }
+.achievement-config-card__head .chk { margin-inline-start: auto; white-space: nowrap; }
+.achievement-config-fields { display: grid; grid-template-columns: repeat(auto-fit,minmax(155px,1fr)); gap: .75rem; margin-bottom: .75rem; }
+.achievement-config-fields .field, .achievement-config-card > .field { min-width: 0; }
+.achievement-config-card textarea { width: 100%; resize: vertical; }
+.achievement-category-groups { display: grid; grid-template-columns: repeat(auto-fit,minmax(220px,1fr)); gap: .75rem; margin-top: .75rem; }
+.achievement-config-categories { display: flex; flex-wrap: wrap; gap: .4rem .7rem; min-width: 0; margin: 0; padding: .65rem; border: 1px solid var(--v-line, var(--p-border, rgba(148,163,184,.2))); border-radius: .75rem; background: var(--v-panel-soft, var(--p-surface-2, transparent)); }
+.achievement-config-categories legend { padding: 0 .35rem; color: var(--v-muted, var(--p-text-dim, #64748b)); font-size: .82rem; font-weight: 700; }
+.achievement-category-choice { display: inline-flex; align-items: center; gap: .35rem; color: var(--v-ink, var(--p-text, #111214)); font-size: .82rem; }
+.achievement-category-choice input { accent-color: #2dd4bf; }
+.achievement-config-notice { padding: .75rem .9rem; border: 1px solid color-mix(in srgb, var(--v-orange, #ff9d39) 36%, transparent); border-radius: .75rem; background: color-mix(in srgb, var(--v-orange, #ff9d39) 10%, var(--v-panel, #fff)); color: #8a5700; line-height: 1.7; }
+.loyalty-reconciliation__counts > div { border: 1px solid var(--v-line, var(--p-border, rgba(148,163,184,.2))); background: var(--v-panel-soft, var(--p-surface-2, rgba(148,163,184,.08))); }
+.loyalty-reconciliation__counts span, .loyalty-reconciliation li { color: var(--v-muted, var(--p-text-dim, #64748b)); }
+html[data-theme='dark'] body.admin-app .achievement-config-notice { color: #fbbf24; }
+.loyalty-reconciliation__counts { display: grid; grid-template-columns: repeat(auto-fit,minmax(155px,1fr)); gap: .75rem; margin: .8rem 0; }
+.loyalty-reconciliation__counts > div { display: grid; gap: .25rem; padding: .8rem; border-radius: .75rem; background: rgba(148,163,184,.08); }
+.loyalty-reconciliation__counts b { font-size: 1.25rem; }
+.loyalty-reconciliation__counts span, .loyalty-reconciliation li { color: #aebbd0; }
+.loyalty-reconciliation ul { display: grid; gap: .35rem; padding-inline-start: 1.25rem; overflow-wrap: anywhere; }
+@media (max-width: 640px) {
+  body.admin-app .achievement-config-card { padding: .75rem; }
+  .achievement-config-fields { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .achievement-config-fields .field:first-child { grid-column: 1 / -1; }
+  .achievement-category-groups { grid-template-columns: 1fr; }
 }

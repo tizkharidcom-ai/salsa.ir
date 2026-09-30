@@ -469,6 +469,20 @@ function receiveGoods(acc, input = {}, opts = {}) {
     sanitizedLines.forEach((line) => {
       const poLine = po.lines.find((row) => row.id === line.poLineId);
       poLine.receivedQuantity = Number(poLine.receivedQuantity || 0) + line.quantityReceived;
+      if ((opts.syncInventoryStock || input.syncInventoryStock) && Array.isArray(acc.inventoryItems)) {
+        const invItem = acc.inventoryItems.find((item) => String(item.id) === String(line.itemId) || String(item.sku) === String(line.itemId));
+        if (invItem) {
+          const prevQty = Number(invItem.qtyOnHand || 0);
+          const prevAvg = Number(invItem.avgCostIrr || invItem.cost || 0);
+          const receivedQty = Number(line.quantityReceived || 0);
+          const receivedCost = Number(line.totalCost || (line.unitCost * receivedQty) || 0);
+          const newQty = prevQty + receivedQty;
+          invItem.qtyOnHand = newQty;
+          if (newQty > 0 && receivedCost > 0) {
+            invItem.avgCostIrr = Math.round(((prevQty * prevAvg) + receivedCost) / newQty);
+          }
+        }
+      }
     });
     po.status = po.lines.every((line) => Number(line.receivedQuantity || 0) >= Number(line.quantity) - PROCUREMENT_EPSILON) ? 'received' : 'partially_received';
     procurementAudit(acc, 'RECEIVE_GOODS', 'GoodsReceipt', grn.id, grn.createdById, `رسید ورود کالا ${grn.number} به ارزش ${formatNumber(totalValue)} ریال ثبت گردید.`);
@@ -637,7 +651,7 @@ function legacyPayVendorBill(acc, billId, paymentInput, opts = {}) {
   const payMethod = String(paymentInput.paymentMethod || 'BANK').toUpperCase();
   let creditAccount = '1210'; // Bank Account
   if (payMethod === 'CASH') creditAccount = '1110';
-  else if (payMethod === 'PETTY_CASH') creditAccount = '1120';
+  else if (payMethod === 'PETTY_CASH') creditAccount = '1130';
 
   const payDate = paymentInput.date || new Date().toISOString();
 
@@ -1005,7 +1019,7 @@ function payVendorBill(acc, billId, paymentInput = {}, opts = {}) {
     if (!PROCUREMENT_PAYMENT_METHODS.has(method)) procurementFail('روش پرداخت پشتیبانی نمی‌شود.', 'payment_method_invalid');
     const payDate = paymentInput.date || paymentInput.paymentDate || procurementNow();
     procurementDate(payDate, 'payment_date_invalid');
-    const creditAccount = method === 'CASH' ? '1110' : method === 'PETTY_CASH' ? '1120' : '1210';
+    const creditAccount = method === 'CASH' ? '1110' : method === 'PETTY_CASH' ? '1130' : '1210';
     const paymentId = procurementId('vpay');
     const journalLines = [
       { accountCode: opts.apAccountCode || '2110', debit: amount, credit: 0, branchId: branch, memo: `تسویه بدهی فاکتور ${bill.billNumber}` },
