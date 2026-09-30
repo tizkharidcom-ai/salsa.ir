@@ -1,8 +1,9 @@
 /* Starts the local WESTO stack together.
  *
- * The public/client app, the isolated GODMODE prototype, and the SALSA Control
+ * The public/client app, the current SALSA frontend, and the SALSA Control
  * Plane are separate processes with separate ports. Keeping these boundaries
- * explicit prevents mock UI data from being mistaken for live operations.
+ * explicit keeps each application on its own port and connects the frontend
+ * to the Control Plane API.
  */
 const crypto = require('crypto');
 const path = require('path');
@@ -33,6 +34,8 @@ function buildServiceDefinitions(sourceEnv = process.env) {
   const defaultMfaKey = crypto.randomBytes(32).toString('hex');
   const common = {
     ...sourceEnv,
+    NODE_ENV: sourceEnv.NODE_ENV || 'development',
+    SALSA_CONTROL_PLANE_URL: sourceEnv.SALSA_CONTROL_PLANE_URL || sourceEnv.SALSA_CONTROL_URL || `http://127.0.0.1:${controlPort}`,
     WESTO_SALSA_BRIDGE_SECRET: bridgeSecret,
     WESTO_NEEM_BRIDGE_SECRET: bridgeSecret,
     SALSA_CONTROL_SECRET: sourceEnv.SALSA_CONTROL_SECRET || sourceEnv.NEEM_CONTROL_SECRET || bridgeSecret,
@@ -62,8 +65,8 @@ function buildServiceDefinitions(sourceEnv = process.env) {
       env: { ...common, PORT: westoPort },
     },
     {
-      name: 'SALSA GODMODE prototype',
-      args: ['prototype/server.js'],
+      name: 'SALSA GODMODE frontend',
+      args: ['superadmin/frontend/server.js'],
       env: { ...common, PORT: godmodePort, GODMODE_HOST: godmodeHost },
     },
     {
@@ -75,6 +78,10 @@ function buildServiceDefinitions(sourceEnv = process.env) {
 }
 
 function startStack() {
+  // Use the same configured database as start:postgres; never quietly start
+  // a separate JSON-backed WESTO instance when local PostgreSQL is configured.
+  const localEnvPath = path.join(root, '.env.local');
+  if (require('fs').existsSync(localEnvPath)) process.loadEnvFile(localEnvPath);
   const services = buildServiceDefinitions();
   const children = services.map((service) => ({
     ...service,
